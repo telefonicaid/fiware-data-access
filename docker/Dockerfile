@@ -1,5 +1,5 @@
 # Copyright 2025 Telefónica Soluciones de Informática y Comunicaciones de España, S.A.U.
-# PROJECT: Cedeas
+# PROJECT: fiware-data-access
 #
 # This software and / or computer program has been developed by Telefónica Soluciones
 # de Informática y Comunicaciones de España, S.A.U (hereinafter TSOL) and is protected
@@ -25,9 +25,9 @@
 ARG NODE_VERSION=24-slim
 FROM node:${NODE_VERSION}
 
-COPY . /opt/cedeas/cedeas
+COPY . /opt/fda/fda
 
-WORKDIR /opt/cedeas/cedeas
+WORKDIR /opt/fda/fda
 # hadolint ignore=DL3008,DL3009,DL3015
 RUN \
         # Ensure that Git is installed prior to running npm install.
