@@ -60,7 +60,16 @@ async function main() {
     COPY example TO '${parquetPath}' (FORMAT 'parquet');
   `);
 
-  console.log(` Parquet file saved into MinIO: ${parquetPath}`);
+  //console.log(` Parquet file saved into MinIO: ${parquetPath}`);
+
+  // Retrieve data
+  conn.all(`SELECT * FROM '${parquetPath}'`, function (err, res) {
+    if (err) {
+      console.warn(err);
+      return;
+    }
+    console.log(res);
+  });
 
   await conn.close();
 }
