@@ -44,10 +44,11 @@ async function main() {
 
   const tableName = 'pocTable';
   const parquetPath = `s3://my-bucket/output/${tableName}.parquet`;
+  const params = `entityId = 'Praia de Coim'`;
 
   createTable(conn, tableName);
   saveToMinIO(conn, tableName, parquetPath);
-  retrieveData(conn, parquetPath);
+  executeQuery(conn, parquetPath, params);
 
   await conn.close();
 }
@@ -71,8 +72,8 @@ async function createTable(conn, tableName) {
   console.log(`Tabla '${tableName}' creada en DuckDB`);
 }
 
-// Retrieve data
-async function retrieveData(conn, parquetPath) {
+// Retrieve all data
+async function retrieveAllData(conn, parquetPath) {
   conn.all(`SELECT * FROM '${parquetPath}'`, function (err, res) {
     if (err) {
       console.warn(err);
@@ -80,6 +81,20 @@ async function retrieveData(conn, parquetPath) {
     }
     console.log(res);
   });
+}
+
+// Execute query: parquetPath = FROM, params = WHERE
+async function executeQuery(conn, parquetPath, params) {
+  conn.all(
+    `SELECT * FROM '${parquetPath}' WHERE ${params}`,
+    function (err, res) {
+      if (err) {
+        console.warn(err);
+        return;
+      }
+      console.log(res);
+    }
+  );
 }
 
 main().catch((err) => {
