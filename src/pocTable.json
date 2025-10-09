@@ -1,0 +1,58 @@
+[
+  {
+    "entityid": "Praia de Albarquel",
+    "timeinstant": "2025-10-09T11:55:36.117Z",
+    "airquality": "201",
+    "beachtype": "urban",
+    "calmwaters": false
+  },
+  {
+    "entityid": "Praia de Cacela Velha",
+    "timeinstant": "2025-10-09T11:55:36.117Z",
+    "airquality": "220",
+    "beachtype": "urban",
+    "calmwaters": true
+  },
+  {
+    "entityid": "Praia de Coim",
+    "timeinstant": "2025-10-09T11:55:36.117Z",
+    "airquality": "95",
+    "beachtype": "urban",
+    "calmwaters": false
+  },
+  {
+    "entityid": "Praia de Santa Cruz",
+    "timeinstant": "2025-10-09T11:55:36.117Z",
+    "airquality": "185",
+    "beachtype": "urban",
+    "calmwaters": false
+  },
+  {
+    "entityid": "Praia dos Três Castelos",
+    "timeinstant": "2025-10-09T11:55:36.117Z",
+    "airquality": "200",
+    "beachtype": "urban",
+    "calmwaters": false
+  },
+  {
+    "entityid": "Praia dos Caneiros",
+    "timeinstant": "2025-10-09T11:55:36.117Z",
+    "airquality": "156",
+    "beachtype": "urban",
+    "calmwaters": false
+  },
+  {
+    "entityid": "Praia do Amado",
+    "timeinstant": "2025-10-09T11:55:36.117Z",
+    "airquality": "132",
+    "beachtype": "urban",
+    "calmwaters": false
+  },
+  {
+    "entityid": "Praia de Cortegaça Sul",
+    "timeinstant": "2025-10-09T11:55:36.117Z",
+    "airquality": "80",
+    "beachtype": "urban",
+    "calmwaters": false
+  }
+]

@@ -42,25 +42,23 @@ async function main() {
     SET s3_secret_access_key='admin123';
   `);
 
-  // Create table example
+  // Create table from JSON
+  const tableName = 'pocTable';
   await conn.run(`
-    CREATE TABLE example AS SELECT 
-      range AS id,
-      'text_' || range AS name,
-      now() AS date
-    FROM range(10);
+    CREATE TABLE ${tableName} AS SELECT *
+    FROM 'src/${tableName}.json';
   `);
 
-  console.log(' Tabla creada en DuckDB');
+  console.log(`Tabla '${tableName}' creada en DuckDB`);
 
   // Write parquet in MinIO
-  const parquetPath = 's3://my-bucket/output/example.parquet';
+  const parquetPath = `s3://my-bucket/output/${tableName}.parquet`;
 
   await conn.run(`
-    COPY example TO '${parquetPath}' (FORMAT 'parquet');
+    COPY '${tableName}' TO '${parquetPath}' (FORMAT 'parquet');
   `);
 
-  //console.log(` Parquet file saved into MinIO: ${parquetPath}`);
+  console.log(` Parquet file saved into MinIO: ${parquetPath}`);
 
   // Retrieve data
   conn.all(`SELECT * FROM '${parquetPath}'`, function (err, res) {
