@@ -42,25 +42,37 @@ async function main() {
     SET s3_secret_access_key='admin123';
   `);
 
-  // Create table from JSON
   const tableName = 'pocTable';
+  const parquetPath = `s3://my-bucket/output/${tableName}.parquet`;
+
+  createTable(conn, tableName);
+  saveToMinIO(conn, tableName, parquetPath);
+  retrieveData(conn, parquetPath);
+
+  await conn.close();
+}
+
+// Write parquet in MinIO
+async function saveToMinIO(conn, tableName, parquetPath) {
+  await conn.run(`
+    COPY '${tableName}' TO '${parquetPath}' (FORMAT 'parquet');
+  `);
+
+  console.log(` Parquet file saved into MinIO: ${parquetPath}`);
+}
+
+// Create table from JSON
+async function createTable(conn, tableName) {
   await conn.run(`
     CREATE TABLE ${tableName} AS SELECT *
     FROM 'src/${tableName}.json';
   `);
 
   console.log(`Tabla '${tableName}' creada en DuckDB`);
+}
 
-  // Write parquet in MinIO
-  const parquetPath = `s3://my-bucket/output/${tableName}.parquet`;
-
-  await conn.run(`
-    COPY '${tableName}' TO '${parquetPath}' (FORMAT 'parquet');
-  `);
-
-  console.log(` Parquet file saved into MinIO: ${parquetPath}`);
-
-  // Retrieve data
+// Retrieve data
+async function retrieveData(conn, parquetPath) {
   conn.all(`SELECT * FROM '${parquetPath}'`, function (err, res) {
     if (err) {
       console.warn(err);
@@ -68,8 +80,6 @@ async function main() {
     }
     console.log(res);
   });
-
-  await conn.close();
 }
 
 main().catch((err) => {
