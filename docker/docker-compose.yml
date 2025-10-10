@@ -27,16 +27,33 @@ services:
     image: minio/minio:latest
     container_name: minio
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - '9000:9000'
+      - '9001:9001'
     environment:
       - MINIO_ROOT_USER=admin
       - MINIO_ROOT_PASSWORD=admin123
-      - MINIO_LOG_LEVEL=debug
     volumes:
       - ./data:/data
     command: server /data --console-address ":9001"
-    restart: unless-stopped
+    networks:
+      - minio-net
+
+  mc:
+    image: minio/mc:latest
+    container_name: minio-mc
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      sleep 5 &&
+      mc alias set local http://minio:9000 admin admin123 &&
+      mc admin info local &&
+      mc mb --ignore-existing local/my-bucket &&
+      mc admin trace -v -a local &&
+      tail -f /dev/null
+      "
+    networks:
+      - minio-net
 
   poc:
     container_name: poc
@@ -53,4 +70,8 @@ services:
       - MINIO_ACCESS_KEY=admin
       - MINIO_SECRET_KEY=admin123
       - MINIO_BUCKET=my-bucket
-    command: ["npm", "start"]
+    command: ['npm', 'start']
+
+networks:
+  minio-net:
+    driver: bridge
