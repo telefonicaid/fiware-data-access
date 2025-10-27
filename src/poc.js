@@ -22,12 +22,12 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
-import duckdb from 'duckdb';
+import { DuckDBInstance } from '@duckdb/node-api';
 
-async function main() {
+export async function pocApi(params) {
   // Create DB in memory
-  const db = new duckdb.Database(':memory:');
-  const conn = db.connect();
+  const instance = await DuckDBInstance.create(':memory:');
+  const conn = await instance.connect();
 
   // Install and load  HTTP/S3 support
   await conn.run('INSTALL httpfs;');
@@ -43,43 +43,12 @@ async function main() {
   `);
 
   const tableName = 'pocTable';
-  const parquetPath = `s3://my-bucket/output/${tableName}.parquet`;
-  const params = `entityId = 'Praia de Coim'`;
-
-  createTable(conn, tableName);
-  saveToMinIO(conn, tableName, parquetPath);
-  executeQuery(conn, parquetPath, params);
-
-  await conn.close();
-}
-
-// same as main but returning query result as promise for api
-export async function apiPoc(params) {
-  // Create DB in memory
-  const db = new duckdb.Database(':memory:');
-  const conn = db.connect();
-
-  // Install and load  HTTP/S3 support
-  await conn.run('INSTALL httpfs;');
-  await conn.run('LOAD httpfs;');
-
-  // Config access to MinIO (S3-compatible)
-  await conn.run(`
-    SET s3_endpoint='localhost:9000';
-    SET s3_url_style='path';
-    SET s3_use_ssl=false;
-    SET s3_access_key_id='admin';
-    SET s3_secret_access_key='admin123';
-  `);
-
-  const tableName = 'pocTable';
-  const parquetPath = `s3://my-bucket/output/${tableName}.parquet`;
-
+  const parquetPath = `s3://my-bucket-api/output/${tableName}.parquet`;
   createTable(conn, tableName);
   saveToMinIO(conn, tableName, parquetPath);
   const queryRes = await executeQueryWithResult(conn, parquetPath, params);
 
-  await conn.close();
+  conn.disconnectSync();
   return queryRes;
 }
 
@@ -102,50 +71,10 @@ async function createTable(conn, tableName) {
   console.log(`Tabla '${tableName}' creada en DuckDB`);
 }
 
-// Retrieve all data
-async function retrieveAllData(conn, parquetPath) {
-  conn.all(`SELECT * FROM '${parquetPath}'`, function (err, res) {
-    if (err) {
-      console.warn(err);
-      return;
-    }
-    console.log(res);
-  });
-}
-
-// Execute query: parquetPath = FROM, params = WHERE
-async function executeQuery(conn, parquetPath, params) {
-  conn.all(
-    `SELECT * FROM '${parquetPath}' WHERE ${params}`,
-    function (err, res) {
-      if (err) {
-        console.warn(err);
-        return;
-      }
-      console.log(res);
-    }
-  );
-}
-
 // execute query and return promise
 async function executeQueryWithResult(conn, parquetPath, params) {
-  return new Promise(function resolver(resolve, reject) {
-    conn.all(
-      `SELECT * FROM '${parquetPath}' WHERE ${params}`,
-      function (err, res) {
-        if (err) {
-          reject(err);
-          console.warn(err);
-          return;
-        }
-
-        resolve(res);
-        return;
-      }
-    );
-  });
+  const result = await conn.run(
+    `SELECT * FROM '${parquetPath}' WHERE ${params}`
+  );
+  return result.getRowObjectsJson();
 }
-
-main().catch((err) => {
-  console.error(' Error:', err);
-});
