@@ -24,7 +24,7 @@
 
 import express from 'express';
 
-import { apiPoc } from './poc.js';
+import { pocApi } from './poc.js';
 
 const app = express();
 const PORT = 8080;
@@ -42,7 +42,7 @@ app.post('/fda', (req, res) => {
     res.status(418).send({ message: 'params not found in body' });
   }
 
-  apiPoc(params)
+  pocApi(params)
     .then((result) => {
       res.json(result);
     })
