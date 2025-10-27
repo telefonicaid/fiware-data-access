@@ -12,14 +12,14 @@
     "lint": "eslint lib/ --cache",
     "lint:fix": "eslint  lib/ --cache --fix",
     "prettier": "prettier --config .prettierrc.json --write '**/**/**/**/*.js' '**/**/**/*.js' '**/**/*.js' '**/*.js' '*.js'",
-    "start": "node src/poc.js",
+    "start": "node src/.",
     "test": "jest --coverage"
   },
   "engines": {
     "node": ">=24"
   },
   "dependencies": {
-    "duckdb": "~1.4.0",
+    "@duckdb/node-api": "~1.4.1-r.1",
     "aws-sdk": "~2.1692.0",
     "express": "5.1.0" 
   },
