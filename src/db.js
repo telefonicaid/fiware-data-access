@@ -22,30 +22,32 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
-import express from 'express';
-import { pocApi } from './poc.js';
+import { DuckDBInstance } from '@duckdb/node-api';
 
-const app = express();
-const PORT = 8081;
+let instancePromise = null;
 
-app.use(express.json());
-
-app.listen(PORT, () => {
-  console.log(` Server listening on port ${PORT}`);
-});
-
-app.post('/fda', async (req, res) => {
-  const { params } = req.body;
-
-  if (!params) {
-    return res.status(418).json({ message: 'params not found in body' });
+export async function getDuckDB() {
+  if (!instancePromise) {
+    instancePromise = initDuckDB();
   }
+  return instancePromise;
+}
 
-  try {
-    const result = await pocApi(params);
-    res.json(result);
-  } catch (err) {
-    console.error(' Error in /fda:', err);
-    res.status(500).json({ error: err.message });
+async function initDuckDB() {
+  console.log(' Initializing DuckDB global instance...');
+
+  const instance = await DuckDBInstance.create(':memory:');
+  const conn = await instance.connect();
+
+  await conn.run('INSTALL httpfs;');
+  await conn.run('LOAD httpfs;');
+
+  console.log(' HTTPFS extension loaded.');
+
+  if (typeof conn.disconnect === 'function') {
+    await conn.disconnect();
+  } else if (typeof conn.disconnectSync === 'function') {
+    conn.disconnectSync();
   }
-});
+  return instance;
+}

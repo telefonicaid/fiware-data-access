@@ -22,18 +22,12 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
-import { DuckDBInstance } from '@duckdb/node-api';
+import { getDuckDB } from './db.js';
 
 export async function pocApi(params) {
-  // Create DB in memory
-  const instance = await DuckDBInstance.create(':memory:');
+  const instance = await getDuckDB();
   const conn = await instance.connect();
 
-  // Install and load  HTTP/S3 support
-  await conn.run('INSTALL httpfs;');
-  await conn.run('LOAD httpfs;');
-
-  // Config access to MinIO (S3-compatible)
   await conn.run(`
     SET s3_endpoint='localhost:9000';
     SET s3_url_style='path';
@@ -44,34 +38,36 @@ export async function pocApi(params) {
 
   const tableName = 'pocTable';
   const parquetPath = `s3://my-bucket-api/output/${tableName}.parquet`;
-  createTable(conn, tableName);
-  saveToMinIO(conn, tableName, parquetPath);
+
+  await createTable(conn, tableName);
+  await saveToMinIO(conn, tableName, parquetPath);
   const queryRes = await executeQueryWithResult(conn, parquetPath, params);
 
-  conn.disconnectSync();
+  if (typeof conn.disconnect === 'function') {
+    await conn.disconnect();
+  } else if (typeof conn.disconnectSync === 'function') {
+    conn.disconnectSync();
+  }
+
   return queryRes;
 }
 
-// Write parquet in MinIO
 async function saveToMinIO(conn, tableName, parquetPath) {
   await conn.run(`
-    COPY '${tableName}' TO '${parquetPath}' (FORMAT 'parquet');
+    COPY ${tableName} TO '${parquetPath}' (FORMAT 'parquet');
   `);
-
   console.log(` Parquet file saved into MinIO: ${parquetPath}`);
 }
 
-// Create table from JSON
 async function createTable(conn, tableName) {
   await conn.run(`
-    CREATE TABLE ${tableName} AS SELECT *
-    FROM 'src/${tableName}.json';
+     CREATE OR REPLACE TABLE ${tableName} AS SELECT *
+     FROM 'src/${tableName}.json';
   `);
 
-  console.log(`Tabla '${tableName}' creada en DuckDB`);
+  console.log(` Table '${tableName}' created in DuckDB`);
 }
 
-// execute query and return promise
 async function executeQueryWithResult(conn, parquetPath, params) {
   const result = await conn.run(
     `SELECT * FROM '${parquetPath}' WHERE ${params}`
