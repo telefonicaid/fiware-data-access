@@ -44,8 +44,9 @@ export async function pocApi(params) {
 
   const tableName = 'pocTable';
   const parquetPath = `s3://my-bucket-api/output/${tableName}.parquet`;
-  createTable(conn, tableName);
-  saveToMinIO(conn, tableName, parquetPath);
+
+  await createTable(conn, tableName);
+  await saveToMinIO(conn, tableName, parquetPath);
   const queryRes = await executeQueryWithResult(conn, parquetPath, params);
 
   conn.disconnectSync();
@@ -54,21 +55,19 @@ export async function pocApi(params) {
 
 // Write parquet in MinIO
 async function saveToMinIO(conn, tableName, parquetPath) {
-  await conn.run(`
+  console.log(` Parquet file saved into MinIO: ${parquetPath}`);
+  return conn.run(`
     COPY '${tableName}' TO '${parquetPath}' (FORMAT 'parquet');
   `);
-
-  console.log(` Parquet file saved into MinIO: ${parquetPath}`);
 }
 
 // Create table from JSON
 async function createTable(conn, tableName) {
-  await conn.run(`
-    CREATE TABLE ${tableName} AS SELECT *
+  console.log(`Tabla '${tableName}' creada en DuckDB`);
+  return conn.run(`
+    CREATE OR REPLACE TABLE ${tableName} AS SELECT *
     FROM 'src/${tableName}.json';
   `);
-
-  console.log(`Tabla '${tableName}' creada en DuckDB`);
 }
 
 // execute query and return promise

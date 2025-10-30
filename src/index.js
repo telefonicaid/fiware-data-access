@@ -35,19 +35,18 @@ app.listen(PORT, () => {
   console.log(`Server listening at port ${PORT}`);
 });
 
-app.post('/fda', (req, res) => {
+app.post('/fda', async (req, res) => {
   const { params } = req.body;
 
   if (!params) {
-    res.status(418).send({ message: 'params not found in body' });
+    return res.status(418).json({ message: 'params not found in body' });
   }
 
-  pocApi(params)
-    .then((result) => {
-      res.json(result);
-    })
-    .catch((err) => {
-      console.log(err);
-      res.sendStatus(500);
-    });
+  try {
+    const result = await pocApi(params);
+    res.json(result);
+  } catch (err) {
+    console.error(' Error in /fda:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
