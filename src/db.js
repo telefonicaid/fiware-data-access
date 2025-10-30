@@ -22,54 +22,32 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
-import { getDuckDB } from './db.js';
+import { DuckDBInstance } from '@duckdb/node-api';
 
-export async function pocApi(params) {
-  const instance = await getDuckDB();
+let instancePromise = null;
+
+export async function getDuckDB() {
+  if (!instancePromise) {
+    instancePromise = initDuckDB();
+  }
+  return instancePromise;
+}
+
+async function initDuckDB() {
+  console.log(' Initializing DuckDB global instance...');
+
+  const instance = await DuckDBInstance.create(':memory:');
   const conn = await instance.connect();
 
-  await conn.run(`
-    SET s3_endpoint='localhost:9000';
-    SET s3_url_style='path';
-    SET s3_use_ssl=false;
-    SET s3_access_key_id='admin';
-    SET s3_secret_access_key='admin123';
-  `);
+  await conn.run('INSTALL httpfs;');
+  await conn.run('LOAD httpfs;');
 
-  const tableName = 'pocTable';
-  const parquetPath = `s3://my-bucket-api/output/${tableName}.parquet`;
-
-  await createTable(conn, tableName);
-  await saveToMinIO(conn, tableName, parquetPath);
-  const queryRes = await executeQueryWithResult(conn, parquetPath, params);
+  console.log(' HTTPFS extension loaded.');
 
   if (typeof conn.disconnect === 'function') {
     await conn.disconnect();
   } else if (typeof conn.disconnectSync === 'function') {
     conn.disconnectSync();
   }
-
-  return queryRes;
-}
-
-async function saveToMinIO(conn, tableName, parquetPath) {
-  console.log(`Parquet file saved into MinIO: ${parquetPath}`);
-  return conn.run(`
-    COPY '${tableName}' TO '${parquetPath}' (FORMAT 'parquet');
-  `);
-}
-
-async function createTable(conn, tableName) {
-  console.log(`Table '${tableName}' created in DuckDB`);
-  return conn.run(`
-    CREATE OR REPLACE TABLE ${tableName} AS SELECT *
-    FROM 'src/${tableName}.json';
-  `);
-}
-
-async function executeQueryWithResult(conn, parquetPath, params) {
-  const result = await conn.run(
-    `SELECT * FROM '${parquetPath}' WHERE ${params}`
-  );
-  return result.getRowObjectsJson();
+  return instance;
 }
