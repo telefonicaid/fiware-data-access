@@ -52,7 +52,7 @@ app.post('/fda', async (req, res) => {
   }
 });
 
-app.put('/storeSet', async (req, res) => {
+app.post('/storeSet', async (req, res) => {
   const { cda, path } = req.body;
 
   if (!cda || !path) {
