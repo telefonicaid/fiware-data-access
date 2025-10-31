@@ -24,7 +24,7 @@
 
 import express from 'express';
 
-import { pocApi } from './poc.js';
+import { getFda, storeSet } from './poc.js';
 
 const app = express();
 const PORT = 8080;
@@ -36,17 +36,34 @@ app.listen(PORT, () => {
 });
 
 app.post('/fda', async (req, res) => {
-  const { params } = req.body;
+  const { data, cda, path } = req.body;
+  const { columns, filters } = data;
 
-  if (!params) {
-    return res.status(418).json({ message: 'params not found in body' });
+  if (!data) {
+    return res.status(418).json({ message: 'missing params in body' });
   }
 
   try {
-    const result = await pocApi(params);
+    const result = await getFda(path, cda, columns);
     res.json(result);
   } catch (err) {
     console.error(' Error in /fda:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/storeSet', async (req, res) => {
+  const { cda, path } = req.body;
+
+  if (!cda || !path) {
+    return res.status(418).json({ message: 'missing params in body' });
+  }
+
+  try {
+    const result = await storeSet(path, cda);
+    res.json(result);
+  } catch (err) {
+    console.error(' Error in /storeSet:', err);
     res.status(500).json({ error: err.message });
   }
 });

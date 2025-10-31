@@ -22,26 +22,14 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
-import { getDuckDB } from './db.js';
+import { getDBConnection } from './db.js';
 
-export async function pocApi(params) {
-  const instance = await getDuckDB();
-  const conn = await instance.connect();
+export async function getFda(path, fda, colums) {
+  const conn = await getDBConnection('localhost:9000', 'admin', 'admin123');
 
-  await conn.run(`
-    SET s3_endpoint='localhost:9000';
-    SET s3_url_style='path';
-    SET s3_use_ssl=false;
-    SET s3_access_key_id='admin';
-    SET s3_secret_access_key='admin123';
-  `);
+  const minioPath = getMinioPath(path, fda);
 
-  const tableName = 'pocTable';
-  const parquetPath = `s3://my-bucket-api/output/${tableName}.parquet`;
-
-  await createTable(conn, tableName);
-  await saveToMinIO(conn, tableName, parquetPath);
-  const queryRes = await executeQueryWithResult(conn, parquetPath, params);
+  const queryRes = await executeQueryWithResult(conn, minioPath, colums);
 
   if (typeof conn.disconnect === 'function') {
     await conn.disconnect();
@@ -52,15 +40,30 @@ export async function pocApi(params) {
   return queryRes;
 }
 
+export async function storeSet(path, fda) {
+  const conn = await getDBConnection('localhost:9000', 'admin', 'admin123');
+
+  const minioPath = getMinioPath(path, fda);
+
+  await createTable(conn, fda);
+  await saveToMinIO(conn, fda, minioPath);
+
+  if (typeof conn.disconnect === 'function') {
+    await conn.disconnect();
+  } else if (typeof conn.disconnectSync === 'function') {
+    conn.disconnectSync();
+  }
+}
+
 async function saveToMinIO(conn, tableName, parquetPath) {
-  console.log(`Parquet file saved into MinIO: ${parquetPath}`);
+  console.log(`Saving parquet file into MinIO: ${parquetPath}`);
   return conn.run(`
     COPY '${tableName}' TO '${parquetPath}' (FORMAT 'parquet');
   `);
 }
 
 async function createTable(conn, tableName) {
-  console.log(`Table '${tableName}' created in DuckDB`);
+  console.log(`Creating table '${tableName}' in DuckDB...`);
   return conn.run(`
     CREATE OR REPLACE TABLE ${tableName} AS SELECT *
     FROM 'src/${tableName}.json';
@@ -73,3 +76,7 @@ async function executeQueryWithResult(conn, parquetPath, params) {
   );
   return result.getRowObjectsJson();
 }
+
+const getMinioPath = (path, fda) => {
+  return `${path}${fda}.parquet`;
+};
