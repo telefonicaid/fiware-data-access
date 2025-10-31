@@ -44,7 +44,7 @@ app.post('/fda', async (req, res) => {
   }
 
   try {
-    const result = await getFda(path, cda, columns);
+    const result = await getFda(path, cda, columns, filters);
     res.json(result);
   } catch (err) {
     console.error(' Error in /fda:', err);
@@ -52,7 +52,7 @@ app.post('/fda', async (req, res) => {
   }
 });
 
-app.post('/storeSet', async (req, res) => {
+app.put('/storeSet', async (req, res) => {
   const { cda, path } = req.body;
 
   if (!cda || !path) {
@@ -60,8 +60,8 @@ app.post('/storeSet', async (req, res) => {
   }
 
   try {
-    const result = await storeSet(path, cda);
-    res.json(result);
+    await storeSet(path, cda);
+    res.status(201).json({ message: 'Set stored correctly' });
   } catch (err) {
     console.error(' Error in /storeSet:', err);
     res.status(500).json({ error: err.message });
