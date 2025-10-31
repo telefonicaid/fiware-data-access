@@ -63,6 +63,8 @@ services:
     image: poc
     depends_on:
       - minio
+    ports:
+      - '8080:8080'
     environment:
       - NODE_ENV=production
       - LOG_LEVEL=INFO
