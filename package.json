@@ -4,7 +4,6 @@
   "version": "0.0.1",
   "description": "fiware-data-access",
   "homepage": "https://github.com/telefonicaid/fiware-data-access",
-  "main": "poc.js",
   "type": "module",
   "scripts": {
     "clean": "rm -rf package-lock.json && rm -rf node_modules",
@@ -12,7 +11,7 @@
     "lint": "eslint lib/ --cache",
     "lint:fix": "eslint  lib/ --cache --fix",
     "prettier": "prettier --config .prettierrc.json --write '**/**/**/**/*.js' '**/**/**/*.js' '**/**/*.js' '**/*.js' '*.js'",
-    "start": "node src/.",
+    "start": "node .",
     "test": "jest --coverage"
   },
   "engines": {

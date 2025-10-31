@@ -24,7 +24,7 @@
 
 import express from 'express';
 
-import { getFda, storeSet } from './poc.js';
+import { getFda, storeSet } from './lib/poc.js';
 
 const app = express();
 const PORT = 8080;
