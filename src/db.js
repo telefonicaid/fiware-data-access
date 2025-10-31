@@ -33,6 +33,20 @@ export async function getDuckDB() {
   return instancePromise;
 }
 
+export async function getDBConnection(endpoint, usr, pass) {
+  const instance = await getDuckDB();
+  const conn = await instance.connect();
+
+  await conn.run(`
+    SET s3_endpoint='${endpoint}';
+    SET s3_url_style='path';
+    SET s3_use_ssl=false;
+    SET s3_access_key_id='${usr}';
+    SET s3_secret_access_key='${pass}';
+  `);
+  return conn;
+}
+
 async function initDuckDB() {
   console.log(' Initializing DuckDB global instance...');
 
