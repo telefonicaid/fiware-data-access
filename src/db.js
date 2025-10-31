@@ -62,9 +62,14 @@ export async function createTable(conn, tableName) {
   `);
 }
 
-export async function executeQueryWithResult(conn, parquetPath, params) {
+export async function executeQueryWithResult(
+  conn,
+  parquetPath,
+  columns,
+  filters
+) {
   const result = await conn.run(
-    `SELECT * FROM '${parquetPath}' WHERE ${params}`
+    `SELECT ${columns} FROM '${parquetPath}' WHERE ${filters}`
   );
   return result.getRowObjectsJson();
 }

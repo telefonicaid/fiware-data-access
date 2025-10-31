@@ -29,12 +29,17 @@ import {
   saveToMinIO,
 } from './db.js';
 
-export async function getFda(path, fda, colums) {
+export async function getFda(path, fda, colums, filters) {
   const conn = await getDBConnection('localhost:9000', 'admin', 'admin123');
 
   const minioPath = getMinioPath(path, fda);
 
-  const queryRes = await executeQueryWithResult(conn, minioPath, colums);
+  const queryRes = await executeQueryWithResult(
+    conn,
+    minioPath,
+    colums,
+    filters
+  );
 
   if (typeof conn.disconnect === 'function') {
     await conn.disconnect();
