@@ -47,6 +47,28 @@ export async function getDBConnection(endpoint, usr, pass) {
   return conn;
 }
 
+export async function saveToMinIO(conn, tableName, parquetPath) {
+  console.log(`Saving parquet file into MinIO: ${parquetPath}`);
+  return conn.run(`
+    COPY '${tableName}' TO '${parquetPath}' (FORMAT 'parquet');
+  `);
+}
+
+export async function createTable(conn, tableName) {
+  console.log(`Creating table '${tableName}' in DuckDB...`);
+  return conn.run(`
+    CREATE OR REPLACE TABLE ${tableName} AS SELECT *
+    FROM 'src/${tableName}.json';
+  `);
+}
+
+export async function executeQueryWithResult(conn, parquetPath, params) {
+  const result = await conn.run(
+    `SELECT * FROM '${parquetPath}' WHERE ${params}`
+  );
+  return result.getRowObjectsJson();
+}
+
 async function initDuckDB() {
   console.log(' Initializing DuckDB global instance...');
 

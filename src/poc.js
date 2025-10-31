@@ -22,7 +22,12 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
-import { getDBConnection } from './db.js';
+import {
+  createTable,
+  executeQueryWithResult,
+  getDBConnection,
+  saveToMinIO,
+} from './db.js';
 
 export async function getFda(path, fda, colums) {
   const conn = await getDBConnection('localhost:9000', 'admin', 'admin123');
@@ -53,28 +58,6 @@ export async function storeSet(path, fda) {
   } else if (typeof conn.disconnectSync === 'function') {
     conn.disconnectSync();
   }
-}
-
-async function saveToMinIO(conn, tableName, parquetPath) {
-  console.log(`Saving parquet file into MinIO: ${parquetPath}`);
-  return conn.run(`
-    COPY '${tableName}' TO '${parquetPath}' (FORMAT 'parquet');
-  `);
-}
-
-async function createTable(conn, tableName) {
-  console.log(`Creating table '${tableName}' in DuckDB...`);
-  return conn.run(`
-    CREATE OR REPLACE TABLE ${tableName} AS SELECT *
-    FROM 'src/${tableName}.json';
-  `);
-}
-
-async function executeQueryWithResult(conn, parquetPath, params) {
-  const result = await conn.run(
-    `SELECT * FROM '${parquetPath}' WHERE ${params}`
-  );
-  return result.getRowObjectsJson();
 }
 
 const getMinioPath = (path, fda) => {
