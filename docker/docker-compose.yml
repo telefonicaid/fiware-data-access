@@ -1,0 +1,79 @@
+# Copyright 2025 Telefónica Soluciones de Informática y Comunicaciones de España, S.A.U.
+# PROJECT: fiware-data-access
+#
+# This software and / or computer program has been developed by Telefónica Soluciones
+# de Informática y Comunicaciones de España, S.A.U (hereinafter TSOL) and is protected
+# as copyright by the applicable legislation on intellectual property.
+#
+# It belongs to TSOL, and / or its licensors, the exclusive rights of reproduction,
+# distribution, public communication and transformation, and any economic right on it,
+# all without prejudice of the moral rights of the authors mentioned above. It is expressly
+# forbidden to decompile, disassemble, reverse engineer, sublicense or otherwise transmit
+# by any means, translate or create derivative works of the software and / or computer
+# programs, and perform with respect to all or part of such programs, any type of exploitation.
+#
+# Any use of all or part of the software and / or computer program will require the
+# express written consent of TSOL. In all cases, it will be necessary to make
+# an express reference to TSOL ownership in the software and / or computer
+# program.
+#
+# Non-fulfillment of the provisions set forth herein and, in general, any violation of
+# the peaceful possession and ownership of these rights will be prosecuted by the means
+# provided in both Spanish and international law. TSOL reserves any civil or
+# criminal actions it may exercise to protect its rights.
+
+services:
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    environment:
+      - MINIO_ROOT_USER=admin
+      - MINIO_ROOT_PASSWORD=admin123
+    volumes:
+      - ./data:/data
+    command: server /data --console-address ":9001"
+    networks:
+      - minio-net
+
+  mc:
+    image: minio/mc:latest
+    container_name: minio-mc
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      sleep 5 &&
+      mc alias set local http://minio:9000 admin admin123 &&
+      mc admin info local &&
+      mc mb --ignore-existing local/my-bucket &&
+      mc admin trace -v -a local &&
+      tail -f /dev/null
+      "
+    networks:
+      - minio-net
+
+  poc:
+    container_name: poc
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: poc
+    depends_on:
+      - minio
+    ports:
+      - '8080:8080'
+    environment:
+      - NODE_ENV=production
+      - LOG_LEVEL=INFO
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=admin
+      - MINIO_SECRET_KEY=admin123
+      - MINIO_BUCKET=my-bucket
+    command: ['npm', 'start']
+
+networks:
+  minio-net:
+    driver: bridge
