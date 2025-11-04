@@ -36,14 +36,12 @@ Queries a set.
 
 ```json
 {
-    {
     "data": {
         "columns": "*",
         "filters": "id = 'id4'"
     },
     "cda": "newfda",
     "path": "s3://my-bucket/my-folder/"
-}
 }
 ```
 
