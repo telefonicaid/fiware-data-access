@@ -53,14 +53,14 @@ app.post('/queryFDA', async (req, res) => {
 });
 
 app.post('/storeSet', async (req, res) => {
-  const { cda, filePath, path } = req.body;
+  const { fda, filePath, path } = req.body;
 
-  if (!cda || !filePath || !path) {
+  if (!fda || !filePath || !path) {
     return res.status(418).json({ message: 'missing params in body' });
   }
 
   try {
-    await storeSet(path, filePath, cda);
+    await storeSet(path, filePath, fda);
     res.status(201).json({ message: 'Set stored correctly' });
   } catch (err) {
     console.error(' Error in /storeSet:', err);
