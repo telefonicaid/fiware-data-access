@@ -35,7 +35,7 @@ app.listen(PORT, () => {
   console.log(`Server listening at port ${PORT}`);
 });
 
-app.post('/fda', async (req, res) => {
+app.post('/queryFDA', async (req, res) => {
   const { data, cda, path } = req.body;
   const { columns, filters } = data;
 

@@ -7,4 +7,4 @@ curl -i -X POST http://localhost:8080/storeSet \
   -H 'content-type: application/json'
 
 # Run ApacheBench (ab) performance test
-ab -n 1000 -c 2 -p test/data.json -T "application/json" http://localhost:8080/fda
+ab -n 1000 -c 2 -p test/data.json -T "application/json" http://localhost:8080/queryFDA
