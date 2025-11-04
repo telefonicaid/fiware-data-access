@@ -24,7 +24,7 @@
 
 import express from 'express';
 
-import { getFda, storeSet } from './lib/poc.js';
+import { queryFDA, storeSet } from './lib/poc.js';
 
 const app = express();
 const PORT = 8080;
@@ -44,7 +44,7 @@ app.post('/queryFDA', async (req, res) => {
   }
 
   try {
-    const result = await getFda(path, cda, columns, filters);
+    const result = await queryFDA(path, cda, columns, filters);
     res.json(result);
   } catch (err) {
     console.error(' Error in /fda:', err);
