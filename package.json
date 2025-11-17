@@ -19,8 +19,11 @@
   },
   "dependencies": {
     "@duckdb/node-api": "~1.4.1-r.1",
-    "aws-sdk": "~2.1692.0",
-    "express": "5.1.0" 
+    "express": "5.1.0",
+    "pg": "^8.16.3",
+    "pg-query-stream": "^4.5.5",
+    "@aws-sdk/client-s3": "^3.645.0",
+    "@aws-sdk/lib-storage": "~3.932.0"
   },
   "devDependencies": {
     "eslint": "~8.18.0",
