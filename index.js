@@ -69,14 +69,14 @@ app.post('/storeSet', async (req, res) => {
 });
 
 app.post('/storeSetPG', async (req, res) => {
-  const { fda, table, bucket } = req.body;
+  const { fda, database, table, bucket } = req.body;
 
-  if (!fda || !table || !bucket) {
+  if (!fda || !database || !table || !bucket) {
     return res.status(418).json({ message: 'missing params in body' });
   }
 
   try {
-    const result = await storeSetPG(bucket, table, fda);
+    const result = await storeSetPG(bucket, database, table, fda);
     console.log(result);
     res.status(201).json({ message: 'Set stored correctly' });
   } catch (err) {
