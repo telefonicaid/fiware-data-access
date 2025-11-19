@@ -76,8 +76,7 @@ app.post('/storeSetPG', async (req, res) => {
   }
 
   try {
-    const result = await storeSetPG(bucket, database, table, fda);
-    console.log(result);
+    await storeSetPG(bucket, database, table, fda);
     res.status(201).json({ message: 'Set stored correctly' });
   } catch (err) {
     console.error(' Error in /storeSetPG:', err);
