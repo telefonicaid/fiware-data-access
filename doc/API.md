@@ -26,6 +26,30 @@ transformed, generating and identical CSV without this data type annotations.
 | filepath | string | Path of the local file to upload |
 | path     | string | Path of the set in MinIO         |
 
+## storeSetPG
+
+Creates a set in Minio uploading a postgresql table.
+
+**Endpoint:** /storeSetPG
+
+**Body:**
+
+```json
+{
+    "database": "pgDatabase",
+    "table": "real_table",
+    "bucket": "my-bucket",
+    "fda": "/performance/real_table"
+}
+```
+
+| Key      | Type   | Description                                 |
+| :------- | :----- | :------------------------------------------ |
+| database | string | Database where the tables is located        |
+| table    | string | Name of the table to upload to Minio        |
+| bucket   | string | Name of the bucket to store the set         |
+| fda      | string | Path (folders and file name) of the new set |
+
 ## queryFDA
 
 Queries a set.
