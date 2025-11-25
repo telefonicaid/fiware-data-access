@@ -39,16 +39,16 @@ Creates a set in Minio uploading a postgresql table.
     "database": "pgDatabase",
     "table": "real_table",
     "bucket": "my-bucket",
-    "fda": "/performance/real_table"
+    "path": "/performance/real_table"
 }
 ```
 
-| Key      | Type   | Description                                 |
-| :------- | :----- | :------------------------------------------ |
-| database | string | Database where the table is located        |
-| table    | string | Name of the table to upload to Minio        |
-| bucket   | string | Name of the bucket to store the set         |
-| fda      | string | Path (folders and file name) of the new set |
+| Key      | Type   | Description                                          |
+| :------- | :----- | :--------------------------------------------------- |
+| database | string | Database where the table is located                  |
+| table    | string | Name of the table to upload to Minio                 |
+| bucket   | string | Name of the bucket to store the set                  |
+| path     | string | Path (folders and file name) of the new set in Minio |
 
 ## queryFDA
 
