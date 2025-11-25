@@ -7,7 +7,7 @@
   "type": "module",
   "scripts": {
     "clean": "rm -rf package-lock.json && rm -rf node_modules",
-    "dev": "nodemon poc.js",
+    "dev": "nodemon fda.js",
     "lint": "eslint lib/ --cache",
     "lint:fix": "eslint  lib/ --cache --fix",
     "prettier": "prettier --config .prettierrc.json --write '**/**/**/**/*.js' '**/**/**/*.js' '**/**/*.js' '**/*.js' '*.js'",
@@ -19,8 +19,11 @@
   },
   "dependencies": {
     "@duckdb/node-api": "~1.4.1-r.1",
-    "aws-sdk": "~2.1692.0",
-    "express": "5.1.0" 
+    "express": "5.1.0",
+    "pg": "~8.16.3",
+    "pg-copy-streams": "~7.0.0",
+    "@aws-sdk/client-s3": "~3.934.0",
+    "@aws-sdk/lib-storage": "~3.934.0"
   },
   "devDependencies": {
     "eslint": "~8.18.0",

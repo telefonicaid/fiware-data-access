@@ -41,6 +41,7 @@ client.
 Complete documentation is available in the [`doc/`](./doc/) directory:
 
 -   [`API Reference`](./doc/API.md): - API endpoint documentation
+-   [`Performance measuring`](./doc/performance.md): - Documentation for the file with performance measuring utilities.
 
 ---
 

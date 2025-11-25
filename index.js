@@ -24,7 +24,7 @@
 
 import express from 'express';
 
-import { queryFDA, storeSet } from './lib/poc.js';
+import { queryFDA, storeSet, storeSetPG } from './lib/fda.js';
 
 const app = express();
 const PORT = 8080;
@@ -64,6 +64,22 @@ app.post('/storeSet', async (req, res) => {
     res.status(201).json({ message: 'Set stored correctly' });
   } catch (err) {
     console.error(' Error in /storeSet:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/storeSetPG', async (req, res) => {
+  const { path, database, table, bucket } = req.body;
+
+  if (!path || !database || !table || !bucket) {
+    return res.status(418).json({ message: 'missing params in body' });
+  }
+
+  try {
+    await storeSetPG(bucket, database, table, path);
+    res.status(201).json({ message: 'Set stored correctly' });
+  } catch (err) {
+    console.error(' Error in /storeSetPG:', err);
     res.status(500).json({ error: err.message });
   }
 });
