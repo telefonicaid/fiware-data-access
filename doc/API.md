@@ -1,6 +1,6 @@
 # Fiware Data Access API Reference
 
-## storeSet
+## storeSet (TEMPORAL)
 
 Stores a set in MinIO using parquet format.
 
