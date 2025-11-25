@@ -41,8 +41,11 @@ export async function storeSetPG(bucket, database, table, fda) {
 
 ## Results
 
-Results from an execution of the method `storeSetPerformance` compared to a complete execution: | Table Size | Complete
-execution | pgToNode | nodeToMinio | changeFormat | | :--------- | :----------------- | :------- | :---------- |
-:----------- | | 195,5 MB | 20,648s | 16,673s | 6,171s | 2,707s | | 902,4 MB | 4m 25,248s | 1m 30,702s | 29,629s |
-5,482s | | 3,1 GB | 6m 35,771s | 5m 39,613s | 1m 45,102s | 14,832s | | 6,6 GB | 9m 41,120s | 7m 26,220s | 3m 28,672s |
-44,618s |
+Results from an execution of the method `storeSetPerformance` compared to a complete execution:
+
+| Table Size | Complete execution | pgToNode   | nodeToMinio | changeFormat |
+| :--------- | :----------------- | :--------- | :---------- | :----------- |
+| 195,5 MB   | 20,648s            | 16,673s    | 6,171s      | 2,707s       |
+| 902,4 MB   | 4m 25,248s         | 1m 30,702s | 29,629s     | 5,482s       |
+| 3,1 GB     | 6m 35,771s         | 5m 39,613s | 1m 45,102s  | 14,832s      |
+| 6,6 GB     | 9m 41,120s         | 7m 26,220s | 3m 28,672s  | 44,618s      |
