@@ -36,9 +36,9 @@ export async function storeSetPG(bucket, database, table, fda) {
 }
 ```
 
-## Results
+## Example results
 
-Results from an execution of the method `storeSetPerformance` compared to a complete execution:
+Example results from an execution of the method `storeSetPerformance` compared to a complete execution (this is part of a PoC to validate the approach of the proyect, run in November 2025):
 
 | Table Size | Complete execution | pgToNode   | nodeToMinio | changeFormat |
 | :--------- | :----------------- | :--------- | :---------- | :----------- |
