@@ -10,23 +10,20 @@ takes the same parameters as the action they measure:
 
 ### storeSetPerformance
 
-Measures the process of creating a set from PostgreSQL. The isolated steps are retrieving a table from postgre using
+Measures the process of creating a set from PostgreSQL. The isolated steps are retrieving a table from postgresql using
 streams, sending local data to Minio using AWS sdk and using DuckDb to change the Minio set format from CSV to PARQUET.
-The methods used to measure the steps are the following: **pgToNode**: downloads a table from postgres using postgres
-native functionlity to export data in CSV format. The retrieved data is discarded in a sink so data processing doesn't
-affect performance.\
-**nodeToMinio**: uploads data from a local csv file with the same name as the table using multipart upload. The size of each
-chunk is 25Mb.\
-**nodeToMinioPartSize**: uploads data from a local csv file with the same name as the table using multipart upload. The
-upload is configured to use 25Mb chunks and process 4 chunks in parallel.\
-**nodeToMinioQueueSize**: uploads data from a local csv file with the same name as the table using multipart upload. The
-upload is configured to use 5Mb chunks.\
-**changeFormat**: connects to Minio using DuckDb and changes the format of the previously uploaded table from CSV to
-PARQUET.
+The methods used to measure the steps are the following:
+
+* **pgToNode**: downloads a table from postgres using postgresql native functionality to export data in CSV format. The retrieved data is discarded in a sink so data processing doesn't
+affect performance.
+* **nodeToMinio**: uploads data from a local csv file with the same name as the table using multipart upload. The size of each chunk is 25Mb.
+* **nodeToMinioPartSize**: uploads data from a local csv file with the same name as the table using multipart upload. The upload is configured to use 25Mb chunks and process 4 chunks in parallel.
+* **nodeToMinioQueueSize**: uploads data from a local csv file with the same name as the table using multipart upload. The upload is configured to use 5Mb chunks.
+* **changeFormat**: connects to Minio using DuckDb and changes the format of the previously uploaded table from CSV to PARQUET.
 
 ## Use
 
-To use the method you simply must call it in the action its measuring and pass the arguments the real action needs.
+To use the method you simply must call it in the action it is measuring and pass the arguments the real action needs.
 
 Usage example:
 

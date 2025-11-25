@@ -45,7 +45,7 @@ Creates a set in Minio uploading a postgresql table.
 
 | Key      | Type   | Description                                 |
 | :------- | :----- | :------------------------------------------ |
-| database | string | Database where the tables is located        |
+| database | string | Database where the table is located        |
 | table    | string | Name of the table to upload to Minio        |
 | bucket   | string | Name of the bucket to store the set         |
 | fda      | string | Path (folders and file name) of the new set |
