@@ -16,9 +16,9 @@ The methods used to measure the steps are the following:
 
 * **pgToNode**: downloads a table from postgres using postgresql native functionality to export data in CSV format. The retrieved data is discarded in a sink so data processing doesn't
 affect performance.
-* **nodeToMinio**: uploads data from a local csv file with the same name as the table using multipart upload. The size of each chunk is 25Mb.
-* **nodeToMinioPartSize**: uploads data from a local csv file with the same name as the table using multipart upload. The upload is configured to use 25Mb chunks and process 4 chunks in parallel.
-* **nodeToMinioQueueSize**: uploads data from a local csv file with the same name as the table using multipart upload. The upload is configured to use 5Mb chunks.
+* **nodeToMinio25MBChunk1Parallel**: uploads data from a local csv file with the same name as the table using multipart upload. The size of each chunk is 25Mb.
+* **nodeToMinio25MBChunk4Parallel**: uploads data from a local csv file with the same name as the table using multipart upload. The upload is configured to use 25Mb chunks and process 4 chunks in parallel.
+* **nodeToMinio5MBChunk1Parallel**: uploads data from a local csv file with the same name as the table using multipart upload. The upload is configured to use 5Mb chunks.
 * **changeFormat**: connects to Minio using DuckDb and changes the format of the previously uploaded table from CSV to PARQUET.
 
 ## Use
