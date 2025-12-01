@@ -36,15 +36,14 @@ app.listen(PORT, () => {
 });
 
 app.post('/queryFDA', async (req, res) => {
-  const { data, cda, path } = req.body;
-  const { columns, filters } = data;
+  const { path } = req.query;
 
-  if (!data) {
-    return res.status(418).json({ message: 'missing params in body' });
+  if (Object.keys(req.query).length === 0 || !path) {
+    return res.status(418).json({ message: 'missing params in request' });
   }
 
   try {
-    const result = await queryFDA(path, cda, columns, filters);
+    const result = await queryFDA(req.query);
     res.json(result);
   } catch (err) {
     console.error(' Error in /fda:', err);
@@ -69,14 +68,14 @@ app.post('/storeSet', async (req, res) => {
 });
 
 app.post('/storeSetPG', async (req, res) => {
-  const { path, database, table, bucket } = req.body;
+  const { database, table, bucket, path, query } = req.body;
 
-  if (!path || !database || !table || !bucket) {
+  if (!database || !table || !bucket || !path || !query) {
     return res.status(418).json({ message: 'missing params in body' });
   }
 
   try {
-    await storeSetPG(bucket, database, table, path);
+    await storeSetPG(database, table, bucket, path, query);
     res.status(201).json({ message: 'Set stored correctly' });
   } catch (err) {
     console.error(' Error in /storeSetPG:', err);
