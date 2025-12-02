@@ -25,15 +25,12 @@
 import express from 'express';
 
 import { queryFDA, storeSet, storeSetPG } from './lib/fda.js';
+import { disconnectClient } from './lib/mongo.js';
 
 const app = express();
 const PORT = 8080;
 
 app.use(express.json());
-
-app.listen(PORT, () => {
-  console.log(`Server listening at port ${PORT}`);
-});
 
 app.post('/queryFDA', async (req, res) => {
   const { path } = req.query;
@@ -82,3 +79,15 @@ app.post('/storeSetPG', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+app.listen(PORT, () => {
+  console.log(`Server listening at port ${PORT}`);
+});
+
+async function shutdown() {
+  await disconnectClient();
+  process.exit(0);
+}
+
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
