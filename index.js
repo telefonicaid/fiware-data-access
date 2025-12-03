@@ -24,7 +24,7 @@
 
 import express from 'express';
 
-import { queryFDA, storeSet, storeSetPG } from './lib/fda.js';
+import { querySet, storeSet } from './lib/fda.js';
 import { disconnectClient } from './lib/mongo.js';
 
 const app = express();
@@ -32,7 +32,7 @@ const PORT = 8080;
 
 app.use(express.json());
 
-app.post('/queryFDA', async (req, res) => {
+app.post('/querySet', async (req, res) => {
   const { path } = req.query;
 
   if (Object.keys(req.query).length === 0 || !path) {
@@ -40,7 +40,7 @@ app.post('/queryFDA', async (req, res) => {
   }
 
   try {
-    const result = await queryFDA(req.query);
+    const result = await querySet(req.query);
     res.json(result);
   } catch (err) {
     console.error(' Error in /fda:', err);
@@ -49,22 +49,6 @@ app.post('/queryFDA', async (req, res) => {
 });
 
 app.post('/storeSet', async (req, res) => {
-  const { fda, filePath, path } = req.body;
-
-  if (!fda || !filePath || !path) {
-    return res.status(418).json({ message: 'missing params in body' });
-  }
-
-  try {
-    await storeSet(path, filePath, fda);
-    res.status(201).json({ message: 'Set stored correctly' });
-  } catch (err) {
-    console.error(' Error in /storeSet:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/storeSetPG', async (req, res) => {
   const { database, table, bucket, path, query } = req.body;
 
   if (!database || !table || !bucket || !path || !query) {
@@ -72,7 +56,7 @@ app.post('/storeSetPG', async (req, res) => {
   }
 
   try {
-    await storeSetPG(database, table, bucket, path, query);
+    await storeSet(database, table, bucket, path, query);
     res.status(201).json({ message: 'Set stored correctly' });
   } catch (err) {
     console.error(' Error in /storeSetPG:', err);
