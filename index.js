@@ -33,14 +33,15 @@ const PORT = 8080;
 app.use(express.json());
 
 app.post('/fetchSet', async (req, res) => {
-  const { database, table, bucket, path } = req.body;
+  const { setId, database, table, bucket, path } = req.body;
+  const { service } = req.query;
 
-  if (!database || !table || !bucket || !path) {
+  if (!setId || !database || !table || !bucket || !path || !service) {
     return res.status(418).json({ message: 'missing params in body' });
   }
 
   try {
-    await fetchSet(database, table, bucket, path);
+    await fetchSet(setId, database, table, bucket, path, service);
     res.status(201).json({ message: 'Set fetched correctly' });
   } catch (err) {
     console.error(' Error in /fetchSet:', err);

@@ -7,10 +7,18 @@ Uploads a table from `postgresql` to `Minio`.
 **Endpoint:** /fetchSet \
 **Method** POST
 
+**Request query parameters:**\
+This requests accepts the following URL parameters to customize the request response.
+
+| Parameter | Type   | Description        |
+| :-------- | :----- | ------------------ |
+| service   | string | service of the set |
+
 **Body:**
 
 ```json
 {
+    "setId": "set1",
     "database": "pgDatabase",
     "table": "real_table",
     "bucket": "my-bucket",
@@ -20,6 +28,7 @@ Uploads a table from `postgresql` to `Minio`.
 
 | Key      | Type   | Description                                                         |
 | :------- | :----- | :------------------------------------------------------------------ |
+| setId    | string | Unique Id of the set                                                |
 | database | string | Database where the table is located                                 |
 | table    | string | Name of the table to upload to Minio                                |
 | bucket   | string | Name of the bucket to store the set                                 |
@@ -55,6 +64,9 @@ Runs a stored parameterized query. The value of the parameters must be included 
 **Endpoint:** /querySet \
 **Method** GET
 
-**URL Parameters:**
+**Request query parameters:**\
+This requests accepts the following URL parameters to customize the request response.
 
--   path: `Minio` path of the file to query
+| Parameter | Type   | Description                       |
+| :-------- | :----- | --------------------------------- |
+| path      | string | `Minio` path of the file to query |
