@@ -32,7 +32,7 @@ const PORT = 8080;
 
 app.use(express.json());
 
-app.post('/querySet', async (req, res) => {
+app.get('/querySet', async (req, res) => {
   const { path } = req.query;
 
   if (Object.keys(req.query).length === 0 || !path) {

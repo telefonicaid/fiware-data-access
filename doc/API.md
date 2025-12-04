@@ -1,36 +1,11 @@
 # Fiware Data Access API Reference
 
-## storeSet (TEMPORAL)
+## fetchSet
 
-Stores a set in MinIO using parquet format.
+Uploads a table from `postgresql` to `Minio`.
 
-⚠️ **Note:** In this stage of the initial development the sets are local files uploaded to MinIO. If the file is a CSV
-the header must be separated by `,`. If the columns have the column data type next to the name the file is parsed and
-transformed, generating and identical CSV without this data type annotations.
-
-**Endpoint:** /storeSet
-
-**Body:**
-
-```json
-{
-    "fda": "newfda",
-    "filePath": "lib/testSet.csv",
-    "path": "s3://my-bucket/my-folder/"
-}
-```
-
-| Key      | Type   | Description                      |
-| :------- | :----- | :------------------------------- |
-| fda      | string | Name of the set in MinIO         |
-| filepath | string | Path of the local file to upload |
-| path     | string | Path of the set in MinIO         |
-
-## storeSetPG
-
-Creates a set in Minio uploading a postgresql table.
-
-**Endpoint:** /storeSetPG
+**Endpoint:** /fetchSet \
+**Method** POST
 
 **Body:**
 
@@ -39,47 +14,47 @@ Creates a set in Minio uploading a postgresql table.
     "database": "pgDatabase",
     "table": "real_table",
     "bucket": "my-bucket",
-    "path": "/performance/real_table"
+    "path": "/performance/real_table.parquet"
 }
 ```
 
-| Key      | Type   | Description                                          |
-| :------- | :----- | :--------------------------------------------------- |
-| database | string | Database where the table is located                  |
-| table    | string | Name of the table to upload to Minio                 |
-| bucket   | string | Name of the bucket to store the set                  |
-| path     | string | Path (folders and file name) of the new set in Minio |
+| Key      | Type   | Description                                                         |
+| :------- | :----- | :------------------------------------------------------------------ |
+| database | string | Database where the table is located                                 |
+| table    | string | Name of the table to upload to Minio                                |
+| bucket   | string | Name of the bucket to store the set                                 |
+| path     | string | Path (folders and file name with extension) of the new set in Minio |
 
-## queryFDA
+## storeSet
 
-Queries a set.
+Stores a set of queries in `mongodb`.
 
-**Endpoint:** /queryFDA
+**Endpoint:** /storeSet \
+**Method** POST
 
 **Body:**
 
 ```json
 {
-    {
-    "data": {
-        "columns": "*",
-        "filters": "id = 'id4'"
-    },
-    "cda": "newfda",
-    "path": "s3://my-bucket/my-folder/"
-}
+    "bucket": "my-bucket",
+    "path": "/performance/real_table",
+    "query": "SELECT * FROM..."
 }
 ```
 
-| Key                  | Type   | Description              |
-| :------------------- | :----- | :----------------------- |
-| [data](#data-object) | object | Query properties         |
-| cda                  | string | Name of the set in MinIO |
-| path                 | string | Path of the set in MinIO |
+| Key    | Type   | Description                                                                                                 |
+| :----- | :----- | :---------------------------------------------------------------------------------------------------------- |
+| bucket | string | Name of the bucket to store the set                                                                         |
+| path   | string | Path (folders and file name) of the new set in Minio                                                        |
+| query  | string | Parameterized query. The `FROM` clausule must reference the `Minio` document with the complete `Minio` url. |
 
-### data object:
+## querySet
 
-| Key     | Type   | Description                    |
-| :------ | :----- | :----------------------------- |
-| columns | string | Name of the columns to retrive |
-| filters | string | Filter to apply to the query   |
+Runs a stored parameterized query. The value of the parameters must be included as url parameters.
+
+**Endpoint:** /querySet \
+**Method** GET
+
+**URL Parameters:**
+
+-   path: `Minio` path of the file to query
