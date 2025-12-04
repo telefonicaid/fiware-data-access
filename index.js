@@ -32,18 +32,18 @@ const PORT = 8080;
 
 app.use(express.json());
 
-app.get('/querySet', async (req, res) => {
-  const { path } = req.query;
+app.post('/fetchSet', async (req, res) => {
+  const { database, table, bucket, path } = req.body;
 
-  if (Object.keys(req.query).length === 0 || !path) {
-    return res.status(418).json({ message: 'missing params in request' });
+  if (!database || !table || !bucket || !path) {
+    return res.status(418).json({ message: 'missing params in body' });
   }
 
   try {
-    const result = await querySet(req.query);
-    res.json(result);
+    await fetchSet(database, table, bucket, path);
+    res.status(201).json({ message: 'Set fetched correctly' });
   } catch (err) {
-    console.error(' Error in /fda:', err);
+    console.error(' Error in /fetchSet:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -64,18 +64,18 @@ app.post('/storeSet', async (req, res) => {
   }
 });
 
-app.post('/fetchSet', async (req, res) => {
-  const { database, table, bucket, path } = req.body;
+app.get('/querySet', async (req, res) => {
+  const { path } = req.query;
 
-  if (!database || !table || !bucket || !path) {
-    return res.status(418).json({ message: 'missing params in body' });
+  if (Object.keys(req.query).length === 0 || !path) {
+    return res.status(418).json({ message: 'missing params in request' });
   }
 
   try {
-    await fetchSet(database, table, bucket, path);
-    res.status(201).json({ message: 'Set fetched correctly' });
+    const result = await querySet(req.query);
+    res.json(result);
   } catch (err) {
-    console.error(' Error in /fetchSet:', err);
+    console.error(' Error in /fda:', err);
     res.status(500).json({ error: err.message });
   }
 });
