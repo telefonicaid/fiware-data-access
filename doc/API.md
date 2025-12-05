@@ -103,7 +103,7 @@ _**Response code**_
 
 _**Response headers**_
 
-* Return the header `Location` with the value of the path used to create the subscription (I.E : `/sets/st01`) 
+* Return the header `Location` with the value of the path used to create the set (I.E : `/sets/st01`) 
 when the creation succeeds (Response code 201).
 
 _**Response payload**_
@@ -292,7 +292,7 @@ _**Response code**_
 
 _**Response headers**_
 
-* Return the header `Location` with the value of the path used to create the subscription (I.E : `/sets/st01/fdas/fda01`) 
+* Return the header `Location` with the value of the path used to create the FDA (I.E : `/sets/st01/fdas/fda01`) 
 when the creation succeeds (Response code 201).
 
 _**Response payload**_
@@ -362,7 +362,7 @@ TBD
 
 _**Response code**_
 
-* Successful operation uses 201 Created
+* Successful operation uses 204 No Content
 * Errors use a non-2xx and (optionally) an error payload. See subsection on [Error Responses](#error-responses) for
   more details.
 
@@ -436,7 +436,7 @@ _**Response payload**_
 
 TBD
 
-## Old fraft API (to be removed)
+## Old draft API (to be removed)
 
 ## storeSet (TEMPORAL)
 
