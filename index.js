@@ -24,7 +24,7 @@
 
 import express from 'express';
 
-import { fetchSet, querySet, storeSet } from './lib/fda.js';
+import { fetchSet, querySet, createFDA } from './lib/fda.js';
 import { disconnectClient } from './lib/mongo.js';
 
 const app = express();
@@ -49,15 +49,17 @@ app.post('/fetchSet', async (req, res) => {
   }
 });
 
-app.post('/storeSet', async (req, res) => {
-  const { bucket, path, query } = req.body;
+// Create FDA
+app.post('/sets/:setId/fdas', async (req, res) => {
+  const { setId } = req.params;
+  const { id, description, query } = req.body;
 
-  if (!bucket || !path || !query) {
+  if (!setId || !id || !description || !query) {
     return res.status(418).json({ message: 'missing params in body' });
   }
 
   try {
-    await storeSet(bucket, path, query);
+    await createFDA(setId, id, description, query);
     res.status(201).json({ message: 'Set stored correctly' });
   } catch (err) {
     console.error(' Error in /storeSetPG:', err);
