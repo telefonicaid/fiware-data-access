@@ -26,6 +26,7 @@ import express from 'express';
 
 import { fetchSet, querySet, createFDA } from './lib/fda.js';
 import { disconnectClient } from './lib/mongo.js';
+import { disconnectConnection } from './lib/db.js';
 
 const app = express();
 const PORT = 8080;
@@ -60,7 +61,7 @@ app.post('/sets/:setId/fdas', async (req, res) => {
 
   try {
     await createFDA(setId, id, description, query);
-    res.status(201).json({ message: 'Set stored correctly' });
+    res.status(201).json({ message: 'FDA created correctly' });
   } catch (err) {
     console.error(' Error in /storeSetPG:', err);
     res.status(500).json({ error: err.message });
@@ -68,9 +69,9 @@ app.post('/sets/:setId/fdas', async (req, res) => {
 });
 
 app.get('/querySet', async (req, res) => {
-  const { path } = req.query;
+  const { setId, id } = req.query;
 
-  if (Object.keys(req.query).length === 0 || !path) {
+  if (Object.keys(req.query).length === 0 || !setId || !id) {
     return res.status(418).json({ message: 'missing params in request' });
   }
 
@@ -89,6 +90,7 @@ app.listen(PORT, () => {
 
 async function shutdown() {
   await disconnectClient();
+  await disconnectConnection();
   process.exit(0);
 }
 
