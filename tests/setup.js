@@ -22,10 +22,10 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
-import { GenericContainer, StartedTestContainer } from 'testcontainers';
+import { GenericContainer } from 'testcontainers';
 import { MongoDBContainer } from '@testcontainers/mongodb';
 import { PostgreSqlContainer } from '@testcontainers/postgresql';
-import { MinioContainer } from 'testcontainers';
+import { MinioContainer } from '@testcontainers/minio';
 import path from 'path';
 import { spawn } from 'child_process';
 
@@ -49,7 +49,7 @@ export default async () => {
   process.env.PG_USER = pg.getUsername();
   process.env.PG_PASSWORD = pg.getPassword();
 
-  // --- 3. MinIO ---
+  // --- 3. MinIO --- // TODO: use MinioContainer
   const minio = await new GenericContainer('minio/minio')
     .withExposedPorts(9000)
     .withEnv('MINIO_ROOT_USER', 'admin')
