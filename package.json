@@ -36,7 +36,12 @@
     "jest": "~29.7.0",
     "jest-mock-extended": "4.0.0",
     "nodemon": "~3.1.10",
-    "prettier": "~2.7.1"
+    "prettier": "~2.7.1",
+    "jest": "~29.7.0",
+    "supertest": "~6.3.4",
+    "testcontainers": "~10.9.0",
+    "@testcontainers/mongodb": "~10.9.0",
+    "@testcontainers/postgresql": "~10.9.0"
   },
   "husky": {
     "hooks": {

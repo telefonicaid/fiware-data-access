@@ -60,13 +60,13 @@ export default async () => {
   const minioPort = minio.getMappedPort(9000);
   process.env.MINIO_ENDPOINT = `http://localhost:${minioPort}`;
 
-  // --- 4. Levantar API ---
+  // --- 4. FDA API ---
   apiProcess = spawn('node', ['src/index.js'], {
     env: { ...process.env },
     stdio: 'inherit',
   });
 
-  // Esperar 1s a que arranque el servidor
+  // Waith for server starts
   await new Promise((res) => setTimeout(res, 1000));
 
   global.__containers = { mongo, pg, minio, apiProcess };
