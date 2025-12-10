@@ -22,12 +22,14 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
-export default async () => {
-  const { mongo, pg, minio, apiProcess } = global.__containers;
+module.exports = async () => {
+  const { mongo, pg, minio, apiProcess } = global.__containers || {};
 
-  if (apiProcess) apiProcess.kill();
+  if (apiProcess) {
+    apiProcess.kill();
+  }
 
-  await mongo.stop();
-  await pg.stop();
-  await minio.stop();
+  if (mongo) await mongo.stop();
+  if (pg) await pg.stop();
+  if (minio) await minio.stop();
 };

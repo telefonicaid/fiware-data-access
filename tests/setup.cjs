@@ -1,8 +1,8 @@
-// Copyright 2025 Telefónica Soluciones de Informática y Comunicaciones de España, S.A.U.
+// Copyright 2025 TelefÃ³nica Soluciones de InformÃ¡tica y Comunicaciones de EspaÃ±a, S.A.U.
 // PROJECT: fiware-data-access
 //
-// This software and / or computer program has been developed by Telefónica Soluciones
-// de Informática y Comunicaciones de España, S.A.U (hereinafter TSOL) and is protected
+// This software and / or computer program has been developed by TelefÃ³nica Soluciones
+// de InformÃ¡tica y Comunicaciones de EspaÃ±a, S.A.U (hereinafter TSOL) and is protected
 // as copyright by the applicable legislation on intellectual property.
 //
 // It belongs to TSOL, and / or its licensors, the exclusive rights of reproduction,
@@ -22,52 +22,61 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
-import { GenericContainer } from 'testcontainers';
-import { MongoDBContainer } from '@testcontainers/mongodb';
-import { PostgreSqlContainer } from '@testcontainers/postgresql';
-import { MinioContainer } from '@testcontainers/minio';
-import path from 'path';
-import { spawn } from 'child_process';
+const { GenericContainer } = require("testcontainers");
+const { MongoDBContainer } = require("@testcontainers/mongodb");
+const { PostgreSqlContainer } = require("@testcontainers/postgresql");
+const { MinioContainer } = require("@testcontainers/minio");
+const path = require("path");
+const { spawn } = require("child_process");
 
 let apiProcess;
 
-export default async () => {
+module.exports = async () => {
+  console.log("Init Testcontainers environment...");
+
   // --- 1. MongoDB ---
-  const mongo = await new MongoDBContainer('mongo:6').start();
+  const mongo = await new MongoDBContainer("mongo:8.0").start();
   process.env.MONGO_URL = mongo.getConnectionString();
+  console.log("   MongoDB started");
 
   // --- 2. PostgreSQL ---
-  const pg = await new PostgreSqlContainer('postgres:16')
-    .withDatabase('testdb')
-    .withUsername('postgres')
-    .withPassword('postgres')
-    .start();
+  const pg = await new PostgreSqlContainer("postgres:16")  
+    //const pg = await new PostgreSqlContainer("postgis:15-3.3")
+        .withDatabase("testdb")
+        .withUsername("postgres")
+        .withPassword("postgres")
+        .start();
 
   process.env.PG_HOST = pg.getHost();
-  process.env.PG_PORT = pg.getPort().toString();
+  process.env.PG_PORT = String(pg.getPort());
   process.env.PG_DB = pg.getDatabase();
   process.env.PG_USER = pg.getUsername();
   process.env.PG_PASSWORD = pg.getPassword();
+  console.log("   PostgreSQL started");
 
-  // --- 3. MinIO --- // TODO: use MinioContainer
-  const minio = await new GenericContainer('minio/minio')
-    .withExposedPorts(9000)
-    .withEnv('MINIO_ROOT_USER', 'admin')
-    .withEnv('MINIO_ROOT_PASSWORD', 'admin123')
-    .withCommand(['server', '/data'])
-    .start();
+  // --- 3. MinIO ---
+  const minio = await new MinioContainer("minio/minio:latest")
+        .withUsername("admin")
+        .withPassword("admin123")
+        .start();
 
-  const minioPort = minio.getMappedPort(9000);
-  process.env.MINIO_ENDPOINT = `http://localhost:${minioPort}`;
+  process.env.MINIO_ENDPOINT = `http://${minio.getHost()}:${minio.getPort()}`;
+  const minioPort = minio.getPort(9000);
+  console.log("   MinIO started on port", minioPort);
 
   // --- 4. FDA API ---
-  apiProcess = spawn('node', ['src/index.js'], {
+  apiProcess = spawn("node", ["./index.js"], {
     env: { ...process.env },
-    stdio: 'inherit',
+    stdio: "inherit",
   });
 
-  // Waith for server starts
+  console.log("   API launched, waiting to start...");
+
+  // Wait for service
   await new Promise((res) => setTimeout(res, 1000));
 
   global.__containers = { mongo, pg, minio, apiProcess };
+
+  console.log(" Test environment ready to work");
 };
+
