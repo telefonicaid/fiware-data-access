@@ -61,7 +61,6 @@ describe('API Integrations', () => {
 
     expect(res.status).toBe(200);
 
-    // Puede devolver un array vac�o, pero es v�lido
     expect(Array.isArray(res.body)).toBe(true);
   });
 });
