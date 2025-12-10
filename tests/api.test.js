@@ -60,6 +60,8 @@ describe('API Integrations', () => {
       .query({ setId: 'set1', id: 'fda1' });
 
     expect(res.status).toBe(200);
+
+    // Puede devolver un array vac�o, pero es v�lido
     expect(Array.isArray(res.body)).toBe(true);
   });
 });

@@ -12,7 +12,7 @@
     "lint:fix": "eslint  lib/ --cache --fix",
     "prettier": "prettier --config .prettierrc.json --write '**/**/**/**/*.js' '**/**/**/*.js' '**/**/*.js' '**/*.js' '*.js'",
     "start": "node .",
-    "test": "jest --coverage"
+    "test": "jest --runInBand"
   },
   "engines": {
     "node": ">=24"
@@ -43,6 +43,12 @@
     "@testcontainers/mongodb": "~11.9.0",
     "@testcontainers/postgresql": "~11.9.0",
     "@testcontainers/minio": "~11.9.0"
+  },
+  "jest": {
+      "testEnvironment": "node",
+      "globalSetup": "./tests/setup.cjs",
+      "globalTeardown": "./tests/teardown.cjs",
+      "transform": {}
   },
   "husky": {
     "hooks": {
