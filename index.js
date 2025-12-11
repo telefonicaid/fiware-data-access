@@ -24,27 +24,60 @@
 
 import express from 'express';
 
-import { queryFDA, storeSet, storeSetPG } from './lib/fda.js';
+import { fetchSet, querySet, createFDA } from './lib/fda.js';
+import { disconnectClient } from './lib/mongo.js';
+import { disconnectConnection } from './lib/db.js';
+import { destroyS3Client } from './lib/aws.js';
 
 const app = express();
 const PORT = 8080;
 
 app.use(express.json());
 
-app.listen(PORT, () => {
-  console.log(`Server listening at port ${PORT}`);
-});
+app.post('/fetchSet', async (req, res) => {
+  const { setId, database, table, bucket, path } = req.body;
+  const { service } = req.query;
 
-app.post('/queryFDA', async (req, res) => {
-  const { data, cda, path } = req.body;
-  const { columns, filters } = data;
-
-  if (!data) {
+  if (!setId || !database || !table || !bucket || !path || !service) {
     return res.status(418).json({ message: 'missing params in body' });
   }
 
   try {
-    const result = await queryFDA(path, cda, columns, filters);
+    await fetchSet(setId, database, table, bucket, path, service);
+    res.status(201).json({ message: 'Set fetched correctly' });
+  } catch (err) {
+    console.error(' Error in /fetchSet:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Create FDA
+app.post('/sets/:setId/fdas', async (req, res) => {
+  const { setId } = req.params;
+  const { id, description, query } = req.body;
+
+  if (!setId || !id || !description || !query) {
+    return res.status(418).json({ message: 'missing params in body' });
+  }
+
+  try {
+    await createFDA(setId, id, description, query);
+    res.status(201).json({ message: 'FDA created correctly' });
+  } catch (err) {
+    console.error(' Error in /storeSetPG:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/querySet', async (req, res) => {
+  const { setId, id } = req.query;
+
+  if (Object.keys(req.query).length === 0 || !setId || !id) {
+    return res.status(418).json({ message: 'missing params in request' });
+  }
+
+  try {
+    const result = await querySet(req.query);
     res.json(result);
   } catch (err) {
     console.error(' Error in /fda:', err);
@@ -52,34 +85,16 @@ app.post('/queryFDA', async (req, res) => {
   }
 });
 
-app.post('/storeSet', async (req, res) => {
-  const { fda, filePath, path } = req.body;
-
-  if (!fda || !filePath || !path) {
-    return res.status(418).json({ message: 'missing params in body' });
-  }
-
-  try {
-    await storeSet(path, filePath, fda);
-    res.status(201).json({ message: 'Set stored correctly' });
-  } catch (err) {
-    console.error(' Error in /storeSet:', err);
-    res.status(500).json({ error: err.message });
-  }
+app.listen(PORT, () => {
+  console.log(`Server listening at port ${PORT}`);
 });
 
-app.post('/storeSetPG', async (req, res) => {
-  const { path, database, table, bucket } = req.body;
+async function shutdown() {
+  await disconnectClient();
+  await disconnectConnection();
+  await destroyS3Client();
+  process.exit(0);
+}
 
-  if (!path || !database || !table || !bucket) {
-    return res.status(418).json({ message: 'missing params in body' });
-  }
-
-  try {
-    await storeSetPG(bucket, database, table, path);
-    res.status(201).json({ message: 'Set stored correctly' });
-  } catch (err) {
-    console.error(' Error in /storeSetPG:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
