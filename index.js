@@ -72,13 +72,14 @@ app.post('/sets/:setId/fdas', async (req, res) => {
 
 app.get('/querySet', async (req, res) => {
   const { setId, id } = req.query;
+  const service = req.get('Fiware-Service');
 
-  if (Object.keys(req.query).length === 0 || !setId || !id) {
+  if (Object.keys(req.query).length === 0 || !setId || !id || !service) {
     return res.status(418).json({ message: 'missing params in request' });
   }
 
   try {
-    const result = await querySet(req.query);
+    const result = await querySet(service, req.query);
     res.json(result);
   } catch (err) {
     console.error(' Error in /fda:', err);
