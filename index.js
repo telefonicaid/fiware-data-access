@@ -25,7 +25,7 @@
 import express from 'express';
 
 import { fetchSet, querySet, createFDA } from './lib/fda.js';
-import { disconnectClient } from './lib/mongo.js';
+import { createIndex, disconnectClient } from './lib/mongo.js';
 import { disconnectConnection } from './lib/db.js';
 import { destroyS3Client } from './lib/aws.js';
 
@@ -89,6 +89,10 @@ app.listen(PORT, () => {
   console.log(`Server listening at port ${PORT}`);
 });
 
+async function startup() {
+  await createIndex();
+}
+
 async function shutdown() {
   await disconnectClient();
   await disconnectConnection();
@@ -98,3 +102,4 @@ async function shutdown() {
 
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
+startup();
