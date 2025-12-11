@@ -27,6 +27,7 @@ import express from 'express';
 import { fetchSet, querySet, createFDA } from './lib/fda.js';
 import { disconnectClient } from './lib/mongo.js';
 import { disconnectConnection } from './lib/db.js';
+import { destroyS3Client } from './lib/aws.js';
 
 const app = express();
 const PORT = 8080;
@@ -91,6 +92,7 @@ app.listen(PORT, () => {
 async function shutdown() {
   await disconnectClient();
   await disconnectConnection();
+  await destroyS3Client();
   process.exit(0);
 }
 
