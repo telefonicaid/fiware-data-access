@@ -408,9 +408,41 @@ None
 
 ### Non RESTful operations
 
-#### doQuery
+#### Query `GET /querySet`
 
-Same operation implemented by Pentaho CDA, in order to provide backward compatibility with existing CDA clients with minimal impact.
+Runs a stored parameterized query. The value of the parameters must be included as url parameters.
+
+_**Request query parameters**_
+
+TBD (formerly we mention `path` here, but now sure if we are using it at the end...)
+
+_**Request headers**_
+
+| Header               | Optional | Description    | Example            |
+|----------------------|----------|----------------|--------------------|
+| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform      | `acme`    |
+
+_**Request payload**_
+
+None
+
+_**Response code**_
+
+* Successful operation uses 200 No Content
+* Errors use a non-2xx and (optionally) an error payload. See subsection on [Error Responses](#error-responses) for
+  more details.
+
+_**Response headers**_
+
+Successful operations return `Content-Type` header with `application/json` value.
+
+_**Response payload**_
+
+TBD
+
+#### doQuery (Petaho CDA legacy support)
+
+Same operation implemented by Pentaho CDA, in order to provide backward compatibility with existing CDA clients with minimal impact. This method is a kind of wrapper of `querySet`
 
 _**Request query parameters**_
 
@@ -436,75 +468,3 @@ _**Response payload**_
 
 TBD
 
-## Old draft API (to be removed)
-
-## storeSet (TEMPORAL)
-
-Uploads a table from `postgresql` to `Minio`.
-
-**Endpoint:** /fetchSet \
-**Method** POST
-
-**Request query parameters:**\
-This requests accepts the following URL parameters to customize the request response.
-
-| Parameter | Type   | Description        |
-| :-------- | :----- | ------------------ |
-| service   | string | service of the set |
-
-**Body:**
-
-```json
-{
-    "setId": "set1",
-    "database": "pgDatabase",
-    "table": "real_table",
-    "bucket": "my-bucket",
-    "path": "/performance/real_table.parquet"
-}
-```
-
-| Key      | Type   | Description                                                         |
-| :------- | :----- | :------------------------------------------------------------------ |
-| setId    | string | Unique Id of the set                                                |
-| database | string | Database where the table is located                                 |
-| table    | string | Name of the table to upload to Minio                                |
-| bucket   | string | Name of the bucket to store the set                                 |
-| path     | string | Path (folders and file name with extension) of the new set in Minio |
-
-## storeSet
-
-Stores a set of queries in `mongodb`.
-
-**Endpoint:** /storeSet \
-**Method** POST
-
-**Body:**
-
-```json
-{
-    "bucket": "my-bucket",
-    "path": "/performance/real_table",
-    "query": "SELECT * FROM..."
-}
-```
-
-| Key    | Type   | Description                                                                                                 |
-| :----- | :----- | :---------------------------------------------------------------------------------------------------------- |
-| bucket | string | Name of the bucket to store the set                                                                         |
-| path   | string | Path (folders and file name) of the new set in Minio                                                        |
-| query  | string | Parameterized query. The `FROM` clausule must reference the `Minio` document with the complete `Minio` url. |
-
-## querySet
-
-Runs a stored parameterized query. The value of the parameters must be included as url parameters.
-
-**Endpoint:** /querySet \
-**Method** GET
-
-**Request query parameters:**\
-This requests accepts the following URL parameters to customize the request response.
-
-| Parameter | Type   | Description                       |
-| :-------- | :----- | --------------------------------- |
-| path      | string | `Minio` path of the file to query |
