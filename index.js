@@ -36,7 +36,7 @@ app.use(express.json());
 
 app.post('/fetchSet', async (req, res) => {
   const { setId, database, table, bucket, path } = req.body;
-  const service = req.get('Fiware-Service');
+  const service = req.get('Fiware-Service') || req.get('fiwareService');
 
   if (!setId || !database || !table || !bucket || !path || !service) {
     return res.status(418).json({ message: 'missing params in body' });
@@ -55,7 +55,7 @@ app.post('/fetchSet', async (req, res) => {
 app.post('/sets/:setId/fdas', async (req, res) => {
   const { setId } = req.params;
   const { id, description, query } = req.body;
-  const service = req.get('Fiware-Service');
+  const service = req.get('Fiware-Service') || req.get('fiwareService');
 
   if (!setId || !id || !description || !query || !service) {
     return res.status(418).json({ message: 'missing params in body' });
@@ -72,7 +72,7 @@ app.post('/sets/:setId/fdas', async (req, res) => {
 
 app.get('/querySet', async (req, res) => {
   const { setId, id } = req.query;
-  const service = req.get('Fiware-Service');
+  const service = req.get('Fiware-Service') || req.get('fiwareService');
 
   if (Object.keys(req.query).length === 0 || !setId || !id || !service) {
     return res.status(418).json({ message: 'missing params in request' });
