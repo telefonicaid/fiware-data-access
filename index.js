@@ -36,7 +36,7 @@ app.use(express.json());
 
 app.post('/fetchSet', async (req, res) => {
   const { setId, database, table, bucket, path } = req.body;
-  const service = req.get('Fiware-Service') || req.get('fiwareService');
+  const service = req.get('Fiware-Service');
 
   if (!setId || !database || !table || !bucket || !path || !service) {
     return res.status(418).json({ message: 'missing params in body' });
