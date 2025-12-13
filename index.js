@@ -24,7 +24,7 @@
 
 import express from 'express';
 
-import { fetchSet, querySet, createFDA } from './lib/fda.js';
+import { listFDAs, fetchSet, querySet, createFDA } from './lib/fda.js';
 import { createIndex, disconnectClient } from './lib/mongo.js';
 import { disconnectConnection } from './lib/db.js';
 import { destroyS3Client } from './lib/aws.js';
@@ -33,6 +33,22 @@ const app = express();
 const PORT = 8080;
 
 app.use(express.json());
+
+app.get('/fdas', async (req, res) => {
+  const service = req.get('Fiware-Service');
+
+  if (!service) {
+    return res.status(418).json({ message: 'missing params in body' });
+  }
+
+  try {
+    const fdas = await listFDAs(service);
+    res.status(200).json(fdas);
+  } catch (err) {
+    console.error(' Error in /fetchSet:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 app.post('/fetchSet', async (req, res) => {
   const { setId, database, table, bucket, path } = req.body;
