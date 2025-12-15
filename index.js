@@ -24,7 +24,7 @@
 
 import express from 'express';
 
-import { listFDAs, fetchFDA, queryFDA, createDA } from './lib/fda.js';
+import { listFDAs, fetchFDA, query, createDA } from './lib/fda.js';
 import { createIndex, disconnectClient } from './lib/mongo.js';
 import { disconnectConnection } from './lib/db.js';
 import { destroyS3Client } from './lib/aws.js';
@@ -85,7 +85,7 @@ app.post('/fdas/:fdaId/das', async (req, res) => {
   }
 });
 
-app.get('/queryFDA', async (req, res) => {
+app.get('/query', async (req, res) => {
   const { fdaId, daId } = req.query;
   const service = req.get('Fiware-Service');
 
@@ -94,7 +94,7 @@ app.get('/queryFDA', async (req, res) => {
   }
 
   try {
-    const result = await queryFDA(service, req.query);
+    const result = await query(service, req.query);
     res.json(result);
   } catch (err) {
     console.error(' Error in /queryFDA:', err);

@@ -409,7 +409,7 @@ None
 
 ### Non RESTful operations
 
-#### Query `GET /queryFDA`
+#### Query `GET /query`
 
 Runs a stored parameterized query. The value of the parameters must be included as url parameters.
 
