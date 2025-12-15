@@ -24,7 +24,7 @@
 
 import express from 'express';
 
-import { listFDAs, fetchFDA, query, createDA } from './lib/fda.js';
+import { getFDAs, fetchFDA, query, createDA, getFDA } from './lib/fda.js';
 import { createIndex, disconnectClient } from './lib/mongo.js';
 import { disconnectConnection } from './lib/db.js';
 import { destroyS3Client } from './lib/aws.js';
@@ -42,7 +42,7 @@ app.get('/fdas', async (req, res) => {
   }
 
   try {
-    const fdas = await listFDAs(service);
+    const fdas = await getFDAs(service);
     res.status(200).json(fdas);
   } catch (err) {
     console.error(' Error in GET /fdas:', err);
@@ -63,6 +63,23 @@ app.post('/fdas', async (req, res) => {
     res.status(201).json({ message: 'FDA created correctly' });
   } catch (err) {
     console.error(' Error in POST /fdas:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/fdas/:fdaId', async (req, res) => {
+  const service = req.get('Fiware-Service');
+  const { fdaId } = req.params;
+
+  if (!fdaId || !service) {
+    return res.status(418).json({ message: 'missing params in body' });
+  }
+
+  try {
+    const fda = await getFDA(service, fdaId);
+    res.status(200).json(fda);
+  } catch (err) {
+    console.error(`Error in /fdas/${fdaId}: ${err}`);
     res.status(500).json({ error: err.message });
   }
 });
