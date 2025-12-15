@@ -7,7 +7,7 @@ This document describes the API used by the FIWARE Data Access component.
 This API is inspired in RESTful principles and we have two different resource types:
 
 -   **fdas**: corresponding to a "raw" fda, fetched from DB and corresponding to a Parquet file in MinIO
--   **das**: corresponding to particular query over a fda
+-   **data accesses (das)**: corresponding to particular query over a fda
 
 There is a dependency relationship between the two types, as the _das_ belongs to a given _fda_.
 
