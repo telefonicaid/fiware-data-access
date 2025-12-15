@@ -51,15 +51,15 @@ app.get('/fdas', async (req, res) => {
 });
 
 app.post('/fdas', async (req, res) => {
-  const { fdaId, database, table, bucket, path } = req.body;
+  const { id, database, table, bucket, path } = req.body;
   const service = req.get('Fiware-Service');
 
-  if (!fdaId || !database || !table || !bucket || !path || !service) {
+  if (!id || !database || !table || !bucket || !path || !service) {
     return res.status(418).json({ message: 'missing params in body' });
   }
 
   try {
-    await fetchFDA(fdaId, database, table, bucket, path, service);
+    await fetchFDA(id, database, table, bucket, path, service);
     res.status(201).json({ message: 'FDA created correctly' });
   } catch (err) {
     console.error(' Error in POST /fdas:', err);
@@ -69,15 +69,15 @@ app.post('/fdas', async (req, res) => {
 
 app.post('/fdas/:fdaId/das', async (req, res) => {
   const { fdaId } = req.params;
-  const { daId, description, query } = req.body;
+  const { id, description, query } = req.body;
   const service = req.get('Fiware-Service');
 
-  if (!fdaId || !daId || !description || !query || !service) {
+  if (!fdaId || !id || !description || !query || !service) {
     return res.status(418).json({ message: 'missing params in body' });
   }
 
   try {
-    await createDA(service, fdaId, daId, description, query);
+    await createDA(service, fdaId, id, description, query);
     res.status(201).json({ message: 'DA created correctly' });
   } catch (err) {
     console.error(`Error in /fdas/${fdaId}/das: ${err}`);

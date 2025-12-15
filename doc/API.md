@@ -26,7 +26,7 @@ A fda is represented by a JSON object with the following fields:
 
 | Parameter     | Optional | Type   | Description                                                  |
 | ------------- | -------- | ------ | ------------------------------------------------------------ |
-| `fdaId`       |          | string | FDA unique identifier                                        |
+| `id`          |          | string | FDA unique identifier                                        |
 | `description` | ✓        | string | A free text used by the client to describe the FDA           |
 | `database`    |          | string | Database from which the FDA has been created                 |
 | `table`       |          | string | Table in the database from which the FDA has been created    |
@@ -220,7 +220,7 @@ A DA is represented by a JSON object with the following fields:
 
 | Parameter     | Optional | Type   | Description                                           |
 | ------------- | -------- | ------ | ----------------------------------------------------- |
-| `daId`        |          | string | DA identifier, unique within the associated FDA       |
+| `id`          |          | string | DA identifier, unique within the associated FDA       |
 | `description` | ✓        | string | A free text used by the client to describe the DA     |
 | `query`       |          | string | Query string to run over the FDA when invoking the DA |
 
