@@ -148,7 +148,7 @@ app.get('/query', async (req, res) => {
     const result = await query(service, req.query);
     res.json(result);
   } catch (err) {
-    console.error(' Error in /queryFDA:', err);
+    console.error(' Error in /query:', err);
     res.status(500).json({ error: err.message });
   }
 });
