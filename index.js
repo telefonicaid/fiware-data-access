@@ -24,7 +24,14 @@
 
 import express from 'express';
 
-import { getFDAs, fetchFDA, query, createDA, getFDA } from './lib/fda.js';
+import {
+  getFDAs,
+  fetchFDA,
+  query,
+  createDA,
+  getFDA,
+  updateFDA,
+} from './lib/fda.js';
 import { createIndex, disconnectClient } from './lib/mongo.js';
 import { disconnectConnection } from './lib/db.js';
 import { destroyS3Client } from './lib/aws.js';
@@ -60,7 +67,7 @@ app.post('/fdas', async (req, res) => {
 
   try {
     await fetchFDA(id, database, table, bucket, path, service);
-    res.status(201).json({ message: 'FDA created correctly' });
+    res.sendStatus(201);
   } catch (err) {
     console.error(' Error in POST /fdas:', err);
     res.status(500).json({ error: err.message });
@@ -79,7 +86,20 @@ app.get('/fdas/:fdaId', async (req, res) => {
     const fda = await getFDA(service, fdaId);
     res.status(200).json(fda);
   } catch (err) {
-    console.error(`Error in /fdas/${fdaId}: ${err}`);
+    console.error(`Error in GET /fdas/${fdaId}: ${err}`);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/fdas/:fdaId', async (req, res) => {
+  const service = req.get('Fiware-Service');
+  const { fdaId } = req.params;
+
+  try {
+    await updateFDA(service, fdaId);
+    res.sendStatus(204);
+  } catch (err) {
+    console.error(`Error in PUT /fdas/${fdaId}: ${err}`);
     res.status(500).json({ error: err.message });
   }
 });
