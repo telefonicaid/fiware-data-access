@@ -35,6 +35,7 @@ import {
   getDAs,
   getDA,
   putDA,
+  deleteDA,
 } from './lib/fda.js';
 import { createIndex, disconnectClient } from './lib/mongo.js';
 import { disconnectConnection } from './lib/db.js';
@@ -199,6 +200,23 @@ app.put('/fdas/:fdaId/das/:daId', async (req, res) => {
     res.sendStatus(204);
   } catch (err) {
     console.error(`Error in PUT /fdas/${fdaId}/das/${daId}: ${err}`);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/fdas/:fdaId/das/:daId', async (req, res) => {
+  const { fdaId, daId } = req.params;
+  const service = req.get('Fiware-Service');
+
+  if (!service || !fdaId || !daId) {
+    return res.status(418).json({ message: 'missing params in body' });
+  }
+
+  try {
+    await deleteDA(service, fdaId, daId);
+    res.sendStatus(204);
+  } catch (err) {
+    console.error(`Error in DELETE /fdas/${fdaId}/das/${daId}: ${err}`);
     res.status(500).json({ error: err.message });
   }
 });
