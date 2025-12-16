@@ -22,7 +22,7 @@ TBD
 
 ### FDA payload datamodel
 
-A fda is represented by a JSON object with the following fields:
+A FDA is represented by a JSON object with the following fields:
 
 | Parameter     | Optional | Type   | Description                                                  |
 | ------------- | -------- | ------ | ------------------------------------------------------------ |
@@ -75,7 +75,7 @@ TBD
 
 #### Create FDA `POST /fdas`
 
-Creates a new fda
+Creates a new FDA
 
 _**Request query parameters**_
 
@@ -90,7 +90,7 @@ _**Request headers**_
 
 _**Request payload**_
 
-The payload is a JSON object containing a fda that follows the JSON fda representation format (described in
+The payload is a JSON object containing a FDA that follows the JSON FDA representation format (described in
 [FDA payload datamodel](#fda-payload-datamodel) section).
 
 Example
@@ -105,7 +105,7 @@ _**Response code**_
 
 _**Response headers**_
 
--   Return the header `Location` with the value of the path used to create the fda (I.E : `/fdas/fda01`) when the
+-   Return the header `Location` with the value of the path used to create the FDA (I.E : `/fdas/fda01`) when the
     creation succeeds (Response code 201).
 
 _**Response payload**_
@@ -114,7 +114,7 @@ None
 
 #### Get FDA `GET /fdas/{fdaId}`
 
-Returns the fda requested.
+Returns the FDA requested.
 
 _**Request query parameters**_
 
@@ -142,7 +142,7 @@ Successful operations return `Content-Type` header with `application/json` value
 
 _**Response payload**_
 
-The payload is a JSON object containing a fda that follows the JSON fda representation format (described in
+The payload is a JSON object containing a FDA that follows the JSON FDA representation format (described in
 [FDA payload datamodel](#fda-payload-datamodel) section).
 
 Example:
@@ -151,7 +151,7 @@ TBD
 
 #### Regenerate FDA `PUT /fdas/{fdaId}`
 
-Regenerate the fda, fetching again the source table from DB.
+Regenerate the FDA, fetching again the source table from DB.
 
 _**Request query parameters**_
 
@@ -183,7 +183,7 @@ None
 
 #### Delete FDA `DELETE /fdas/{fdaId}`
 
-Delete fda. Note that deleting a fda deletes in cascade all the das belonging to it.
+Delete FDA. Note that deleting a FDA deletes in cascade all the DAs belonging to it.
 
 _**Request query parameters**_
 
@@ -445,7 +445,7 @@ TBD
 #### doQuery (Petaho CDA legacy support)
 
 Same operation implemented by Pentaho CDA, in order to provide backward compatibility with existing CDA clients with
-minimal impact. This method is a kind of wrapper of `queryFDA`
+minimal impact. This method is a kind of wrapper of `query`
 
 _**Request query parameters**_
 
