@@ -31,6 +31,7 @@ import {
   createDA,
   getFDA,
   updateFDA,
+  deleteFDA,
 } from './lib/fda.js';
 import { createIndex, disconnectClient } from './lib/mongo.js';
 import { disconnectConnection } from './lib/db.js';
@@ -100,6 +101,19 @@ app.put('/fdas/:fdaId', async (req, res) => {
     res.sendStatus(204);
   } catch (err) {
     console.error(`Error in PUT /fdas/${fdaId}: ${err}`);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/fdas/:fdaId', async (req, res) => {
+  const service = req.get('Fiware-Service');
+  const { fdaId } = req.params;
+
+  try {
+    const statusCode = await deleteFDA(service, fdaId);
+    res.sendStatus(statusCode);
+  } catch (err) {
+    console.error(`Error in DELETE /fdas/${fdaId}: ${err}`);
     res.status(500).json({ error: err.message });
   }
 });
