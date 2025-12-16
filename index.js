@@ -32,6 +32,7 @@ import {
   getFDA,
   updateFDA,
   deleteFDA,
+  getDAs,
 } from './lib/fda.js';
 import { createIndex, disconnectClient } from './lib/mongo.js';
 import { disconnectConnection } from './lib/db.js';
@@ -96,6 +97,10 @@ app.put('/fdas/:fdaId', async (req, res) => {
   const service = req.get('Fiware-Service');
   const { fdaId } = req.params;
 
+  if (!service || !fdaId) {
+    return res.status(418).json({ message: 'missing params in body' });
+  }
+
   try {
     await updateFDA(service, fdaId);
     res.sendStatus(204);
@@ -109,11 +114,32 @@ app.delete('/fdas/:fdaId', async (req, res) => {
   const service = req.get('Fiware-Service');
   const { fdaId } = req.params;
 
+  if (!service || !fdaId) {
+    return res.status(418).json({ message: 'missing params in body' });
+  }
+
   try {
     const statusCode = await deleteFDA(service, fdaId);
     res.sendStatus(statusCode);
   } catch (err) {
     console.error(`Error in DELETE /fdas/${fdaId}: ${err}`);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/fdas/:fdaId/das', async (req, res) => {
+  const service = req.get('Fiware-Service');
+  const { fdaId } = req.params;
+
+  if (!fdaId || !service) {
+    return res.status(418).json({ message: 'missing params in body' });
+  }
+
+  try {
+    const das = await getDAs(service, fdaId);
+    res.status(200).json(das);
+  } catch (err) {
+    console.error(`Error in GET /fdas/${fdaId}/das: ${err}`);
     res.status(500).json({ error: err.message });
   }
 });
