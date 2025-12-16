@@ -238,6 +238,33 @@ app.get('/query', async (req, res) => {
   }
 });
 
+app.get('/doQuery', async (req, res) => {
+  const { path, dataAccessId, ...rest } = req.query;
+  const service = req.get('Fiware-Service');
+
+  if (
+    Object.keys(req.query).length === 0 ||
+    !path ||
+    !dataAccessId ||
+    !service
+  ) {
+    return res.status(418).json({ message: 'missing params in request' });
+  }
+
+  try {
+    const updatedParams = {
+      ...rest,
+      fdaId: path.split('/').pop(),
+      daId: dataAccessId,
+    };
+    const result = await query(service, updatedParams);
+    res.json(result);
+  } catch (err) {
+    console.error(' Error in /doQuery:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server listening at port ${PORT}`);
 });
