@@ -33,6 +33,7 @@ import {
   updateFDA,
   deleteFDA,
   getDAs,
+  getDA,
 } from './lib/fda.js';
 import { createIndex, disconnectClient } from './lib/mongo.js';
 import { disconnectConnection } from './lib/db.js';
@@ -155,9 +156,30 @@ app.post('/fdas/:fdaId/das', async (req, res) => {
 
   try {
     await createDA(service, fdaId, id, description, query);
-    res.status(201).json({ message: 'DA created correctly' });
+    res.sendStatus(201);
   } catch (err) {
-    console.error(`Error in /fdas/${fdaId}/das: ${err}`);
+    console.error(`Error in POST /fdas/${fdaId}/das: ${err}`);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/fdas/:fdaId/das/:daId', async (req, res) => {
+  const { fdaId, daId } = req.params;
+  const service = req.get('Fiware-Service');
+
+  if (!service || !fdaId || !daId) {
+    return res.status(418).json({ message: 'missing params in body' });
+  }
+
+  try {
+    const da = await getDA(service, fdaId, daId);
+    if (da) {
+      res.status(200).json(da);
+    } else {
+      res.sendStatus(404);
+    }
+  } catch (err) {
+    console.error(`Error in GET /fdas/${fdaId}/das/${daId}: ${err}`);
     res.status(500).json({ error: err.message });
   }
 });
