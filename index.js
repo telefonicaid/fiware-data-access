@@ -50,7 +50,7 @@ app.get('/fdas', async (req, res) => {
   const service = req.get('Fiware-Service');
 
   if (!service) {
-    return res.status(418).json({ message: 'missing params in body' });
+    return res.status(400).json({ message: 'missing params' });
   }
 
   try {
@@ -67,7 +67,7 @@ app.post('/fdas', async (req, res) => {
   const service = req.get('Fiware-Service');
 
   if (!id || !database || !schema || !table || !bucket || !path || !service) {
-    return res.status(418).json({ message: 'missing params in body' });
+    return res.status(400).json({ message: 'missing params' });
   }
 
   try {
@@ -84,7 +84,7 @@ app.get('/fdas/:fdaId', async (req, res) => {
   const { fdaId } = req.params;
 
   if (!fdaId || !service) {
-    return res.status(418).json({ message: 'missing params in body' });
+    return res.status(400).json({ message: 'missing params' });
   }
 
   try {
@@ -101,7 +101,7 @@ app.put('/fdas/:fdaId', async (req, res) => {
   const { fdaId } = req.params;
 
   if (!service || !fdaId) {
-    return res.status(418).json({ message: 'missing params in body' });
+    return res.status(400).json({ message: 'missing params' });
   }
 
   try {
@@ -118,7 +118,7 @@ app.delete('/fdas/:fdaId', async (req, res) => {
   const { fdaId } = req.params;
 
   if (!service || !fdaId) {
-    return res.status(418).json({ message: 'missing params in body' });
+    return res.status(400).json({ message: 'missing params' });
   }
 
   try {
@@ -135,7 +135,7 @@ app.get('/fdas/:fdaId/das', async (req, res) => {
   const { fdaId } = req.params;
 
   if (!fdaId || !service) {
-    return res.status(418).json({ message: 'missing params in body' });
+    return res.status(400).json({ message: 'missing params' });
   }
 
   try {
@@ -153,7 +153,7 @@ app.post('/fdas/:fdaId/das', async (req, res) => {
   const service = req.get('Fiware-Service');
 
   if (!fdaId || !id || !description || !query || !service) {
-    return res.status(418).json({ message: 'missing params in body' });
+    return res.status(400).json({ message: 'missing params' });
   }
 
   try {
@@ -170,7 +170,7 @@ app.get('/fdas/:fdaId/das/:daId', async (req, res) => {
   const service = req.get('Fiware-Service');
 
   if (!service || !fdaId || !daId) {
-    return res.status(418).json({ message: 'missing params in body' });
+    return res.status(400).json({ message: 'missing params' });
   }
 
   try {
@@ -192,7 +192,7 @@ app.put('/fdas/:fdaId/das/:daId', async (req, res) => {
   const { id, description, query } = req.body;
 
   if (!service || !fdaId || !daId || !id || !description || !query) {
-    return res.status(418).json({ message: 'missing params in body' });
+    return res.status(400).json({ message: 'missing params' });
   }
 
   try {
@@ -209,7 +209,7 @@ app.delete('/fdas/:fdaId/das/:daId', async (req, res) => {
   const service = req.get('Fiware-Service');
 
   if (!service || !fdaId || !daId) {
-    return res.status(418).json({ message: 'missing params in body' });
+    return res.status(400).json({ message: 'missing params' });
   }
 
   try {
@@ -226,7 +226,7 @@ app.get('/query', async (req, res) => {
   const service = req.get('Fiware-Service');
 
   if (Object.keys(req.query).length === 0 || !fdaId || !daId || !service) {
-    return res.status(418).json({ message: 'missing params in request' });
+    return res.status(400).json({ message: 'missing params' });
   }
 
   try {
@@ -248,7 +248,7 @@ app.get('/doQuery', async (req, res) => {
     !dataAccessId ||
     !service
   ) {
-    return res.status(418).json({ message: 'missing params in request' });
+    return res.status(400).json({ message: 'missing params' });
   }
 
   try {

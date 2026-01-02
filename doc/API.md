@@ -16,7 +16,10 @@ document.
 
 ## Error responses
 
-TBD
+The app returns the following error codes:
+
+-   **400**: when there are missing values in the requests body, header or parameters.
+-   **500**: when there is an error in the apps execution.
 
 ## API Routes
 
