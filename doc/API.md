@@ -448,7 +448,7 @@ Successful operations return `Content-Type` header with `application/json` value
 
 _**Response payload**_
 
-TBD
+The payload is a JSON object containing the result of the stored parameterized query.
 
 #### doQuery (Petaho CDA legacy support)
 
@@ -486,4 +486,4 @@ Successful operations return `Content-Type` header with `application/json` value
 
 _**Response payload**_
 
-TBD
+The payload is a JSON object containing the result of the stored parameterized query.
