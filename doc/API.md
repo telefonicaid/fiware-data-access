@@ -419,7 +419,12 @@ Runs a stored parameterized query. The value of the parameters must be included 
 
 _**Request query parameters**_
 
-TBD (formerly we mention `path` here, but now sure if we are using it at the end...)
+| Header  | Optional | Description                                                          | Example |
+| ------- | -------- | -------------------------------------------------------------------- | ------- |
+| `fdaId` |          | Id of the `fda`. Must be unique in combination with `Fiware-Service` | `fda1`  |
+| `daId`  |          | Id of the `da`. Must be unique inside each `fda`                     | `da1`   |
+
+Additionally the necessary parameters for the query must be included with the previous ones.
 
 _**Request headers**_
 
@@ -452,23 +457,32 @@ minimal impact. This method is a kind of wrapper of `query`
 
 _**Request query parameters**_
 
-TBD
+| Header         | Optional | Description                                                                 | Example        |
+| -------------- | -------- | --------------------------------------------------------------------------- | -------------- |
+| `path`         |          | Path to the `fda`. Right now only uses the last bit to retrieve the `fdaId` | `/public/fda1` |
+| `dataAccessId` |          | Id of the `da`. Must be unique inside each `fda`                            | `da1`          |
+
+Additionally the necessary parameters for the query must be included with the previous ones.
 
 _**Request headers**_
 
-TBD
+| Header           | Optional | Description                                                          | Example |
+| ---------------- | -------- | -------------------------------------------------------------------- | ------- |
+| `Fiware-Service` |          | Tenant or service, using the common mechanism of the FIWARE platform | `acme`  |
 
 _**Request payload**_
 
-TBD
+None
 
 _**Response code**_
 
-TBD
+-   Successful operation uses 200 No Content
+-   Errors use a non-2xx and (optionally) an error payload. See subsection on [Error Responses](#error-responses) for
+    more details.
 
 _**Response headers**_
 
-TBD
+Successful operations return `Content-Type` header with `application/json` value.
 
 _**Response payload**_
 
