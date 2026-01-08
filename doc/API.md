@@ -448,7 +448,21 @@ Successful operations return `Content-Type` header with `application/json` value
 
 _**Response payload**_
 
-The payload is a JSON object containing the result of the stored parameterized query.
+The payload is an array of JSON objects, each one being a record result of the stored parameterized query.
+
+```
+[
+    {
+        "timeinstant": "2020-08-17 18:25:28.332+01",
+        "activity": 12,
+        "animalbreed": "Merina",
+        "animalname": "TUNA",
+        "animalspecies": "Ovino",
+        ...
+    },
+    ...
+]
+```
 
 #### doQuery (Petaho CDA legacy support)
 
@@ -486,4 +500,18 @@ Successful operations return `Content-Type` header with `application/json` value
 
 _**Response payload**_
 
-The payload is a JSON object containing the result of the stored parameterized query.
+The payload is an array of JSON objects, each one being a record result of the stored parameterized query.
+
+```
+[
+    {
+        "timeinstant": "2020-08-17 18:25:28.332+01",
+        "activity": 12,
+        "animalbreed": "Merina",
+        "animalname": "TUNA",
+        "animalspecies": "Ovino",
+        ...
+    },
+    ...
+]
+```
