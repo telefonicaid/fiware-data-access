@@ -11,7 +11,7 @@ storage application and stores information about the database that contains the 
 
 ## FDAs collection
 
-The _fdas_ collection stores information about `fiware-data-acces` objects, the multiple `data-access` that each `fda`
+The _fdas_ collection stores information about `fiware-data-access` objects, the multiple `data-access` that each `fda`
 has and the necessary information to manage them. Each document in the collection corresponds to one `fda`.
 
 Fields:
