@@ -21,6 +21,7 @@ Fields:
     unique.
 -   **service**: _fiware-service_ of the fda. The app creates and index using _fdaId_ and _service_ so the combination
     of the two is unique.
+-   **description**: description of the FDA.
 -   **database**: name of the _postgre_ database from which the _fda_ fetches the data for its _das_.
 -   **schema**: name of the _postgre_ schema from which the _fda_ fetches the data for its _das_.
 -   **table**: name of the _postgre_ table from which the _fda_ fetches the data for its _das_.
@@ -40,6 +41,7 @@ Example document:
 {
     _id: ObjectId('695f9a3cc0d41d928f5e6a39'),
     fdaId: 'fda1',
+    description: 'Description for the first FDA',
     database: 'exampleDatabase',
     schema: 'exampleSchema',
     table: 'exampleTable',
