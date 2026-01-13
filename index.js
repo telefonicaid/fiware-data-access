@@ -63,24 +63,15 @@ app.get('/fdas', async (req, res) => {
 });
 
 app.post('/fdas', async (req, res) => {
-  const { id, database, schema, table, bucket, path, description } = req.body;
+  const { id, database, schema, table, path, description } = req.body;
   const service = req.get('Fiware-Service');
 
-  if (!id || !database || !schema || !table || !bucket || !path || !service) {
+  if (!id || !database || !schema || !table || !path || !service) {
     return res.status(400).json({ message: 'missing params' });
   }
 
   try {
-    await fetchFDA(
-      id,
-      database,
-      schema,
-      table,
-      bucket,
-      path,
-      service,
-      description
-    );
+    await fetchFDA(id, database, schema, table, path, service, description);
     res.sendStatus(201);
   } catch (err) {
     console.error(' Error in POST /fdas:', err);
