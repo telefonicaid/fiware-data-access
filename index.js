@@ -63,7 +63,7 @@ app.get('/fdas', async (req, res) => {
 });
 
 app.post('/fdas', async (req, res) => {
-  const { id, database, schema, table, bucket, path } = req.body;
+  const { id, database, schema, table, bucket, path, description } = req.body;
   const service = req.get('Fiware-Service');
 
   if (!id || !database || !schema || !table || !bucket || !path || !service) {
@@ -71,7 +71,16 @@ app.post('/fdas', async (req, res) => {
   }
 
   try {
-    await fetchFDA(id, database, schema, table, bucket, path, service);
+    await fetchFDA(
+      id,
+      database,
+      schema,
+      table,
+      bucket,
+      path,
+      service,
+      description
+    );
     res.sendStatus(201);
   } catch (err) {
     console.error(' Error in POST /fdas:', err);
