@@ -6,7 +6,8 @@ This document describes the API used by the FIWARE Data Access component.
 
 This API is inspired in RESTful principles and we have two different resource types:
 
--   **fdas**: corresponding to a "raw" fda, fetched from DB and corresponding to a Parquet file in MinIO
+-   **fdas**: corresponding to a "raw" fda, fetched from DB and corresponding to a Parquet file in the object
+    bucket-based storage system.
 -   **data accesses (das)**: corresponding to particular query over a fda
 
 There is a dependency relationship between the two types, as the _das_ belongs to a given _fda_.
@@ -27,14 +28,14 @@ The app returns the following error codes:
 
 A FDA is represented by a JSON object with the following fields:
 
-| Parameter     | Optional | Type   | Description                                               |
-| ------------- | -------- | ------ | --------------------------------------------------------- |
-| `id`          |          | string | FDA unique identifier                                     |
-| `description` | ✓        | string | A free text used by the client to describe the FDA        |
-| `database`    |          | string | Database from which the FDA has been created              |
-| `schema`      |          | string | Database schema from which the FDA has been created       |
-| `table`       |          | string | Table in the database from which the FDA has been created |
-| `path`        |          | string | Full path to the Parquet file storing the FDA in MinIO    |
+| Parameter     | Optional | Type   | Description                                                                      |
+| ------------- | -------- | ------ | -------------------------------------------------------------------------------- |
+| `id`          |          | string | FDA unique identifier                                                            |
+| `description` | ✓        | string | A free text used by the client to describe the FDA                               |
+| `database`    |          | string | Database from which the FDA has been created                                     |
+| `schema`      |          | string | Database schema from which the FDA has been created                              |
+| `table`       |          | string | Table in the database from which the FDA has been created                        |
+| `path`        |          | string | Full path to the Parquet file storing the FDA in the bucket-based storage system |
 
 ### FDAs operations
 
