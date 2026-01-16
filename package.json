@@ -12,7 +12,7 @@
     "lint:fix": "eslint  lib/ --cache --fix",
     "prettier": "prettier --config .prettierrc.json --write '**/**/**/**/*.js' '**/**/**/*.js' '**/**/*.js' '**/*.js' '*.js'",
     "start": "node .",
-    "test": "jest --coverage"
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand"
   },
   "engines": {
     "node": ">=24"
@@ -36,7 +36,20 @@
     "jest": "~29.7.0",
     "jest-mock-extended": "4.0.0",
     "nodemon": "~3.1.10",
-    "prettier": "~2.7.1"
+    "prettier": "~2.7.1",
+    "jest": "~29.7.0",
+    "supertest": "~6.3.4",
+    "testcontainers": "~11.9.0",
+    "@testcontainers/mongodb": "~11.9.0",
+    "@testcontainers/postgresql": "~11.9.0",
+    "@testcontainers/minio": "~11.9.0"
+  },
+  "jest": {
+      "testEnvironment": "node",
+      "globalSetup": "./tests/setup.cjs",
+      "globalTeardown": "./tests/teardown.cjs",
+      "testMatch": ["**/?(*.)+(spec|test).[jt]s?(x)", "**/?(*.)+(spec|test).mjs"],
+      "transform": {}
   },
   "husky": {
     "hooks": {
