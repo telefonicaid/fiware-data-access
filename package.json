@@ -8,7 +8,7 @@
   "scripts": {
     "clean": "rm -rf package-lock.json && rm -rf node_modules",
     "dev": "nodemon fda.js",
-    "lint": "eslint lib/ --cache",
+    "lint": "eslint -c ./eslint.config.js lib/ --cache",
     "lint:fix": "eslint  lib/ --cache --fix",
     "prettier": "prettier --config .prettierrc.json --write '**/**/**/**/*.js' '**/**/**/*.js' '**/**/*.js' '**/*.js' '*.js'",
     "start": "node .",
