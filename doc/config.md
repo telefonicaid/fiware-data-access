@@ -43,7 +43,7 @@ Variabes related to the object bucket-based storage system:
 | --------------------- | -------- | ------ | ---------------------------------------------------------------------------------------------------- |
 | `FDA_OBJSTG_USER`     |          | string | User to connect to the object bucket-based storage system.                                           |
 | `FDA_OBJSTG_PASSWORD` |          | string | Password to connect to the object bucket-based storage system.                                       |
-| `FDA_OBJSTG_PROTOCOL` |          | string | Protocol (http or https) to connect to the object bucket-based storage system. Default value `https` |
+| `FDA_OBJSTG_PROTOCOL` | ✓        | string | Protocol (http or https) to connect to the object bucket-based storage system. Default value `https` |
 | `FDA_OBJSTG_ENDPOINT` |          | string | Endpoint (host and port) to connect to the object bucket-based storage system.                       |
 
 ### MongoDB
