@@ -84,7 +84,6 @@ services:
       - "5432:5432"
     command: postgres --shared_buffers=256MB --max_connections=500
     environment:
-      POSTGRES_PASSWORD: ${FDA_PG_PASSWORD:-postgres}
       POSTGRES_USER: ${FDA_PG_USER:-postgres}
       POSTGRES_PASSWORD: ${FDA_PG_PASSWORD:-postgres}
       POSTGRES_DB: ${FDA_PG_DB:-postgres}      
