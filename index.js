@@ -55,10 +55,10 @@ app.get('/fdas', async (req, res) => {
 
   try {
     const fdas = await getFDAs(service);
-    res.status(200).json(fdas);
+    return res.status(200).json(fdas);
   } catch (err) {
     console.error(' Error in GET /fdas:', err);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -72,10 +72,10 @@ app.post('/fdas', async (req, res) => {
 
   try {
     await fetchFDA(id, database, schema, table, path, service, description);
-    res.sendStatus(201);
+    return res.sendStatus(201);
   } catch (err) {
     console.error(' Error in POST /fdas:', err);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -89,10 +89,10 @@ app.get('/fdas/:fdaId', async (req, res) => {
 
   try {
     const fda = await getFDA(service, fdaId);
-    res.status(200).json(fda);
+    return res.status(200).json(fda);
   } catch (err) {
     console.error(`Error in GET /fdas/${fdaId}: ${err}`);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -106,10 +106,10 @@ app.put('/fdas/:fdaId', async (req, res) => {
 
   try {
     await updateFDA(service, fdaId);
-    res.sendStatus(204);
+    return res.sendStatus(204);
   } catch (err) {
     console.error(`Error in PUT /fdas/${fdaId}: ${err}`);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -123,10 +123,10 @@ app.delete('/fdas/:fdaId', async (req, res) => {
 
   try {
     const statusCode = await deleteFDA(service, fdaId);
-    res.sendStatus(statusCode);
+    return res.sendStatus(statusCode);
   } catch (err) {
     console.error(`Error in DELETE /fdas/${fdaId}: ${err}`);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -140,10 +140,10 @@ app.get('/fdas/:fdaId/das', async (req, res) => {
 
   try {
     const das = await getDAs(service, fdaId);
-    res.status(200).json(das);
+    return res.status(200).json(das);
   } catch (err) {
     console.error(`Error in GET /fdas/${fdaId}/das: ${err}`);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -158,10 +158,10 @@ app.post('/fdas/:fdaId/das', async (req, res) => {
 
   try {
     await createDA(service, fdaId, id, description, query);
-    res.sendStatus(201);
+    return res.sendStatus(201);
   } catch (err) {
     console.error(`Error in POST /fdas/${fdaId}/das: ${err}`);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -176,13 +176,13 @@ app.get('/fdas/:fdaId/das/:daId', async (req, res) => {
   try {
     const da = await getDA(service, fdaId, daId);
     if (da) {
-      res.status(200).json(da);
+      return res.status(200).json(da);
     } else {
-      res.sendStatus(404);
+      return res.sendStatus(404);
     }
   } catch (err) {
     console.error(`Error in GET /fdas/${fdaId}/das/${daId}: ${err}`);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -197,10 +197,10 @@ app.put('/fdas/:fdaId/das/:daId', async (req, res) => {
 
   try {
     await putDA(service, fdaId, daId, id, description, query);
-    res.sendStatus(204);
+    return res.sendStatus(204);
   } catch (err) {
     console.error(`Error in PUT /fdas/${fdaId}/das/${daId}: ${err}`);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -214,10 +214,10 @@ app.delete('/fdas/:fdaId/das/:daId', async (req, res) => {
 
   try {
     await deleteDA(service, fdaId, daId);
-    res.sendStatus(204);
+    return res.sendStatus(204);
   } catch (err) {
     console.error(`Error in DELETE /fdas/${fdaId}/das/${daId}: ${err}`);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -231,10 +231,10 @@ app.get('/query', async (req, res) => {
 
   try {
     const result = await query(service, req.query);
-    res.json(result);
+    return res.json(result);
   } catch (err) {
     console.error(' Error in /query:', err);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -258,10 +258,10 @@ app.get('/doQuery', async (req, res) => {
       daId: dataAccessId,
     };
     const result = await query(service, updatedParams);
-    res.json(result);
+    return res.json(result);
   } catch (err) {
     console.error(' Error in /doQuery:', err);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
