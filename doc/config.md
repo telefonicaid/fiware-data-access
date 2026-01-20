@@ -28,12 +28,12 @@ Variables related to the environment of the application:
 
 Variables related to `PostgreSQL` client:
 
-| Variable                 | Optional | Type   | Description                                                                                          |
-| ------------------------ | -------- | ------ | ---------------------------------------------------------------------------------------------------- |
-| `FDA_PG_CLIENT_USER`     |          | string | User to connect to `PostgreSQL` to fetch the data to create the `FDAs`.                              |
-| `FDA_PG_CLIENT_PASSWORD` |          | string | Password to connect to `PostgreSQL` to fetch the data to create the `FDAs`.                          |
-| `FDA_PG_CLIENT_HOST`     |          | string | Host to connect to `PostgreSQL` to fetch the data to create the `FDAs`.                              |
-| `FDA_PG_CLIENT_PORT`     | ✓        | number | Port to connect to `PostgreSQL` to fetch the data to create the `FDAs`. Value by _default_ **5432**. |
+| Variable          | Optional | Type   | Description                                                                                          |
+| ----------------- | -------- | ------ | ---------------------------------------------------------------------------------------------------- |
+| `FDA_PG_USER`     |          | string | User to connect to `PostgreSQL` to fetch the data to create the `FDAs`.                              |
+| `FDA_PG_PASSWORD` |          | string | Password to connect to `PostgreSQL` to fetch the data to create the `FDAs`.                          |
+| `FDA_PG_HOST`     |          | string | Host to connect to `PostgreSQL` to fetch the data to create the `FDAs`.                              |
+| `FDA_PG_PORT`     | ✓        | number | Port to connect to `PostgreSQL` to fetch the data to create the `FDAs`. Value by _default_ **5432**. |
 
 ### Object bucket-based storage system
 
