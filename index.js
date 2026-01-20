@@ -40,9 +40,10 @@ import {
 import { createIndex, disconnectClient } from './lib/mongo.js';
 import { disconnectConnection } from './lib/db.js';
 import { destroyS3Client } from './lib/aws.js';
+import { config } from './lib/fdaConfig.js';
 
 const app = express();
-const PORT = 8080;
+const PORT = config.port;
 
 app.use(express.json());
 

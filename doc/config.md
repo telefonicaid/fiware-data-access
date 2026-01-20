@@ -23,6 +23,7 @@ Variables related to the environment of the application:
 | Variable       | Optional | Type   | Description                                                                                                           |
 | -------------- | -------- | ------ | --------------------------------------------------------------------------------------------------------------------- |
 | `FDA_NODE_ENV` | ✓        | string | Level of the node environment. Possible values are `development` and `production`. Value is `development` by default. |
+| `FDA_SERVER_PORT` | ✓        | number | Port used by FDA server. Value is `8080` by default. |
 
 ### PostgreSQL
 
