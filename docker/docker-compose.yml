@@ -55,6 +55,35 @@ services:
     networks:
       - minio-net
 
+  mongo:
+    image: mongo:8.0
+    container_name: mongo
+    ports:
+      - "27017:27017"
+    networks:
+      - minio-net
+
+  postgis:
+    container_name: postgis
+    hostname: postgis
+    # Default env variables will be used if not specify in .env
+    image: ${FDA_POSTGIS_IMAGE:-postgis/postgis:15-3.3}
+    volumes:
+      - ${FDA_DBPATH_POSTGIS:-/data/postgis}:/var/lib/postgresql/data
+    expose:
+      - "5432"
+    ports:
+      - "5432:5432"
+    command: postgres --shared_buffers=256MB --max_connections=500
+    environment:
+      POSTGRES_PASSWORD: $FDA_PG_PASSWORD:-postgres}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "250m"
+    networks:
+      - minio-net
+
   poc:
     container_name: poc
     build:
@@ -66,12 +95,16 @@ services:
     ports:
       - '8080:8080'
     environment:
-      - NODE_ENV=production
+      - FDA_NODE_ENV=production
       - LOG_LEVEL=INFO
-      - MINIO_ENDPOINT=minio:9000
-      - MINIO_ACCESS_KEY=admin
-      - MINIO_SECRET_KEY=admin123
-      - MINIO_BUCKET=my-bucket
+      - FDA_PG_USER=postgres
+      - FDA_PG_PASSWORD=postgres
+      - FDA_PG_HOST=localhost
+      - FDA_PG_PORT=5432
+      - FDA_OBJSTG_USER=admin
+      - FDA_OBJSTG_PASSWORD=admin123
+      - FDA_OBJSTG_ENDPOINT=minio:9000
+      - FDA_MONGO_ENDPOINT=mongodb://mongo:27017
     command: ['npm', 'start']
 
 networks:
