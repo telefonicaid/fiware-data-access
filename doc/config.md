@@ -3,7 +3,7 @@
 -   [Introduction](#introduction)
 -   [Variables](#variables)
     -   [Environment](#environment)
-    -   [Postgre](#postgre)
+    -   [PostgreSQL](#postgresql)
     -   [Object bucket-based storage system](#object-bucket-based-storage-system)
     -   [MongoDB](#mongodb)
 
@@ -24,16 +24,16 @@ Variables related to the environment of the application:
 | -------------- | -------- | ------ | --------------------------------------------------------------------------------------------------------------------- |
 | `FDA_NODE_ENV` | ✓        | string | Level of the node environment. Possible values are `development` and `production`. Value is `development` by default. |
 
-### Postgre
+### PostgreSQL
 
-Variables related to `postgre` client:
+Variables related to `PostgreSQL` client:
 
-| Variable                      | Optional | Type   | Description                                                                                     |
-| ----------------------------- | -------- | ------ | ----------------------------------------------------------------------------------------------- |
-| `FDA_POSTGRE_CLIENT_USER`     |          | string | User to connect to postgre to fetch the data to create the `FDAs`.                              |
-| `FDA_POSTGRE_CLIENT_PASSWORD` |          | string | Password to connect to postgre to fetch the data to create the `FDAs`.                          |
-| `FDA_POSTGRE_CLIENT_HOST`     |          | string | Host to connect to postgre to fetch the data to create the `FDAs`.                              |
-| `FDA_POSTGRE_CLIENT_PORT`     | ✓        | number | Port to connect to postgre to fetch the data to create the `FDAs`. Value by _default_ **5432**. |
+| Variable                      | Optional | Type   | Description                                                                                          |
+| ----------------------------- | -------- | ------ | ---------------------------------------------------------------------------------------------------- |
+| `FDA_POSTGRE_CLIENT_USER`     |          | string | User to connect to `PostgreSQL` to fetch the data to create the `FDAs`.                              |
+| `FDA_POSTGRE_CLIENT_PASSWORD` |          | string | Password to connect to `PostgreSQL` to fetch the data to create the `FDAs`.                          |
+| `FDA_POSTGRE_CLIENT_HOST`     |          | string | Host to connect to `PostgreSQL` to fetch the data to create the `FDAs`.                              |
+| `FDA_POSTGRE_CLIENT_PORT`     | ✓        | number | Port to connect to `PostgreSQL` to fetch the data to create the `FDAs`. Value by _default_ **5432**. |
 
 ### Object bucket-based storage system
 

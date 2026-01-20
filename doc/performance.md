@@ -10,12 +10,12 @@ takes the same parameters as the action they measure:
 
 ### storeSetPerformance
 
-Measures the process of creating a set from PostgreSQL. The isolated steps are retrieving a table from postgresql using
+Measures the process of creating a set from PostgreSQL. The isolated steps are retrieving a table from PostgreSQL using
 streams, sending local data to Minio using AWS sdk and using DuckDb to change the Minio set format from CSV to PARQUET.
 The methods used to measure the steps are the following:
 
--   **pgToNode**: downloads a table from postgres using postgresql native functionality to export data in CSV format.
-    The retrieved data is discarded in a sink so data processing doesn't affect performance.
+-   **pgToNode**: downloads a table from PostgreSQL using it's native functionality to export data in CSV format. The
+    retrieved data is discarded in a sink so data processing doesn't affect performance.
 -   **nodeToMinio25MBChunk1Parallel**: uploads data from a local csv file with the same name as the table using
     multipart upload. The size of each chunk is 25Mb.
 -   **nodeToMinio25MBChunk4Parallel**: uploads data from a local csv file with the same name as the table using
@@ -54,4 +54,4 @@ data from `nodeToMinio25MBChunk1Parallel` because there wasn't a big difference 
 | 6,6 GB     | 9m 41,120s         | 7m 26,220s | 3m 28,672s                    | 44,618s      |
 
 ⚠️ **Environment:** The previous data has been measured in a laptop with 4 cpus, 16Gbs of RAM, connected to the
-postgresql through a ssh tunnel and with MINIO running on a local docker container.
+PostgreSQL through a ssh tunnel and with MINIO running on a local docker container.
