@@ -20,10 +20,10 @@ The _environment variabless_ are ordered inside the following categories.
 
 Variables related to the environment of the application:
 
-| Variable       | Optional | Type   | Description                                                                                                           |
-| -------------- | -------- | ------ | --------------------------------------------------------------------------------------------------------------------- |
-| `FDA_NODE_ENV` | ✓        | string | Level of the node environment. Possible values are `development` and `production`. Value is `development` by default. |
-| `FDA_SERVER_PORT` | ✓        | number | Port used by FDA server. Value is `8080` by default. |
+| Variable          | Optional | Type   | Description                                                                                                           |
+| ----------------- | -------- | ------ | --------------------------------------------------------------------------------------------------------------------- |
+| `FDA_NODE_ENV`    | ✓        | string | Level of the node environment. Possible values are `development` and `production`. Value is `development` by default. |
+| `FDA_SERVER_PORT` | ✓        | number | Port used by FDA server. Value is `8080` by default.                                                                  |
 
 ### PostgreSQL
 
@@ -51,8 +51,6 @@ Variabes related to the object bucket-based storage system:
 
 Variables related to MongoDB:
 
-| Variable             | Optional | Type   | Description                                           |
-| -------------------- | -------- | ------ | ----------------------------------------------------- |
-| `FDA_MONGO_USER`     |          | string | User to connect to the `MongoDB`.                     |
-| `FDA_MONGO_PASSWORD` |          | string | Password to connect to the `MongoDB`.                 |
-| `FDA_MONGO_ENDPOINT` |          | string | Endpoint (host and port) to connect to the `MongoDB`. |
+| Variable        | Optional | Type   | Description                              |
+| --------------- | -------- | ------ | ---------------------------------------- |
+| `FDA_MONGO_URI` |          | string | Mongodb URI to connect to the `MongoDB`. |
