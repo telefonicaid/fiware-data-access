@@ -23,6 +23,7 @@ Variables related to the environment of the application:
 | Variable       | Optional | Type   | Description                                                                                                           |
 | -------------- | -------- | ------ | --------------------------------------------------------------------------------------------------------------------- |
 | `FDA_NODE_ENV` | ✓        | string | Level of the node environment. Possible values are `development` and `production`. Value is `development` by default. |
+| `FDA_SERVER_PORT` | ✓        | number | Port used by FDA server. Value is `8080` by default. |
 
 ### PostgreSQL
 
@@ -39,11 +40,12 @@ Variables related to `PostgreSQL` client:
 
 Variabes related to the object bucket-based storage system:
 
-| Variable              | Optional | Type   | Description                                                                    |
-| --------------------- | -------- | ------ | ------------------------------------------------------------------------------ |
-| `FDA_OBJSTG_USER`     |          | string | User to connect to the object bucket-based storage system.                     |
-| `FDA_OBJSTG_PASSWORD` |          | string | Password to connect to the object bucket-based storage system.                 |
-| `FDA_OBJSTG_ENDPOINT` |          | string | Endpoint (host and port) to connect to the object bucket-based storage system. |
+| Variable              | Optional | Type   | Description                                                                                          |
+| --------------------- | -------- | ------ | ---------------------------------------------------------------------------------------------------- |
+| `FDA_OBJSTG_USER`     |          | string | User to connect to the object bucket-based storage system.                                           |
+| `FDA_OBJSTG_PASSWORD` |          | string | Password to connect to the object bucket-based storage system.                                       |
+| `FDA_OBJSTG_PROTOCOL` | ✓        | string | Protocol (http or https) to connect to the object bucket-based storage system. Default value `https` |
+| `FDA_OBJSTG_ENDPOINT` |          | string | Endpoint (host and port) to connect to the object bucket-based storage system.                       |
 
 ### MongoDB
 

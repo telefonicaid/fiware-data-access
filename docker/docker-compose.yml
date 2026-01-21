@@ -36,7 +36,7 @@ services:
       - ./data:/data
     command: server /data --console-address ":9001"
     networks:
-      - minio-net
+      - fda-net
 
   mc:
     image: minio/mc:latest
@@ -52,28 +52,81 @@ services:
       mc admin trace -v -a local &&
       tail -f /dev/null
       "
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "250m"      
     networks:
-      - minio-net
+      - fda-net
 
-  poc:
-    container_name: poc
+  mongo:
+    image: mongo:8.0
+    container_name: mongo
+    ports:
+      - "27017:27017"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "250m"
+    networks:
+      - fda-net
+
+  postgis:
+    container_name: postgis
+    hostname: postgis
+    # Default env variables will be used if not specify in .env
+    image: ${FDA_POSTGIS_IMAGE:-postgis/postgis:15-3.3}
+    volumes:
+      - ${FDA_DBPATH_POSTGIS:-/data/postgis}:/var/lib/postgresql/data
+    expose:
+      - "5432"
+    ports:
+      - "5432:5432"
+    command: postgres --shared_buffers=256MB --max_connections=500
+    environment:
+      POSTGRES_USER: ${FDA_PG_USER:-postgres}
+      POSTGRES_PASSWORD: ${FDA_PG_PASSWORD:-postgres}
+      POSTGRES_DB: ${FDA_PG_DB:-postgres}      
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "250m"
+    networks:
+      - fda-net
+
+  fda:
+    container_name: fda
     build:
       context: .
       dockerfile: Dockerfile
-    image: poc
+    image: fda
     depends_on:
       - minio
+      - mongo
+      - postgis
     ports:
       - '8080:8080'
     environment:
-      - NODE_ENV=production
+      - FDA_NODE_ENV=production
       - LOG_LEVEL=INFO
-      - MINIO_ENDPOINT=minio:9000
-      - MINIO_ACCESS_KEY=admin
-      - MINIO_SECRET_KEY=admin123
-      - MINIO_BUCKET=my-bucket
+      - FDA_PG_USER= ${FDA_PG_USER:-postgres}
+      - FDA_PG_PASSWORD= ${FDA_PG_PASSWORD:-postgres}
+      - FDA_PG_HOST= postgis
+      - FDA_PG_PORT= "5432"
+      - FDA_PG_DB=${FDA_PG_DB:-postgres}
+      - FDA_OBJSTG_USER=${MINIO_ROOT_USER}
+      - FDA_OBJSTG_PASSWORD=${MINIO_ROOT_PASSWORD}
+      - FDA_OBJSTG_ENDPOINT=minio:9000
+      - FDA_OBJSTG_BUCKET=${MINIO_BUCKET}      
+      - FDA_MONGO_ENDPOINT=mongo:27017
     command: ['npm', 'start']
-
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "250m"
+    networks:
+      - fda-net
+    
 networks:
-  minio-net:
+  fda-net:
     driver: bridge
