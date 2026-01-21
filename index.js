@@ -42,7 +42,7 @@ import { disconnectConnection } from './lib/db.js';
 import { destroyS3Client } from './lib/aws.js';
 import { config } from './lib/fdaConfig.js';
 
-const app = express();
+export const app = express();
 const PORT = config.port;
 
 app.use(express.json());
@@ -266,9 +266,11 @@ app.get('/doQuery', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Server listening at port ${PORT}`);
-});
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => {
+    console.log(`Server listening at port ${PORT}`);
+  });
+}
 
 async function startup() {
   await createIndex();
