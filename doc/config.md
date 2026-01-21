@@ -53,4 +53,4 @@ Variables related to MongoDB:
 
 | Variable        | Optional | Type   | Description                              |
 | --------------- | -------- | ------ | ---------------------------------------- |
-| `FDA_MONGO_URI` |          | string | Mongodb URI to connect to the `MongoDB`. |
+| `FDA_MONGO_URI` |          | string | Mongodb connection URI to connect to the `MongoDB`. More details in  [MongoDb connection URI](https://www.mongodb.com/docs/drivers/node/current/connect/mongoclient/#connection-uri) |
