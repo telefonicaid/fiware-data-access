@@ -25,6 +25,7 @@ Fields:
 -   **database**: name of the _PostgreSQL_ database from which the _fda_ fetches the data for its _das_.
 -   **schema**: name of the _PostgreSQL_ schema from which the _fda_ fetches the data for its _das_.
 -   **table**: name of the _PostgreSQL_ table from which the _fda_ fetches the data for its _das_.
+-   **query**: _PostgreSQL_ query used to create the file in the object bucket-based storage application.
 -   **path**: path to the data in the object bucket-based storage application that is going to be queried by the _da_.
 -   **das**: keymap of the different _DAs_ in the _FDA_. Each _Da_ (key included) is created by the user and has the
     following information:
@@ -43,6 +44,7 @@ Example document:
     database: 'exampleDatabase',
     schema: 'exampleSchema',
     table: 'exampleTable',
+    query: 'SELECT population, timeinstant FROM exampleDatabase.exampleSchema.exampleTable',
     path: '/das/exampleTable.parquet',
     das: {
         da1: {
