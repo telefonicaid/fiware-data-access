@@ -33,8 +33,7 @@ A FDA is represented by a JSON object with the following fields:
 | `id`          |          | string | FDA unique identifier                                                            |
 | `description` | ✓        | string | A free text used by the client to describe the FDA                               |
 | `database`    |          | string | Database from which the FDA has been created                                     |
-| `schema`      |          | string | Database schema from which the FDA has been created                              |
-| `table`       |          | string | Table in the database from which the FDA has been created                        |
+| `query`       |          | string | Base `postgreSQL` query to create the file in the bucket-based storage system    |
 | `path`        |          | string | Full path to the Parquet file storing the FDA in the bucket-based storage system |
 
 ### FDAs operations
