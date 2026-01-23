@@ -45,13 +45,26 @@ import { config } from './lib/fdaConfig.js';
 const app = express();
 const PORT = config.port;
 
+let responseCode;
+let error;
+let description;
+
+export function setResponse(code, errStr = '', errDesc = '') {
+  responseCode = code;
+  error = errStr;
+  description = errDesc;
+}
+
 app.use(express.json());
 
 app.get('/fdas', async (req, res) => {
   const service = req.get('Fiware-Service');
 
   if (!service) {
-    return res.status(400).json({ message: 'missing params' });
+    return res.status(400).json({
+      error: 'BadRequest',
+      description: 'Missing params in the request',
+    });
   }
 
   try {
@@ -68,7 +81,10 @@ app.post('/fdas', async (req, res) => {
   const service = req.get('Fiware-Service');
 
   if (!id || !database || !query || !path || !service) {
-    return res.status(400).json({ message: 'missing params' });
+    return res.status(400).json({
+      error: 'BadRequest',
+      description: 'Missing params in the request',
+    });
   }
 
   try {
@@ -85,7 +101,10 @@ app.get('/fdas/:fdaId', async (req, res) => {
   const { fdaId } = req.params;
 
   if (!fdaId || !service) {
-    return res.status(400).json({ message: 'missing params' });
+    return res.status(400).json({
+      error: 'BadRequest',
+      description: 'Missing params in the request',
+    });
   }
 
   try {
@@ -102,7 +121,10 @@ app.put('/fdas/:fdaId', async (req, res) => {
   const { fdaId } = req.params;
 
   if (!service || !fdaId) {
-    return res.status(400).json({ message: 'missing params' });
+    return res.status(400).json({
+      error: 'BadRequest',
+      description: 'Missing params in the request',
+    });
   }
 
   try {
@@ -119,7 +141,10 @@ app.delete('/fdas/:fdaId', async (req, res) => {
   const { fdaId } = req.params;
 
   if (!service || !fdaId) {
-    return res.status(400).json({ message: 'missing params' });
+    return res.status(400).json({
+      error: 'BadRequest',
+      description: 'Missing params in the request',
+    });
   }
 
   try {
@@ -136,7 +161,10 @@ app.get('/fdas/:fdaId/das', async (req, res) => {
   const { fdaId } = req.params;
 
   if (!fdaId || !service) {
-    return res.status(400).json({ message: 'missing params' });
+    return res.status(400).json({
+      error: 'BadRequest',
+      description: 'Missing params in the request',
+    });
   }
 
   try {
@@ -154,7 +182,10 @@ app.post('/fdas/:fdaId/das', async (req, res) => {
   const service = req.get('Fiware-Service');
 
   if (!fdaId || !id || !description || !query || !service) {
-    return res.status(400).json({ message: 'missing params' });
+    return res.status(400).json({
+      error: 'BadRequest',
+      description: 'Missing params in the request',
+    });
   }
 
   try {
@@ -171,7 +202,10 @@ app.get('/fdas/:fdaId/das/:daId', async (req, res) => {
   const service = req.get('Fiware-Service');
 
   if (!service || !fdaId || !daId) {
-    return res.status(400).json({ message: 'missing params' });
+    return res.status(400).json({
+      error: 'BadRequest',
+      description: 'Missing params in the request',
+    });
   }
 
   try {
@@ -193,7 +227,10 @@ app.put('/fdas/:fdaId/das/:daId', async (req, res) => {
   const { id, description, query } = req.body;
 
   if (!service || !fdaId || !daId || !id || !description || !query) {
-    return res.status(400).json({ message: 'missing params' });
+    return res.status(400).json({
+      error: 'BadRequest',
+      description: 'Missing params in the request',
+    });
   }
 
   try {
@@ -210,7 +247,10 @@ app.delete('/fdas/:fdaId/das/:daId', async (req, res) => {
   const service = req.get('Fiware-Service');
 
   if (!service || !fdaId || !daId) {
-    return res.status(400).json({ message: 'missing params' });
+    return res.status(400).json({
+      error: 'BadRequest',
+      description: 'Missing params in the request',
+    });
   }
 
   try {
@@ -227,7 +267,10 @@ app.get('/query', async (req, res) => {
   const service = req.get('Fiware-Service');
 
   if (Object.keys(req.query).length === 0 || !fdaId || !daId || !service) {
-    return res.status(400).json({ message: 'missing params' });
+    return res.status(400).json({
+      error: 'BadRequest',
+      description: 'Missing params in the request',
+    });
   }
 
   try {
@@ -249,7 +292,10 @@ app.get('/doQuery', async (req, res) => {
     !dataAccessId ||
     !service
   ) {
-    return res.status(400).json({ message: 'missing params' });
+    return res.status(400).json({
+      error: 'BadRequest',
+      description: 'Missing params in the request',
+    });
   }
 
   try {

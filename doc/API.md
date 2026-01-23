@@ -17,10 +17,19 @@ document.
 
 ## Error responses
 
-The app returns the following error codes:
+If present, the error payload is a JSON object including the following fields:
 
--   **400**: when there are missing values in the requests body, header or parameters.
--   **500**: when there is an error in the apps execution.
+-   `error`(required, string): a textual description of the error.
+-   `description`(optional, string): additional information about the error.
+
+FDA uses the HTTP status codes and error texts described in this section. However, the particular text used for
+description field is thought for humans and its exact wording may vary between FDA versions.
+
+The `error` reporting is as follows:
+
+-   Errors which are only caused by request itself (i.e. they do not depend on the FDA status), either in the URL
+    parameters or in the payload, results in `BadRequest`(`400`).
+-   Internal errors use `InternalServerError` (`500`)
 
 ## API Routes
 
