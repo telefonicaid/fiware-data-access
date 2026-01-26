@@ -47,12 +47,12 @@ const PORT = config.port;
 
 let responseCode;
 let error;
-let description;
+let resDesc;
 
 export function setResponse(code, errStr = '', errDesc = '') {
   responseCode = code;
   error = errStr;
-  description = errDesc;
+  resDesc = errDesc;
 }
 
 app.use(express.json());
@@ -71,8 +71,7 @@ app.get('/fdas', async (req, res) => {
     const fdas = await getFDAs(service);
     return res.status(200).json(fdas);
   } catch (err) {
-    console.error(' Error in GET /fdas:', err);
-    return res.status(500).json({ error: err.message });
+    return res.status(responseCode).json({ error, description: resDesc });
   }
 });
 
@@ -91,8 +90,7 @@ app.post('/fdas', async (req, res) => {
     await fetchFDA(id, database, query, path, service, description);
     return res.sendStatus(201);
   } catch (err) {
-    console.error(' Error in POST /fdas:', err);
-    return res.status(500).json({ error: err.message });
+    return res.status(responseCode).json({ error, description: resDesc });
   }
 });
 
@@ -111,8 +109,7 @@ app.get('/fdas/:fdaId', async (req, res) => {
     const fda = await getFDA(service, fdaId);
     return res.status(200).json(fda);
   } catch (err) {
-    console.error(`Error in GET /fdas/${fdaId}: ${err}`);
-    return res.status(500).json({ error: err.message });
+    return res.status(responseCode).json({ error, description: resDesc });
   }
 });
 
@@ -131,8 +128,7 @@ app.put('/fdas/:fdaId', async (req, res) => {
     await updateFDA(service, fdaId);
     return res.sendStatus(204);
   } catch (err) {
-    console.error(`Error in PUT /fdas/${fdaId}: ${err}`);
-    return res.status(500).json({ error: err.message });
+    return res.status(responseCode).json({ error, description: resDesc });
   }
 });
 
@@ -148,11 +144,10 @@ app.delete('/fdas/:fdaId', async (req, res) => {
   }
 
   try {
-    const statusCode = await deleteFDA(service, fdaId);
-    return res.sendStatus(statusCode);
+    await deleteFDA(service, fdaId);
+    return res.sendStatus(204);
   } catch (err) {
-    console.error(`Error in DELETE /fdas/${fdaId}: ${err}`);
-    return res.status(500).json({ error: err.message });
+    return res.status(resDesc).json({ error, description: resDesc });
   }
 });
 
