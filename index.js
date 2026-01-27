@@ -147,7 +147,7 @@ app.delete('/fdas/:fdaId', async (req, res) => {
     await deleteFDA(service, fdaId);
     return res.sendStatus(204);
   } catch (err) {
-    return res.status(resDesc).json({ error, description: resDesc });
+    return res.status(responseCode).json({ error, description: resDesc });
   }
 });
 
@@ -166,8 +166,7 @@ app.get('/fdas/:fdaId/das', async (req, res) => {
     const das = await getDAs(service, fdaId);
     return res.status(200).json(das);
   } catch (err) {
-    console.error(`Error in GET /fdas/${fdaId}/das: ${err}`);
-    return res.status(500).json({ error: err.message });
+    return res.status(responseCode).json({ error, description: resDesc });
   }
 });
 
@@ -187,8 +186,7 @@ app.post('/fdas/:fdaId/das', async (req, res) => {
     await createDA(service, fdaId, id, description, query);
     return res.sendStatus(201);
   } catch (err) {
-    console.error(`Error in POST /fdas/${fdaId}/das: ${err}`);
-    return res.status(500).json({ error: err.message });
+    return res.status(responseCode).json({ error, description: resDesc });
   }
 });
 
@@ -205,14 +203,9 @@ app.get('/fdas/:fdaId/das/:daId', async (req, res) => {
 
   try {
     const da = await getDA(service, fdaId, daId);
-    if (da) {
-      return res.status(200).json(da);
-    } else {
-      return res.sendStatus(404);
-    }
+    return res.status(200).json(da);
   } catch (err) {
-    console.error(`Error in GET /fdas/${fdaId}/das/${daId}: ${err}`);
-    return res.status(500).json({ error: err.message });
+    return res.status(responseCode).json({ error, description: resDesc });
   }
 });
 
@@ -233,7 +226,7 @@ app.put('/fdas/:fdaId/das/:daId', async (req, res) => {
     return res.sendStatus(204);
   } catch (err) {
     console.error(`Error in PUT /fdas/${fdaId}/das/${daId}: ${err}`);
-    return res.status(500).json({ error: err.message });
+    return res.status(responseCode).json({ error: err.message });
   }
 });
 
@@ -252,8 +245,7 @@ app.delete('/fdas/:fdaId/das/:daId', async (req, res) => {
     await deleteDA(service, fdaId, daId);
     return res.sendStatus(204);
   } catch (err) {
-    console.error(`Error in DELETE /fdas/${fdaId}/das/${daId}: ${err}`);
-    return res.status(500).json({ error: err.message });
+    return res.status(responseCode).json({ error, description: resDesc });
   }
 });
 
@@ -272,8 +264,7 @@ app.get('/query', async (req, res) => {
     const result = await query(service, req.query);
     return res.json(result);
   } catch (err) {
-    console.error(' Error in /query:', err);
-    return res.status(500).json({ error: err.message });
+    return res.status(responseCode).json({ error, description: resDesc });
   }
 });
 
@@ -302,8 +293,7 @@ app.get('/doQuery', async (req, res) => {
     const result = await query(service, updatedParams);
     return res.json(result);
   } catch (err) {
-    console.error(' Error in /doQuery:', err);
-    return res.status(500).json({ error: err.message });
+    return res.status(responseCode).json({ error, description: resDesc });
   }
 });
 
