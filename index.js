@@ -45,16 +45,6 @@ import { config } from './lib/fdaConfig.js';
 const app = express();
 const PORT = config.port;
 
-let responseCode;
-let error;
-let resDesc;
-
-export function setResponse(code, errStr = '', errDesc = '') {
-  responseCode = code;
-  error = errStr;
-  resDesc = errDesc;
-}
-
 app.use(express.json());
 
 app.get('/fdas', async (req, res) => {
@@ -67,12 +57,8 @@ app.get('/fdas', async (req, res) => {
     });
   }
 
-  try {
-    const fdas = await getFDAs(service);
-    return res.status(200).json(fdas);
-  } catch (err) {
-    return res.status(responseCode).json({ error, description: resDesc });
-  }
+  const fdas = await getFDAs(service);
+  return res.status(200).json(fdas);
 });
 
 app.post('/fdas', async (req, res) => {
@@ -86,12 +72,8 @@ app.post('/fdas', async (req, res) => {
     });
   }
 
-  try {
-    await fetchFDA(id, database, query, path, service, description);
-    return res.sendStatus(201);
-  } catch (err) {
-    return res.status(responseCode).json({ error, description: resDesc });
-  }
+  await fetchFDA(id, database, query, path, service, description);
+  return res.sendStatus(201);
 });
 
 app.get('/fdas/:fdaId', async (req, res) => {
@@ -105,12 +87,8 @@ app.get('/fdas/:fdaId', async (req, res) => {
     });
   }
 
-  try {
-    const fda = await getFDA(service, fdaId);
-    return res.status(200).json(fda);
-  } catch (err) {
-    return res.status(responseCode).json({ error, description: resDesc });
-  }
+  const fda = await getFDA(service, fdaId);
+  return res.status(200).json(fda);
 });
 
 app.put('/fdas/:fdaId', async (req, res) => {
@@ -124,12 +102,8 @@ app.put('/fdas/:fdaId', async (req, res) => {
     });
   }
 
-  try {
-    await updateFDA(service, fdaId);
-    return res.sendStatus(204);
-  } catch (err) {
-    return res.status(responseCode).json({ error, description: resDesc });
-  }
+  await updateFDA(service, fdaId);
+  return res.sendStatus(204);
 });
 
 app.delete('/fdas/:fdaId', async (req, res) => {
@@ -143,12 +117,8 @@ app.delete('/fdas/:fdaId', async (req, res) => {
     });
   }
 
-  try {
-    await deleteFDA(service, fdaId);
-    return res.sendStatus(204);
-  } catch (err) {
-    return res.status(responseCode).json({ error, description: resDesc });
-  }
+  await deleteFDA(service, fdaId);
+  return res.sendStatus(204);
 });
 
 app.get('/fdas/:fdaId/das', async (req, res) => {
@@ -162,12 +132,8 @@ app.get('/fdas/:fdaId/das', async (req, res) => {
     });
   }
 
-  try {
-    const das = await getDAs(service, fdaId);
-    return res.status(200).json(das);
-  } catch (err) {
-    return res.status(responseCode).json({ error, description: resDesc });
-  }
+  const das = await getDAs(service, fdaId);
+  return res.status(200).json(das);
 });
 
 app.post('/fdas/:fdaId/das', async (req, res) => {
@@ -182,12 +148,8 @@ app.post('/fdas/:fdaId/das', async (req, res) => {
     });
   }
 
-  try {
-    await createDA(service, fdaId, id, description, query);
-    return res.sendStatus(201);
-  } catch (err) {
-    return res.status(responseCode).json({ error, description: resDesc });
-  }
+  await createDA(service, fdaId, id, description, query);
+  return res.sendStatus(201);
 });
 
 app.get('/fdas/:fdaId/das/:daId', async (req, res) => {
@@ -201,12 +163,8 @@ app.get('/fdas/:fdaId/das/:daId', async (req, res) => {
     });
   }
 
-  try {
-    const da = await getDA(service, fdaId, daId);
-    return res.status(200).json(da);
-  } catch (err) {
-    return res.status(responseCode).json({ error, description: resDesc });
-  }
+  const da = await getDA(service, fdaId, daId);
+  return res.status(200).json(da);
 });
 
 app.put('/fdas/:fdaId/das/:daId', async (req, res) => {
@@ -221,13 +179,8 @@ app.put('/fdas/:fdaId/das/:daId', async (req, res) => {
     });
   }
 
-  try {
-    await putDA(service, fdaId, daId, id, description, query);
-    return res.sendStatus(204);
-  } catch (err) {
-    console.error(`Error in PUT /fdas/${fdaId}/das/${daId}: ${err}`);
-    return res.status(responseCode).json({ error: err.message });
-  }
+  await putDA(service, fdaId, daId, id, description, query);
+  return res.sendStatus(204);
 });
 
 app.delete('/fdas/:fdaId/das/:daId', async (req, res) => {
@@ -241,12 +194,8 @@ app.delete('/fdas/:fdaId/das/:daId', async (req, res) => {
     });
   }
 
-  try {
-    await deleteDA(service, fdaId, daId);
-    return res.sendStatus(204);
-  } catch (err) {
-    return res.status(responseCode).json({ error, description: resDesc });
-  }
+  await deleteDA(service, fdaId, daId);
+  return res.sendStatus(204);
 });
 
 app.get('/query', async (req, res) => {
@@ -260,12 +209,8 @@ app.get('/query', async (req, res) => {
     });
   }
 
-  try {
-    const result = await query(service, req.query);
-    return res.json(result);
-  } catch (err) {
-    return res.status(responseCode).json({ error, description: resDesc });
-  }
+  const result = await query(service, req.query);
+  return res.json(result);
 });
 
 app.get('/doQuery', async (req, res) => {
@@ -284,21 +229,28 @@ app.get('/doQuery', async (req, res) => {
     });
   }
 
-  try {
-    const updatedParams = {
-      ...rest,
-      fdaId: path.split('/').pop(),
-      daId: dataAccessId,
-    };
-    const result = await query(service, updatedParams);
-    return res.json(result);
-  } catch (err) {
-    return res.status(responseCode).json({ error, description: resDesc });
-  }
+  const updatedParams = {
+    ...rest,
+    fdaId: path.split('/').pop(),
+    daId: dataAccessId,
+  };
+  const result = await query(service, updatedParams);
+  return res.json(result);
 });
 
 app.listen(PORT, () => {
   console.log(`Server listening at port ${PORT}`);
+});
+
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  console.log(err);
+
+  const status = err.statusCode || 500;
+  return res.status(status).json({
+    error: err.code || 'InternalServerError',
+    description: err.message,
+  });
 });
 
 async function startup() {
