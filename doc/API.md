@@ -29,7 +29,15 @@ The `error` reporting is as follows:
 
 -   Errors which are only caused by request itself (i.e. they do not depend on the FDA status), either in the URL
     parameters or in the payload, results in `BadRequest`(`400`).
--   Internal errors use `InternalServerError` (`500`)
+-   If the resource identified by the request is not found then status `404` is returned and depending the resource we
+    get a `FDANotFound` or a `DaNotFound` code.
+-   If the resource identified by the request is already in the database and we try to create it we get a
+    `DuplicatedKey` (`409`).
+-   Internal errors with status `500` use a different error code depending of the component that threw the error. `S3`
+    component throws `S3ServerError`, `DuckDB` component throws `DuckDBServerError` and `MongoDB` throws
+    `MongoDBServerError`.
+-   Connection errors throw a status `503`, `PostgreSQL` component with a `UploadError` code and `MongoDB` component
+    with a `MongoConnectionError` code.
 
 ## API Routes
 
