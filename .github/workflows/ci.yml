@@ -59,3 +59,35 @@ jobs:
           DOCKER_HOST: "unix:///var/run/docker.sock"
         run: |
           npm test
+  coverage:
+    name: Test coverage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Git checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 24.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Docker info
+        run: |
+          docker version
+          docker info
+
+      - name: Run tests with coverage
+        env:
+          TESTCONTAINERS_RYUK_DISABLED: "true"
+          DOCKER_HOST: "unix:///var/run/docker.sock"
+        run: npm run test:coverage
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage
+          if-no-files-found: error
