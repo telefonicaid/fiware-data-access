@@ -6,6 +6,7 @@
     -   [PostgreSQL](#postgresql)
     -   [Object bucket-based storage system](#object-bucket-based-storage-system)
     -   [MongoDB](#mongodb)
+    -   [Logger](#logger)
 
 ## Introduction
 
@@ -51,6 +52,13 @@ Variabes related to the object bucket-based storage system:
 
 Variables related to MongoDB:
 
-| Variable        | Optional | Type   | Description                              |
-| --------------- | -------- | ------ | ---------------------------------------- |
-| `FDA_MONGO_URI` |          | string | Mongodb connection URI to connect to the `MongoDB`. More details in  [MongoDb connection URI](https://www.mongodb.com/docs/drivers/node/current/connect/mongoclient/#connection-uri) |
+| Variable        | Optional | Type   | Description                                                                                                                                                                         |
+| --------------- | -------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FDA_MONGO_URI` |          | string | Mongodb connection URI to connect to the `MongoDB`. More details in [MongoDb connection URI](https://www.mongodb.com/docs/drivers/node/current/connect/mongoclient/#connection-uri) |
+
+### Logger
+
+| Variable        | Optional | Type   | Description                                                                                      |
+| --------------- | -------- | ------ | ------------------------------------------------------------------------------------------------ |
+| `FDA_LOG_LEVEL` | ✓        | string | VAlue to define the log level. Possible values `INFO`, `WARN`, `ERROR`, `DEBUG`, default `INFO`. |
+| `FDA_LOG_COMP`  | ✓        | string | Name of the component for the log context. Default value `Fiware-data-access`                    |
