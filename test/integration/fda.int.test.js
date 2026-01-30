@@ -122,6 +122,7 @@ describe('FDA API - integration', () => {
     process.env.FDA_MONGO_URI = mongoUri;
     process.env.FDA_NODE_ENV = 'test';
 
+    jest.resetModules();
     ({ app } = await import('../../index.js'));
   });
 
