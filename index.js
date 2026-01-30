@@ -270,6 +270,14 @@ if (process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {
     console.log(`Server listening at port ${PORT}`);
   });
+
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+
+  startup().catch((err) => {
+    console.error('Startup failed:', err);
+    process.exit(1);
+  });
 }
 
 async function startup() {
@@ -282,7 +290,3 @@ async function shutdown() {
   await destroyS3Client();
   process.exit(0);
 }
-
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
-startup();
