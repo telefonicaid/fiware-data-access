@@ -43,7 +43,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24.x
-          cache: npm
 
       - name: Docker info
         run: |
@@ -52,7 +51,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+          npm install
 
       - name: Run tests
         env:
