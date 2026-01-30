@@ -37,7 +37,7 @@ function httpReq({ method, url, headers, body }) {
           ...(headers || {}),
           ...(body ? { 'Content-Type': 'application/json' } : {}),
         },
-        timeout: 20_000,
+        timeout: 30_000,
       },
       (res) => {
         let data = '';
@@ -75,7 +75,7 @@ async function getFreePort() {
   });
 }
 
-async function connectWithRetry(client, attempts = 20, delayMs = 500) {
+async function connectWithRetry(client, attempts = 25, delayMs = 400) {
   let lastErr;
   for (let i = 0; i < attempts; i++) {
     try {
@@ -96,6 +96,11 @@ describe('FDA API - integration (run app as child process)', () => {
   let appProc;
   let appPort;
   let baseUrl;
+
+  const service = 'myservice';
+  const fdaId = 'fda1';
+  const daId = 'da1';
+  const datasetPath = '/datasets/users'; // files in minio: /datasets/users.csv and /datasets/users (parquet)
 
   beforeAll(async () => {
     // Containers
@@ -153,11 +158,10 @@ describe('FDA API - integration (run app as child process)', () => {
         forcePathStyle: true,
       });
       await s3.send(new ListBucketsCommand({}));
-      const bucket = 'myservice';
       try {
-        await s3.send(new HeadBucketCommand({ Bucket: bucket }));
+        await s3.send(new HeadBucketCommand({ Bucket: service }));
       } catch {
-        await s3.send(new CreateBucketCommand({ Bucket: bucket }));
+        await s3.send(new CreateBucketCommand({ Bucket: service }));
       }
       console.log('[TEST] MinIO OK');
     }
@@ -173,6 +177,7 @@ describe('FDA API - integration (run app as child process)', () => {
         connectionTimeoutMillis: 10_000,
       });
       await connectWithRetry(pgClient);
+
       await pgClient.query(`DROP TABLE IF EXISTS public.users;`);
       await pgClient.query(`
         CREATE TABLE public.users (
@@ -185,6 +190,7 @@ describe('FDA API - integration (run app as child process)', () => {
         INSERT INTO public.users (id, name, age)
         VALUES (1,'ana',30), (2,'bob',20), (3,'carlos',40);
       `);
+
       await pgClient.end();
       console.log('[TEST] Postgres OK');
     }
@@ -225,12 +231,12 @@ describe('FDA API - integration (run app as child process)', () => {
       console.error('[APP-ERR]', d.toString().trim())
     );
 
-    // Wait until app responds (we can hit /fdas without header -> 400)
+    // Wait until app responds: /fdas without header -> 400 when up
     const start = Date.now();
     while (true) {
       try {
         const res = await httpReq({ method: 'GET', url: `${baseUrl}/fdas` });
-        if (res.status === 400) break; // app is up
+        if (res.status === 400) break;
       } catch {}
       if (Date.now() - start > 30_000)
         throw new Error('Timeout waiting app to start');
@@ -249,16 +255,17 @@ describe('FDA API - integration (run app as child process)', () => {
     await Promise.allSettled([minio?.stop(), mongo?.stop(), postgis?.stop()]);
   });
 
-  test('POST /fdas creates an FDA', async () => {
+  test('POST /fdas creates an FDA (uploads CSV then converts to Parquet)', async () => {
     const res = await httpReq({
       method: 'POST',
       url: `${baseUrl}/fdas`,
-      headers: { 'Fiware-Service': 'myservice' },
+      headers: { 'Fiware-Service': service },
       body: {
-        id: 'fda1',
+        id: fdaId,
         database: 'postgres',
-        query: 'SELECT * FROM public.users',
-        path: '/datasets/users',
+        // query base to extract from PG to CSV
+        query: 'SELECT id, name, age FROM public.users ORDER BY id',
+        path: datasetPath,
         description: 'users dataset',
       },
     });
@@ -272,13 +279,62 @@ describe('FDA API - integration (run app as child process)', () => {
     const res = await httpReq({
       method: 'GET',
       url: `${baseUrl}/fdas`,
-      headers: { 'Fiware-Service': 'myservice' },
+      headers: { 'Fiware-Service': service },
     });
 
     if (res.status >= 400)
       console.error('GET /fdas failed:', res.status, res.json ?? res.text);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.json)).toBe(true);
-    expect(res.json.some((x) => x.fdaId === 'fda1')).toBe(true);
+    expect(res.json.some((x) => x.fdaId === fdaId)).toBe(true);
+  });
+
+  test('POST /fdas/:fdaId/das + GET /query executes DuckDB against Parquet', async () => {
+    // DuckDB reads parquet generated in  s3://<bucket><path>
+    const daQuery = `
+      SELECT id, name, age
+      FROM read_parquet('s3://${service}${datasetPath}')
+      WHERE age > $minAge
+      ORDER BY id;
+    `;
+
+    const createDa = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas/${fdaId}/das`,
+      headers: { 'Fiware-Service': service },
+      body: {
+        id: daId,
+        description: 'age filter',
+        query: daQuery,
+      },
+    });
+
+    if (createDa.status >= 400)
+      console.error(
+        'POST /das failed:',
+        createDa.status,
+        createDa.json ?? createDa.text
+      );
+    expect(createDa.status).toBe(201);
+
+    const queryRes = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+        fdaId
+      )}&daId=${encodeURIComponent(daId)}&minAge=25`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    if (queryRes.status >= 400)
+      console.error(
+        'GET /query failed:',
+        queryRes.status,
+        queryRes.json ?? queryRes.text
+      );
+    expect(queryRes.status).toBe(200);
+    expect(queryRes.json).toEqual([
+      { id: '1', name: 'ana', age: '30' },
+      { id: '3', name: 'carlos', age: '40' },
+    ]);
   });
 });
