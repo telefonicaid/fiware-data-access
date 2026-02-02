@@ -41,9 +41,11 @@ import { createIndex, disconnectClient } from './lib/mongo.js';
 import { disconnectConnection } from './lib/db.js';
 import { destroyS3Client } from './lib/aws.js';
 import { config } from './lib/fdaConfig.js';
+import { initLogger, getBasicLogger } from './lib/utils/logger.js';
 
 const app = express();
 const PORT = config.port;
+const logger = getBasicLogger();
 
 app.use(express.json());
 
@@ -239,12 +241,12 @@ app.get('/doQuery', async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Server listening at port ${PORT}`);
+  logger.debug(`Server listening at port ${PORT}`);
 });
 
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
-  console.log(err);
+  logger.error(err);
 
   const status = err.statusCode || 500;
   return res.status(status).json({
@@ -255,6 +257,7 @@ app.use((err, req, res, next) => {
 
 async function startup() {
   await createIndex();
+  initLogger(config);
 }
 
 async function shutdown() {
