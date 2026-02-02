@@ -104,4 +104,11 @@ Run locally:
 npm test
 ```
 
+You can also run the coverage report this way:
+
+```bash
+npm run test:coverage
+```
+
+
 The same tests are executed in CI using GitHub Actions
