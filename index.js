@@ -43,7 +43,7 @@ import { destroyS3Client } from './lib/aws.js';
 import { config } from './lib/fdaConfig.js';
 import { initLogger, getBasicLogger } from './lib/utils/logger.js';
 
-const app = express();
+export const app = express();
 const PORT = config.port;
 const logger = getBasicLogger();
 
@@ -240,20 +240,29 @@ app.get('/doQuery', async (req, res) => {
   return res.json(result);
 });
 
-app.listen(PORT, () => {
-  logger.debug(`Server listening at port ${PORT}`);
-});
-
-// eslint-disable-next-line no-unused-vars
-app.use((err, req, res, next) => {
-  logger.error(err);
-
-  const status = err.statusCode || 500;
-  return res.status(status).json({
-    error: err.code || 'InternalServerError',
-    description: err.message,
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => {
+    logger.debug(`Server listening at port ${PORT}`);
   });
-});
+
+  app.use((err, req, res, next) => {
+    logger.error(err);
+
+    const status = err.statusCode || 500;
+    return res.status(status).json({
+      error: err.code || 'InternalServerError',
+      description: err.message,
+    });
+  });
+
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+
+  startup().catch((err) => {
+    logger.debug(`Startup failed:  ${err}`);
+    process.exit(1);
+  });
+}
 
 async function startup() {
   await createIndex();
@@ -266,7 +275,3 @@ async function shutdown() {
   await destroyS3Client();
   process.exit(0);
 }
-
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
-startup();

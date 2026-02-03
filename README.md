@@ -45,6 +45,7 @@ Complete documentation is available in the [`doc/`](./doc/) directory:
 -   [`Database Model`](./doc/database_model.md): - Documentation describing the structure of the MongoDB.
 -   [`Advanced Topics`](./doc/advanced.md): - Advanced topics about the application.
 -   [`Environment Configuration`](./doc/config.md): - Information about the environment variables and configuration.
+-   [`Testing strategy`](./doc/Testing.md): - Information about the testing strategy.
 
 ---
 
