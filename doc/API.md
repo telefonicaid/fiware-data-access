@@ -463,7 +463,7 @@ The payload is an array of JSON objects, each one being a record result of the s
 ]
 ```
 
-#### doQuery (Petaho CDA legacy support)
+#### Query `GET /doQuery` (Pentaho CDA legacy support)
 
 Same operation implemented by Pentaho CDA, in order to provide backward compatibility with existing CDA clients with
 minimal impact. This method is a kind of wrapper of `query`
