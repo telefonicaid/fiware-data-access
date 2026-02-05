@@ -41,7 +41,11 @@ import { createIndex, disconnectClient } from './lib/mongo.js';
 import { disconnectConnection } from './lib/db.js';
 import { destroyS3Client } from './lib/aws.js';
 import { config } from './lib/fdaConfig.js';
-import { initLogger, getBasicLogger } from './lib/utils/logger.js';
+import {
+  initLogger,
+  getBasicLogger,
+  getInitialLogger,
+} from './lib/utils/logger.js';
 
 export const app = express();
 const PORT = config.port;
@@ -245,6 +249,7 @@ if (process.env.NODE_ENV !== 'test') {
     logger.debug(`Server listening at port ${PORT}`);
   });
 
+  // eslint-disable-next-line no-unused-vars
   app.use((err, req, res, next) => {
     logger.error(err);
 
@@ -267,6 +272,7 @@ if (process.env.NODE_ENV !== 'test') {
 async function startup() {
   await createIndex();
   initLogger(config);
+  getInitialLogger(config).fatal('[INIT]: Initializing app');
 }
 
 async function shutdown() {
