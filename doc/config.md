@@ -58,7 +58,8 @@ Variables related to MongoDB:
 
 ### Logger
 
-| Variable        | Optional | Type   | Description                                                                                      |
-| --------------- | -------- | ------ | ------------------------------------------------------------------------------------------------ |
-| `FDA_LOG_LEVEL` | ✓        | string | VAlue to define the log level. Possible values `INFO`, `WARN`, `ERROR`, `DEBUG`, default `INFO`. |
-| `FDA_LOG_COMP`  | ✓        | string | Name of the component for the log context. Default value `Fiware-data-access`                    |
+| Variable           | Optional | Type   | Description                                                                                      |
+| ------------------ | -------- | ------ | ------------------------------------------------------------------------------------------------ |
+| `FDA_LOG_LEVEL`    | ✓        | string | VAlue to define the log level. Possible values `INFO`, `WARN`, `ERROR`, `DEBUG`, default `INFO`. |
+| `FDA_LOG_COMP`     | ✓        | string | Name of the component for the log context. Default value `Fiware-data-access`                    |
+| `FDA_LOG_RES_SIZE` | ✓        | number | Size in characters of the response body showed in the logs. Default value `25`                   |

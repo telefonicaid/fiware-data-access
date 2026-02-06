@@ -54,6 +54,33 @@ const logger = getBasicLogger();
 app.use(express.json());
 
 app.use((req, res, next) => {
+  const oldSend = res.send;
+  const oldJson = res.json;
+
+  function capture(body) {
+    try {
+      let str = typeof body === 'string' ? body : JSON.stringify(body);
+
+      if (str.length > config.logger.resSize) {
+        str = str.slice(0, config.logger.resSize) + '…[truncated]';
+      }
+
+      res.locals.responseBody = str;
+    } catch {
+      res.locals.responseBody = '[unserializable body]';
+    }
+  }
+
+  res.send = function (body) {
+    capture(body);
+    return oldSend.call(this, body);
+  };
+
+  res.json = function (body) {
+    capture(body);
+    return oldJson.call(this, body);
+  };
+
   const start = Date.now();
 
   res.on('finish', () => {
@@ -61,11 +88,17 @@ app.use((req, res, next) => {
       {
         method: req.method,
         path: req.originalUrl,
-        responseCode: res.statusCode,
+        fiwareService: req.get('Fiware-Service'),
+        reqParams: `${JSON.stringify(req.params)}`,
+        reqQuery: `${JSON.stringify(req.query)}`,
+        reqBody: `${JSON.stringify(req.body)}`,
+        resCode: res.statusCode,
+        resMsg: res.statusMessage,
         durationMs: Date.now() - start,
         ip: req.ip,
         userAgent: req.headers['user-agent'],
-        responseSize: res.getHeader('Content-Length'),
+        resSize: res.getHeader('Content-Length'),
+        resBody: res.locals.responseBody,
       },
       'API request completed'
     );
