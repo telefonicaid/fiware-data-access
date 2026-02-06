@@ -53,6 +53,27 @@ const logger = getBasicLogger();
 
 app.use(express.json());
 
+app.use((req, res, next) => {
+  const start = Date.now();
+
+  res.on('finish', () => {
+    logger.info(
+      {
+        method: req.method,
+        path: req.originalUrl,
+        responseCode: res.statusCode,
+        durationMs: Date.now() - start,
+        ip: req.ip,
+        userAgent: req.headers['user-agent'],
+        responseSize: res.getHeader('Content-Length'),
+      },
+      'API request completed'
+    );
+  });
+
+  next();
+});
+
 app.get('/fdas', async (req, res) => {
   const service = req.get('Fiware-Service');
 
@@ -251,9 +272,13 @@ if (process.env.NODE_ENV !== 'test') {
 
   // eslint-disable-next-line no-unused-vars
   app.use((err, req, res, next) => {
-    logger.error(err);
-
     const status = err.statusCode || 500;
+    if (status < 500) {
+      logger.warn(err);
+    } else {
+      logger.error(err);
+    }
+
     return res.status(status).json({
       error: err.code || 'InternalServerError',
       description: err.message,
