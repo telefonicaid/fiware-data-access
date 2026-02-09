@@ -1,1 +1,2 @@
 - Add e2e testing based on testcointainers and supertest (partially #14)
+- Fix validation schema in configuration env vars like port (#43)
