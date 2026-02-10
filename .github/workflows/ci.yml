@@ -91,3 +91,9 @@ jobs:
           name: coverage
           path: coverage
           if-no-files-found: error
+      - name: Push coverage to Coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          file: coverage/lcov.info
+          format: lcov
