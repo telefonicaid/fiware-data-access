@@ -62,4 +62,4 @@ Variables related to MongoDB:
 | ------------------ | -------- | ------ | ------------------------------------------------------------------------------------------------ |
 | `FDA_LOG_LEVEL`    | ✓        | string | Value to define the log level. Possible values `INFO`, `WARN`, `ERROR`, `DEBUG`, default `INFO`. |
 | `FDA_LOG_COMP`     | ✓        | string | Name of the component for the log context. Default value `FDA`                    |
-| `FDA_LOG_RES_SIZE` | ✓        | number | Size in characters of the response body showed in the logs. Default value `25`                   |
+| `FDA_LOG_RES_SIZE` | ✓        | number | Size in characters of the response body showed in the logs. Default value `100`                   |
