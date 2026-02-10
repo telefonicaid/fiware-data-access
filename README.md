@@ -5,6 +5,8 @@ designed as a open source replacement for Pentaho CDAs extension.
 
 [![CI](https://github.com/telefonicaid/fiware-data-access/workflows/CI/badge.svg)](https://github.com/telefonicaid/fiware-data-access/actions?query=workflow%3ACI)
 [![Coverage Status](https://coveralls.io/repos/github/telefonicaid/fiware-data-access/badge.svg?branch=main)](https://coveralls.io/github/telefonicaid/fiware-data-access?branch=main)
+[![Docker badge](https://img.shields.io/badge/docker-telefonicaiot%2Ffiware--data--access-blue?logo=docker)](https://hub.docker.com/r/telefonicaiot/fiware-data-access)
+
 
 Initial development
 
