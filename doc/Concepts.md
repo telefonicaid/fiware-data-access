@@ -119,6 +119,9 @@ This DA:
 
 
 ### Execute the DA (query)
+
+**FIXME [#62](https://github.com/telefonicaid/fiware-data-access/issues/62)**: this request is going to change when that issue get addressed
+
 ```http
 GET /query?fdaId=animals_fda&daId=activity_by_species&species=Ovino
 Fiware-Service: acme
