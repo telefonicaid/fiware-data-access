@@ -84,12 +84,14 @@ function httpReq({ method, url, headers, body }) {
     );
     req.on('timeout', () => req.destroy(new Error('timeout')));
     req.on('error', reject);
-    if (body) req.write(JSON.stringify(body));
+    if (body) {
+      req.write(JSON.stringify(body));
+    }
     req.end();
   });
 }
 
-async function getFreePort() {
+function getFreePort() {
   return new Promise((resolve) => {
     const srv = net.createServer();
     srv.listen(0, '127.0.0.1', () => {
@@ -114,8 +116,15 @@ async function connectWithRetry(client, attempts = 25, delayMs = 400) {
 }
 
 describe('FDA API - integration (run app as child process)', () => {
-  let minio, mongo, postgis;
-  let minioHostPort, minioUrl, mongoUri, pgHost, pgPort;
+  let minio;
+  let mongo;
+  let postgis;
+
+  let minioHostPort;
+  let minioUrl;
+  let mongoUri;
+  let pgHost;
+  let pgPort;
 
   let appProc;
   let appPort;
@@ -257,13 +266,19 @@ describe('FDA API - integration (run app as child process)', () => {
 
     // Wait until app responds: /fdas without header -> 400 when up
     const start = Date.now();
+    // eslint-disable-next-line no-constant-condition
     while (true) {
       try {
         const res = await httpReq({ method: 'GET', url: `${baseUrl}/fdas` });
-        if (res.status === 400) break;
-      } catch {}
-      if (Date.now() - start > 30_000)
+        if (res.status === 400) {
+          break;
+        }
+      } catch (e) {
+        throw new Error('Error while waiting the response: ', e);
+      }
+      if (Date.now() - start > 30_000) {
         throw new Error('Timeout waiting app to start');
+      }
       await new Promise((r) => setTimeout(r, 200));
     }
 
@@ -274,7 +289,9 @@ describe('FDA API - integration (run app as child process)', () => {
     if (appProc) {
       appProc.kill('SIGTERM');
       await new Promise((r) => setTimeout(r, 500));
-      if (!appProc.killed) appProc.kill('SIGKILL');
+      if (!appProc.killed) {
+        appProc.kill('SIGKILL');
+      }
     }
     await Promise.allSettled([minio?.stop(), mongo?.stop(), postgis?.stop()]);
   });
@@ -294,8 +311,9 @@ describe('FDA API - integration (run app as child process)', () => {
       },
     });
 
-    if (res.status >= 400)
+    if (res.status >= 400) {
       console.error('POST /fdas failed:', res.status, res.json ?? res.text);
+    }
     expect(res.status).toBe(201);
   });
 
@@ -306,8 +324,9 @@ describe('FDA API - integration (run app as child process)', () => {
       headers: { 'Fiware-Service': service },
     });
 
-    if (res.status >= 400)
+    if (res.status >= 400) {
       console.error('GET /fdas failed:', res.status, res.json ?? res.text);
+    }
     expect(res.status).toBe(200);
     expect(Array.isArray(res.json)).toBe(true);
     expect(res.json.some((x) => x.fdaId === fdaId)).toBe(true);
@@ -333,12 +352,13 @@ describe('FDA API - integration (run app as child process)', () => {
       },
     });
 
-    if (createDa.status >= 400)
+    if (createDa.status >= 400) {
       console.error(
         'POST /das failed:',
         createDa.status,
         createDa.json ?? createDa.text
       );
+    }
     expect(createDa.status).toBe(201);
 
     const queryRes = await httpReq({
@@ -349,12 +369,13 @@ describe('FDA API - integration (run app as child process)', () => {
       headers: { 'Fiware-Service': service },
     });
 
-    if (queryRes.status >= 400)
+    if (queryRes.status >= 400) {
       console.error(
         'GET /query failed:',
         queryRes.status,
         queryRes.json ?? queryRes.text
       );
+    }
     expect(queryRes.status).toBe(200);
     expect(queryRes.json).toEqual([
       { id: '1', name: 'ana', age: '30' },
