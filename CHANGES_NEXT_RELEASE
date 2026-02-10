@@ -1,2 +1,4 @@
+- Fix: improved error responses with proper status code and message (#30)
+- Add logger component for initial, debug, info, warning and error level logs (adding new env vars `FDA_LOG_*`) (#14)
 - Add e2e testing based on testcointainers and supertest (partially #14)
 - Fix validation schema in configuration env vars like port (#43)

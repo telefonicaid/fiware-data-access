@@ -110,5 +110,4 @@ You can also run the coverage report this way:
 npm run test:coverage
 ```
 
-
 The same tests are executed in CI using GitHub Actions
