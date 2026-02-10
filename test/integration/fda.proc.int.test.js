@@ -133,7 +133,6 @@ describe('FDA API - integration (run app as child process)', () => {
   const service = 'myservice';
   const fdaId = 'fda1';
   const daId = 'da1';
-  const datasetPath = '/datasets/users'; // files in minio: /datasets/users.csv and /datasets/users (parquet)
 
   beforeAll(async () => {
     // Containers
@@ -159,7 +158,7 @@ describe('FDA API - integration (run app as child process)', () => {
       .withEnvironment({
         POSTGRES_USER: 'postgres',
         POSTGRES_PASSWORD: 'postgres',
-        POSTGRES_DB: 'postgres',
+        POSTGRES_DB: service,
       })
       .withExposedPorts(5432)
       .withWaitStrategy(Wait.forListeningPorts())
@@ -206,7 +205,7 @@ describe('FDA API - integration (run app as child process)', () => {
         port: pgPort,
         user: 'postgres',
         password: 'postgres',
-        database: 'postgres',
+        database: service,
         connectionTimeoutMillis: 10_000,
       });
       await connectWithRetry(pgClient);
@@ -273,6 +272,7 @@ describe('FDA API - integration (run app as child process)', () => {
         if (res.status === 400) {
           break;
         }
+        // eslint-disable-next-line no-empty
       } catch {}
       if (Date.now() - start > 30_000) {
         throw new Error('Timeout waiting app to start');
@@ -301,10 +301,8 @@ describe('FDA API - integration (run app as child process)', () => {
       headers: { 'Fiware-Service': service },
       body: {
         id: fdaId,
-        database: 'postgres',
         // query base to extract from PG to CSV
         query: 'SELECT id, name, age FROM public.users ORDER BY id',
-        path: datasetPath,
         description: 'users dataset',
       },
     });
@@ -331,10 +329,10 @@ describe('FDA API - integration (run app as child process)', () => {
   });
 
   test('POST /fdas/:fdaId/das + GET /query executes DuckDB against Parquet', async () => {
-    // DuckDB reads parquet generated in  s3://<bucket><path>
+    // DuckDB reads parquet generated in  s3://<bucket>/<fdaID>.parquet
     const daQuery = `
       SELECT id, name, age
-      FROM read_parquet('s3://${service}${datasetPath}')
+      FROM read_parquet('s3://${service}/${fdaId}.parquet')
       WHERE age > $minAge
       ORDER BY id;
     `;
