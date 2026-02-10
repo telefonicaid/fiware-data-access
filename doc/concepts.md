@@ -130,14 +130,10 @@ Fiware-Service: acme
 Response example:
 
 ```json
-[
-  {
-    "timeinstant": "2020-08-17 18:25:28.332+01",
-    "activity": 12,
-    "animalname": "TUNA",
-    "animalspecies": "Ovino"
-  }
-]
+{"timeinstant": "2020-08-17T18:25:28.332Z","activity": 12,"animalname": "TUNA","animalspecies": "Ovino"}
+{"timeinstant": "2020-08-17T18:26:28.332Z","activity": 18,"animalname": "TUNA","animalspecies": "Ovino"}
+{"timeinstant": "2020-08-17T18:27:28.332Z","activity": 47,"animalname": "TUNA","animalspecies": "Ovino"}
+{"timeinstant": "2020-08-17T18:28:28.332Z","activity": 21,"animalname": "TUNA","animalspecies": "Ovino"}
 ```
 
 

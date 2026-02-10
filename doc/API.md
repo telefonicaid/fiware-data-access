@@ -452,7 +452,7 @@ The payload is an array of JSON objects, each one being a record result of the s
 ```
 [
     {
-        "timeinstant": "2020-08-17 18:25:28.332+01",
+        "timeinstant": "2020-08-17T18:25:28.332Z",
         "activity": 12,
         "animalbreed": "Merina",
         "animalname": "TUNA",
@@ -504,7 +504,7 @@ The payload is an array of JSON objects, each one being a record result of the s
 ```
 [
     {
-        "timeinstant": "2020-08-17 18:25:28.332+01",
+        "timeinstant": "2020-08-17T18:25:28.332Z",
         "activity": 12,
         "animalbreed": "Merina",
         "animalname": "TUNA",
