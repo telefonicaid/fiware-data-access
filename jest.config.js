@@ -4,5 +4,6 @@ export default {
   verbose: true,
   collectCoverage: true,
   coverageDirectory: 'coverage',
+  collectCoverageFrom: ['lib/**/*.js', '!**/node_modules/**'],
   coverageReporters: ['text', 'lcov'],
 };
