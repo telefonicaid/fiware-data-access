@@ -2,8 +2,8 @@ export default {
   testEnvironment: 'node',
   testMatch: ['**/*.test.js'],
   verbose: true,
-  collectCoverage: true,
+  collectCoverage: false,
   coverageDirectory: 'coverage',
-  collectCoverageFrom: ['lib/**/*.js', '!**/node_modules/**'],
-  coverageReporters: ['text', 'lcov'],
+  collectCoverageFrom: ['lib/**/*.js', '*.js', '!**/node_modules/**'],
+  coverageReporters: ['text-summary', 'lcov'],
 };
