@@ -273,9 +273,7 @@ describe('FDA API - integration (run app as child process)', () => {
         if (res.status === 400) {
           break;
         }
-      } catch (e) {
-        throw new Error('Error while waiting the response: ', e);
-      }
+      } catch {}
       if (Date.now() - start > 30_000) {
         throw new Error('Timeout waiting app to start');
       }
