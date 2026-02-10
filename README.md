@@ -1,4 +1,4 @@
-# Fiware Data Access
+# FIWARE Data Access
 
 **FIWARE Data Access** is a smart city API to efficiently store and query sets in an object storage server. It's
 designed as a open source replacement for Pentaho CDAs extension.
