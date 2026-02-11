@@ -62,5 +62,39 @@
     "*.js": [
       "prettier --config .prettierrc.json --write"
     ]
+  },
+  "c8": {
+    "reporter": [
+      "lcov",
+      "text-summary"
+    ],
+    "reportsDirectory": "coverage",
+    "include": [
+      "src/**/*.js"
+    ],
+    "exclude": [
+      "test/**",
+      "**/node_modules/**"
+    ]
+  },
+  "nyc": {
+    "all": true,
+    "check-coverage": false,
+    "reporter": [
+      "lcov",
+      "text-summary"
+    ],
+    "report-dir": "coverage",
+    "temp-dir": ".nyc_output",
+    "include": [
+      "src/**/*.js"
+    ],
+    "exclude": [
+      "test/**",
+      "**/node_modules/**"
+    ],
+    "extension": [
+      ".js"
+    ]
   }
 }

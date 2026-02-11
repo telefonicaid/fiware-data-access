@@ -6,7 +6,6 @@ package-lock.json
 
 # Github
 .git
-.github
 
 # Environment variables
 .env
