@@ -23,3 +23,11 @@ gonna search for when uploading data is the **same** as the `fiware-service` of 
 The `FDA` app **does not** create the bucket when uploading a _FDA_ to the object bucket-based storage system, it instead
 rises an error. This is because we want to manage the bucket permissions so we prefer to create the bucket previously by
 hand.
+
+---
+
+## 🧭 Navigation
+
+-   [⬅️ Previous: Config And Operational Guide](/doc/04_config_operational_guide.md)
+-   [🏠 Main index](../README.md#documentation)
+-   [➡️ Next: Testing](/doc/06_testing.md)

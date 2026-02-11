@@ -111,3 +111,11 @@ npm run test:coverage
 ```
 
 The same tests are executed in CI using GitHub Actions
+
+---
+
+## 🧭 Navigation
+
+-   [⬅️ Previous: Advanced Topics](/doc/05_advanced_topics.md)
+-   [🏠 Main index](../README.md#documentation)
+-   [➡️ Next: Testing](/doc/07_performance.md)
