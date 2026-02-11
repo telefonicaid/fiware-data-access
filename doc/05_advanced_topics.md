@@ -36,3 +36,9 @@ _fdaId_ as the name. This file is updated and removed in unity with the _fda_ in
 
 When creating a _FDA_ we cannot specify the database from where we want to fetch the data. In _FDA_ we are always gonna
 use the `fiware-service` value as the _database_ name.
+
+## 🧭 Navigation
+
+-   [⬅️ Previous: Config And Operational Guide](/doc/04_config_operational_guide.md)
+-   [🏠 Main index](../README.md#documentation)
+-   [➡️ Next: Testing](/doc/06_testing.md)

@@ -55,3 +55,10 @@ data from `nodeToMinio25MBChunk1Parallel` because there wasn't a big difference 
 
 ⚠️ **Environment:** The previous data has been measured in a laptop with 4 cpus, 16Gbs of RAM, connected to the
 PostgreSQL through a ssh tunnel and with MINIO running on a local docker container.
+
+---
+
+## 🧭 Navigation
+
+-   [⬅️ Previous: Testing](/doc/06_testing.md)
+-   [🏠 Main index](../README.md#documentation)
