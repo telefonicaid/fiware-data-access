@@ -42,9 +42,7 @@ Content-Type: application/json
 {
     "id": "animals_fda",
     "description": "All animal activity records",
-    "database": "farm_db",
-    "query": "SELECT * FROM animal_activity",
-    "path": "/animals/animals_fda.parquet"
+    "query": "SELECT * FROM animal_activity"
 }
 ```
 
