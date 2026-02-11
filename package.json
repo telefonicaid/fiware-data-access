@@ -8,7 +8,7 @@
   "scripts": {
     "clean": "rm -rf package-lock.json && rm -rf node_modules",
     "dev": "nodemon src/index.js",
-    "lint": "npm run lint:api && npm run lint:test",      
+    "lint": "npm run lint:api && npm run lint:test",
     "lint:api": "eslint src/lib/ --cache",
     "lint:test": "eslint test/integration/ --cache",
     "lint:fix": "eslint src/lib/ --cache --fix",
@@ -16,7 +16,6 @@
     "start": "node src/index.js",
     "test": "NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
     "test:coverage": "NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules c8 --reporter=lcov --reporter=text-summary --reports-dir=coverage jest --runInBand"
-
   },
   "engines": {
     "node": ">=24"
@@ -47,7 +46,7 @@
     "lint-staged": "~12.3.8",
     "nodemon": "~3.1.10",
     "nyc": "~17.1.0",
-    "prettier": "~2.7.1",
+    "prettier": "^3.2.5",
     "supertest": "~7.2.2",
     "testcontainers": "~11.11.0"
   },
