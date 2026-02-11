@@ -378,4 +378,65 @@ describe('FDA API - integration (run app as child process)', () => {
       { id: '3', name: 'carlos', age: '40' },
     ]);
   });
+
+  test('GET /fdas/:fdaId returns expected FDA', async () => {
+    const res = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/fdas/${fdaId}`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    if (res.status >= 400) {
+      console.error(
+        'GET /fdas/:fdaId failed:',
+        res.status,
+        res.json ?? res.text
+      );
+    }
+    expect(res.status).toBe(200);
+    expect(Object.keys(res.json).length).toBeGreaterThan(0);
+    expect(res.json.fdaId === fdaId).toBe(true);
+  });
+
+  test('PUT /fdas/:fdaID reuploads FDA', async () => {
+    const res = await httpReq({
+      method: 'PUT',
+      url: `${baseUrl}/fdas/${fdaId}`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    if (res.status >= 400) {
+      console.error(
+        'PUT /fdas/:fdaId failed:',
+        res.status,
+        res.json ?? res.text
+      );
+    }
+    expect(res.status).toBe(204);
+  });
+
+  test('DELETE /fdas/:fdaId removes given FDA', async () => {
+    const deleteFDA = await httpReq({
+      method: 'DELETE',
+      url: `${baseUrl}/fdas/${fdaId}`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    if (deleteFDA.status >= 400) {
+      console.error(
+        'DELETE /fdas/:fdaId failed:',
+        deleteFDA.status,
+        deleteFDA.json ?? deleteFDA.text
+      );
+    }
+    expect(deleteFDA.status).toBe(204);
+
+    const getFDA = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/fdas/${fdaId}`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    expect(getFDA.status).toBe(404);
+  });
 });
