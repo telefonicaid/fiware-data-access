@@ -45,7 +45,7 @@ RUN \
 
 USER node
 ENV NODE_ENV=production
-ENV LOG_LEVEL=INFO
+ENV FDA_LOG_LEVEL=INFO
 
 
 CMD [ "npm", "start" ]
