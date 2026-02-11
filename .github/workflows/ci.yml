@@ -19,19 +19,19 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HADOLINT_ACTION_DOCKERFILE_FOLDER: docker
   lint-code:
-    name: Lint JavaScriptg
+    name: Lint JavaScript
     runs-on: ubuntu-latest
     steps:
       - name: Git checkout
         uses: actions/checkout@v4
       - name: Use Node.js 24.x
-        uses: actions/setup-node@v1
+        uses: actions/setup-node@v4
         with:
           node-version: 24.x
+      - name: Install dependencies
+        run: npm install
       - name: Run EsLint Node.js Linter
-        run: |
-          npm install
-          npm run lint
+        run: npm run lint
   tests:
     name: Integration tests
     runs-on: ubuntu-latest

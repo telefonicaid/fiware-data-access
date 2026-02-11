@@ -24,7 +24,15 @@
 
 import logger from 'logops';
 import { v4 as uuidv4 } from 'uuid';
-import packageInfo from '../../../package.json' with { type: 'json' };
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const packageInfo = JSON.parse(
+  readFileSync(join(__dirname, '../../../package.json'), 'utf8'),
+);
 
 export function initLogger(config) {
   logger.format = logger.formatters.pipe;

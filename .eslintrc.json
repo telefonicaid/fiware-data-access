@@ -1,8 +1,7 @@
 {
   "extends": "tamia",
   "parserOptions": {
-    "ecmaVersion": "latest",
-    "ecmaFeatures": { "importAssertions": true },
+    "ecmaVersion": 2024,
     "sourceType": "module"
   },
   "plugins": ["prettier"],
