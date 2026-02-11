@@ -295,16 +295,22 @@ describe('FDA API - integration (run app as child process)', () => {
   });
 
   test('GET / returns UP status', async () => {
-    const res = await request(app).get('/');
+    const res = await httpReq({
+      method: 'GET',
+      url: `http://127.0.0.1:${appPort}/`,
+    });
     expect(res.status).toBe(200);
-    expect(res.body.status).toBe('UP');
-    expect(res.body.timestamp).toBeDefined();
+    expect(res.json.status).toBe('UP');
+    expect(res.json.timestamp).toBeDefined();
   });
 
   test('GET /health returns UP status', async () => {
-    const res = await request(app).get('/health');
+    const res = await httpReq({
+      method: 'GET',
+      url: `http://127.0.0.1:${appPort}/health`,
+    });
     expect(res.status).toBe(200);
-    expect(res.body.status).toBe('UP');
+    expect(res.json.status).toBe('UP');
   });
 
   test('POST /fdas creates an FDA (uploads CSV then converts to Parquet)', async () => {
