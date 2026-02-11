@@ -25,9 +25,9 @@
 import pg from 'pg';
 import { to as copyTo } from 'pg-copy-streams';
 import { newUpload } from './aws.js';
-import { config } from './fdaConfig.js';
-import { FDAError } from './fdaError.js';
-import { getBasicLogger } from './utils/logger.js';
+import { config } from '../fdaConfig.js';
+import { FDAError } from '../fdaError.js';
+import { getBasicLogger } from './logger.js';
 
 const { Client } = pg;
 const logger = getBasicLogger();

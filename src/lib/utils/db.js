@@ -23,8 +23,8 @@
 // criminal actions it may exercise to protect its rights.
 
 import { retrieveDA } from './mongo.js';
-import { FDAError } from './fdaError.js';
-import { getBasicLogger } from './utils/logger.js';
+import { FDAError } from '../fdaError.js';
+import { getBasicLogger } from './logger.js';
 
 let instancePromise = null;
 const preparedStatements = new Map();

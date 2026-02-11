@@ -27,9 +27,9 @@ import {
   getDBConnection,
   toParquet,
   storePreparedStatement,
-} from './db.js';
-import { uploadTable } from './pg.js';
-import { getS3Client, dropFile } from './aws.js';
+} from './utils/db.js';
+import { uploadTable } from './utils/pg.js';
+import { getS3Client, dropFile } from './utils/aws.js';
 import {
   createFDA,
   retrieveFDAs,
@@ -40,7 +40,7 @@ import {
   retrieveDA,
   updateDA,
   removeDA,
-} from './mongo.js';
+} from './utils/mongo.js';
 import { config } from './fdaConfig.js';
 import { FDAError } from './fdaError.js';
 

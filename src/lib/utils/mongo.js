@@ -23,9 +23,9 @@
 // criminal actions it may exercise to protect its rights.
 
 import { MongoClient } from 'mongodb';
-import { config } from './fdaConfig.js';
-import { FDAError } from './fdaError.js';
-import { getBasicLogger } from './utils/logger.js';
+import { config } from '../fdaConfig.js';
+import { FDAError } from '../fdaError.js';
+import { getBasicLogger } from './logger.js';
 
 const uri = config.mongo.uri;
 const client = new MongoClient(uri);

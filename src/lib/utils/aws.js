@@ -29,8 +29,8 @@ import {
   HeadBucketCommand,
 } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
-import { FDAError } from './fdaError.js';
-import { getBasicLogger } from './utils/logger.js';
+import { FDAError } from '../fdaError.js';
+import { getBasicLogger } from './logger.js';
 
 let s3ClientInstance = null;
 const logger = getBasicLogger();
