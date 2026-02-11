@@ -136,17 +136,17 @@ app.get('/fdas', async (req, res) => {
 });
 
 app.post('/fdas', async (req, res) => {
-  const { id, database, query, path, description } = req.body;
+  const { id, query, description } = req.body;
   const service = req.get('Fiware-Service');
 
-  if (!id || !database || !query || !path || !service) {
+  if (!id || !query || !service) {
     return res.status(400).json({
       error: 'BadRequest',
       description: 'Missing params in the request',
     });
   }
 
-  await fetchFDA(id, database, query, path, service, description);
+  await fetchFDA(id, query, service, description);
   return res.sendStatus(201);
 });
 

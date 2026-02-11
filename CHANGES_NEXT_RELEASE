@@ -1,3 +1,4 @@
+- Fix: remove attributes path and database from post /fdas action and database (#59)
 - Fix: docker compose pgsql options and context
 - Fix: add lint to test
 - Fix: move runtime dependencies (ajv, dotenv, lodash, @aws-sdk/client-s3) from devDependencies to dependencies in package.json (#72)

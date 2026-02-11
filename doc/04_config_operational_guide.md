@@ -1,21 +1,32 @@
-# Configuration
+# Configuration and Operational Guide
 
--   [Introduction](#introduction)
--   [Variables](#variables)
-    -   [Environment](#environment)
-    -   [PostgreSQL](#postgresql)
-    -   [Object bucket-based storage system](#object-bucket-based-storage-system)
-    -   [MongoDB](#mongodb)
-    -   [Logger](#logger)
+This document describes the configuration options and operational setup for **FIWARE Data Access** (FDA).  
+The application is configured primarily through environment variables.
+
+---
 
 ## Introduction
 
-`Fiware-data-access` supports the configuration via environment file. To make this we have to create a `.env` file and
-assign values to the desired variables. To do so we can copy the `.env.example` file and modify the variables.
+`Fiware-data-access` supports configuration via a `.env` file, or in docker service in
+[`docker-compose.yml`](../docker/docker-compose.yml).
 
-## Variables
+To set it up:
 
-The _environment variabless_ are ordered inside the following categories.
+-   Copy the provided `.env.example` file located in `src/`:
+
+```bash
+cp src/.env.example .env
+```
+
+and modify the variables in the `.env` file according to your environment.
+
+-   Or modify environment variables in `fda` service inside [`docker-compose.yml`](../docker/docker-compose.yml).
+
+The variables are grouped by category: **Environment**, **PostgreSQL**, and **MongoDB**.
+
+---
+
+## Environment Variables
 
 ### Environment
 
@@ -61,5 +72,37 @@ Variables related to MongoDB:
 | Variable           | Optional | Type   | Description                                                                                      |
 | ------------------ | -------- | ------ | ------------------------------------------------------------------------------------------------ |
 | `FDA_LOG_LEVEL`    | ✓        | string | Value to define the log level. Possible values `INFO`, `WARN`, `ERROR`, `DEBUG`, default `INFO`. |
-| `FDA_LOG_COMP`     | ✓        | string | Name of the component for the log context. Default value `FDA`                    |
-| `FDA_LOG_RES_SIZE` | ✓        | number | Size in characters of the response body showed in the logs. Default value `100`                   |
+| `FDA_LOG_COMP`     | ✓        | string | Name of the component for the log context. Default value `FDA`                                   |
+| `FDA_LOG_RES_SIZE` | ✓        | number | Size in characters of the response body showed in the logs. Default value `100`                  |
+
+---
+
+## Example `.env` file
+
+```env
+# NODE ENVIRONMENT
+FDA_NODE_ENV=development
+
+# POSTGRESQL
+FDA_PG_USER=exampleUser
+FDA_PG_PASSWORD=examplePass
+FDA_PG_HOST=exampleHost
+FDA_PG_PORT=5432
+
+## Object Bucket-Based Storage System
+FDA_OBJSTG_PROTOCOL=http
+FDA_OBJSTG_ENDPOINT=endpoint:port
+FDA_OBJSTG_USER=exampleUser
+FDA_OBJSTG_PASSWORD=examplePass
+
+# MONGODB
+FDA_MONGO_URI=mongodb://exampleUser:examplePassword@endpoint:port
+```
+
+---
+
+## 🧭 Navigation
+
+-   [⬅️ Previous: Architecture](/doc/02_architecture.md)
+-   [🏠 Main index](../README.md#documentation)
+-   [➡️ Next: Config And Operational Guide](/doc/04_config_operational_guide.md)

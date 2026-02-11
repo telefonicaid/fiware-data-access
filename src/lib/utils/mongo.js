@@ -59,25 +59,13 @@ export async function disconnectClient() {
   logger.debug('MongoDB connection closed');
 }
 
-export async function createFDA(
-  fdaId,
-  database,
-  query,
-  path,
-  service,
-  description,
-) {
-  logger.debug(
-    { fdaId, database, query, path, service, description },
-    '[DEBUG]: createFDA',
-  );
+export async function createFDA(fdaId, query, service, description) {
+  logger.debug({ fdaId, query, service, description }, '[DEBUG]: createFDA');
   const collection = await getCollection();
   try {
     await collection.insertOne({
       fdaId,
-      database,
       query,
-      path,
       das: {},
       service,
       ...(description && { description }),

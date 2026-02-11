@@ -22,9 +22,7 @@ Fields:
 -   **service**: _fiware-service_ of the fda. The app creates and index using _fdaId_ and _service_ so the combination
     of the two is unique.
 -   **description**: description of the FDA.
--   **database**: name of the _PostgreSQL_ database from which the _fda_ fetches the data for its _das_.
 -   **query**: _PostgreSQL_ query used to create the file in the object bucket-based storage application.
--   **path**: path to the data in the object bucket-based storage application that is going to be queried by the _da_.
 -   **das**: keymap of the different _DAs_ in the _FDA_. Each _Da_ (key included) is created by the user and has the
     following information:
     -   **description**: basic description of the _DA_.
@@ -39,9 +37,7 @@ Example document:
     _id: ObjectId('695f9a3cc0d41d928f5e6a39'),
     fdaId: 'fda1',
     description: 'Description for the first FDA',
-    database: 'exampleDatabase',
     query: 'SELECT population, timeinstant FROM exampleSchema.exampleTable',
-    path: '/das/exampleTable.parquet',
     das: {
         da1: {
             description: 'First DA querying timeInstant and population.',
