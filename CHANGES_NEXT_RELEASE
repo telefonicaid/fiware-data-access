@@ -1,4 +1,4 @@
-- Upgrade: remove attributes path and database from post /fdas action and database (#59)
+- Fix: remove attributes path and database from post /fdas action and database (#59)
 - Fix: add lint to test
 - Fix: move runtime dependencies (ajv, dotenv, lodash, @aws-sdk/client-s3) from devDependencies to dependencies in package.json (#72)
 - Fix: improved error responses with proper status code and message (#30)
