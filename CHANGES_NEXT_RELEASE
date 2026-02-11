@@ -1,4 +1,5 @@
 - Fix: docker compose pgsql options and context
+- Fix: add lint to test
 - Fix: move runtime dependencies (ajv, dotenv, lodash, @aws-sdk/client-s3) from devDependencies to dependencies in package.json (#72)
 - Fix: improved error responses with proper status code and message (#30)
 - Add logger component for initial, debug, info, warning and error level logs (adding new env vars `FDA_LOG_*`) (#14)
