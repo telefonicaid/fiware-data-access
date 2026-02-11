@@ -1,4 +1,4 @@
-# Fiware Data Access
+# FIWARE Data Access
 
 [![CI](https://github.com/telefonicaid/fiware-data-access/workflows/CI/badge.svg)](https://github.com/telefonicaid/fiware-data-access/actions?query=workflow%3ACI)
 [![Coverage Status](https://coveralls.io/repos/github/telefonicaid/fiware-data-access/badge.svg?branch=main)](https://coveralls.io/github/telefonicaid/fiware-data-access?branch=main)
