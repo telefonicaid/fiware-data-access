@@ -49,7 +49,7 @@ export async function uploadTable(s3Client, bucket, database, query, path) {
     config.pg.pass,
     config.pg.host,
     config.pg.port,
-    database
+    database,
   );
   await pgClient.connect();
 
@@ -62,7 +62,7 @@ export async function uploadTable(s3Client, bucket, database, query, path) {
     `${path}.csv`,
     pgStream,
     25,
-    1
+    1,
   );
 
   parallelUploads3.on('httpUploadProgress', (progress) => {
@@ -77,7 +77,7 @@ export async function uploadTable(s3Client, bucket, database, query, path) {
     throw new FDAError(
       503,
       'UploadError',
-      `Error uploading FDA to object storage: ${e.message}`
+      `Error uploading FDA to object storage: ${e.message}`,
     );
   } finally {
     pgStream.destroy();

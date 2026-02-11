@@ -7,13 +7,13 @@
   "type": "module",
   "scripts": {
     "clean": "rm -rf package-lock.json && rm -rf node_modules",
-    "dev": "nodemon fda.js",
+    "dev": "nodemon src/index.js",
     "lint": "npm run lint:api && npm run lint:test",      
-    "lint:api": "eslint lib/ --cache",
+    "lint:api": "eslint src/lib/ --cache",
     "lint:test": "eslint test/integration/ --cache",
-    "lint:fix": "eslint  lib/ --cache --fix",
+    "lint:fix": "eslint src/lib/ --cache --fix",
     "prettier": "prettier --config .prettierrc.json --write '**/**/**/**/*.js' '**/**/**/*.js' '**/**/*.js' '**/*.js' '*.js'",
-    "start": "node .",
+    "start": "node src/index.js",
     "test": "NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
     "test:coverage": "NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules c8 --reporter=lcov --reporter=text-summary --reports-dir=coverage jest --runInBand"
 

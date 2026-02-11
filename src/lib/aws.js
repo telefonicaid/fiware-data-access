@@ -60,7 +60,7 @@ export async function destroyS3Client() {
 export function newUpload(client, bucket, path, body, partSize, queueSize) {
   logger.debug(
     { bucket, path, body, partSize, queueSize },
-    '[DEBUG]: newUpload'
+    '[DEBUG]: newUpload',
   );
   return new Upload({
     client,
@@ -81,13 +81,13 @@ export async function dropFile(s3Client, bucket, path) {
       new DeleteObjectCommand({
         Bucket: bucket,
         Key: path,
-      })
+      }),
     );
   } catch (e) {
     throw new FDAError(
       500,
       'S3ServerError',
-      `Error deleting file ${path} in bucket ${bucket}: ${e}`
+      `Error deleting file ${path} in bucket ${bucket}: ${e}`,
     );
   }
 }

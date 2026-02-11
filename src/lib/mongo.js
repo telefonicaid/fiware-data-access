@@ -40,7 +40,7 @@ async function getCollection() {
       throw new FDAError(
         503,
         'MongoConnectionError',
-        `Error connecting to MongoDB: ${e}`
+        `Error connecting to MongoDB: ${e}`,
       );
     }
     isConnected = true;
@@ -65,11 +65,11 @@ export async function createFDA(
   query,
   path,
   service,
-  description
+  description,
 ) {
   logger.debug(
     { fdaId, database, query, path, service, description },
-    '[DEBUG]: createFDA'
+    '[DEBUG]: createFDA',
   );
   const collection = await getCollection();
   try {
@@ -87,13 +87,13 @@ export async function createFDA(
       throw new FDAError(
         409,
         'DuplicatedKey',
-        `FDA with id ${fdaId} and ${service} already exists: ${e}`
+        `FDA with id ${fdaId} and ${service} already exists: ${e}`,
       );
     } else {
       throw new FDAError(
         500,
         'MongoDBServerError',
-        `Error creating fda ${fdaId} in service ${service}: ${e}`
+        `Error creating fda ${fdaId} in service ${service}: ${e}`,
       );
     }
   }
@@ -102,19 +102,19 @@ export async function createFDA(
 export async function storeDA(service, fdaId, daId, description, query) {
   logger.debug(
     { service, fdaId, daId, description, query },
-    '[DEBUG]: storeDA'
+    '[DEBUG]: storeDA',
   );
   const collection = await getCollection();
   try {
     await collection.updateOne(
       { service, fdaId },
-      { $set: { [`das.${daId}`]: { description, query } } }
+      { $set: { [`das.${daId}`]: { description, query } } },
     );
   } catch (e) {
     throw new FDAError(
       500,
       'MongoDBServerError',
-      `Error storing DA ${daId} in FDA ${fdaId} of service ${service}: ${e}`
+      `Error storing DA ${daId} in FDA ${fdaId} of service ${service}: ${e}`,
     );
   }
 }
@@ -128,7 +128,7 @@ export async function retrieveFDAs(service) {
     throw new FDAError(
       500,
       'MongoDBServerError',
-      `Error retrieving all the FDAs of service ${service}: ${e.message}`
+      `Error retrieving all the FDAs of service ${service}: ${e.message}`,
     );
   }
 }
@@ -142,7 +142,7 @@ export async function retrieveFDA(service, fdaId) {
     throw new FDAError(
       500,
       'MongoDBServerError',
-      `Error retrieving FDA ${fdaId} of service ${service}: ${e}`
+      `Error retrieving FDA ${fdaId} of service ${service}: ${e}`,
     );
   }
 }
@@ -156,14 +156,14 @@ export async function removeFDA(service, fdaId) {
       throw new FDAError(
         404,
         'FDANotFound',
-        `FDA ${fdaId} of the service ${service} not found.`
+        `FDA ${fdaId} of the service ${service} not found.`,
       );
     }
   } catch (e) {
     throw new FDAError(
       500,
       'MongoDBServerError',
-      `Error deleting FDA ${fdaId} of service ${service}: ${e}`
+      `Error deleting FDA ${fdaId} of service ${service}: ${e}`,
     );
   }
 }
@@ -199,7 +199,7 @@ export async function retrieveDAs(service, fdaId) {
     throw new FDAError(
       500,
       'MongoDBServerError',
-      `Error retrieving all the DAs of FDA ${fdaId} and service ${service}: ${e}`
+      `Error retrieving all the DAs of FDA ${fdaId} and service ${service}: ${e}`,
     );
   }
 }
@@ -210,14 +210,14 @@ export async function retrieveDA(service, fdaId, daId) {
   try {
     const result = await collection.findOne(
       { service, fdaId },
-      { projection: { [`das.${daId}`]: 1, _id: 0 } }
+      { projection: { [`das.${daId}`]: 1, _id: 0 } },
     );
     return result?.das?.[daId] || null;
   } catch (e) {
     throw new FDAError(
       500,
       'MongoDBServerError',
-      `Error retrieving getting DA of FDA ${fdaId} and service ${service}: ${e}`
+      `Error retrieving getting DA of FDA ${fdaId} and service ${service}: ${e}`,
     );
   }
 }
@@ -228,11 +228,11 @@ export async function updateDA(
   daId,
   newId,
   description,
-  query
+  query,
 ) {
   logger.debug(
     { service, fdaId, daId, newId, description, query },
-    '[DEBUG]: updateDA'
+    '[DEBUG]: updateDA',
   );
   const collection = await getCollection();
   try {
@@ -253,7 +253,7 @@ export async function updateDA(
     throw new FDAError(
       500,
       'MongoDBServerError',
-      `Error updating DA ${daId} of FDA ${fdaId} and service ${service}: ${e}`
+      `Error updating DA ${daId} of FDA ${fdaId} and service ${service}: ${e}`,
     );
   }
 }
@@ -269,7 +269,7 @@ export async function removeDA(service, fdaId, daId) {
     throw new FDAError(
       500,
       'MongoDBServerError',
-      `Error removing DA ${daId} of FDA ${fdaId} and service ${service}: ${e}`
+      `Error removing DA ${daId} of FDA ${fdaId} and service ${service}: ${e}`,
     );
   }
 }

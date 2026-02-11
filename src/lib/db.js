@@ -78,7 +78,7 @@ export async function getDBConnection(endpoint, usr, pass) {
 export async function runPreparedStatement(conn, service, fdaId, daId, params) {
   logger.debug(
     { service, fdaId, daId, params },
-    '[DEBUG]: runPreparedStatements'
+    '[DEBUG]: runPreparedStatements',
   );
   if (!getPreparedStatement(service, fdaId, daId)) {
     const da = await retrieveDA(service, fdaId, daId);
@@ -86,7 +86,7 @@ export async function runPreparedStatement(conn, service, fdaId, daId, params) {
       throw new FDAError(
         404,
         'DaNotFound',
-        `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`
+        `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`,
       );
     }
     await storePreparedStatement(conn, service, fdaId, daId, da.query);
@@ -101,7 +101,7 @@ export async function runPreparedStatement(conn, service, fdaId, daId, params) {
     throw new FDAError(
       500,
       'DuckDBServerError',
-      `Error running the prepared statement: ${e}`
+      `Error running the prepared statement: ${e}`,
     );
   }
 }
@@ -116,11 +116,11 @@ export async function storePreparedStatement(
   service,
   fdaId,
   daId,
-  query
+  query,
 ) {
   logger.debug(
     { service, fdaId, daId, query },
-    '[DEBUG]: storePreparedStatement'
+    '[DEBUG]: storePreparedStatement',
   );
   const dbStatement = await conn.prepare(query);
   const fda = preparedStatements.get(`${service}${fdaId}`);
@@ -137,7 +137,7 @@ export function toParquet(conn, originPath, resultPath) {
   logger.debug({ originPath, resultPath }, '[DEBUG]: toParquet');
   return conn.run(
     `COPY ( SELECT * FROM read_csv_auto('s3://${originPath}')) 
-    TO 's3://${resultPath}' (FORMAT PARQUET);`
+    TO 's3://${resultPath}' (FORMAT PARQUET);`,
   );
 }
 

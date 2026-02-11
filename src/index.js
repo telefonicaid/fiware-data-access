@@ -100,7 +100,7 @@ app.use((req, res, next) => {
         resSize: res.getHeader('Content-Length'),
         resBody: res.locals.responseBody,
       },
-      'API request completed'
+      'API request completed',
     );
   });
 
