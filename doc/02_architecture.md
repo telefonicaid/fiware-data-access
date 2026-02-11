@@ -42,9 +42,7 @@ Content-Type: application/json
 {
     "id": "animals_fda",
     "description": "All animal activity records",
-    "database": "farm_db",
-    "query": "SELECT * FROM animal_activity",
-    "path": "/animals/animals_fda.parquet"
+    "query": "SELECT * FROM animal_activity"
 }
 ```
 
@@ -123,9 +121,7 @@ Each document corresponds to one FDA:
 -   **fdaId**: FDA identifier
 -   **service**: FIWARE service (`fiware-service`) name
 -   **description**: FDA description
--   **database**: source PostgreSQL database
 -   **query**: SQL query used to generate the Parquet file
--   **path**: path in object storage where the Parquet file is stored
 -   **das**: keymap of DAs associated with the FDA
 
 Each DA contains:
@@ -140,9 +136,7 @@ Each DA contains:
     "_id": "695f9a3cc0d41d928f5e6a39",
     "fdaId": "fda1",
     "description": "Description for the first FDA",
-    "database": "exampleDatabase",
     "query": "SELECT population, timeinstant FROM exampleSchema.exampleTable",
-    "path": "/das/exampleTable.parquet",
     "das": {
         "da1": {
             "description": "First DA querying timeInstant and population.",

@@ -119,6 +119,7 @@ describe('FDA API - integration (run app as child process)', () => {
   let minio;
   let mongo;
   let postgis;
+
   let minioHostPort;
   let minioUrl;
   let mongoUri;
@@ -132,7 +133,6 @@ describe('FDA API - integration (run app as child process)', () => {
   const service = 'myservice';
   const fdaId = 'fda1';
   const daId = 'da1';
-  const datasetPath = '/datasets/users'; // files in minio: /datasets/users.csv and /datasets/users (parquet)
 
   beforeAll(async () => {
     // Containers
@@ -158,7 +158,7 @@ describe('FDA API - integration (run app as child process)', () => {
       .withEnvironment({
         POSTGRES_USER: 'postgres',
         POSTGRES_PASSWORD: 'postgres',
-        POSTGRES_DB: 'postgres',
+        POSTGRES_DB: service,
       })
       .withExposedPorts(5432)
       .withWaitStrategy(Wait.forListeningPorts())
@@ -205,7 +205,7 @@ describe('FDA API - integration (run app as child process)', () => {
         port: pgPort,
         user: 'postgres',
         password: 'postgres',
-        database: 'postgres',
+        database: service,
         connectionTimeoutMillis: 10_000,
       });
       await connectWithRetry(pgClient);
@@ -272,9 +272,8 @@ describe('FDA API - integration (run app as child process)', () => {
         if (res.status === 400) {
           break;
         }
-      } catch {
-        console.log('[TEST] App res');
-      }
+        // eslint-disable-next-line no-empty
+      } catch {}
       if (Date.now() - start > 30_000) {
         throw new Error('Timeout waiting app to start');
       }
@@ -302,10 +301,8 @@ describe('FDA API - integration (run app as child process)', () => {
       headers: { 'Fiware-Service': service },
       body: {
         id: fdaId,
-        database: 'postgres',
         // query base to extract from PG to CSV
         query: 'SELECT id, name, age FROM public.users ORDER BY id',
-        path: datasetPath,
         description: 'users dataset',
       },
     });
@@ -332,10 +329,10 @@ describe('FDA API - integration (run app as child process)', () => {
   });
 
   test('POST /fdas/:fdaId/das + GET /query executes DuckDB against Parquet', async () => {
-    // DuckDB reads parquet generated in  s3://<bucket><path>
+    // DuckDB reads parquet generated in  s3://<bucket>/<fdaID>.parquet
     const daQuery = `
       SELECT id, name, age
-      FROM read_parquet('s3://${service}${datasetPath}')
+      FROM read_parquet('s3://${service}/${fdaId}.parquet')
       WHERE age > $minAge
       ORDER BY id;
     `;
@@ -380,5 +377,66 @@ describe('FDA API - integration (run app as child process)', () => {
       { id: '1', name: 'ana', age: '30' },
       { id: '3', name: 'carlos', age: '40' },
     ]);
+  });
+
+  test('GET /fdas/:fdaId returns expected FDA', async () => {
+    const res = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/fdas/${fdaId}`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    if (res.status >= 400) {
+      console.error(
+        'GET /fdas/:fdaId failed:',
+        res.status,
+        res.json ?? res.text
+      );
+    }
+    expect(res.status).toBe(200);
+    expect(Object.keys(res.json).length).toBeGreaterThan(0);
+    expect(res.json.fdaId === fdaId).toBe(true);
+  });
+
+  test('PUT /fdas/:fdaID reuploads FDA', async () => {
+    const res = await httpReq({
+      method: 'PUT',
+      url: `${baseUrl}/fdas/${fdaId}`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    if (res.status >= 400) {
+      console.error(
+        'PUT /fdas/:fdaId failed:',
+        res.status,
+        res.json ?? res.text
+      );
+    }
+    expect(res.status).toBe(204);
+  });
+
+  test('DELETE /fdas/:fdaId removes given FDA', async () => {
+    const deleteFDA = await httpReq({
+      method: 'DELETE',
+      url: `${baseUrl}/fdas/${fdaId}`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    if (deleteFDA.status >= 400) {
+      console.error(
+        'DELETE /fdas/:fdaId failed:',
+        deleteFDA.status,
+        deleteFDA.json ?? deleteFDA.text
+      );
+    }
+    expect(deleteFDA.status).toBe(204);
+
+    const getFDA = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/fdas/${fdaId}`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    expect(getFDA.status).toBe(404);
   });
 });

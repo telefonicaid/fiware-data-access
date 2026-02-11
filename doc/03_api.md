@@ -192,9 +192,7 @@ curl -i -X POST http://localhost:8080/fdas \
   -H "Fiware-Service: my-bucket" \
   -d '{
     "id": "fda_alarms",
-    "database": "postgres",
     "query": "SELECT * FROM public.alarms",
-    "path": "alarms/fda_alarms.parquet",
     "description": "Intento duplicado"
   }'
 ```
@@ -220,9 +218,7 @@ curl -i -X POST http://localhost:8080/fdas \
   -H "Fiware-Service: my-bucket" \
   -d '{
     "id": "fda_test",
-    "database": "postgres",
     "query": "SELECT * FROM public.nonexistent_table",
-    "path": "test/fda_test.parquet",
     "description": "Test"
   }'
 ```
@@ -270,9 +266,7 @@ curl -i -X POST http://localhost:8080/fdas \
   -H "Fiware-Service: my-bucket" \
   -d '{
     "id": "fda_alarms",
-    "database": "postgres",
-    "query": "SELECT * FROM public.alarms",
-    "path": "alarms/fda_alarms.parquet"
+    "query": "SELECT * FROM public.alarms"
   }'
 ```
 
@@ -312,13 +306,11 @@ curl -i -X POST http://localhost:8080/fdas \
 
 A FDA is represented by a JSON object with the following fields:
 
-| Parameter     | Optional | Type   | Description                                                                      |
-| ------------- | -------- | ------ | -------------------------------------------------------------------------------- |
-| `id`          |          | string | FDA unique identifier                                                            |
-| `description` | ✓        | string | A free text used by the client to describe the FDA                               |
-| `database`    |          | string | Database from which the FDA has been created                                     |
-| `query`       |          | string | Base `postgreSQL` query to create the file in the bucket-based storage system    |
-| `path`        |          | string | Full path to the Parquet file storing the FDA in the bucket-based storage system |
+| Parameter     | Optional | Type   | Description                                                                   |
+| ------------- | -------- | ------ | ----------------------------------------------------------------------------- |
+| `id`          |          | string | FDA unique identifier                                                         |
+| `description` | ✓        | string | A free text used by the client to describe the FDA                            |
+| `query`       |          | string | Base `postgreSQL` query to create the file in the bucket-based storage system |
 
 ### FDAs operations
 
@@ -369,9 +361,7 @@ _**Example Response:**_
     {
         "_id": "698c572d1cd0982695cc3a8e",
         "fdaId": "fda_alarms",
-        "database": "postgres",
         "query": "SELECT * FROM public.alarms",
-        "path": "alarms/fda_alarms.parquet",
         "das": {},
         "service": "my-bucket",
         "description": "FDA de alarmas del sistema"
@@ -407,9 +397,7 @@ curl -i -X POST http://localhost:8080/fdas \
   -H "Fiware-Service: my-bucket" \
   -d '{
     "id": "fda_alarms",
-    "database": "postgres",
     "query": "SELECT * FROM public.alarms",
-    "path": "alarms/fda_alarms.parquet",
     "description": "FDA de alarmas del sistema"
   }'
 ```
@@ -480,9 +468,7 @@ curl -i -X POST http://localhost:8080/fdas \
   -H "Fiware-Service: my-bucket" \
   -d '{
     "id": "fda_alarms",
-    "database": "postgres",
     "query": "SELECT * FROM public.alarms",
-    "path": "alarms/fda_alarms.parquet",
     "description": "FDA de alarmas del sistema"
   }'
 ```
