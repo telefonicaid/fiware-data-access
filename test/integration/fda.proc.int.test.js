@@ -294,6 +294,19 @@ describe('FDA API - integration (run app as child process)', () => {
     await Promise.allSettled([minio?.stop(), mongo?.stop(), postgis?.stop()]);
   });
 
+  test('GET / returns UP status', async () => {
+    const res = await request(app).get('/');
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('UP');
+    expect(res.body.timestamp).toBeDefined();
+  });
+
+  test('GET /health returns UP status', async () => {
+    const res = await request(app).get('/health');
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('UP');
+  });
+
   test('POST /fdas creates an FDA (uploads CSV then converts to Parquet)', async () => {
     const res = await httpReq({
       method: 'POST',
