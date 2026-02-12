@@ -106,9 +106,15 @@ export async function createDA(service, fdaId, daId, description, query) {
   storeDA(service, fdaId, daId, description, query);
 }
 
-export async function fetchFDA(fdaId, query, service, description) {
+export async function fetchFDA(
+  fdaId,
+  query,
+  service,
+  servicePath,
+  description,
+) {
   await uploadTableToObjStg(service, query, service, fdaId);
-  await createFDA(fdaId, query, service, description);
+  await createFDA(fdaId, query, service, servicePath, description);
 }
 
 export async function updateFDA(service, fdaId) {

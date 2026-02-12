@@ -140,6 +140,7 @@ app.get('/fdas', async (req, res) => {
 app.post('/fdas', async (req, res) => {
   const { id, query, description } = req.body;
   const service = req.get('Fiware-Service');
+  const servicePath = req.get('Fiware-ServicePath');
 
   if (!id || !query || !service) {
     return res.status(400).json({
@@ -148,7 +149,7 @@ app.post('/fdas', async (req, res) => {
     });
   }
 
-  await fetchFDA(id, query, service, description);
+  await fetchFDA(id, query, service, servicePath, description);
   return res.sendStatus(201);
 });
 
