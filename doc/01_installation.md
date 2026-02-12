@@ -352,7 +352,7 @@ curl -i -X GET http://localhost:8080/fdas \
 
 Expected response (should be empty initially):
 
-```json
+```
 HTTP/1.1 200 OK
 Content-Type: application/json; charset=utf-8
 
@@ -393,7 +393,7 @@ curl -i -X GET http://localhost:8080/fdas \
 
 Expected response (should now contain the FDA):
 
-```json
+```
 HTTP/1.1 200 OK
 Content-Type: application/json; charset=utf-8
 

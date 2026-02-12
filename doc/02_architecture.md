@@ -160,13 +160,10 @@ Each DA contains:
 -   DAs query the FDA Parquet files directly via DuckDB
 -   Metadata in MongoDB ensures unique combination of `fdaId` and `service`
 
-```
-
 ---
 
 ## 🧭 Navigation
 
-- [⬅️ Previous: Installation](/doc/01_installation.md)
-- [🏠 Main index](../README.md#documentation)
-- [➡️ Next: API](/doc/03_api.md)
-```
+-   [⬅️ Previous: Installation](/doc/01_installation.md)
+-   [🏠 Main index](../README.md#documentation)
+-   [➡️ Next: API](/doc/03_api.md)
