@@ -24,6 +24,7 @@
 
 import {
   runPreparedStatement,
+  runPreparedStatementStream,
   getDBConnection,
   toParquet,
   storePreparedStatement,
@@ -76,6 +77,23 @@ export async function query(service, { fdaId, daId, ...params }) {
     params,
   );
   return queryRes;
+}
+
+export async function queryStream(service, { fdaId, daId, ...params }) {
+  const conn = await getDBConnection(
+    config.objstg.endpoint,
+    config.objstg.usr,
+    config.objstg.pass,
+  );
+
+  const stream = await runPreparedStatementStream(
+    conn,
+    service,
+    fdaId,
+    daId,
+    params,
+  );
+  return stream;
 }
 
 export async function createDA(service, fdaId, daId, description, query) {
