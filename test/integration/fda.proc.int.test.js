@@ -398,6 +398,39 @@ describe('FDA API - integration (run app as child process)', () => {
     ]);
   });
 
+  test('GET /query returns NDJSON when Accept: application/x-ndjson', async () => {
+    const queryRes = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+        fdaId,
+      )}&daId=${encodeURIComponent(daId)}&minAge=25`,
+      headers: {
+        'Fiware-Service': service,
+        Accept: 'application/x-ndjson',
+      },
+    });
+
+    if (queryRes.status >= 400) {
+      console.error(
+        'GET /query NDJSON failed:',
+        queryRes.status,
+        queryRes.text,
+      );
+    }
+    expect(queryRes.status).toBe(200);
+    expect(queryRes.text).toBeDefined();
+
+    // Parse NDJSON: split by newline and parse each line as JSON
+    const lines = queryRes.text.split('\n').filter((line) => line.trim());
+    expect(lines.length).toBe(2);
+
+    const row1 = JSON.parse(lines[0]);
+    const row2 = JSON.parse(lines[1]);
+
+    expect(row1).toEqual({ id: 1, name: 'ana', age: 30 });
+    expect(row2).toEqual({ id: 3, name: 'carlos', age: 40 });
+  });
+
   test('GET /fdas/:fdaId returns expected FDA', async () => {
     const res = await httpReq({
       method: 'GET',
