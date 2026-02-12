@@ -28,6 +28,7 @@ import {
   getFDAs,
   fetchFDA,
   query,
+  queryStream,
   createDA,
   getFDA,
   updateFDA,
@@ -40,6 +41,7 @@ import {
 import { createIndex, disconnectClient } from './lib/utils/mongo.js';
 import { disconnectConnection } from './lib/utils/db.js';
 import { destroyS3Client } from './lib/utils/aws.js';
+import { convertBigInt } from './lib/utils/utils.js';
 import { config } from './lib/fdaConfig.js';
 import {
   initLogger,
@@ -275,6 +277,7 @@ app.delete('/fdas/:fdaId/das/:daId', async (req, res) => {
 app.get('/query', async (req, res) => {
   const { fdaId, daId } = req.query;
   const service = req.get('Fiware-Service');
+  const accept = req.get('Accept') || 'application/json';
 
   if (Object.keys(req.query).length === 0 || !fdaId || !daId || !service) {
     return res.status(400).json({
@@ -283,13 +286,47 @@ app.get('/query', async (req, res) => {
     });
   }
 
-  const result = await query(service, req.query);
-  return res.json(result);
+  // Content negotiation: check if client wants NDJSON
+  if (accept.includes('application/x-ndjson')) {
+    try {
+      const stream = await queryStream(service, req.query);
+      res.setHeader('Content-Type', 'application/x-ndjson');
+
+      // Iterate through stream chunks and write NDJSON
+      while (true) {
+        const chunk = await stream.fetchChunk();
+        if (chunk.rowCount === 0) break;
+
+        // Get rows from chunk and write as NDJSON
+        const rows = chunk.getRows();
+        const columnNames = stream.columnNames();
+
+        for (const row of rows) {
+          const rowObj = {};
+          for (let i = 0; i < columnNames.length; i++) {
+            rowObj[columnNames[i]] = row[i];
+          }
+          // Convert BigInt recursively before stringifying
+          const safeObj = convertBigInt(rowObj);
+          res.write(JSON.stringify(safeObj) + '\n');
+        }
+      }
+      res.end();
+    } catch (err) {
+      // Delegate error handling to Express middleware
+      throw err;
+    }
+  } else {
+    // Default: return JSON array (backward compatible)
+    const result = await query(service, req.query);
+    return res.json(result);
+  }
 });
 
 app.get('/doQuery', async (req, res) => {
   const { path, dataAccessId, ...rest } = req.query;
   const service = req.get('Fiware-Service');
+  const accept = req.get('Accept') || 'application/json';
 
   if (
     Object.keys(req.query).length === 0 ||
@@ -308,8 +345,42 @@ app.get('/doQuery', async (req, res) => {
     fdaId: path.split('/').pop(),
     daId: dataAccessId,
   };
-  const result = await query(service, updatedParams);
-  return res.json(result);
+
+  // Content negotiation: check if client wants NDJSON
+  if (accept.includes('application/x-ndjson')) {
+    try {
+      const stream = await queryStream(service, updatedParams);
+      res.setHeader('Content-Type', 'application/x-ndjson');
+
+      // Iterate through stream chunks and write NDJSON
+      while (true) {
+        const chunk = await stream.fetchChunk();
+        if (chunk.rowCount === 0) break;
+
+        // Get rows from chunk and write as NDJSON
+        const rows = chunk.getRows();
+        const columnNames = stream.columnNames();
+
+        for (const row of rows) {
+          const rowObj = {};
+          for (let i = 0; i < columnNames.length; i++) {
+            rowObj[columnNames[i]] = row[i];
+          }
+          // Convert BigInt recursively before stringifying
+          const safeObj = convertBigInt(rowObj);
+          res.write(JSON.stringify(safeObj) + '\n');
+        }
+      }
+      res.end();
+    } catch (err) {
+      // Delegate error handling to Express middleware
+      throw err;
+    }
+  } else {
+    // Default: return JSON array (backward compatible)
+    const result = await query(service, updatedParams);
+    return res.json(result);
+  }
 });
 
 if (process.env.NODE_ENV !== 'test') {

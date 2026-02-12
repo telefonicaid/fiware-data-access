@@ -25,6 +25,7 @@
 import { retrieveDA } from './mongo.js';
 import { FDAError } from '../fdaError.js';
 import { getBasicLogger } from './logger.js';
+import { convertBigInt } from './utils.js';
 
 let instancePromise = null;
 const preparedStatements = new Map();
@@ -102,6 +103,46 @@ export async function runPreparedStatement(conn, service, fdaId, daId, params) {
       500,
       'DuckDBServerError',
       `Error running the prepared statement: ${e}`,
+    );
+  }
+}
+
+export async function runPreparedStatementStream(
+  conn,
+  service,
+  fdaId,
+  daId,
+  params,
+) {
+  logger.debug(
+    { service, fdaId, daId, params },
+    '[DEBUG]: runPreparedStatementStream',
+  );
+  if (!getPreparedStatement(service, fdaId, daId)) {
+    const da = await retrieveDA(service, fdaId, daId);
+    if (!da?.query) {
+      throw new FDAError(
+        404,
+        'DaNotFound',
+        `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`,
+      );
+    }
+    await storePreparedStatement(conn, service, fdaId, daId, da.query);
+  }
+
+  try {
+    const dbStatement = getPreparedStatement(service, fdaId, daId);
+    dbStatement.bind(params);
+    // Use stream() for lazy evaluation without buffering
+    const stream = dbStatement.stream();
+    // Attach helper function to stream for converting BigInt
+    stream.convertBigInt = convertBigInt;
+    return stream;
+  } catch (e) {
+    throw new FDAError(
+      500,
+      'DuckDBServerError',
+      `Error streaming the prepared statement: ${e}`,
     );
   }
 }

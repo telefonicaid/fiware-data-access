@@ -398,6 +398,109 @@ describe('FDA API - integration (run app as child process)', () => {
     ]);
   });
 
+  test('GET /query returns JSON array when Accept: application/json', async () => {
+    const res = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+        fdaId,
+      )}&daId=${encodeURIComponent(daId)}&minAge=25`,
+      headers: { 'Fiware-Service': service, Accept: 'application/json' },
+    });
+
+    if (res.status >= 400) {
+      console.error(
+        'GET /query (json) failed:',
+        res.status,
+        res.json ?? res.text,
+      );
+    }
+    expect(res.status).toBe(200);
+    expect(res.json).toEqual([
+      { id: '1', name: 'ana', age: '30' },
+      { id: '3', name: 'carlos', age: '40' },
+    ]);
+  });
+
+  test('GET /query returns NDJSON when Accept: application/x-ndjson', async () => {
+    const queryRes = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+        fdaId,
+      )}&daId=${encodeURIComponent(daId)}&minAge=25`,
+      headers: {
+        'Fiware-Service': service,
+        Accept: 'application/x-ndjson',
+      },
+    });
+
+    if (queryRes.status >= 400) {
+      console.error(
+        'GET /query NDJSON failed:',
+        queryRes.status,
+        queryRes.text,
+      );
+    }
+    expect(queryRes.status).toBe(200);
+    expect(queryRes.text).toBeDefined();
+
+    // Parse NDJSON: split by newline and parse each line as JSON
+    const lines = queryRes.text.split('\n').filter((line) => line.trim());
+    expect(lines.length).toBe(2);
+
+    const row1 = JSON.parse(lines[0]);
+    const row2 = JSON.parse(lines[1]);
+
+    expect(row1).toEqual({ id: 1, name: 'ana', age: 30 });
+    expect(row2).toEqual({ id: 3, name: 'carlos', age: 40 });
+  });
+
+  test('GET /doQuery returns JSON array (legacy) when Accept: application/json', async () => {
+    const res = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/doQuery?path=/fdas/${encodeURIComponent(
+        fdaId,
+      )}&dataAccessId=${encodeURIComponent(daId)}&minAge=15`,
+      headers: { 'Fiware-Service': service, Accept: 'application/json' },
+    });
+
+    if (res.status >= 400) {
+      console.error('GET /doQuery failed:', res.status, res.json ?? res.text);
+    }
+    expect(res.status).toBe(200);
+    expect(res.json).toEqual([
+      { id: '1', name: 'ana', age: '30' },
+      { id: '2', name: 'bob', age: '20' },
+      { id: '3', name: 'carlos', age: '40' },
+    ]);
+  });
+
+  test('GET /doQuery returns NDJSON when Accept: application/x-ndjson', async () => {
+    const res = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/doQuery?path=/fdas/${encodeURIComponent(
+        fdaId,
+      )}&dataAccessId=${encodeURIComponent(daId)}&minAge=15`,
+      headers: { 'Fiware-Service': service, Accept: 'application/x-ndjson' },
+    });
+
+    if (res.status >= 400) {
+      console.error('GET /doQuery NDJSON failed:', res.status, res.text);
+    }
+    expect(res.status).toBe(200);
+    expect(res.text).toBeDefined();
+
+    const lines = res.text.split('\n').filter((l) => l.trim());
+    expect(lines.length).toBe(3);
+
+    const a = JSON.parse(lines[0]);
+    const b = JSON.parse(lines[1]);
+    const c = JSON.parse(lines[2]);
+
+    expect(a).toEqual({ id: 1, name: 'ana', age: 30 });
+    expect(b).toEqual({ id: 2, name: 'bob', age: 20 });
+    expect(c).toEqual({ id: 3, name: 'carlos', age: 40 });
+  });
+
   test('GET /fdas/:fdaId returns expected FDA', async () => {
     const res = await httpReq({
       method: 'GET',
