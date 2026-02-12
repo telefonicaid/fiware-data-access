@@ -848,6 +848,15 @@ _**Response payload**_
 
 The payload is an array of JSON objects, each one being a record result of the stored parameterized query.
 
+_**Content negotiation (JSON / NDJSON)**_
+
+-   By default the endpoint returns a full JSON array (`application/json`). This keeps backward compatibility with
+    existing clients.
+-   If the client sets the `Accept: application/x-ndjson` header the server responds with
+    `Content-Type: application/x-ndjson` and streams one JSON object per line (NDJSON). Use this for large result sets
+    or streaming consumers.
+-   NDJSON output uses numeric types for integer columns (BigInt values are converted to numbers before serialization).
+
 _**Example Request (without parameters):**_
 
 ```bash
@@ -907,6 +916,14 @@ _**Example Response:**_
 ]
 ```
 
+_**Example Request (NDJSON):**_
+
+```bash
+curl -i -X GET "http://localhost:8080/query?fdaId=fda_alarms&daId=da_all_alarms" \
+  -H "Fiware-Service: my-bucket" \
+  -H "Accept: application/x-ndjson"
+```
+
 #### Query `GET /doQuery` (Pentaho CDA legacy support)
 
 Same operation implemented by Pentaho CDA, in order to provide backward compatibility with existing CDA clients with
@@ -944,6 +961,15 @@ Successful operations return `Content-Type` header with `application/json` value
 _**Response payload**_
 
 The payload is an array of JSON objects, each one being a record result of the stored parameterized query.
+
+_**Content negotiation (JSON / NDJSON)**_
+
+-   By default the endpoint returns a full JSON array (`application/json`). This is the backward-compatible behaviour.
+-   If the client sets the `Accept: application/x-ndjson` header the server responds with
+    `Content-Type: application/x-ndjson` and streams one JSON object per line (NDJSON). This is useful for large results
+    and streaming processing.
+-   NDJSON output will have numeric types for integer columns (BigInt values are converted to numbers before
+    serialization).
 
 _**Example Request:**_
 
@@ -983,6 +1009,14 @@ _**Example Response:**_
         "created_at": "2026-02-11 10:41:17.960528"
     }
 ]
+```
+
+_**Example Request (NDJSON):**_
+
+```bash
+curl -i -X GET "http://localhost:8080/doQuery?path=/public/fda_alarms&dataAccessId=da_all_alarms" \
+  -H "Fiware-Service: my-bucket" \
+  -H "Accept: application/x-ndjson"
 ```
 
 ---
