@@ -379,10 +379,11 @@ None so far
 
 _**Request headers**_
 
-| Header           | Optional | Description                                                          | Example            |
-| ---------------- | -------- | -------------------------------------------------------------------- | ------------------ |
-| `Content-Type`   |          | MIME type. Required to be `application/json`.                        | `application/json` |
-| `Fiware-Service` |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket`        |
+| Header               | Optional | Description                                                                                                                                                    | Example            |
+| -------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| `Content-Type`       |          | MIME type. Required to be `application/json`.                                                                                                                  | `application/json` |
+| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform                                                                                           | `my-bucket`        |
+| `Fiware-ServicePath` | ✓        | Hierarchical service path to allow a `FDA` to be queried with authentication or anonimaly. Possible values `/public` and `/private`. Default value `/private`. | `/public`          |
 
 _**Request payload**_
 
@@ -395,6 +396,7 @@ _**Example Request:**_
 curl -i -X POST http://localhost:8080/fdas \
   -H "Content-Type: application/json" \
   -H "Fiware-Service: my-bucket" \
+  -H "Fiware-ServicePath: /public" \
   -d '{
     "id": "fda_alarms",
     "query": "SELECT * FROM public.alarms",

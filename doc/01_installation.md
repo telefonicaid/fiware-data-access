@@ -471,8 +471,6 @@ Notes:
 -   The NDJSON response is useful for streaming large result sets; timestamps may be returned in a structured format
     (e.g. micros).
 
-```
-
 ---
 
 ## Common issues
@@ -498,4 +496,3 @@ Notes:
 -   [⬅️ Previous: Overview](/doc/00_overview.md)
 -   [🏠 Main index](../README.md#documentation)
 -   [➡️ Next: Architecture](/doc/02_architecture.md)
-```
