@@ -59,7 +59,7 @@ async function pgToNode(bucket, database, table, fda) {
     'fakePassword',
     'fakeHost',
     5432,
-    database
+    database,
   );
   pgClient.connect();
 
@@ -70,8 +70,8 @@ async function pgToNode(bucket, database, table, fda) {
   const sanitizedDatabase = database.replace(/[^a-zA-Z0-9_]/g, '');
   const pgStream = pgClient.query(
     copyTo(
-      `COPY ${sanitizedDatabase}.${sanitizedTable} TO STDOUT WITH CSV HEADER`
-    )
+      `COPY ${sanitizedDatabase}.${sanitizedTable} TO STDOUT WITH CSV HEADER`,
+    ),
   );
 
   try {
@@ -100,7 +100,7 @@ async function nodeToMinio25MBChunk1Parallel(bucket, database, table, fda) {
     `${fda}.csv`,
     localStream,
     25,
-    1
+    1,
   );
 
   try {
@@ -128,7 +128,7 @@ async function nodeToMinio25MBChunk4Parallel(bucket, database, table, fda) {
     `${fda}.csv`,
     localStream,
     25,
-    4
+    4,
   );
 
   try {
@@ -156,7 +156,7 @@ async function nodeToMinio5MBChunk1Parallel(bucket, database, table, fda) {
     `${fda}.csv`,
     localStream,
     5,
-    1
+    1,
   );
 
   try {
@@ -179,7 +179,7 @@ async function changeFormat(bucket, database, table, fda) {
   await toParquet(
     conn,
     getPath(bucket, fda, 'csv'),
-    getPath(bucket, fda, 'parquet')
+    getPath(bucket, fda, 'parquet'),
   );
   console.timeEnd('changeFormat');
   console.log(' ');

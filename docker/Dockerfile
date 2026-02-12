@@ -25,7 +25,8 @@
 ARG NODE_VERSION=24-slim
 FROM node:${NODE_VERSION}
 
-COPY . /opt/fda/fda
+COPY package*.json /opt/fda/fda/
+COPY src/ /opt/fda/fda/src
 
 WORKDIR /opt/fda/fda
 # hadolint ignore=DL3008,DL3009,DL3015

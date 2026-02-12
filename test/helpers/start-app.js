@@ -51,7 +51,7 @@ function waitFor(url, timeoutMs = 30_000) {
 // Nothing else here. This file is only used as the entrypoint for node child process.
 console.log(`[CHILD] starting app... FDA_SERVER_PORT=${port}`);
 // Your real entrypoint:
-await import('../../index.js');
+await import('../../src/index.js');
 
 // If your app does not listen in NODE_ENV=test, force it by NOT using NODE_ENV=test in child.
 // We'll handle that from the test (set NODE_ENV=integration).

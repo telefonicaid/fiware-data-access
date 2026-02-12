@@ -37,9 +37,9 @@ import {
   putDA,
   deleteDA,
 } from './lib/fda.js';
-import { createIndex, disconnectClient } from './lib/mongo.js';
-import { disconnectConnection } from './lib/db.js';
-import { destroyS3Client } from './lib/aws.js';
+import { createIndex, disconnectClient } from './lib/utils/mongo.js';
+import { disconnectConnection } from './lib/utils/db.js';
+import { destroyS3Client } from './lib/utils/aws.js';
 import { config } from './lib/fdaConfig.js';
 import {
   initLogger,
@@ -100,11 +100,25 @@ app.use((req, res, next) => {
         resSize: res.getHeader('Content-Length'),
         resBody: res.locals.responseBody,
       },
-      'API request completed'
+      'API request completed',
     );
   });
 
   next();
+});
+
+app.get('/', (req, res) => {
+  res.status(200).json({
+    status: 'UP',
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'UP',
+    timestamp: new Date().toISOString(),
+  });
 });
 
 app.get('/fdas', async (req, res) => {

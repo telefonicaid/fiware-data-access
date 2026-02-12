@@ -27,9 +27,9 @@ import {
   getDBConnection,
   toParquet,
   storePreparedStatement,
-} from './db.js';
-import { uploadTable } from './pg.js';
-import { getS3Client, dropFile } from './aws.js';
+} from './utils/db.js';
+import { uploadTable } from './utils/pg.js';
+import { getS3Client, dropFile } from './utils/aws.js';
 import {
   createFDA,
   retrieveFDAs,
@@ -40,7 +40,7 @@ import {
   retrieveDA,
   updateDA,
   removeDA,
-} from './mongo.js';
+} from './utils/mongo.js';
 import { config } from './fdaConfig.js';
 import { FDAError } from './fdaError.js';
 
@@ -54,7 +54,7 @@ export async function getFDA(service, fdaId) {
     throw new FDAError(
       404,
       'FDANotFound',
-      `FDA ${fdaId} not found in service ${service}`
+      `FDA ${fdaId} not found in service ${service}`,
     );
   }
 
@@ -65,7 +65,7 @@ export async function query(service, { fdaId, daId, ...params }) {
   const conn = await getDBConnection(
     config.objstg.endpoint,
     config.objstg.usr,
-    config.objstg.pass
+    config.objstg.pass,
   );
 
   const queryRes = await runPreparedStatement(
@@ -73,7 +73,7 @@ export async function query(service, { fdaId, daId, ...params }) {
     service,
     fdaId,
     daId,
-    params
+    params,
   );
   return queryRes;
 }
@@ -82,7 +82,7 @@ export async function createDA(service, fdaId, daId, description, query) {
   const conn = await getDBConnection(
     config.objstg.endpoint,
     config.objstg.usr,
-    config.objstg.pass
+    config.objstg.pass,
   );
   await storePreparedStatement(conn, service, fdaId, daId, query);
   storeDA(service, fdaId, daId, description, query);
@@ -105,13 +105,13 @@ export async function deleteFDA(service, fdaId) {
     throw new FDAError(
       404,
       'FDANotFound',
-      `FDA ${fdaId} of the service ${service} not found.`
+      `FDA ${fdaId} of the service ${service} not found.`,
     );
   }
   const s3Client = await getS3Client(
     `${config.objstg.protocol}://${config.objstg.endpoint}`,
     config.objstg.usr,
-    config.objstg.pass
+    config.objstg.pass,
   );
   await dropFile(s3Client, service, getPath('', fdaId, '.parquet'));
   await removeFDA(service, fdaId);
@@ -129,7 +129,7 @@ export async function getDA(service, fdaId, daId) {
     throw new FDAError(
       404,
       'DaNotFound',
-      `DA ${daId} not found in FDA ${fdaId} and service ${service}.`
+      `DA ${daId} not found in FDA ${fdaId} and service ${service}.`,
     );
   }
 
@@ -148,14 +148,14 @@ async function uploadTableToObjStg(database, query, bucket, path) {
   const s3Client = getS3Client(
     `${config.objstg.protocol}://${config.objstg.endpoint}`,
     config.objstg.usr,
-    config.objstg.pass
+    config.objstg.pass,
   );
   await uploadTable(s3Client, bucket, database, query, path);
 
   const conn = await getDBConnection(
     config.objstg.endpoint,
     config.objstg.usr,
-    config.objstg.pass
+    config.objstg.pass,
   );
   const parquetPath = getPath(bucket, path, '.parquet');
   await toParquet(conn, getPath(bucket, path, '.csv'), parquetPath);
@@ -163,5 +163,7 @@ async function uploadTableToObjStg(database, query, bucket, path) {
 }
 
 const getPath = (bucket, path, extension) => {
-  return `${bucket}/${path}${extension}`;
+  const cleanBucket = bucket?.endsWith('/') ? bucket.slice(0, -1) : bucket;
+  const cleanPath = path?.startsWith('/') ? path.slice(1) : path;
+  return `${cleanBucket}/${cleanPath}${extension}`;
 };

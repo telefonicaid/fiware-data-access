@@ -25,9 +25,9 @@
 import pg from 'pg';
 import { to as copyTo } from 'pg-copy-streams';
 import { newUpload } from './aws.js';
-import { config } from './fdaConfig.js';
-import { FDAError } from './fdaError.js';
-import { getBasicLogger } from './utils/logger.js';
+import { config } from '../fdaConfig.js';
+import { FDAError } from '../fdaError.js';
+import { getBasicLogger } from './logger.js';
 
 const { Client } = pg;
 const logger = getBasicLogger();
@@ -49,7 +49,7 @@ export async function uploadTable(s3Client, bucket, database, query, path) {
     config.pg.pass,
     config.pg.host,
     config.pg.port,
-    database
+    database,
   );
   await pgClient.connect();
 
@@ -62,7 +62,7 @@ export async function uploadTable(s3Client, bucket, database, query, path) {
     `${path}.csv`,
     pgStream,
     25,
-    1
+    1,
   );
 
   parallelUploads3.on('httpUploadProgress', (progress) => {
@@ -77,7 +77,7 @@ export async function uploadTable(s3Client, bucket, database, query, path) {
     throw new FDAError(
       503,
       'UploadError',
-      `Error uploading FDA to object storage: ${e.message}`
+      `Error uploading FDA to object storage: ${e.message}`,
     );
   } finally {
     pgStream.destroy();

@@ -80,7 +80,7 @@ function httpReq({ method, url, headers, body }) {
             })(),
           });
         });
-      }
+      },
     );
     req.on('timeout', () => req.destroy(new Error('timeout')));
     req.on('error', reject);
@@ -260,7 +260,7 @@ describe('FDA API - integration (run app as child process)', () => {
 
     appProc.stdout.on('data', (d) => console.log('[APP]', d.toString().trim()));
     appProc.stderr.on('data', (d) =>
-      console.error('[APP-ERR]', d.toString().trim())
+      console.error('[APP-ERR]', d.toString().trim()),
     );
 
     // Wait until app responds: /fdas without header -> 400 when up
@@ -292,6 +292,25 @@ describe('FDA API - integration (run app as child process)', () => {
       }
     }
     await Promise.allSettled([minio?.stop(), mongo?.stop(), postgis?.stop()]);
+  });
+
+  test('GET / returns UP status', async () => {
+    const res = await httpReq({
+      method: 'GET',
+      url: `http://127.0.0.1:${appPort}/`,
+    });
+    expect(res.status).toBe(200);
+    expect(res.json.status).toBe('UP');
+    expect(res.json.timestamp).toBeDefined();
+  });
+
+  test('GET /health returns UP status', async () => {
+    const res = await httpReq({
+      method: 'GET',
+      url: `http://127.0.0.1:${appPort}/health`,
+    });
+    expect(res.status).toBe(200);
+    expect(res.json.status).toBe('UP');
   });
 
   test('POST /fdas creates an FDA (uploads CSV then converts to Parquet)', async () => {
@@ -352,7 +371,7 @@ describe('FDA API - integration (run app as child process)', () => {
       console.error(
         'POST /das failed:',
         createDa.status,
-        createDa.json ?? createDa.text
+        createDa.json ?? createDa.text,
       );
     }
     expect(createDa.status).toBe(201);
@@ -360,7 +379,7 @@ describe('FDA API - integration (run app as child process)', () => {
     const queryRes = await httpReq({
       method: 'GET',
       url: `${baseUrl}/query?fdaId=${encodeURIComponent(
-        fdaId
+        fdaId,
       )}&daId=${encodeURIComponent(daId)}&minAge=25`,
       headers: { 'Fiware-Service': service },
     });
@@ -369,7 +388,7 @@ describe('FDA API - integration (run app as child process)', () => {
       console.error(
         'GET /query failed:',
         queryRes.status,
-        queryRes.json ?? queryRes.text
+        queryRes.json ?? queryRes.text,
       );
     }
     expect(queryRes.status).toBe(200);
@@ -390,7 +409,7 @@ describe('FDA API - integration (run app as child process)', () => {
       console.error(
         'GET /fdas/:fdaId failed:',
         res.status,
-        res.json ?? res.text
+        res.json ?? res.text,
       );
     }
     expect(res.status).toBe(200);
@@ -409,7 +428,7 @@ describe('FDA API - integration (run app as child process)', () => {
       console.error(
         'PUT /fdas/:fdaId failed:',
         res.status,
-        res.json ?? res.text
+        res.json ?? res.text,
       );
     }
     expect(res.status).toBe(204);
@@ -426,7 +445,7 @@ describe('FDA API - integration (run app as child process)', () => {
       console.error(
         'DELETE /fdas/:fdaId failed:',
         deleteFDA.status,
-        deleteFDA.json ?? deleteFDA.text
+        deleteFDA.json ?? deleteFDA.text,
       );
     }
     expect(deleteFDA.status).toBe(204);

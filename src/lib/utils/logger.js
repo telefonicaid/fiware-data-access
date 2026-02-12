@@ -24,7 +24,15 @@
 
 import logger from 'logops';
 import { v4 as uuidv4 } from 'uuid';
-import packageInfo from '../../package.json' with { type: 'json' };
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const packageInfo = JSON.parse(
+  readFileSync(join(__dirname, '../../../package.json'), 'utf8'),
+);
 
 export function initLogger(config) {
   logger.format = logger.formatters.pipe;
@@ -56,8 +64,6 @@ export function getInitialLogger(config) {
     envVars: `[pgHost=${config.pg.host} pgUsr=${config.pg.usr} objStgHost=${
       config.objstg.protocol + '://' + config.objstg.endpoint
     } objStgUsr=${config.objstg.usr}]`,
-    dependendencies: `@aws-sdk/lib-storage:${packageInfo.dependencies['@aws-sdk/lib-storage']} @duckdb/node-api:${
-      packageInfo.dependencies['@duckdb/node-api']} express:${packageInfo.dependencies.express} mongodb":${
-        packageInfo.dependencies.mongodb} pg:${packageInfo.dependencies.pg}` 
+    dependencies: `@aws-sdk/lib-storage:${packageInfo.dependencies['@aws-sdk/lib-storage']} @duckdb/node-api:${packageInfo.dependencies['@duckdb/node-api']} express:${packageInfo.dependencies.express} mongodb:${packageInfo.dependencies.mongodb} pg:${packageInfo.dependencies.pg}`,
   });
 }
