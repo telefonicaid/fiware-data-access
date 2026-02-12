@@ -1,9 +1,5 @@
 # Advanced Topics
 
--   [Introduction](#introduction)
--   [Object Bucket-Based Storage System](#object-bucket-based-storage-system)
-    -   [Bucket Name convention](#bucket-name-convention)
-
 ## Introduction
 
 The `FDA` app interacts and communicates with various systems. To keep that communication tidy we have multiple

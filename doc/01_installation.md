@@ -352,7 +352,7 @@ curl -i -X GET http://localhost:8080/fdas \
 
 Expected response (should be empty initially):
 
-```json
+```
 HTTP/1.1 200 OK
 Content-Type: application/json; charset=utf-8
 
@@ -393,7 +393,7 @@ curl -i -X GET http://localhost:8080/fdas \
 
 Expected response (should now contain the FDA):
 
-```json
+````
 HTTP/1.1 200 OK
 Content-Type: application/json; charset=utf-8
 
@@ -407,6 +407,70 @@ Content-Type: application/json; charset=utf-8
     "das": {}
   }
 ]
+
+### 7. Create a DA (Data Access) for the FDA and run a query
+
+You can create a DA that references the FDA (for example, reading a Parquet file in object storage) and then run a query against it.
+
+Create the DA for `fda_alarms`:
+
+```bash
+curl -i -X POST http://localhost:8080/fdas/fda_alarms/das \
+  -H "Content-Type: application/json" \
+  -H "Fiware-Service: my-bucket" \
+  -d '{
+    "id": "da_all_alarms",
+    "description": "Todas las alarmas (actualizado)",
+    "query": "SELECT * FROM read_parquet('\''s3://my-bucket/alarms/fda_alarms.parquet'\'')"
+  }'
+````
+
+Expected response:
+
+```
+HTTP/1.1 201 Created
+X-Powered-By: Express
+Content-Type: text/plain; charset=utf-8
+Content-Length: 7
+...
+Created
+```
+
+Run a query against the FDA/DA (JSON response):
+
+```bash
+curl -i -X GET "http://localhost:8080/query?fdaId=fda_alarms&daId=da_all_alarms" \
+  -H "Fiware-Service: my-bucket"
+```
+
+Example JSON response (array):
+
+```json
+[{"entityid":"alarm_nosignal_001","entitytype":"template","__ALERTDESCRIPTION__":"Regla que evalua si llegan medidas","__NAME__":"nosignal_001","__SEVERITY__":"medium","__TIME_BETWEEN_NOTIF__":"3600000","templateid":"alarm_nosenal_usuario","__ATTR__":null,"__OPER__":null,"__UMBRAL__":null,"created_at":"2026-02-11 10:41:17.960528"}, ...]
+```
+
+Or request streaming NDJSON by setting the `Accept` header:
+
+```bash
+curl -i -X GET "http://localhost:8080/query?fdaId=fda_alarms&daId=da_all_alarms" \
+  -H "Fiware-Service: my-bucket" \
+  -H 'Accept: application/x-ndjson'
+```
+
+Example NDJSON streaming output (one JSON object per line):
+
+```
+{"entityid":"alarm_nosignal_001","entitytype":"template",...}
+{"entityid":"alarm_threshold_04","entitytype":"template",...}
+...
+```
+
+Notes:
+
+-   Use the same `Fiware-Service` header when creating the DA and when querying.
+-   The NDJSON response is useful for streaming large result sets; timestamps may be returned in a structured format
+    (e.g. micros).
+
 ```
 
 ---
@@ -434,3 +498,4 @@ Content-Type: application/json; charset=utf-8
 -   [⬅️ Previous: Overview](/doc/00_overview.md)
 -   [🏠 Main index](../README.md#documentation)
 -   [➡️ Next: Architecture](/doc/02_architecture.md)
+```

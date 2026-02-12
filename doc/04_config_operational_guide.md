@@ -105,4 +105,4 @@ FDA_MONGO_URI=mongodb://exampleUser:examplePassword@endpoint:port
 
 -   [⬅️ Previous: Architecture](/doc/02_architecture.md)
 -   [🏠 Main index](../README.md#documentation)
--   [➡️ Next: Config And Operational Guide](/doc/04_config_operational_guide.md)
+-   [➡️ Next: Advanced Topics](/doc/05_advanced_topics.md)
