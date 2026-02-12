@@ -4,6 +4,7 @@
 - Fix: add lint to test
 - Fix: move runtime dependencies (ajv, dotenv, lodash, @aws-sdk/client-s3) from devDependencies to dependencies in package.json (#72)
 - Fix: improved error responses with proper status code and message (#30)
+- Add NDJSON support for /query and /doQuery endpoints with streaming capability (#82)
 - Add health endpoint with e2e test coverage (#79)
 - Add logger component for initial, debug, info, warning and error level logs (adding new env vars `FDA_LOG_*`) (#14)
 - Add e2e testing based on testcointainers and supertest (partially #14)
