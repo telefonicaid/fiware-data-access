@@ -34,9 +34,7 @@ Usage example:
 ```
 export async function storeSetPG(bucket, database, table, fda) {
   await storeSetPerformance(bucket, database, table, fda);
-  .
-  .
-  .
+  ...
 }
 ```
 

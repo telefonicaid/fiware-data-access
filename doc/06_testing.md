@@ -1,3 +1,5 @@
+# Testing
+
 ## Test Strategy
 
 This project relies on **end-to-end integration tests** rather than unit tests or mocks.
@@ -118,4 +120,4 @@ The same tests are executed in CI using GitHub Actions
 
 -   [⬅️ Previous: Advanced Topics](/doc/05_advanced_topics.md)
 -   [🏠 Main index](../README.md#documentation)
--   [➡️ Next: Testing](/doc/07_performance.md)
+-   [➡️ Next: Performance](/doc/07_performance.md)
