@@ -8,3 +8,4 @@
 - Add logger component for initial, debug, info, warning and error level logs (adding new env vars `FDA_LOG_*`) (#14)
 - Add e2e testing based on testcointainers and supertest (partially #14)
 - Update: upgrade lint version (#79)
+- Update @duckdb/node-api dependency version to 1.4.4-r.1
