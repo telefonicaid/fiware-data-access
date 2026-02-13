@@ -131,7 +131,9 @@ describe('FDA API - integration (run app as child process)', () => {
   let baseUrl;
 
   const service = 'myservice';
+  const servicePath = '/public';
   const fdaId = 'fda1';
+  const fdaId2 = 'fda2';
   const daId = 'da1';
 
   beforeAll(async () => {
@@ -560,5 +562,54 @@ describe('FDA API - integration (run app as child process)', () => {
     });
 
     expect(getFDA.status).toBe(404);
+  });
+
+  test('MongoDB integration: POST /fdas + get /fdas/:fdaId', async () => {
+    const postFDA = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas`,
+      headers: { 'Fiware-Service': service, 'Fiware-ServicePath': servicePath },
+      body: {
+        id: fdaId2,
+        // query base to extract from PG to CSV
+        query: 'SELECT id, name, age FROM public.users ORDER BY id',
+        description: 'users dataset',
+      },
+    });
+
+    if (postFDA.status >= 400) {
+      console.error(
+        'POST /fdas failed:',
+        postFDA.status,
+        postFDA.json ?? postFDA.text,
+      );
+    }
+    expect(postFDA.status).toBe(201);
+
+    const getFDA = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/fdas/${fdaId2}`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    const fdaBody = {
+      fdaId: fdaId2,
+      query: 'SELECT id, name, age FROM public.users ORDER BY id',
+      description: 'users dataset',
+      service,
+      servicePath,
+    };
+
+    if (getFDA.status >= 400) {
+      console.error(
+        'GET /fdas/:fdaId failed:',
+        getFDA.status,
+        getFDA.json ?? getFDA.text,
+      );
+    }
+    expect(getFDA.status).toBe(200);
+    expect(Object.keys(getFDA.json).length).toBeGreaterThan(0);
+    expect(getFDA.json.fdaId === fdaId2).toBe(true);
+    expect(getFDA.json).toMatchObject(fdaBody);
   });
 });
