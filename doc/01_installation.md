@@ -367,6 +367,7 @@ Create an FDA that extracts all alarms from the PostgreSQL table:
 curl -i -X POST http://localhost:8080/fdas \
   -H "Content-Type: application/json" \
   -H "Fiware-Service: my-bucket" \
+  -H "Fiware-ServicePath: /public" \
   -d '{
     "id": "fda_alarms",
     "query": "SELECT * FROM public.alarms",
@@ -393,7 +394,7 @@ curl -i -X GET http://localhost:8080/fdas \
 
 Expected response (should now contain the FDA):
 
-````
+```
 HTTP/1.1 200 OK
 Content-Type: application/json; charset=utf-8
 
@@ -402,15 +403,18 @@ Content-Type: application/json; charset=utf-8
     "_id": "...",
     "fdaId": "fda_alarms",
     "service": "my-bucket",
+    "servicePath: /public"
     "query": "SELECT * FROM public.alarms",
     "description": "FDA de alarmas del sistema",
     "das": {}
   }
 ]
+```
 
 ### 7. Create a DA (Data Access) for the FDA and run a query
 
-You can create a DA that references the FDA (for example, reading a Parquet file in object storage) and then run a query against it.
+You can create a DA that references the FDA (for example, reading a Parquet file in object storage) and then run a query
+against it.
 
 Create the DA for `fda_alarms`:
 
@@ -423,7 +427,7 @@ curl -i -X POST http://localhost:8080/fdas/fda_alarms/das \
     "description": "Todas las alarmas (actualizado)",
     "query": "SELECT * FROM read_parquet('\''s3://my-bucket/alarms/fda_alarms.parquet'\'')"
   }'
-````
+```
 
 Expected response:
 
@@ -471,8 +475,6 @@ Notes:
 -   The NDJSON response is useful for streaming large result sets; timestamps may be returned in a structured format
     (e.g. micros).
 
-```
-
 ---
 
 ## Common issues
@@ -498,4 +500,3 @@ Notes:
 -   [⬅️ Previous: Overview](/doc/00_overview.md)
 -   [🏠 Main index](../README.md#documentation)
 -   [➡️ Next: Architecture](/doc/02_architecture.md)
-```

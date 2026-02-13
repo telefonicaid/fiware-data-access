@@ -120,6 +120,7 @@ Each document corresponds to one FDA:
 -   **\_id**: MongoDB unique identifier
 -   **fdaId**: FDA identifier
 -   **service**: FIWARE service (`fiware-service`) name
+-   **servicePath**: FIWARE service path (`fiware-servicePath`) for access control
 -   **description**: FDA description
 -   **query**: SQL query used to generate the Parquet file
 -   **das**: keymap of DAs associated with the FDA
@@ -137,6 +138,7 @@ Each DA contains:
     "fdaId": "fda1",
     "description": "Description for the first FDA",
     "query": "SELECT population, timeinstant FROM exampleSchema.exampleTable",
+    "servicePath": "/public",
     "das": {
         "da1": {
             "description": "First DA querying timeInstant and population.",

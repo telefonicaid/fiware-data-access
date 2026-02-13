@@ -140,6 +140,7 @@ app.get('/fdas', async (req, res) => {
 app.post('/fdas', async (req, res) => {
   const { id, query, description } = req.body;
   const service = req.get('Fiware-Service');
+  const servicePath = req.get('Fiware-ServicePath');
 
   if (!id || !query || !service) {
     return res.status(400).json({
@@ -148,7 +149,7 @@ app.post('/fdas', async (req, res) => {
     });
   }
 
-  await fetchFDA(id, query, service, description);
+  await fetchFDA(id, query, service, servicePath, description);
   return res.sendStatus(201);
 });
 
@@ -288,34 +289,32 @@ app.get('/query', async (req, res) => {
 
   // Content negotiation: check if client wants NDJSON
   if (accept.includes('application/x-ndjson')) {
-    try {
-      const stream = await queryStream(service, req.query);
-      res.setHeader('Content-Type', 'application/x-ndjson');
+    const stream = await queryStream(service, req.query);
+    res.setHeader('Content-Type', 'application/x-ndjson');
 
-      // Iterate through stream chunks and write NDJSON
-      while (true) {
-        const chunk = await stream.fetchChunk();
-        if (chunk.rowCount === 0) break;
-
-        // Get rows from chunk and write as NDJSON
-        const rows = chunk.getRows();
-        const columnNames = stream.columnNames();
-
-        for (const row of rows) {
-          const rowObj = {};
-          for (let i = 0; i < columnNames.length; i++) {
-            rowObj[columnNames[i]] = row[i];
-          }
-          // Convert BigInt recursively before stringifying
-          const safeObj = convertBigInt(rowObj);
-          res.write(JSON.stringify(safeObj) + '\n');
-        }
+    // Iterate through stream chunks and write NDJSON
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const chunk = await stream.fetchChunk();
+      if (chunk.rowCount === 0) {
+        break;
       }
-      res.end();
-    } catch (err) {
-      // Delegate error handling to Express middleware
-      throw err;
+
+      // Get rows from chunk and write as NDJSON
+      const rows = chunk.getRows();
+      const columnNames = stream.columnNames();
+
+      for (const row of rows) {
+        const rowObj = {};
+        for (let i = 0; i < columnNames.length; i++) {
+          rowObj[columnNames[i]] = row[i];
+        }
+        // Convert BigInt recursively before stringifying
+        const safeObj = convertBigInt(rowObj);
+        res.write(JSON.stringify(safeObj) + '\n');
+      }
     }
+    return res.end();
   } else {
     // Default: return JSON array (backward compatible)
     const result = await query(service, req.query);
@@ -348,34 +347,32 @@ app.get('/doQuery', async (req, res) => {
 
   // Content negotiation: check if client wants NDJSON
   if (accept.includes('application/x-ndjson')) {
-    try {
-      const stream = await queryStream(service, updatedParams);
-      res.setHeader('Content-Type', 'application/x-ndjson');
+    const stream = await queryStream(service, updatedParams);
+    res.setHeader('Content-Type', 'application/x-ndjson');
 
-      // Iterate through stream chunks and write NDJSON
-      while (true) {
-        const chunk = await stream.fetchChunk();
-        if (chunk.rowCount === 0) break;
-
-        // Get rows from chunk and write as NDJSON
-        const rows = chunk.getRows();
-        const columnNames = stream.columnNames();
-
-        for (const row of rows) {
-          const rowObj = {};
-          for (let i = 0; i < columnNames.length; i++) {
-            rowObj[columnNames[i]] = row[i];
-          }
-          // Convert BigInt recursively before stringifying
-          const safeObj = convertBigInt(rowObj);
-          res.write(JSON.stringify(safeObj) + '\n');
-        }
+    // Iterate through stream chunks and write NDJSON
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const chunk = await stream.fetchChunk();
+      if (chunk.rowCount === 0) {
+        break;
       }
-      res.end();
-    } catch (err) {
-      // Delegate error handling to Express middleware
-      throw err;
+
+      // Get rows from chunk and write as NDJSON
+      const rows = chunk.getRows();
+      const columnNames = stream.columnNames();
+
+      for (const row of rows) {
+        const rowObj = {};
+        for (let i = 0; i < columnNames.length; i++) {
+          rowObj[columnNames[i]] = row[i];
+        }
+        // Convert BigInt recursively before stringifying
+        const safeObj = convertBigInt(rowObj);
+        res.write(JSON.stringify(safeObj) + '\n');
+      }
     }
+    return res.end();
   } else {
     // Default: return JSON array (backward compatible)
     const result = await query(service, updatedParams);
