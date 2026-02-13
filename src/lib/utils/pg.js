@@ -24,63 +24,61 @@
 
 import pg from 'pg';
 import { to as copyTo } from 'pg-copy-streams';
-import { createBucket, newUpload } from './aws.js';
+import { newUpload } from './aws.js';
+import { config } from '../fdaConfig.js';
+import { FDAError } from '../fdaError.js';
+import { getBasicLogger } from './logger.js';
 
 const { Client } = pg;
-
-function sanitizeString(string) {
-  return string.replace(/[^a-zA-Z0-9_]/g, '');
-}
+const logger = getBasicLogger();
 
 export function getPgClient(user, password, host, port, database) {
   return new Client({
-    user: user,
-    password: password,
-    host: host,
-    port: port,
-    database: database,
+    user,
+    password,
+    host,
+    port,
+    database,
   });
 }
 
-export async function uploadSet(s3Client, bucket, database, table, fda) {
+export async function uploadTable(s3Client, bucket, database, query, path) {
+  logger.debug({ bucket, database, query, path }, '[DEBUG]: uploadTable');
   const pgClient = getPgClient(
-    'fakeUser',
-    'fakePass',
-    'fakeHost',
-    5432,
-    database
+    config.pg.usr,
+    config.pg.pass,
+    config.pg.host,
+    config.pg.port,
+    database,
   );
-  pgClient.connect();
+  await pgClient.connect();
 
-  await createBucket(s3Client, bucket);
-
-  const pgStream = pgClient.query(
-    copyTo(
-      `COPY ${sanitizeString(database)}.${sanitizeString(
-        table
-      )} TO STDOUT WITH CSV HEADER`
-    )
-  );
+  const baseQuery = `COPY (${query}) TO STDOUT WITH CSV HEADER`;
+  const pgStream = pgClient.query(copyTo(baseQuery));
 
   const parallelUploads3 = newUpload(
     s3Client,
     bucket,
-    `${fda}.csv`,
+    `${path}.csv`,
     pgStream,
     25,
-    1
+    1,
   );
 
   parallelUploads3.on('httpUploadProgress', (progress) => {
-    console.log(progress);
+    logger.info(progress, 'Uploading table');
   });
 
   try {
     await parallelUploads3.done();
-    console.log('Upload completed successfully');
+    logger.debug('Upload completed successfully');
   } catch (e) {
     pgStream.destroy(e);
-    console.log('Error uploading:', e);
+    throw new FDAError(
+      503,
+      'UploadError',
+      `Error uploading FDA to object storage: ${e.message}`,
+    );
   } finally {
     pgStream.destroy();
     await pgClient.end();

@@ -1,0 +1,13 @@
+{
+  "extends": "tamia",
+  "parserOptions": {
+    "ecmaVersion": 2024,
+    "sourceType": "module"
+  },
+  "plugins": ["prettier"],
+  "rules": {
+    "prettier/prettier": "error",
+    "no-shadow": 0,
+    "valid-jsdoc": 0
+  }
+}

@@ -29,53 +29,81 @@ import {
   HeadBucketCommand,
 } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
+import { FDAError } from '../fdaError.js';
+import { getBasicLogger } from './logger.js';
 
-export async function getS3Client(endpoint, user, password) {
-  return new S3Client({
-    endpoint: endpoint,
-    region: 'REGION',
-    credentials: {
-      accessKeyId: user,
-      secretAccessKey: password,
-    },
-    forcePathStyle: true,
-  });
+let s3ClientInstance = null;
+const logger = getBasicLogger();
+
+export function getS3Client(endpoint, user, password) {
+  if (!s3ClientInstance) {
+    s3ClientInstance = new S3Client({
+      endpoint,
+      region: 'REGION',
+      credentials: {
+        accessKeyId: user,
+        secretAccessKey: password,
+      },
+      forcePathStyle: true,
+    });
+  }
+  return s3ClientInstance;
+}
+
+export async function destroyS3Client() {
+  if (s3ClientInstance) {
+    await s3ClientInstance.destroy();
+    s3ClientInstance = null;
+  }
 }
 
 export function newUpload(client, bucket, path, body, partSize, queueSize) {
+  logger.debug(
+    { bucket, path, body, partSize, queueSize },
+    '[DEBUG]: newUpload',
+  );
   return new Upload({
-    client: client,
+    client,
     params: {
       Bucket: bucket,
       Key: path,
       Body: body,
     },
     partSize: partSize * 1024 * 1024,
-    queueSize: queueSize,
+    queueSize,
   });
 }
 
-export async function dropSet(s3Client, bucket, path) {
-  return s3Client.send(
-    new DeleteObjectCommand({
-      Bucket: bucket,
-      Key: path,
-    })
-  );
+export async function dropFile(s3Client, bucket, path) {
+  logger.debug({ bucket, path }, '[DEBUG]: dropFile');
+  try {
+    await s3Client.send(
+      new DeleteObjectCommand({
+        Bucket: bucket,
+        Key: path,
+      }),
+    );
+  } catch (e) {
+    throw new FDAError(
+      500,
+      'S3ServerError',
+      `Error deleting file ${path} in bucket ${bucket}: ${e}`,
+    );
+  }
 }
 
 export async function createBucket(s3Client, bucket) {
   try {
     await s3Client.send(new HeadBucketCommand({ Bucket: bucket }));
-    console.log(`Bucket "${bucket}" already exists.`);
+    logger.info(`Bucket "${bucket}" already exists.`);
   } catch (err) {
     if (err.$metadata && err.$metadata.httpStatusCode === 404) {
-      console.log(`Bucket "${bucket}" not found. Creating...`);
+      logger.info(`Bucket "${bucket}" not found. Creating...`);
 
       await s3Client.send(new CreateBucketCommand({ Bucket: bucket }));
-      console.log(`Bucket "${bucket}" created.`);
+      logger.info(`Bucket "${bucket}" created.`);
     } else {
-      console.error('Unexpected error checking bucket:', err);
+      logger.error('Unexpected error checking bucket:', err);
       throw err;
     }
   }

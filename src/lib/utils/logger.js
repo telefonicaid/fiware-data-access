@@ -22,65 +22,48 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
-import { MongoClient } from 'mongodb';
+import logger from 'logops';
+import { v4 as uuidv4 } from 'uuid';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 
-const uri = 'mongodb://root:example@localhost:27017/?authSource=admin';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const packageInfo = JSON.parse(
+  readFileSync(join(__dirname, '../../../package.json'), 'utf8'),
+);
 
-const client = new MongoClient(uri);
-let isConnected = false;
+export function initLogger(config) {
+  logger.format = logger.formatters.pipe;
+  logger.setLevel(config.logger.level);
 
-async function getCollection() {
-  if (!isConnected) {
-    await client.connect();
-    isConnected = true;
-  }
-  const db = client.db('fiware-data-access');
-  return db.collection('sets');
+  logger.getContext = () => ({
+    ver: packageInfo.version,
+    corr: 'n/a',
+    trans: 'n/a',
+    comp: config.logger.comp,
+    op: 'n/a',
+  });
 }
 
-export async function disconnectClient() {
-  await client.close();
-  console.log('MongoDB connection closed');
+export function getBasicLogger() {
+  return logger;
 }
 
-export async function createSet(setId, table, bucket, path, service) {
-  const collection = await getCollection();
-  try {
-    await collection.insertOne({
-      _id: setId,
-      table,
-      bucket,
-      path,
-      queries: {},
-      service,
-    });
-  } catch (e) {
-    if (e.code === 11000) {
-      console.log(`Set with id ${setId} already exists.`);
-    } else {
-      console.log('Error creating set:', e);
-    }
-  }
+export function createChildLogger(config) {
+  const loggerCtx = logger.getContext();
+  return logger.child({
+    op: (config && config.op) || loggerCtx.op,
+    corr: (config && config.corr) || uuidv4(),
+  });
 }
 
-export async function storeFDA(setId, id, description, query) {
-  const collection = await getCollection();
-  try {
-    await collection.updateOne(
-      { _id: setId },
-      { $set: { [`queries.${id}`]: { description, query } } }
-    );
-  } catch (e) {
-    console.log(`Error storing FDA ${id} in set ${setId}: ${e}`);
-  }
-}
-
-export async function getFDA(setId, id) {
-  const collection = await getCollection();
-  const result = await collection.findOne(
-    { _id: setId },
-    { projection: { [`queries.${id}`]: 1, _id: 0 } }
-  );
-  const fda = result?.queries?.[id] || null;
-  return fda;
+export function getInitialLogger(config) {
+  return logger.child({
+    envVars: `[pgHost=${config.pg.host} pgUsr=${config.pg.usr} objStgHost=${
+      config.objstg.protocol + '://' + config.objstg.endpoint
+    } objStgUsr=${config.objstg.usr}]`,
+    dependencies: `@aws-sdk/lib-storage:${packageInfo.dependencies['@aws-sdk/lib-storage']} @duckdb/node-api:${packageInfo.dependencies['@duckdb/node-api']} express:${packageInfo.dependencies.express} mongodb:${packageInfo.dependencies.mongodb} pg:${packageInfo.dependencies.pg}`,
+  });
 }

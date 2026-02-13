@@ -22,56 +22,14 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
-import {
-  runPreparedStatement,
-  getDBConnection,
-  releaseDBConnection,
-  toParquet,
-  storePreparedStatement,
-} from './db.js';
-import { uploadSet } from './pg.js';
-import { getS3Client, dropSet } from './aws.js';
-import { createSet, storeFDA } from './mongo.js';
+export class FDAError extends Error {
+  constructor(statusCode = 500, code = 'InternalServerError', message) {
+    super(message);
 
-export async function querySet({ setId, id, ...params }) {
-  const conn = await getDBConnection();
-  try {
-    const queryRes = await runPreparedStatement(conn, setId, id, params);
-    return queryRes;
-  } finally {
-    await releaseDBConnection(conn);
+    this.name = this.constructor.name;
+    this.statusCode = statusCode;
+    this.code = code;
+
+    Error.captureStackTrace(this, this.constructor);
   }
 }
-
-export async function createFDA(setId, id, description, query) {
-  const conn = await getDBConnection();
-  try {
-    storeFDA(setId, id, description, query);
-    storePreparedStatement(conn, setId, id, query);
-  } finally {
-    await releaseDBConnection(conn);
-  }
-}
-
-export async function fetchSet(setId, database, table, bucket, path, service) {
-  const s3Client = await getS3Client(
-    'http://localhost:9000',
-    'admin',
-    'admin123'
-  );
-  await uploadSet(s3Client, bucket, database, table, path);
-
-  const conn = await getDBConnection();
-  try {
-    const parquetPath = getPath(bucket, path, '');
-    await toParquet(conn, getPath(bucket, path, '.csv'), parquetPath);
-    await dropSet(s3Client, bucket, `${path}.csv`);
-    await createSet(setId, table, bucket, path, service);
-  } finally {
-    await releaseDBConnection(conn);
-  }
-}
-
-const getPath = (path, fda, extension) => {
-  return `${path}${fda}${extension}`;
-};
