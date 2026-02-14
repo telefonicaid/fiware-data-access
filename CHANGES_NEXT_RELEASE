@@ -1,3 +1,4 @@
+- Add: use of header Fiware-servicePath for future access control (#61)
 - Fix: remove attributes path and database from post /fdas action and database (#59)
 - Fix validation schema in configuration env vars like port (#43)
 - Fix: docker compose pgsql options and context (#76)
@@ -9,3 +10,4 @@
 - Add logger component for initial, debug, info, warning and error level logs (adding new env vars `FDA_LOG_*`) (#14)
 - Add e2e testing based on testcointainers and supertest (partially #14)
 - Update: upgrade lint version (#79)
+- Update @duckdb/node-api dependency version from ~1.4.1-r.1 to ~1.4.4-r.1

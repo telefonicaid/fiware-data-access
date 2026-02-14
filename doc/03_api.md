@@ -364,6 +364,7 @@ _**Example Response:**_
         "query": "SELECT * FROM public.alarms",
         "das": {},
         "service": "my-bucket",
+        "servicePath": "/public",
         "description": "FDA de alarmas del sistema"
     }
 ]
@@ -379,10 +380,11 @@ None so far
 
 _**Request headers**_
 
-| Header           | Optional | Description                                                          | Example            |
-| ---------------- | -------- | -------------------------------------------------------------------- | ------------------ |
-| `Content-Type`   |          | MIME type. Required to be `application/json`.                        | `application/json` |
-| `Fiware-Service` |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket`        |
+| Header               | Optional | Description                                                                                                                                                    | Example            |
+| -------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| `Content-Type`       |          | MIME type. Required to be `application/json`.                                                                                                                  | `application/json` |
+| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform                                                                                           | `my-bucket`        |
+| `Fiware-ServicePath` | ✓        | Hierarchical service path to allow a `FDA` to be queried with authentication or anonimaly. Possible values `/public` and `/private`. Default value `/private`. | `/public`          |
 
 _**Request payload**_
 
@@ -395,6 +397,7 @@ _**Example Request:**_
 curl -i -X POST http://localhost:8080/fdas \
   -H "Content-Type: application/json" \
   -H "Fiware-Service: my-bucket" \
+  -H "Fiware-ServicePath: /public" \
   -d '{
     "id": "fda_alarms",
     "query": "SELECT * FROM public.alarms",
@@ -463,25 +466,22 @@ None
 _**Example Request:**_
 
 ```bash
-curl -i -X POST http://localhost:8080/fdas \
-  -H "Content-Type: application/json" \
-  -H "Fiware-Service: my-bucket" \
-  -d '{
-    "id": "fda_alarms",
-    "query": "SELECT * FROM public.alarms",
-    "description": "FDA de alarmas del sistema"
-  }'
+curl -i -X GET http://localhost:8080/fdas/fda_alarms \
+  -H "Fiware-Service: my-bucket"
 ```
 
 _**Example Response:**_
 
 ```
-HTTP/1.1 201 Created
-X-Powered-By: Express
-Content-Type: text/plain; charset=utf-8
-Content-Length: 7
-
-Created
+{
+    "_id": "698c572d1cd0982695cc3a8e",
+    "fdaId": "fda_alarms",
+    "query": "SELECT * FROM public.alarms",
+    "das": {},
+    "service": "my-bucket",
+    "servicePath": "/public",
+    "description": "FDA de alarmas del sistema"
+}
 ```
 
 #### Regenerate FDA `PUT /fdas/{fdaId}`
