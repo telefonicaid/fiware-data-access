@@ -351,7 +351,6 @@ describe('FDA API - integration (run app as child process)', () => {
     // DuckDB reads parquet generated in  s3://<bucket>/<fdaID>.parquet
     const daQuery = `
       SELECT id, name, age
-      FROM read_parquet('s3://${service}/${fdaId}.parquet')
       WHERE age > $minAge
       ORDER BY id;
     `;
@@ -396,6 +395,27 @@ describe('FDA API - integration (run app as child process)', () => {
       { id: '1', name: 'ana', age: '30' },
       { id: '3', name: 'carlos', age: '40' },
     ]);
+  });
+
+  test('POST /fdas/:fdaId/das rejects query with FROM clause', async () => {
+    const badQuery = `
+      FROM read_parquet('s3://some/path')
+      SELECT id
+    `;
+
+    const res = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas/${fdaId}/das`,
+      headers: { 'Fiware-Service': service },
+      body: {
+        id: 'da_bad',
+        description: 'should fail',
+        query: badQuery,
+      },
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.json.error).toBe('InvalidDAQuery');
   });
 
   test('GET /query returns JSON array when Accept: application/json', async () => {
