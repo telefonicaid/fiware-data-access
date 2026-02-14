@@ -425,9 +425,11 @@ curl -i -X POST http://localhost:8080/fdas/fda_alarms/das \
   -d '{
     "id": "da_all_alarms",
     "description": "Todas las alarmas (actualizado)",
-    "query": "SELECT * FROM read_parquet('\''s3://my-bucket/alarms/fda_alarms.parquet'\'')"
+    "query": "SELECT * LIMIT 10"
   }'
 ```
+
+> Avoid using the **FROM** clause within the DA query; it will be automatically added by the system.
 
 Expected response:
 

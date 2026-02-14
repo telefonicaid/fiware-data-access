@@ -554,11 +554,11 @@ None
 
 A DA is represented by a JSON object with the following fields:
 
-| Parameter     | Optional | Type   | Description                                           |
-| ------------- | -------- | ------ | ----------------------------------------------------- |
-| `id`          |          | string | DA identifier, unique within the associated FDA       |
-| `description` | ✓        | string | A free text used by the client to describe the DA     |
-| `query`       |          | string | Query string to run over the FDA when invoking the DA |
+| Parameter     | Optional | Type   | Description                                                                     |
+| ------------- | -------- | ------ | ------------------------------------------------------------------------------- |
+| `id`          |          | string | DA identifier, unique within the associated FDA                                 |
+| `description` | ✓        | string | A free text used by the client to describe the DA                               |
+| `query`       |          | string | Query string, without **FROM**, clause to run over the FDA when invoking the DA |
 
 #### List DAs `GET /fdas/{fdaId}/das`
 
@@ -646,7 +646,7 @@ curl -i -X POST http://localhost:8080/fdas/fda_alarms/das \
   -d '{
     "id": "da_all_alarms",
     "description": "Todas las alarmas",
-    "query": "SELECT * FROM read_parquet('"'"'s3://my-bucket/alarms/fda_alarms.parquet'"'"') LIMIT 10"
+    "query": "SELECT * LIMIT 10"
   }'
 ```
 
@@ -759,7 +759,7 @@ curl -i -X PUT http://localhost:8080/fdas/fda_alarms/das/da_all_alarms \
   -H "Fiware-Service: my-bucket" \
   -d '{
     "description": "Todas las alarmas (actualizado)",
-    "query": "SELECT * FROM read_parquet('"'"'s3://my-bucket/alarms/fda_alarms.parquet'"'"') LIMIT 20"
+    "query": "SELECT * LIMIT 20"
   }'
 ```
 
