@@ -89,7 +89,12 @@ export async function queryStream(service, { fdaId, daId, ...params }) {
     daId,
     params,
   );
+  let cleaned = false;
   const cleanup = async () => {
+    if (cleaned) {
+      return;
+    }
+    cleaned = true;
     try {
       await close();
     } finally {
