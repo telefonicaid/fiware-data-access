@@ -248,14 +248,15 @@ app.put('/fdas/:fdaId/das/:daId', async (req, res) => {
   const service = req.get('Fiware-Service');
   const { id, description, query } = req.body;
 
-  if (!service || !fdaId || !daId || !id || !description || !query) {
+  if (!service || !fdaId || !daId || !description || !query) {
     return res.status(400).json({
       error: 'BadRequest',
       description: 'Missing params in the request',
     });
   }
 
-  await putDA(service, fdaId, daId, id, description, query);
+  await putDA(service, fdaId, daId, description, query);
+
   return res.sendStatus(204);
 });
 

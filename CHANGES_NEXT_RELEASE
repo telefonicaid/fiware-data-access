@@ -1,5 +1,7 @@
 - Fix: use db connection pool for object storage
 - Add: use of header Fiware-servicePath for future access control (#61)
+- Fix: make DA identifier immutable (cannot be updated via PUT) (#88)
+- Fix: avoid FROM in DA queries; read_parquet source is injected internally (#37)
 - Fix: remove attributes path and database from post /fdas action and database (#59)
 - Fix validation schema in configuration env vars like port (#43)
 - Fix: docker compose pgsql options and context (#76)

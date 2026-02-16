@@ -25,6 +25,7 @@
 import {
   runPreparedStatement,
   runPreparedStatementStream,
+  storeCachedQuery,
   getDBConnection,
   releaseDBConnection,
   toParquet,
@@ -104,10 +105,12 @@ export async function queryStream(service, { fdaId, daId, ...params }) {
   return { stream, cleanup };
 }
 
-export async function createDA(service, fdaId, daId, description, query) {
+export async function createDA(service, fdaId, daId, description, userQuery) {
   const conn = await getDBConnection();
   try {
-    storeDA(service, fdaId, daId, description, query);
+    const query = buildDAQuery(service, fdaId, userQuery);
+    await storeCachedQuery(service, fdaId, daId, query);
+    storeDA(service, fdaId, daId, description, userQuery);
   } finally {
     await releaseDBConnection(conn);
   }
@@ -167,8 +170,18 @@ export async function getDA(service, fdaId, daId) {
   return da;
 }
 
-export async function putDA(service, fdaId, daId, newId, description, query) {
-  await updateDA(service, fdaId, daId, newId, description, query);
+export async function putDA(service, fdaId, daId, description, userQuery) {
+  const conn = await getDBConnection(
+    config.objstg.endpoint,
+    config.objstg.usr,
+    config.objstg.pass,
+  );
+
+  const query = buildDAQuery(service, fdaId, userQuery);
+
+  await storeCachedQuery(service, fdaId, daId, query);
+
+  await updateDA(service, fdaId, daId, description, userQuery);
 }
 
 export async function deleteDA(service, fdaId, daId) {
@@ -198,3 +211,23 @@ const getPath = (bucket, path, extension) => {
   const cleanPath = path?.startsWith('/') ? path.slice(1) : path;
   return `${cleanBucket}/${cleanPath}${extension}`;
 };
+
+function buildDAQuery(service, fdaId, userQuery) {
+  if (!userQuery || typeof userQuery !== 'string') {
+    throw new FDAError(400, 'BadRequest', 'Invalid DA query');
+  }
+
+  if (/^\s*from\b/i.test(userQuery)) {
+    throw new FDAError(
+      400,
+      'InvalidDAQuery',
+      'DA query must not include FROM clause at start. It is managed internally.',
+    );
+  }
+
+  const trimmed = userQuery.trim();
+
+  const parquetPath = `s3://${service}/${fdaId}.parquet`;
+
+  return `FROM read_parquet('${parquetPath}') ${trimmed}`; // TO DISCUSS: implementation by adding FROM clause at the beginning of the query
+}
