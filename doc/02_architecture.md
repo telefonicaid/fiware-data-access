@@ -59,6 +59,7 @@ It:
 -   Defines how to query an existing FDA
 -   Can be executed multiple times with different parameters
 -   Returns results in JSON format
+-   Does **not** include **FROM** clause. Access the FDA directly, you don't need to know the internal storage logic
 
 In simple terms:
 
@@ -84,7 +85,7 @@ Content-Type: application/json
 {
     "id": "activity_by_species",
     "description": "Activity filtered by animal species",
-    "query": "SELECT * FROM fda WHERE animalspecies = ${species}"
+    "query": "SELECT * WHERE animalspecies = ${species}"
 }
 ```
 
@@ -142,11 +143,11 @@ Each DA contains:
     "das": {
         "da1": {
             "description": "First DA querying timeInstant and population.",
-            "query": "SELECT * FROM 's3://my-bucket/das/exampleTable.parquet' WHERE population = $population AND timeinstant = $timeinstant;"
+            "query": "SELECT * WHERE population = $population AND timeinstant = $timeinstant;"
         },
         "da2": {
             "description": "Second DA querying timeInstant and gender.",
-            "query": "SELECT * FROM 's3://my-bucket/das/exampleTable.parquet' WHERE gender = $gender AND timeinstant = $timeinstant;"
+            "query": "SELECT * WHERE gender = $gender AND timeinstant = $timeinstant;"
         }
     },
     "service": "fiwareService"
