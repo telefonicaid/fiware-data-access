@@ -302,15 +302,15 @@ curl -i -X POST http://localhost:8080/fdas \
 
 ## API Routes
 
-## Health Endpoints
+## Health Endpoint
 
-These endpoints allow checking whether the FIWARE Data Access service is running.
+This endpoint allow checking whether the FIWARE Data Access service is running.
 
-They do not require the `Fiware-Service` header and are intended for monitoring purposes.
+It does not require the `Fiware-Service` header and is intended for monitoring purposes.
 
 ---
 
-### Root Health `GET /` and Health Check `GET /health`
+### Health Check `GET /health`
 
 Returns the operational status of the service.
 
