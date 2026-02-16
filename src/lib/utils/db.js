@@ -30,7 +30,8 @@ import { config } from '../fdaConfig.js';
 
 let instance = null;
 
-const preparedStatements = new Map();
+// key: `${service}::${fdaId}` -> Map(daId -> sql query)
+const cachedQueries = new Map();
 const logger = getBasicLogger();
 
 const connectionPool = [];
@@ -100,9 +101,12 @@ async function initDuckDB() {
 export async function runPreparedStatement(conn, service, fdaId, daId, params) {
   logger.debug(
     { service, fdaId, daId, params },
-    '[DEBUG]: runPreparedStatements'
+    '[DEBUG]: runPreparedStatement'
   );
-  if (!getPreparedStatement(service, fdaId, daId)) {
+
+  let query = getCachedQuery(service, fdaId, daId);
+
+  if (!query) {
     const da = await retrieveDA(service, fdaId, daId);
     if (!da?.query) {
       throw new FDAError(
@@ -111,13 +115,15 @@ export async function runPreparedStatement(conn, service, fdaId, daId, params) {
         `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`
       );
     }
-    await storePreparedStatement(conn, service, fdaId, daId, da.query);
+    query = da.query;
+    await storeCachedQuery(service, fdaId, daId, query);
   }
 
+  const stmt = await conn.prepare(query);
+
   try {
-    const dbStatement = getPreparedStatement(service, fdaId, daId);
-    dbStatement.bind(params);
-    const result = await dbStatement.run();
+    await stmt.bind(params);
+    const result = await stmt.run();
     return result.getRowObjectsJson();
   } catch (e) {
     throw new FDAError(
@@ -125,6 +131,11 @@ export async function runPreparedStatement(conn, service, fdaId, daId, params) {
       'DuckDBServerError',
       `Error running the prepared statement: ${e}`
     );
+  } finally {
+    // release statement resources
+    if (typeof stmt.close === 'function') {
+      await stmt.close();
+    }
   }
 }
 
@@ -139,7 +150,10 @@ export async function runPreparedStatementStream(
     { service, fdaId, daId, params },
     '[DEBUG]: runPreparedStatementStream'
   );
-  if (!getPreparedStatement(service, fdaId, daId)) {
+
+  let query = getCachedQuery(service, fdaId, daId);
+
+  if (!query) {
     const da = await retrieveDA(service, fdaId, daId);
     if (!da?.query) {
       throw new FDAError(
@@ -148,18 +162,28 @@ export async function runPreparedStatementStream(
         `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`
       );
     }
-    await storePreparedStatement(conn, service, fdaId, daId, da.query);
+    query = da.query;
+    await storeCachedQuery(service, fdaId, daId, query);
   }
 
+  const stmt = await conn.prepare(query);
+
   try {
-    const dbStatement = getPreparedStatement(service, fdaId, daId);
-    dbStatement.bind(params);
-    // Use stream() for lazy evaluation without buffering
-    const stream = dbStatement.stream();
-    // Attach helper function to stream for converting BigInt
-    stream.convertBigInt = convertBigInt;
+    await stmt.bind(params);
+    const stream = stmt.stream();
+
+    // close statement when strem ends
+    stream.on('end', async () => {
+      if (typeof stmt.close === 'function') {
+        await stmt.close();
+      }
+    });
+
     return stream;
   } catch (e) {
+    if (typeof stmt.close === 'function') {
+      await stmt.close();
+    }
     throw new FDAError(
       500,
       'DuckDBServerError',
@@ -168,31 +192,23 @@ export async function runPreparedStatementStream(
   }
 }
 
-export function getPreparedStatement(service, fdaId, daId) {
-  logger.debug({ service, fdaId, daId }, '[DEBUG]: getPreparedStatement');
-  return preparedStatements.get(`${service}${fdaId}`)?.get(daId);
+function fdaKey(service, fdaId) {
+  return `${service}::${fdaId}`;
+}
+function getCachedQuery(service, fdaId, daId) {
+  return cachedQueries.get(fdaKey(service, fdaId))?.get(daId);
 }
 
-export async function storePreparedStatement(
-  conn,
-  service,
-  fdaId,
-  daId,
-  query
-) {
-  logger.debug(
-    { service, fdaId, daId, query },
-    '[DEBUG]: storePreparedStatement'
-  );
-  const dbStatement = await conn.prepare(query);
-  const fda = preparedStatements.get(`${service}${fdaId}`);
-  if (fda) {
-    fda.set(daId, dbStatement);
-  } else {
-    const da = new Map();
-    da.set(daId, dbStatement);
-    preparedStatements.set(`${service}${fdaId}`, da);
+async function storeCachedQuery(service, fdaId, daId, query) {
+  const key = fdaKey(service, fdaId);
+  let fda = cachedQueries.get(key);
+
+  if (!fda) {
+    fda = new Map();
+    cachedQueries.set(key, fda);
   }
+
+  fda.set(daId, query);
 }
 
 export function toParquet(conn, originPath, resultPath) {
