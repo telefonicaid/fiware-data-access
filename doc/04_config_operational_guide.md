@@ -101,6 +101,32 @@ FDA_MONGO_URI=mongodb://exampleUser:examplePassword@endpoint:port
 
 ---
 
+## Health Check Endpoints
+
+FIWARE Data Access exposes two basic health check endpoints intended for monitoring, container orchestration systems
+(e.g., Kubernetes), load balancers, or uptime checks.
+
+These endpoints do **not** require authentication headers and can be used to verify that the service is running.
+
+### `GET /` and `GET /health`
+
+Basic root health check endpoint.
+
+**Response code**
+
+-   `200 OK` when the service is up.
+
+**Response payload**
+
+```json
+{
+    "status": "UP",
+    "timestamp": "2026-02-16T10:15:30.123Z"
+}
+```
+
+---
+
 ## 🧭 Navigation
 
 -   [⬅️ Previous: Architecture](/doc/02_architecture.md)

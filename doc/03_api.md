@@ -302,6 +302,35 @@ curl -i -X POST http://localhost:8080/fdas \
 
 ## API Routes
 
+## Health Endpoints
+
+These endpoints allow checking whether the FIWARE Data Access service is running.
+
+They do not require the `Fiware-Service` header and are intended for monitoring purposes.
+
+---
+
+### Root Health `GET /` and Health Check `GET /health`
+
+Returns the operational status of the service.
+
+**Request headers**
+
+None required.
+
+**Response code**
+
+-   `200 OK` — Service is running.
+
+**Response payload**
+
+```json
+{
+    "status": "UP",
+    "timestamp": "2026-02-16T10:15:30.123Z"
+}
+```
+
 ### FDA payload datamodel
 
 A FDA is represented by a JSON object with the following fields:
