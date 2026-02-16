@@ -735,7 +735,9 @@ _**Example Response:**_
 
 #### Update DA `PUT /fdas/{fdaId}/das/{daId}`
 
-Update an existing DA. Optionally allows changing its identifier.
+Update an existing DA.
+
+The DA identifier (`daId`) is defined in the URL and **cannot be modified**.
 
 _**Request query parameters**_
 
@@ -752,13 +754,10 @@ _**Request payload**_
 
 The payload is a JSON object containing the DA fields to update.
 
-| Field         | Optional | Description                                                           |
-| ------------- | -------- | --------------------------------------------------------------------- |
-| `id`          | Yes      | New identifier for the DA. If omitted, the existing `{daId}` is kept. |
-| `description` | No       | Updated description of the DA.                                        |
-| `query`       | No       | Logical DA query (must not contain a `FROM` clause).                  |
-
-If `id` is provided and differs from `{daId}`, the DA identifier will be updated.
+| Field         | Optional | Description                                          |
+| ------------- | -------- | ---------------------------------------------------- |
+| `description` | No       | Updated description of the DA.                       |
+| `query`       | No       | Logical DA query (must not contain a `FROM` clause). |
 
 _**Example Request:**_
 
@@ -768,17 +767,6 @@ curl -i -X PUT http://localhost:8080/fdas/fda_alarms/das/da_all_alarms \
   -H "Fiware-Service: my-bucket" \
   -d '{
     "description": "Todas las alarmas (actualizado)",
-    "query": "SELECT * LIMIT 20"
-  }'
-```
-
-```bash
-curl -i -X PUT http://localhost:8080/fdas/fda_alarms/das/da_all_alarms \
-  -H "Content-Type: application/json" \
-  -H "Fiware-Service: my-bucket" \
-  -d '{
-    "id": "da_recent_alarms",
-    "description": "Recent alarms",
     "query": "SELECT * LIMIT 20"
   }'
 ```
