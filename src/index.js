@@ -308,7 +308,13 @@ app.get('/query', async (req, res) => {
           for (let i = 0; i < columnNames.length; i++) {
             rowObj[columnNames[i]] = row[i];
           }
-          res.write(JSON.stringify(convertBigInt(rowObj)) + '\n');
+          // Convert BigInt recursively before stringifying
+          const safeObj = convertBigInt(rowObj);
+          // Handle backpressure if big result
+          const ok = res.write(JSON.stringify(safeObj) + '\n');
+          if (!ok) {
+            await new Promise((resolve) => res.once('drain', resolve));
+          }
         }
       }
     } finally {
@@ -371,7 +377,11 @@ app.get('/doQuery', async (req, res) => {
           }
           // Convert BigInt recursively before stringifying
           const safeObj = convertBigInt(rowObj);
-          res.write(JSON.stringify(safeObj) + '\n');
+          // Handle backpressure if big result
+          const ok = res.write(JSON.stringify(safeObj) + '\n');
+          if (!ok) {
+            await new Promise((resolve) => res.once('drain', resolve));
+          }
         }
       }
     } finally {
