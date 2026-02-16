@@ -285,10 +285,9 @@ app.get('/query', async (req, res) => {
       description: 'Missing params in the request',
     });
   }
-
   // Content negotiation: check if client wants NDJSON
   if (accept.includes('application/x-ndjson')) {
-    const stream = await queryStream(service, req.query);
+    const { stream, cleanup } = await queryStream(service, req.query);
     res.setHeader('Content-Type', 'application/x-ndjson');
 
     // Iterate through stream chunks and write NDJSON
@@ -313,6 +312,7 @@ app.get('/query', async (req, res) => {
         res.write(JSON.stringify(safeObj) + '\n');
       }
     }
+    await cleanup();
     return res.end();
   } else {
     // Default: return JSON array (backward compatible)
@@ -346,7 +346,7 @@ app.get('/doQuery', async (req, res) => {
 
   // Content negotiation: check if client wants NDJSON
   if (accept.includes('application/x-ndjson')) {
-    const stream = await queryStream(service, updatedParams);
+    const { stream, cleanup } = await queryStream(service, updatedParams);
     res.setHeader('Content-Type', 'application/x-ndjson');
 
     // Iterate through stream chunks and write NDJSON
@@ -371,6 +371,7 @@ app.get('/doQuery', async (req, res) => {
         res.write(JSON.stringify(safeObj) + '\n');
       }
     }
+    await cleanup();
     return res.end();
   } else {
     // Default: return JSON array (backward compatible)
