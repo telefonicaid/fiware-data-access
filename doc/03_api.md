@@ -556,11 +556,11 @@ A DA is represented by a JSON object with the following fields:
 
 | Parameter     | Optional | Type   | Description                                                                     |
 | ------------- | -------- | ------ | ------------------------------------------------------------------------------- |
-| `id`          | ✓        | string | DA identifier, unique within the associated FDA. Mandatory only for creation.   |
+| `id`          | (*)      | string | DA identifier, unique within the associated FDA.                                |
 | `description` | ✓        | string | A free text used by the client to describe the DA                               |
 | `query`       |          | string | Query string, without **FROM**, clause to run over the FDA when invoking the DA |
 
-The `id` field is mandatory when creating a DA (`POST`) and must not be included when updating a DA (`PUT`).
+(*) The `id` field is mandatory when creating a DA (`POST`) and must not be included when updating a DA (`PUT`).
 
 #### List DAs `GET /fdas/{fdaId}/das`
 
@@ -737,8 +737,6 @@ _**Example Response:**_
 
 Update an existing DA.
 
-The DA identifier (`daId`) is defined in the URL and **cannot be modified**.
-
 _**Request query parameters**_
 
 None so far
@@ -752,12 +750,8 @@ _**Request headers**_
 
 _**Request payload**_
 
-The payload is a JSON object containing the DA fields to update.
-
-| Field         | Optional | Description                                          |
-| ------------- | -------- | ---------------------------------------------------- |
-| `description` | No       | Updated description of the DA.                       |
-| `query`       | No       | Logical DA query (must not contain a `FROM` clause). |
+The payload is a JSON object containing a DA that follows the JSON DA representation format (described in
+[DA payload datamodel](#da-payload-datamodel) section). The DA is updated with that content.
 
 _**Example Request:**_
 
