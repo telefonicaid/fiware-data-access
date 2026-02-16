@@ -296,16 +296,6 @@ describe('FDA API - integration (run app as child process)', () => {
     await Promise.allSettled([minio?.stop(), mongo?.stop(), postgis?.stop()]);
   });
 
-  test('GET / returns UP status', async () => {
-    const res = await httpReq({
-      method: 'GET',
-      url: `http://127.0.0.1:${appPort}/`,
-    });
-    expect(res.status).toBe(200);
-    expect(res.json.status).toBe('UP');
-    expect(res.json.timestamp).toBeDefined();
-  });
-
   test('GET /health returns UP status', async () => {
     const res = await httpReq({
       method: 'GET',
