@@ -171,17 +171,15 @@ export async function getDA(service, fdaId, daId) {
 }
 
 export async function putDA(service, fdaId, daId, description, userQuery) {
-  const conn = await getDBConnection(
-    config.objstg.endpoint,
-    config.objstg.usr,
-    config.objstg.pass,
-  );
+  const conn = await getDBConnection();
 
-  const query = buildDAQuery(service, fdaId, userQuery);
-
-  await storeCachedQuery(service, fdaId, daId, query);
-
-  await updateDA(service, fdaId, daId, description, userQuery);
+  try {
+    const query = buildDAQuery(service, fdaId, userQuery);
+    await storeCachedQuery(service, fdaId, daId, query);
+    await updateDA(service, fdaId, daId, description, userQuery);
+  } finally {
+    await releaseDBConnection(conn);
+  }
 }
 
 export async function deleteDA(service, fdaId, daId) {
