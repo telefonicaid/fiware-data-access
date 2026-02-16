@@ -5,6 +5,8 @@
 -   [Introduction](#introduction)
 -   [Error Responses](#error-responses)
 -   [API Routes](#api-routes)
+    -   [Health Endpoint](#health-endpoint)
+        -   [Health Check `GET /health`](#health-check-get-health)
     -   [FDA payload datamodel](#fda-payload-datamodel)
     -   [FDAs operations](#fdas-operations)
         -   [List FDAs](#list-fdas-get-fdas)
@@ -21,7 +23,7 @@
         -   [Delete DA](#delete-da-delete-fdasfdaiddasdaid)
 -   [Non RESTful operations](#non-restful-operations)
     -   [Query](#query-get-query)
-    -   [Query (Pentaho CDA legacy support)](#query-get-doquery-pentaho-cda-legacy-support)
+    -   [DoQuery (Pentaho CDA legacy support)](#query-get-doquery-pentaho-cda-legacy-support)
 -   [Navigation](#-navigation)
 
 ## Introduction
