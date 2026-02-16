@@ -39,7 +39,6 @@ import {
   deleteDA,
 } from './lib/fda.js';
 import { createIndex, disconnectClient } from './lib/utils/mongo.js';
-import { disconnectConnection } from './lib/utils/db.js';
 import { destroyS3Client } from './lib/utils/aws.js';
 import { convertBigInt } from './lib/utils/utils.js';
 import { config } from './lib/fdaConfig.js';
@@ -417,7 +416,6 @@ async function startup() {
 
 async function shutdown() {
   await disconnectClient();
-  await disconnectConnection();
   await destroyS3Client();
   process.exit(0);
 }

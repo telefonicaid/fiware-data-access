@@ -56,4 +56,3 @@ await import('../../src/index.js');
 // If your app does not listen in NODE_ENV=test, force it by NOT using NODE_ENV=test in child.
 // We'll handle that from the test (set NODE_ENV=integration).
 // Add a health route in app? If you don't have one, we'll just rely on /fdas 400.
->>>>>>> main:test/helpers/start-app.js
