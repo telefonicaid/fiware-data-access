@@ -420,6 +420,81 @@ describe('FDA API - integration (run app as child process)', () => {
     expect(res.json.error).toBe('InvalidDAQuery');
   });
 
+  test('PUT /fdas/:fdaId/das/:daId updates DA query and affects execution', async () => {
+    const daIdToUpdate = 'da_update';
+
+    // Create DA
+    const createRes = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas/${fdaId}/das`,
+      headers: { 'Fiware-Service': service },
+      body: {
+        id: daIdToUpdate,
+        description: 'initial filter',
+        query: `
+          SELECT id, name, age
+          WHERE age > $minAge
+          ORDER BY id
+        `,
+      },
+    });
+
+    expect(createRes.status).toBe(201);
+
+    // Execute with minAge=25 (should return 2 rows)
+    const firstQuery = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+        fdaId,
+      )}&daId=${encodeURIComponent(daIdToUpdate)}&minAge=25`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    expect(firstQuery.status).toBe(200);
+    expect(firstQuery.json.length).toBe(2);
+
+    // Update DA (change filter logic)
+    const updateRes = await httpReq({
+      method: 'PUT',
+      url: `${baseUrl}/fdas/${fdaId}/das/${daIdToUpdate}`,
+      headers: {
+        'Content-Type': 'application/json',
+        'Fiware-Service': service,
+      },
+      body: {
+        description: 'updated filter',
+        query: `
+          SELECT id, name, age
+          WHERE age > $minAge
+          AND age < 35
+          ORDER BY id
+        `,
+      },
+    });
+
+    if (updateRes.status >= 400) {
+      console.error(
+        'PUT /das failed:',
+        updateRes.status,
+        updateRes.json ?? updateRes.text,
+      );
+    }
+
+    expect(updateRes.status).toBe(204);
+
+    // Execute again → now should return only 1 row (ana, 30)
+    const secondQuery = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+        fdaId,
+      )}&daId=${encodeURIComponent(daIdToUpdate)}&minAge=25`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    expect(secondQuery.status).toBe(200);
+    expect(secondQuery.json).toEqual([{ id: '1', name: 'ana', age: '30' }]);
+  });
+
   test('GET /query returns JSON array when Accept: application/json', async () => {
     const res = await httpReq({
       method: 'GET',
