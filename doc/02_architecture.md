@@ -143,11 +143,11 @@ Each DA contains:
     "das": {
         "da1": {
             "description": "First DA querying timeInstant and population.",
-            "query": "SELECT * FROM read_parquet('s3://my-bucket/das/exampleTable.parquet') WHERE population = $population AND timeinstant = $timeinstant;"
+            "query": "SELECT * WHERE population = $population AND timeinstant = $timeinstant;"
         },
         "da2": {
             "description": "Second DA querying timeInstant and gender.",
-            "query": "SELECT * FROM read_parquet('s3://my-bucket/das/exampleTable.parquet') WHERE gender = $gender AND timeinstant = $timeinstant;"
+            "query": "SELECT * WHERE gender = $gender AND timeinstant = $timeinstant;"
         }
     },
     "service": "fiwareService"
