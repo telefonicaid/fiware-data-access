@@ -101,7 +101,7 @@ async function initDuckDB() {
 export async function runPreparedStatement(conn, service, fdaId, daId, params) {
   logger.debug(
     { service, fdaId, daId, params },
-    '[DEBUG]: runPreparedStatement'
+    '[DEBUG]: runPreparedStatement',
   );
 
   let query = getCachedQuery(service, fdaId, daId);
@@ -112,7 +112,7 @@ export async function runPreparedStatement(conn, service, fdaId, daId, params) {
       throw new FDAError(
         404,
         'DaNotFound',
-        `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`
+        `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`,
       );
     }
     query = da.query;
@@ -129,7 +129,7 @@ export async function runPreparedStatement(conn, service, fdaId, daId, params) {
     throw new FDAError(
       500,
       'DuckDBServerError',
-      `Error running the prepared statement: ${e}`
+      `Error running the prepared statement: ${e}`,
     );
   } finally {
     // release statement resources
@@ -144,11 +144,11 @@ export async function runPreparedStatementStream(
   service,
   fdaId,
   daId,
-  params
+  params,
 ) {
   logger.debug(
     { service, fdaId, daId, params },
-    '[DEBUG]: runPreparedStatementStream'
+    '[DEBUG]: runPreparedStatementStream',
   );
 
   let query = getCachedQuery(service, fdaId, daId);
@@ -159,7 +159,7 @@ export async function runPreparedStatementStream(
       throw new FDAError(
         404,
         'DaNotFound',
-        `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`
+        `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`,
       );
     }
     query = da.query;
@@ -172,12 +172,8 @@ export async function runPreparedStatementStream(
     await stmt.bind(params);
     const stream = stmt.stream();
 
-    // close statement when strem ends
-    stream.on('end', async () => {
-      if (typeof stmt.close === 'function') {
-        await stmt.close();
-      }
-    });
+    // Attach helper function to stream for converting BigInt
+    stream.convertBigInt = convertBigInt;
 
     return stream;
   } catch (e) {
@@ -187,7 +183,7 @@ export async function runPreparedStatementStream(
     throw new FDAError(
       500,
       'DuckDBServerError',
-      `Error streaming the prepared statement: ${e}`
+      `Error streaming the prepared statement: ${e}`,
     );
   }
 }
@@ -215,7 +211,7 @@ export function toParquet(conn, originPath, resultPath) {
   logger.debug({ originPath, resultPath }, '[DEBUG]: toParquet');
   return conn.run(
     `COPY ( SELECT * FROM read_csv_auto('s3://${originPath}')) 
-    TO 's3://${resultPath}' (FORMAT PARQUET);`
+    TO 's3://${resultPath}' (FORMAT PARQUET);`,
   );
 }
 
