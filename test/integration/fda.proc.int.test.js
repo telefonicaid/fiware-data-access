@@ -462,6 +462,7 @@ describe('FDA API - integration (run app as child process)', () => {
         'Fiware-Service': service,
       },
       body: {
+        id: 'ignored_in_put',
         description: 'updated filter',
         query: `
           SELECT id, name, age
