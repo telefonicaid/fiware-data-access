@@ -9,5 +9,6 @@
 - Add health endpoint with e2e test coverage (#79)
 - Add logger component for initial, debug, info, warning and error level logs (adding new env vars `FDA_LOG_*`) (#14)
 - Add e2e testing based on testcointainers and supertest (partially #14)
+- Update: avoid FROM in DA queries; read_parquet source is injected internally (#37)
 - Update: upgrade lint version (#79)
 - Update @duckdb/node-api dependency version from ~1.4.1-r.1 to ~1.4.4-r.1
