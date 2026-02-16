@@ -256,8 +256,7 @@ app.put('/fdas/:fdaId/das/:daId', async (req, res) => {
     });
   }
 
-  const newId = id ?? daId;
-  await putDA(service, fdaId, daId, newId, description, query);
+  await putDA(service, fdaId, daId, description, query);
 
   return res.sendStatus(204);
 });

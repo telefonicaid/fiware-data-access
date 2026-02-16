@@ -161,14 +161,7 @@ export async function getDA(service, fdaId, daId) {
   return da;
 }
 
-export async function putDA(
-  service,
-  fdaId,
-  daId,
-  newId,
-  description,
-  userQuery,
-) {
+export async function putDA(service, fdaId, daId, description, userQuery) {
   const conn = await getDBConnection(
     config.objstg.endpoint,
     config.objstg.usr,
@@ -177,9 +170,9 @@ export async function putDA(
 
   const query = buildDAQuery(service, fdaId, userQuery);
 
-  await storePreparedStatement(conn, service, fdaId, newId, query);
+  await storePreparedStatement(conn, service, fdaId, daId, query);
 
-  await updateDA(service, fdaId, daId, newId, description, userQuery);
+  await updateDA(service, fdaId, daId, description, userQuery);
 }
 
 export async function deleteDA(service, fdaId, daId) {
