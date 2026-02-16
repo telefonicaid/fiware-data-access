@@ -288,31 +288,32 @@ app.get('/query', async (req, res) => {
   // Content negotiation: check if client wants NDJSON
   if (accept.includes('application/x-ndjson')) {
     const { stream, cleanup } = await queryStream(service, req.query);
+    req.on('close', () => {
+      cleanup().catch(() => {});
+    });
     res.setHeader('Content-Type', 'application/x-ndjson');
-
-    // Iterate through stream chunks and write NDJSON
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const chunk = await stream.fetchChunk();
-      if (chunk.rowCount === 0) {
-        break;
-      }
-
-      // Get rows from chunk and write as NDJSON
-      const rows = chunk.getRows();
-      const columnNames = stream.columnNames();
-
-      for (const row of rows) {
-        const rowObj = {};
-        for (let i = 0; i < columnNames.length; i++) {
-          rowObj[columnNames[i]] = row[i];
+    try {
+      // Iterate through stream chunks and write NDJSON
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const chunk = await stream.fetchChunk();
+        if (chunk.rowCount === 0) {
+          break;
         }
-        // Convert BigInt recursively before stringifying
-        const safeObj = convertBigInt(rowObj);
-        res.write(JSON.stringify(safeObj) + '\n');
+        // Get rows from chunk and write as NDJSON
+        const rows = chunk.getRows();
+        const columnNames = stream.columnNames();
+        for (const row of rows) {
+          const rowObj = {};
+          for (let i = 0; i < columnNames.length; i++) {
+            rowObj[columnNames[i]] = row[i];
+          }
+          res.write(JSON.stringify(convertBigInt(rowObj)) + '\n');
+        }
       }
+    } finally {
+      await cleanup();
     }
-    await cleanup();
     return res.end();
   } else {
     // Default: return JSON array (backward compatible)
@@ -347,31 +348,35 @@ app.get('/doQuery', async (req, res) => {
   // Content negotiation: check if client wants NDJSON
   if (accept.includes('application/x-ndjson')) {
     const { stream, cleanup } = await queryStream(service, updatedParams);
+    req.on('close', () => {
+      cleanup().catch(() => {});
+    });
     res.setHeader('Content-Type', 'application/x-ndjson');
-
-    // Iterate through stream chunks and write NDJSON
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const chunk = await stream.fetchChunk();
-      if (chunk.rowCount === 0) {
-        break;
-      }
-
-      // Get rows from chunk and write as NDJSON
-      const rows = chunk.getRows();
-      const columnNames = stream.columnNames();
-
-      for (const row of rows) {
-        const rowObj = {};
-        for (let i = 0; i < columnNames.length; i++) {
-          rowObj[columnNames[i]] = row[i];
+    try {
+      // Iterate through stream chunks and write NDJSON
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const chunk = await stream.fetchChunk();
+        if (chunk.rowCount === 0) {
+          break;
         }
-        // Convert BigInt recursively before stringifying
-        const safeObj = convertBigInt(rowObj);
-        res.write(JSON.stringify(safeObj) + '\n');
+
+        // Get rows from chunk and write as NDJSON
+        const rows = chunk.getRows();
+        const columnNames = stream.columnNames();
+        for (const row of rows) {
+          const rowObj = {};
+          for (let i = 0; i < columnNames.length; i++) {
+            rowObj[columnNames[i]] = row[i];
+          }
+          // Convert BigInt recursively before stringifying
+          const safeObj = convertBigInt(rowObj);
+          res.write(JSON.stringify(safeObj) + '\n');
+        }
       }
+    } finally {
+      await cleanup();
     }
-    await cleanup();
     return res.end();
   } else {
     // Default: return JSON array (backward compatible)
