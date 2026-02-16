@@ -41,6 +41,7 @@ export async function releaseDBConnection(conn) {
     // Reset connection before return to pool
     try {
       await conn.run('RESET ALL;');
+      await configureConn(conn);
       connectionPool.push(conn);
     } catch (error) {
       // If error close connection
@@ -62,6 +63,8 @@ export async function getDBConnection() {
 
   // Create a new connection if pool is empty
   const conn = await instance.connect();
+  await configureConn(conn);
+
   return conn;
 }
 
@@ -97,7 +100,7 @@ async function initDuckDB() {
 export async function runPreparedStatement(conn, service, fdaId, daId, params) {
   logger.debug(
     { service, fdaId, daId, params },
-    '[DEBUG]: runPreparedStatements',
+    '[DEBUG]: runPreparedStatements'
   );
   if (!getPreparedStatement(service, fdaId, daId)) {
     const da = await retrieveDA(service, fdaId, daId);
@@ -105,7 +108,7 @@ export async function runPreparedStatement(conn, service, fdaId, daId, params) {
       throw new FDAError(
         404,
         'DaNotFound',
-        `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`,
+        `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`
       );
     }
     await storePreparedStatement(conn, service, fdaId, daId, da.query);
@@ -120,7 +123,7 @@ export async function runPreparedStatement(conn, service, fdaId, daId, params) {
     throw new FDAError(
       500,
       'DuckDBServerError',
-      `Error running the prepared statement: ${e}`,
+      `Error running the prepared statement: ${e}`
     );
   }
 }
@@ -130,11 +133,11 @@ export async function runPreparedStatementStream(
   service,
   fdaId,
   daId,
-  params,
+  params
 ) {
   logger.debug(
     { service, fdaId, daId, params },
-    '[DEBUG]: runPreparedStatementStream',
+    '[DEBUG]: runPreparedStatementStream'
   );
   if (!getPreparedStatement(service, fdaId, daId)) {
     const da = await retrieveDA(service, fdaId, daId);
@@ -142,7 +145,7 @@ export async function runPreparedStatementStream(
       throw new FDAError(
         404,
         'DaNotFound',
-        `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`,
+        `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`
       );
     }
     await storePreparedStatement(conn, service, fdaId, daId, da.query);
@@ -160,7 +163,7 @@ export async function runPreparedStatementStream(
     throw new FDAError(
       500,
       'DuckDBServerError',
-      `Error streaming the prepared statement: ${e}`,
+      `Error streaming the prepared statement: ${e}`
     );
   }
 }
@@ -175,11 +178,11 @@ export async function storePreparedStatement(
   service,
   fdaId,
   daId,
-  query,
+  query
 ) {
   logger.debug(
     { service, fdaId, daId, query },
-    '[DEBUG]: storePreparedStatement',
+    '[DEBUG]: storePreparedStatement'
   );
   const dbStatement = await conn.prepare(query);
   const fda = preparedStatements.get(`${service}${fdaId}`);
@@ -196,8 +199,19 @@ export function toParquet(conn, originPath, resultPath) {
   logger.debug({ originPath, resultPath }, '[DEBUG]: toParquet');
   return conn.run(
     `COPY ( SELECT * FROM read_csv_auto('s3://${originPath}')) 
-    TO 's3://${resultPath}' (FORMAT PARQUET);`,
+    TO 's3://${resultPath}' (FORMAT PARQUET);`
   );
+}
+
+async function configureConn(conn) {
+  await conn.run('LOAD httpfs;');
+  await conn.run(`
+    SET s3_endpoint='${config.objstg.endpoint}';
+    SET s3_url_style='path';
+    SET s3_use_ssl=false;
+    SET s3_access_key_id='${config.objstg.usr}';
+    SET s3_secret_access_key='${config.objstg.pass}';
+  `);
 }
 
 async function closeConnection(conn) {
