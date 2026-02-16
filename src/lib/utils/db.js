@@ -196,7 +196,7 @@ function getCachedQuery(service, fdaId, daId) {
   return cachedQueries.get(fdaKey(service, fdaId))?.get(daId);
 }
 
-function storeCachedQuery(service, fdaId, daId, query) {
+export function storeCachedQuery(service, fdaId, daId, query) {
   const key = fdaKey(service, fdaId);
   let fda = cachedQueries.get(key);
 
