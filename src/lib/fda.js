@@ -104,7 +104,7 @@ export async function createDA(service, fdaId, daId, description, userQuery) {
   );
   const query = buildDAQuery(service, fdaId, userQuery);
   await storePreparedStatement(conn, service, fdaId, daId, query);
-  storeDA(service, fdaId, daId, description, query); // TO DISCUSS: should we store the user query instead of the built query?
+  storeDA(service, fdaId, daId, description, userQuery);
 }
 
 export async function fetchFDA(
@@ -179,7 +179,7 @@ export async function putDA(
 
   await storePreparedStatement(conn, service, fdaId, newId, query);
 
-  await updateDA(service, fdaId, daId, newId, description, query); // TO DISCUSS: should we store the user query instead of the built query?
+  await updateDA(service, fdaId, daId, newId, description, userQuery);
 }
 
 export async function deleteDA(service, fdaId, daId) {
