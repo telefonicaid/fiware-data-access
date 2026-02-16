@@ -82,7 +82,7 @@ export async function query(service, { fdaId, daId, ...params }) {
 export async function queryStream(service, { fdaId, daId, ...params }) {
   const conn = await getDBConnection();
 
-  const stream = await runPreparedStatementStream(
+  const { stream, close } = await runPreparedStatementStream(
     conn,
     service,
     fdaId,
@@ -90,7 +90,11 @@ export async function queryStream(service, { fdaId, daId, ...params }) {
     params,
   );
   const cleanup = async () => {
-    await releaseDBConnection(conn);
+    try {
+      await close();
+    } finally {
+      await releaseDBConnection(conn);
+    }
   };
   return { stream, cleanup };
 }

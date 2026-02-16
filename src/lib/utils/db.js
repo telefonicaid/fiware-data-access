@@ -170,12 +170,14 @@ export async function runPreparedStatementStream(
 
   try {
     await stmt.bind(params);
-    const stream = stmt.stream();
+    const stream = await stmt.stream();
 
-    // Attach helper function to stream for converting BigInt
-    stream.convertBigInt = convertBigInt;
-
-    return stream;
+    const close = async () => {
+      if (typeof stmt.close === 'function') {
+        await stmt.close();
+      }
+    };
+    return { stream, close };
   } catch (e) {
     if (typeof stmt.close === 'function') {
       await stmt.close();
