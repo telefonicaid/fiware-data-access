@@ -25,7 +25,6 @@
 import { retrieveDA } from './mongo.js';
 import { FDAError } from '../fdaError.js';
 import { getBasicLogger } from './logger.js';
-import { convertBigInt } from './utils.js';
 import { config } from '../fdaConfig.js';
 
 let instance = null;
