@@ -5,6 +5,8 @@
 -   [Introduction](#introduction)
 -   [Error Responses](#error-responses)
 -   [API Routes](#api-routes)
+    -   [Health Endpoint](#health-endpoint)
+        -   [Health Check `GET /health`](#health-check-get-health)
     -   [FDA payload datamodel](#fda-payload-datamodel)
     -   [FDAs operations](#fdas-operations)
         -   [List FDAs](#list-fdas-get-fdas)
@@ -21,7 +23,7 @@
         -   [Delete DA](#delete-da-delete-fdasfdaiddasdaid)
 -   [Non RESTful operations](#non-restful-operations)
     -   [Query](#query-get-query)
-    -   [Query (Pentaho CDA legacy support)](#query-get-doquery-pentaho-cda-legacy-support)
+    -   [DoQuery (Pentaho CDA legacy support)](#query-get-doquery-pentaho-cda-legacy-support)
 -   [Navigation](#-navigation)
 
 ## Introduction
@@ -301,6 +303,35 @@ curl -i -X POST http://localhost:8080/fdas \
    FDAs.
 
 ## API Routes
+
+## Health Endpoint
+
+This endpoint allow checking whether the FIWARE Data Access service is running.
+
+It does not require the `Fiware-Service` header and is intended for monitoring purposes.
+
+---
+
+### Health Check `GET /health`
+
+Returns the operational status of the service.
+
+**Request headers**
+
+None required.
+
+**Response code**
+
+-   `200 OK` — Service is running.
+
+**Response payload**
+
+```json
+{
+    "status": "UP",
+    "timestamp": "2026-02-16T10:15:30.123Z"
+}
+```
 
 ### FDA payload datamodel
 
