@@ -67,13 +67,13 @@ export async function query(service, { fdaId, daId, ...params }) {
   const conn = await getDBConnection();
 
   try {
-      const queryRes = await runPreparedStatement(
-          conn,
-          service,
-          fdaId,
-          daId,
-          params,
-      );      
+    const queryRes = await runPreparedStatement(
+      conn,
+      service,
+      fdaId,
+      daId,
+      params,
+    );
     return queryRes;
   } finally {
     await releaseDBConnection(conn);
@@ -84,26 +84,26 @@ export async function queryStream(service, { fdaId, daId, ...params }) {
   const conn = await getDBConnection();
 
   try {
-      const stream = await runPreparedStatementStream(
-          conn,
-          service,
-          fdaId,
-          daId,
-          params,
-      );
-      return stream;
+    const stream = await runPreparedStatementStream(
+      conn,
+      service,
+      fdaId,
+      daId,
+      params,
+    );
+    return stream;
   } finally {
-      await releaseDBConnection(conn);
+    await releaseDBConnection(conn);
   }
 }
 
 export async function createDA(service, fdaId, daId, description, query) {
   const conn = await getDBConnection();
   try {
-      await storePreparedStatement(conn, service, fdaId, daId, query);
-      storeDA(service, fdaId, daId, description, query);
+    await storePreparedStatement(conn, service, fdaId, daId, query);
+    storeDA(service, fdaId, daId, description, query);
   } finally {
-      await releaseDBConnection(conn);
+    await releaseDBConnection(conn);
   }
 }
 
@@ -179,9 +179,9 @@ async function uploadTableToObjStg(database, query, bucket, path) {
 
   const conn = await getDBConnection();
   try {
-      const parquetPath = getPath(bucket, path, '.parquet');
-      await toParquet(conn, getPath(bucket, path, '.csv'), parquetPath);
-      await dropFile(s3Client, bucket, `${path}.csv`);
+    const parquetPath = getPath(bucket, path, '.parquet');
+    await toParquet(conn, getPath(bucket, path, '.csv'), parquetPath);
+    await dropFile(s3Client, bucket, `${path}.csv`);
   } finally {
     await releaseDBConnection(conn);
   }

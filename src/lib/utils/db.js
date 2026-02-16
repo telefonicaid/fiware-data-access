@@ -33,7 +33,7 @@ let instance = null;
 const preparedStatements = new Map();
 const logger = getBasicLogger();
 
-let connectionPool = [];
+const connectionPool = [];
 const MAX_POOL_SIZE = 10;
 
 export async function releaseDBConnection(conn) {
@@ -67,7 +67,9 @@ export async function getDBConnection() {
 
 async function initDuckDB() {
   if (!instance) {
-    logger.debug('Initializing DuckDB global instance...');      
+    logger.debug('Initializing DuckDB global instance...');
+    // Lazy import: avoid  "module is already linked" in Jest ESM/VM
+    const { DuckDBInstance } = await import('@duckdb/node-api');
     instance = await DuckDBInstance.create(':memory:');
 
     // Init connection for config
