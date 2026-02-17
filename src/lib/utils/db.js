@@ -1,4 +1,4 @@
-// Copyright 2025 Telefónica Soluciones de Informática y Comunicaciones de España, S.A.U.
+0; // Copyright 2025 Telefónica Soluciones de Informática y Comunicaciones de España, S.A.U.
 // PROJECT: fiware-data-access
 //
 // This software and / or computer program has been developed by Telefónica Soluciones
@@ -34,10 +34,9 @@ const cachedQueries = new Map();
 const logger = getBasicLogger();
 
 const connectionPool = [];
-const MAX_POOL_SIZE = 10;
 
 export async function releaseDBConnection(conn) {
-  if (connectionPool.length < MAX_POOL_SIZE) {
+  if (connectionPool.length < config.objstg.maxPoolSize) {
     // Reset connection before return to pool
     try {
       await conn.run('RESET ALL;');

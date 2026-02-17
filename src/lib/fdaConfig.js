@@ -74,6 +74,10 @@ const envVarsSchema = {
       type: 'string',
       default: null,
     },
+    FDA_OBJSTG_MAX_POOL_SIXE: {
+      type: 'number',
+      default: 10,
+    },
     FDA_MONGO_URI: {
       type: 'string',
       default: null,
@@ -117,6 +121,7 @@ export const config = {
     pass: envVars.FDA_OBJSTG_PASSWORD,
     protocol: envVars.FDA_OBJSTG_PROTOCOL,
     endpoint: envVars.FDA_OBJSTG_ENDPOINT,
+    maxPoolSize: envVars.FDA_OBJSTG_MAX_POOL_SIZE,
   },
   mongo: {
     uri: envVars.FDA_MONGO_URI,
