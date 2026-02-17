@@ -640,12 +640,12 @@ _**Example Response:**_
     {
         "id": "da_all_alarms",
         "description": "Todas las alarmas",
-        "query": "SELECT * FROM read_parquet('s3://my-bucket/alarms/fda_alarms.parquet') LIMIT 10"
+        "query": "SELECT * LIMIT 10"
     },
     {
         "id": "da_filter_by_name",
         "description": "Filtrar alarmas por nombre",
-        "query": "SELECT entityID, __NAME__, __SEVERITY__ FROM read_parquet('s3://my-bucket/alarms/fda_alarms.parquet') WHERE __NAME__ LIKE $pattern ORDER BY entityID"
+        "query": "SELECT entityID, __NAME__, __SEVERITY__ WHERE __NAME__ LIKE $pattern ORDER BY entityID"
     }
 ]
 ```
@@ -754,7 +754,7 @@ _**Example Response:**_
 ```json
 {
   "description": "Todas las alarmas",
-  "query": "SELECT * FROM read_parquet('s3://my-bucket/alarms/fda_alarms.parquet') LIMIT 10",
+  "query": "SELECT * LIMIT 10",
   "id": "da_all_alarms"
 },
 {
