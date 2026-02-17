@@ -58,7 +58,7 @@ Variabes related to the object bucket-based storage system:
 | `FDA_OBJSTG_PASSWORD`      |          | string | Password to connect to the object bucket-based storage system.                                       |
 | `FDA_OBJSTG_PROTOCOL`      | ✓        | string | Protocol (http or https) to connect to the object bucket-based storage system. Default value `https` |
 | `FDA_OBJSTG_ENDPOINT`      |          | string | Endpoint (host and port) to connect to the object bucket-based storage system.                       |
-| `FDA_OBJSTG_MAX_POOL_SIZE` |          | number | Max Pool size for connections pool for object storage. Default is 10                                 |
+| `FDA_OBJSTG_MAX_POOL_SIZE` |  ✓        | number | Max Pool size for connections pool for object storage. Default is 10                                 |
 
 ### MongoDB
 
