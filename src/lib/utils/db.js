@@ -195,7 +195,7 @@ function getCachedQuery(service, fdaId, daId) {
   return cachedQueries.get(fdaKey(service, fdaId))?.get(daId);
 }
 
-export function storeCachedQuery(service, fdaId, daId, query) {
+export async function storeCachedQuery(conn, service, fdaId, daId, query) {
   const key = fdaKey(service, fdaId);
   let fda = cachedQueries.get(key);
 
@@ -203,6 +203,9 @@ export function storeCachedQuery(service, fdaId, daId, query) {
     fda = new Map();
     cachedQueries.set(key, fda);
   }
+
+  // We create the pStatement in DuckDB to check compatibility with FDA baseQuery
+  await conn.prepare(query);
 
   fda.set(daId, query);
 }
