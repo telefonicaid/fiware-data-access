@@ -73,9 +73,6 @@ Key characteristics:
 -   Produces JSON query results
 -   Used by dashboards, services, or external clients
 
-**DISCLAIMER:** DA query **must** be compatible with the FDA base query. If not the _execution_ of the query throws an
-error (e.g. non existing attribute in the FDA etc.).
-
 #### Example DA
 
 ```http
