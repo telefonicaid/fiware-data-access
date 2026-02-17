@@ -114,7 +114,7 @@ export async function runPreparedStatement(conn, service, fdaId, daId, params) {
       );
     }
     query = da.query;
-    await storeCachedQuery(service, fdaId, daId, query);
+    await storeCachedQuery(conn, service, fdaId, daId, query);
   }
 
   const stmt = await conn.prepare(query);
@@ -161,7 +161,7 @@ export async function runPreparedStatementStream(
       );
     }
     query = da.query;
-    await storeCachedQuery(service, fdaId, daId, query);
+    await storeCachedQuery(conn, service, fdaId, daId, query);
   }
 
   const stmt = await conn.prepare(query);
