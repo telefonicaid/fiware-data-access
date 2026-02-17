@@ -39,7 +39,6 @@ import {
   deleteDA,
 } from './lib/fda.js';
 import { createIndex, disconnectClient } from './lib/utils/mongo.js';
-import { disconnectConnection } from './lib/utils/db.js';
 import { destroyS3Client } from './lib/utils/aws.js';
 import { convertBigInt } from './lib/utils/utils.js';
 import { config } from './lib/fdaConfig.js';
@@ -280,33 +279,40 @@ app.get('/query', async (req, res) => {
       description: 'Missing params in the request',
     });
   }
-
   // Content negotiation: check if client wants NDJSON
   if (accept.includes('application/x-ndjson')) {
-    const stream = await queryStream(service, req.query);
+    const { stream, cleanup } = await queryStream(service, req.query);
+    req.on('close', () => {
+      cleanup().catch(() => {});
+    });
     res.setHeader('Content-Type', 'application/x-ndjson');
-
-    // Iterate through stream chunks and write NDJSON
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const chunk = await stream.fetchChunk();
-      if (chunk.rowCount === 0) {
-        break;
-      }
-
-      // Get rows from chunk and write as NDJSON
-      const rows = chunk.getRows();
-      const columnNames = stream.columnNames();
-
-      for (const row of rows) {
-        const rowObj = {};
-        for (let i = 0; i < columnNames.length; i++) {
-          rowObj[columnNames[i]] = row[i];
+    try {
+      // Iterate through stream chunks and write NDJSON
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const chunk = await stream.fetchChunk();
+        if (chunk.rowCount === 0) {
+          break;
         }
-        // Convert BigInt recursively before stringifying
-        const safeObj = convertBigInt(rowObj);
-        res.write(JSON.stringify(safeObj) + '\n');
+        // Get rows from chunk and write as NDJSON
+        const rows = chunk.getRows();
+        const columnNames = stream.columnNames();
+        for (const row of rows) {
+          const rowObj = {};
+          for (let i = 0; i < columnNames.length; i++) {
+            rowObj[columnNames[i]] = row[i];
+          }
+          // Convert BigInt recursively before stringifying
+          const safeObj = convertBigInt(rowObj);
+          // Handle backpressure if big result
+          const ok = res.write(JSON.stringify(safeObj) + '\n');
+          if (!ok) {
+            await new Promise((resolve) => res.once('drain', resolve));
+          }
+        }
       }
+    } finally {
+      await cleanup();
     }
     return res.end();
   } else {
@@ -341,30 +347,39 @@ app.get('/doQuery', async (req, res) => {
 
   // Content negotiation: check if client wants NDJSON
   if (accept.includes('application/x-ndjson')) {
-    const stream = await queryStream(service, updatedParams);
+    const { stream, cleanup } = await queryStream(service, updatedParams);
+    req.on('close', () => {
+      cleanup().catch(() => {});
+    });
     res.setHeader('Content-Type', 'application/x-ndjson');
-
-    // Iterate through stream chunks and write NDJSON
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const chunk = await stream.fetchChunk();
-      if (chunk.rowCount === 0) {
-        break;
-      }
-
-      // Get rows from chunk and write as NDJSON
-      const rows = chunk.getRows();
-      const columnNames = stream.columnNames();
-
-      for (const row of rows) {
-        const rowObj = {};
-        for (let i = 0; i < columnNames.length; i++) {
-          rowObj[columnNames[i]] = row[i];
+    try {
+      // Iterate through stream chunks and write NDJSON
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const chunk = await stream.fetchChunk();
+        if (chunk.rowCount === 0) {
+          break;
         }
-        // Convert BigInt recursively before stringifying
-        const safeObj = convertBigInt(rowObj);
-        res.write(JSON.stringify(safeObj) + '\n');
+
+        // Get rows from chunk and write as NDJSON
+        const rows = chunk.getRows();
+        const columnNames = stream.columnNames();
+        for (const row of rows) {
+          const rowObj = {};
+          for (let i = 0; i < columnNames.length; i++) {
+            rowObj[columnNames[i]] = row[i];
+          }
+          // Convert BigInt recursively before stringifying
+          const safeObj = convertBigInt(rowObj);
+          // Handle backpressure if big result
+          const ok = res.write(JSON.stringify(safeObj) + '\n');
+          if (!ok) {
+            await new Promise((resolve) => res.once('drain', resolve));
+          }
+        }
       }
+    } finally {
+      await cleanup();
     }
     return res.end();
   } else {
@@ -411,7 +426,6 @@ async function startup() {
 
 async function shutdown() {
   await disconnectClient();
-  await disconnectConnection();
   await destroyS3Client();
   process.exit(0);
 }

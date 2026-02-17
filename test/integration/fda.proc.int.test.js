@@ -324,6 +324,29 @@ describe('FDA API - integration (run app as child process)', () => {
     expect(res.status).toBe(201);
   });
 
+  test('POST /fdas tries to creates an FDA without id and is detected', async () => {
+    const res = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas`,
+      headers: { 'Fiware-Service': service },
+      body: {
+        id: null,
+        // query base to extract from PG to CSV
+        query: 'SELECT id, name, age FROM public.users ORDER BY id',
+        description: 'users dataset',
+      },
+    });
+
+    if (res.status >= 400) {
+      console.error(
+        'POST /fdas failed as expected:',
+        res.status,
+        res.json ?? res.text,
+      );
+    }
+    expect(res.status).toBe(400);
+  });
+
   test('GET /fdas returns list', async () => {
     const res = await httpReq({
       method: 'GET',

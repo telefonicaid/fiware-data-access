@@ -25,9 +25,10 @@
 import {
   runPreparedStatement,
   runPreparedStatementStream,
+  storeCachedQuery,
   getDBConnection,
+  releaseDBConnection,
   toParquet,
-  storePreparedStatement,
 } from './utils/db.js';
 import { uploadTable } from './utils/pg.js';
 import { getS3Client, dropFile } from './utils/aws.js';
@@ -63,48 +64,56 @@ export async function getFDA(service, fdaId) {
 }
 
 export async function query(service, { fdaId, daId, ...params }) {
-  const conn = await getDBConnection(
-    config.objstg.endpoint,
-    config.objstg.usr,
-    config.objstg.pass,
-  );
+  const conn = await getDBConnection();
 
-  const queryRes = await runPreparedStatement(
-    conn,
-    service,
-    fdaId,
-    daId,
-    params,
-  );
-  return queryRes;
+  try {
+    const queryRes = await runPreparedStatement(
+      conn,
+      service,
+      fdaId,
+      daId,
+      params,
+    );
+    return queryRes;
+  } finally {
+    await releaseDBConnection(conn);
+  }
 }
 
 export async function queryStream(service, { fdaId, daId, ...params }) {
-  const conn = await getDBConnection(
-    config.objstg.endpoint,
-    config.objstg.usr,
-    config.objstg.pass,
-  );
+  const conn = await getDBConnection();
 
-  const stream = await runPreparedStatementStream(
+  const { stream, close } = await runPreparedStatementStream(
     conn,
     service,
     fdaId,
     daId,
     params,
   );
-  return stream;
+  let cleaned = false;
+  const cleanup = async () => {
+    if (cleaned) {
+      return;
+    }
+    cleaned = true;
+    try {
+      await close();
+    } finally {
+      await releaseDBConnection(conn);
+    }
+  };
+  return { stream, cleanup };
 }
 
 export async function createDA(service, fdaId, daId, description, userQuery) {
-  const conn = await getDBConnection(
-    config.objstg.endpoint,
-    config.objstg.usr,
-    config.objstg.pass,
-  );
-  const query = buildDAQuery(service, fdaId, userQuery);
-  await storePreparedStatement(conn, service, fdaId, daId, query);
-  storeDA(service, fdaId, daId, description, userQuery);
+  const conn = await getDBConnection();
+  try {
+    const query = buildDAQuery(service, fdaId, userQuery);
+    await storeCachedQuery(service, fdaId, daId, query);
+    storeDA(service, fdaId, daId, description, userQuery);
+  } finally {
+    await releaseDBConnection(conn);
+  }
 }
 
 export async function fetchFDA(
@@ -162,17 +171,15 @@ export async function getDA(service, fdaId, daId) {
 }
 
 export async function putDA(service, fdaId, daId, description, userQuery) {
-  const conn = await getDBConnection(
-    config.objstg.endpoint,
-    config.objstg.usr,
-    config.objstg.pass,
-  );
+  const conn = await getDBConnection();
 
-  const query = buildDAQuery(service, fdaId, userQuery);
-
-  await storePreparedStatement(conn, service, fdaId, daId, query);
-
-  await updateDA(service, fdaId, daId, description, userQuery);
+  try {
+    const query = buildDAQuery(service, fdaId, userQuery);
+    await storeCachedQuery(service, fdaId, daId, query);
+    await updateDA(service, fdaId, daId, description, userQuery);
+  } finally {
+    await releaseDBConnection(conn);
+  }
 }
 
 export async function deleteDA(service, fdaId, daId) {
@@ -187,14 +194,14 @@ async function uploadTableToObjStg(database, query, bucket, path) {
   );
   await uploadTable(s3Client, bucket, database, query, path);
 
-  const conn = await getDBConnection(
-    config.objstg.endpoint,
-    config.objstg.usr,
-    config.objstg.pass,
-  );
-  const parquetPath = getPath(bucket, path, '.parquet');
-  await toParquet(conn, getPath(bucket, path, '.csv'), parquetPath);
-  await dropFile(s3Client, bucket, `${path}.csv`);
+  const conn = await getDBConnection();
+  try {
+    const parquetPath = getPath(bucket, path, '.parquet');
+    await toParquet(conn, getPath(bucket, path, '.csv'), parquetPath);
+    await dropFile(s3Client, bucket, `${path}.csv`);
+  } finally {
+    await releaseDBConnection(conn);
+  }
 }
 
 const getPath = (bucket, path, extension) => {

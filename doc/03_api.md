@@ -587,11 +587,11 @@ A DA is represented by a JSON object with the following fields:
 
 | Parameter     | Optional | Type   | Description                                                                     |
 | ------------- | -------- | ------ | ------------------------------------------------------------------------------- |
-| `id`          | (*)      | string | DA identifier, unique within the associated FDA.                                |
+| `id`          | (\*)     | string | DA identifier, unique within the associated FDA.                                |
 | `description` | ✓        | string | A free text used by the client to describe the DA                               |
 | `query`       |          | string | Query string, without **FROM**, clause to run over the FDA when invoking the DA |
 
-(*) The `id` field is mandatory when creating a DA (`POST`) and must not be included when updating a DA (`PUT`).
+(\*) The `id` field is mandatory when creating a DA (`POST`) and must not be included when updating a DA (`PUT`).
 
 #### List DAs `GET /fdas/{fdaId}/das`
 

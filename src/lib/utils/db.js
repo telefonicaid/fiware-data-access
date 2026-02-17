@@ -25,63 +25,86 @@
 import { retrieveDA } from './mongo.js';
 import { FDAError } from '../fdaError.js';
 import { getBasicLogger } from './logger.js';
-import { convertBigInt } from './utils.js';
+import { config } from '../fdaConfig.js';
 
-let instancePromise = null;
-const preparedStatements = new Map();
+let instance = null;
+
+// key: `${service}::${fdaId}` -> Map(daId -> sql query)
+const cachedQueries = new Map();
 const logger = getBasicLogger();
 
-export function getDuckDB() {
-  if (!instancePromise) {
-    instancePromise = initDuckDB();
+const connectionPool = [];
+
+export async function releaseDBConnection(conn) {
+  if (connectionPool.length < config.objstg.maxPoolSize) {
+    // Reset connection before return to pool
+    try {
+      await conn.run('RESET ALL;');
+      await configureConn(conn);
+      connectionPool.push(conn);
+    } catch (error) {
+      // If error close connection
+      await closeConnection(conn);
+    }
+  } else {
+    // Pool full, close connection
+    await closeConnection(conn);
   }
-  return instancePromise;
+}
+
+export async function getDBConnection() {
+  await initDuckDB();
+
+  // Reuse connection from pool if exists
+  if (connectionPool.length > 0) {
+    return connectionPool.pop();
+  }
+
+  // Create a new connection if pool is empty
+  const conn = await instance.connect();
+  await configureConn(conn);
+
+  return conn;
 }
 
 async function initDuckDB() {
-  logger.debug('Initializing DuckDB global instance...');
+  if (!instance) {
+    logger.debug('Initializing DuckDB global instance...');
+    // Lazy import: avoid  "module is already linked" in Jest ESM/VM
+    const { DuckDBInstance } = await import('@duckdb/node-api');
+    instance = await DuckDBInstance.create(':memory:');
 
-  // Lazy import: avoid  "module is already linked" in Jest ESM/VM
-  const { DuckDBInstance } = await import('@duckdb/node-api');
+    // Init connection for config
+    const configConn = await instance.connect();
+    await configConn.run('INSTALL httpfs;');
+    await configConn.run('LOAD httpfs;');
 
-  const instance = await DuckDBInstance.create(':memory:');
-  const conn = await instance.connect();
+    // Common config
+    await configConn.run(`
+      SET s3_endpoint='${config.objstg.endpoint}';
+      SET s3_url_style='path';
+      SET s3_use_ssl=false;
+      SET s3_access_key_id='${config.objstg.usr}';
+      SET s3_secret_access_key='${config.objstg.pass}';
+    `);
 
-  await conn.run('INSTALL httpfs;');
-  await conn.run('LOAD httpfs;');
-
-  logger.debug('HTTPFS extension loaded.');
-
-  if (typeof conn.disconnect === 'function') {
-    await conn.disconnect();
-  } else if (typeof conn.disconnectSync === 'function') {
-    conn.disconnectSync();
+    if (typeof configConn.disconnect === 'function') {
+      await configConn.disconnect();
+    }
+    logger.debug('DuckDB initialized with HTTPFS');
   }
-
   return instance;
-}
-
-export async function getDBConnection(endpoint, usr, pass) {
-  const instance = await getDuckDB();
-  const conn = await instance.connect();
-
-  await conn.run(`
-    SET s3_endpoint='${endpoint}';
-    SET s3_url_style='path';
-    SET s3_use_ssl=false;
-    SET s3_access_key_id='${usr}';
-    SET s3_secret_access_key='${pass}';
-  `);
-
-  return conn;
 }
 
 export async function runPreparedStatement(conn, service, fdaId, daId, params) {
   logger.debug(
     { service, fdaId, daId, params },
-    '[DEBUG]: runPreparedStatements',
+    '[DEBUG]: runPreparedStatement',
   );
-  if (!getPreparedStatement(service, fdaId, daId)) {
+
+  let query = getCachedQuery(service, fdaId, daId);
+
+  if (!query) {
     const da = await retrieveDA(service, fdaId, daId);
     if (!da?.query) {
       throw new FDAError(
@@ -90,13 +113,15 @@ export async function runPreparedStatement(conn, service, fdaId, daId, params) {
         `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`,
       );
     }
-    await storePreparedStatement(conn, service, fdaId, daId, da.query);
+    query = da.query;
+    await storeCachedQuery(service, fdaId, daId, query);
   }
 
+  const stmt = await conn.prepare(query);
+
   try {
-    const dbStatement = getPreparedStatement(service, fdaId, daId);
-    dbStatement.bind(params);
-    const result = await dbStatement.run();
+    await stmt.bind(params);
+    const result = await stmt.run();
     return result.getRowObjectsJson();
   } catch (e) {
     throw new FDAError(
@@ -104,6 +129,11 @@ export async function runPreparedStatement(conn, service, fdaId, daId, params) {
       'DuckDBServerError',
       `Error running the prepared statement: ${e}`,
     );
+  } finally {
+    // release statement resources
+    if (typeof stmt.close === 'function') {
+      await stmt.close();
+    }
   }
 }
 
@@ -118,7 +148,10 @@ export async function runPreparedStatementStream(
     { service, fdaId, daId, params },
     '[DEBUG]: runPreparedStatementStream',
   );
-  if (!getPreparedStatement(service, fdaId, daId)) {
+
+  let query = getCachedQuery(service, fdaId, daId);
+
+  if (!query) {
     const da = await retrieveDA(service, fdaId, daId);
     if (!da?.query) {
       throw new FDAError(
@@ -127,18 +160,26 @@ export async function runPreparedStatementStream(
         `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`,
       );
     }
-    await storePreparedStatement(conn, service, fdaId, daId, da.query);
+    query = da.query;
+    await storeCachedQuery(service, fdaId, daId, query);
   }
 
+  const stmt = await conn.prepare(query);
+
   try {
-    const dbStatement = getPreparedStatement(service, fdaId, daId);
-    dbStatement.bind(params);
-    // Use stream() for lazy evaluation without buffering
-    const stream = dbStatement.stream();
-    // Attach helper function to stream for converting BigInt
-    stream.convertBigInt = convertBigInt;
-    return stream;
+    await stmt.bind(params);
+    const stream = await stmt.stream();
+
+    const close = async () => {
+      if (typeof stmt.close === 'function') {
+        await stmt.close();
+      }
+    };
+    return { stream, close };
   } catch (e) {
+    if (typeof stmt.close === 'function') {
+      await stmt.close();
+    }
     throw new FDAError(
       500,
       'DuckDBServerError',
@@ -147,31 +188,23 @@ export async function runPreparedStatementStream(
   }
 }
 
-export function getPreparedStatement(service, fdaId, daId) {
-  logger.debug({ service, fdaId, daId }, '[DEBUG]: getPreparedStatement');
-  return preparedStatements.get(`${service}${fdaId}`)?.get(daId);
+function fdaKey(service, fdaId) {
+  return `${service}::${fdaId}`;
+}
+function getCachedQuery(service, fdaId, daId) {
+  return cachedQueries.get(fdaKey(service, fdaId))?.get(daId);
 }
 
-export async function storePreparedStatement(
-  conn,
-  service,
-  fdaId,
-  daId,
-  query,
-) {
-  logger.debug(
-    { service, fdaId, daId, query },
-    '[DEBUG]: storePreparedStatement',
-  );
-  const dbStatement = await conn.prepare(query);
-  const fda = preparedStatements.get(`${service}${fdaId}`);
-  if (fda) {
-    fda.set(daId, dbStatement);
-  } else {
-    const da = new Map();
-    da.set(daId, dbStatement);
-    preparedStatements.set(`${service}${fdaId}`, da);
+export function storeCachedQuery(service, fdaId, daId, query) {
+  const key = fdaKey(service, fdaId);
+  let fda = cachedQueries.get(key);
+
+  if (!fda) {
+    fda = new Map();
+    cachedQueries.set(key, fda);
   }
+
+  fda.set(daId, query);
 }
 
 export function toParquet(conn, originPath, resultPath) {
@@ -182,8 +215,18 @@ export function toParquet(conn, originPath, resultPath) {
   );
 }
 
-export async function disconnectConnection() {
-  const conn = await getDBConnection('localhost:9000', 'admin', 'admin123');
+async function configureConn(conn) {
+  await conn.run('LOAD httpfs;');
+  await conn.run(`
+    SET s3_endpoint='${config.objstg.endpoint}';
+    SET s3_url_style='path';
+    SET s3_use_ssl=false;
+    SET s3_access_key_id='${config.objstg.usr}';
+    SET s3_secret_access_key='${config.objstg.pass}';
+  `);
+}
+
+async function closeConnection(conn) {
   if (typeof conn.disconnect === 'function') {
     await conn.disconnect();
   } else if (typeof conn.disconnectSync === 'function') {
