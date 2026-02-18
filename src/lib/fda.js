@@ -165,21 +165,50 @@ export async function fetchFDA(
 }
 
 export async function updateFDA(service, fdaId) {
-  const fda = await retrieveFDA(service, fdaId);
+  const collection = await getCollection();
 
-  if (!fda) {
-    throw new FDAError(
-      404,
-      'NotFound',
-      `FDA ${fdaId} not found in service ${service}`,
-    );
+  const result = await collection.findOneAndUpdate(
+    {
+      service,
+      fdaId,
+      status: { $in: ['completed', 'failed'] }, // block update if already executing
+      // Note: could be a problem if the FDA is stuck in 'fetching' status (crashing), but we can consider it as an edge case for now.
+      // In a future iteration, we could add a timeout mechanism to unblock FDAs stuck in 'fetching' for too long.
+    },
+    {
+      $set: {
+        status: 'fetching',
+        progress: 0,
+        lastExecution: new Date(),
+      },
+    },
+    { returnDocument: 'before' },
+  );
+
+  if (!result.value) {
+    // Can be either:
+    // - FDA not found
+    // - FDA is currently being fetched
+    const existing = await collection.findOne({ service, fdaId });
+
+    if (!existing) {
+      throw new FDAError(
+        404,
+        'NotFound',
+        `FDA ${fdaId} not found in service ${service}`,
+      );
+    }
+
+    if (existing.status === 'fetching') {
+      throw new FDAError(
+        409,
+        'AlreadyFetching',
+        `FDA ${fdaId} is already being regenerated`,
+      );
+    }
   }
 
-  await updateFDAStatus(service, fdaId, 'fetching', 0);
-
-  processFDAAsync(fdaId, fda.query, service).catch((err) => {
-    console.error(err);
-  });
+  processFDAAsync(fdaId, result.value.query, service).catch(console.error);
 }
 
 async function processFDAAsync(fdaId, query, service) {

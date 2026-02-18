@@ -69,6 +69,7 @@ export async function createFDA(
   logger.debug({ fdaId, query, service, description }, '[DEBUG]: createFDA');
   const collection = await getCollection();
   try {
+    // As there is a unique index on (fdaId, service), this will throw an error if an FDA with the same fdaId and service already exists
     await collection.insertOne({
       fdaId,
       query,
