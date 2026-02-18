@@ -228,7 +228,15 @@ describe('FDA API - integration (run app as child process)', () => {
       await pgClient.end();
       console.log('[TEST] Postgres OK');
     }
+    await startApp();
+  });
 
+  afterAll(async () => {
+    await stopApp();
+    await Promise.allSettled([minio?.stop(), mongo?.stop(), postgis?.stop()]);
+  });
+
+  async function startApp() {
     // Start app as child process (NOT NODE_ENV=test)
     appPort = await getFreePort();
     baseUrl = `http://127.0.0.1:${appPort}`;
@@ -283,9 +291,9 @@ describe('FDA API - integration (run app as child process)', () => {
     }
 
     console.log('[TEST] App OK at', baseUrl);
-  });
+  }
 
-  afterAll(async () => {
+  async function stopApp() {
     if (appProc) {
       appProc.kill('SIGTERM');
       await new Promise((r) => setTimeout(r, 500));
@@ -293,8 +301,7 @@ describe('FDA API - integration (run app as child process)', () => {
         appProc.kill('SIGKILL');
       }
     }
-    await Promise.allSettled([minio?.stop(), mongo?.stop(), postgis?.stop()]);
-  });
+  }
 
   test('GET /health returns UP status', async () => {
     const res = await httpReq({
@@ -610,6 +617,32 @@ describe('FDA API - integration (run app as child process)', () => {
     expect(a).toEqual({ id: 1, name: 'ana', age: 30 });
     expect(b).toEqual({ id: 2, name: 'bob', age: 20 });
     expect(c).toEqual({ id: 3, name: 'carlos', age: 40 });
+  });
+
+  test('GET /query works correctly after app restart', async () => {
+    await stopApp();
+    await startApp();
+
+    const res = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+        fdaId,
+      )}&daId=${encodeURIComponent(daId)}&minAge=25`,
+      headers: { 'Fiware-Service': service, Accept: 'application/json' },
+    });
+
+    if (res.status >= 400) {
+      console.error(
+        'GET /query (json) failed:',
+        res.status,
+        res.json ?? res.text,
+      );
+    }
+    expect(res.status).toBe(200);
+    expect(res.json).toEqual([
+      { id: '1', name: 'ana', age: '30' },
+      { id: '3', name: 'carlos', age: '40' },
+    ]);
   });
 
   test('GET /fdas/:fdaId returns expected FDA', async () => {

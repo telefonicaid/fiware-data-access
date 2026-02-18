@@ -113,7 +113,7 @@ export async function runPreparedStatement(conn, service, fdaId, daId, params) {
         `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`,
       );
     }
-    query = da.query;
+    query = buildDAQuery(service, fdaId, da.query);
     await storeCachedQuery(conn, service, fdaId, daId, query);
   }
 
@@ -160,7 +160,7 @@ export async function runPreparedStatementStream(
         `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`,
       );
     }
-    query = da.query;
+    query = buildDAQuery(service, fdaId, da.query);
     await storeCachedQuery(conn, service, fdaId, daId, query);
   }
 
@@ -223,6 +223,26 @@ export function toParquet(conn, originPath, resultPath) {
     `COPY ( SELECT * FROM read_csv_auto('s3://${originPath}')) 
     TO 's3://${resultPath}' (FORMAT PARQUET);`,
   );
+}
+
+export function buildDAQuery(service, fdaId, userQuery) {
+  if (!userQuery || typeof userQuery !== 'string') {
+    throw new FDAError(400, 'BadRequest', 'Invalid DA query');
+  }
+
+  if (/^\s*from\b/i.test(userQuery)) {
+    throw new FDAError(
+      400,
+      'InvalidDAQuery',
+      'DA query must not include FROM clause at start. It is managed internally.',
+    );
+  }
+
+  const trimmed = userQuery.trim();
+
+  const parquetPath = `s3://${service}/${fdaId}.parquet`;
+
+  return `FROM read_parquet('${parquetPath}') ${trimmed}`; // TO DISCUSS: implementation by adding FROM clause at the beginning of the query
 }
 
 async function configureConn(conn) {
