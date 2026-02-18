@@ -207,7 +207,7 @@ app.get('/fdas/:fdaId/das', async (req, res) => {
 
 app.post('/fdas/:fdaId/das', async (req, res) => {
   const { fdaId } = req.params;
-  const { id, description, query } = req.body;
+  const { id, description, query, params } = req.body;
   const service = req.get('Fiware-Service');
 
   if (!fdaId || !id || !description || !query || !service) {
@@ -217,7 +217,7 @@ app.post('/fdas/:fdaId/das', async (req, res) => {
     });
   }
 
-  await createDA(service, fdaId, id, description, query);
+  await createDA(service, fdaId, id, description, query, params);
   return res.sendStatus(201);
 });
 
@@ -239,7 +239,7 @@ app.get('/fdas/:fdaId/das/:daId', async (req, res) => {
 app.put('/fdas/:fdaId/das/:daId', async (req, res) => {
   const { fdaId, daId } = req.params;
   const service = req.get('Fiware-Service');
-  const { id, description, query } = req.body;
+  const { description, query } = req.body;
 
   if (!service || !fdaId || !daId || !description || !query) {
     return res.status(400).json({

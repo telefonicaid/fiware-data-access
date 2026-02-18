@@ -29,7 +29,7 @@ import { config } from '../fdaConfig.js';
 
 let instance = null;
 
-// key: `${service}::${fdaId}` -> Map(daId -> sql query)
+// key: `${service}::${fdaId}` -> Map(daId -> { sql query, params})
 const cachedQueries = new Map();
 const logger = getBasicLogger();
 
@@ -195,7 +195,14 @@ function getCachedQuery(service, fdaId, daId) {
   return cachedQueries.get(fdaKey(service, fdaId))?.get(daId);
 }
 
-export async function storeCachedQuery(conn, service, fdaId, daId, query) {
+export async function storeCachedQuery(
+  conn,
+  service,
+  fdaId,
+  daId,
+  query,
+  params,
+) {
   const key = fdaKey(service, fdaId);
   let fda = cachedQueries.get(key);
 
@@ -207,7 +214,7 @@ export async function storeCachedQuery(conn, service, fdaId, daId, query) {
   // We create the pStatement in DuckDB to check compatibility with FDA baseQuery
   await conn.prepare(query);
 
-  fda.set(daId, query);
+  fda.set(daId, { query, params });
 }
 
 export function toParquet(conn, originPath, resultPath) {
