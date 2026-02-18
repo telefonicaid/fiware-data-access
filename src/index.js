@@ -176,7 +176,7 @@ app.put('/fdas/:fdaId', async (req, res) => {
 
   await updateFDA(service, fdaId);
 
-  return res.sendStatus(202).json({
+  return res.status(202).json({
     id: fdaId,
     status: 'pending',
   });
