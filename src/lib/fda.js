@@ -82,13 +82,24 @@ export async function executeQueryStream({ service, params, req, res }) {
 
   const conn = await getDBConnection();
 
-  const { stream, close } = await runPreparedStatementStream(
-    conn,
-    service,
-    fdaId,
-    daId,
-    rest,
-  );
+  let stream;
+  let close;
+
+  try {
+    const result = await runPreparedStatementStream(
+      conn,
+      service,
+      fdaId,
+      daId,
+      rest,
+    );
+
+    stream = result.stream;
+    close = result.close;
+  } catch (err) {
+    await releaseDBConnection(conn);
+    throw err;
+  }
 
   let cleaned = false;
 
