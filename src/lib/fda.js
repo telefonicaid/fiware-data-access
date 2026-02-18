@@ -44,6 +44,7 @@ import {
   removeDA,
   updateFDAStatus,
 } from './utils/mongo.js';
+import { convertBigInt } from './utils/utils.js';
 import { config } from './fdaConfig.js';
 import { FDAError } from './fdaError.js';
 
@@ -64,24 +65,21 @@ export async function getFDA(service, fdaId) {
   return fda;
 }
 
-export async function query(service, { fdaId, daId, ...params }) {
+export async function executeQuery({ service, params }) {
+  const { fdaId, daId, ...rest } = params;
+
   const conn = await getDBConnection();
 
   try {
-    const queryRes = await runPreparedStatement(
-      conn,
-      service,
-      fdaId,
-      daId,
-      params,
-    );
-    return queryRes;
+    return await runPreparedStatement(conn, service, fdaId, daId, rest);
   } finally {
     await releaseDBConnection(conn);
   }
 }
 
-export async function queryStream(service, { fdaId, daId, ...params }) {
+export async function executeQueryStream({ service, params, req, res }) {
+  const { fdaId, daId, ...rest } = params;
+
   const conn = await getDBConnection();
 
   const { stream, close } = await runPreparedStatementStream(
@@ -89,21 +87,57 @@ export async function queryStream(service, { fdaId, daId, ...params }) {
     service,
     fdaId,
     daId,
-    params,
+    rest,
   );
+
   let cleaned = false;
+
   const cleanup = async () => {
-    if (cleaned) {
-      return;
-    }
+    if (cleaned) return;
     cleaned = true;
+
     try {
       await close();
     } finally {
       await releaseDBConnection(conn);
     }
   };
-  return { stream, cleanup };
+
+  req.on('close', () => {
+    cleanup().catch(() => {});
+  });
+
+  res.setHeader('Content-Type', 'application/x-ndjson');
+
+  try {
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const chunk = await stream.fetchChunk();
+      if (chunk.rowCount === 0) break;
+
+      const rows = chunk.getRows();
+      const columnNames = stream.columnNames();
+
+      for (const row of rows) {
+        const rowObj = {};
+
+        for (let i = 0; i < columnNames.length; i++) {
+          rowObj[columnNames[i]] = row[i];
+        }
+
+        const safeObj = convertBigInt(rowObj);
+
+        const ok = res.write(JSON.stringify(safeObj) + '\n');
+        if (!ok) {
+          await new Promise((resolve) => res.once('drain', resolve));
+        }
+      }
+    }
+  } finally {
+    await cleanup();
+  }
+
+  return res.end();
 }
 
 export async function createDA(service, fdaId, daId, description, userQuery) {
@@ -225,10 +259,10 @@ async function uploadTableToObjStg(service, database, query, bucket, path) {
 
   const conn = await getDBConnection();
   try {
-    await updateFDAStatus(service, path, 'fetching', 60);
+    await updateFDAStatus(service, path, 'transforming', 60);
     const parquetPath = getPath(bucket, path, '.parquet');
     await toParquet(conn, getPath(bucket, path, '.csv'), parquetPath);
-    await updateFDAStatus(service, path, 'fetching', 80);
+    await updateFDAStatus(service, path, 'uploading', 80);
     await dropFile(s3Client, bucket, `${path}.csv`);
   } finally {
     await releaseDBConnection(conn);
