@@ -142,7 +142,11 @@ app.post('/fdas', async (req, res) => {
   }
 
   await fetchFDA(id, query, service, servicePath, description);
-  return res.sendStatus(201);
+
+  return res.status(202).json({
+    id,
+    status: 'fetching',
+  });
 });
 
 app.get('/fdas/:fdaId', async (req, res) => {
@@ -172,7 +176,11 @@ app.put('/fdas/:fdaId', async (req, res) => {
   }
 
   await updateFDA(service, fdaId);
-  return res.sendStatus(204);
+
+  return res.sendStatus(202).json({
+    id: fdaId,
+    status: 'fetching',
+  });
 });
 
 app.delete('/fdas/:fdaId', async (req, res) => {

@@ -42,6 +42,7 @@ import {
   retrieveDA,
   updateDA,
   removeDA,
+  updateFDAStatus,
 } from './utils/mongo.js';
 import { config } from './fdaConfig.js';
 import { FDAError } from './fdaError.js';
@@ -123,13 +124,40 @@ export async function fetchFDA(
   servicePath,
   description,
 ) {
-  await uploadTableToObjStg(service, query, service, fdaId);
   await createFDA(fdaId, query, service, servicePath, description);
+  processFDAAsync(fdaId, query, service).catch((err) => {
+    console.error(err);
+  });
 }
 
 export async function updateFDA(service, fdaId) {
-  const { query } = await retrieveFDA(service, fdaId);
-  await uploadTableToObjStg(service, query, service, fdaId);
+  const fda = await retrieveFDA(service, fdaId);
+
+  if (!fda) {
+    throw new FDAError(
+      404,
+      'NotFound',
+      `FDA ${fdaId} not found in service ${service}`,
+    );
+  }
+
+  await updateFDAStatus(service, fdaId, 'fetching', 0);
+
+  processFDAAsync(fdaId, fda.query, service).catch((err) => {
+    console.error(err);
+  });
+}
+
+async function processFDAAsync(fdaId, query, service) {
+  try {
+    await updateFDAStatus(service, fdaId, 'fetching', 10);
+
+    await uploadTableToObjStg(service, service, query, service, fdaId);
+
+    await updateFDAStatus(service, fdaId, 'completed', 100);
+  } catch (err) {
+    await updateFDAStatus(service, fdaId, 'failed', 0, err.message);
+  }
 }
 
 export async function deleteFDA(service, fdaId) {
@@ -186,18 +214,21 @@ export async function deleteDA(service, fdaId, daId) {
   await removeDA(service, fdaId, daId);
 }
 
-async function uploadTableToObjStg(database, query, bucket, path) {
+async function uploadTableToObjStg(service, database, query, bucket, path) {
   const s3Client = getS3Client(
     `${config.objstg.protocol}://${config.objstg.endpoint}`,
     config.objstg.usr,
     config.objstg.pass,
   );
+  await updateFDAStatus(service, path, 'fetching', 20);
   await uploadTable(s3Client, bucket, database, query, path);
 
   const conn = await getDBConnection();
   try {
+    await updateFDAStatus(service, path, 'fetching', 60);
     const parquetPath = getPath(bucket, path, '.parquet');
     await toParquet(conn, getPath(bucket, path, '.csv'), parquetPath);
+    await updateFDAStatus(service, path, 'fetching', 80);
     await dropFile(s3Client, bucket, `${path}.csv`);
   } finally {
     await releaseDBConnection(conn);
@@ -227,5 +258,5 @@ function buildDAQuery(service, fdaId, userQuery) {
 
   const parquetPath = `s3://${service}/${fdaId}.parquet`;
 
-  return `FROM read_parquet('${parquetPath}') ${trimmed}`; // TO DISCUSS: implementation by adding FROM clause at the beginning of the query
+  return `FROM read_parquet('${parquetPath}') ${trimmed}`;
 }

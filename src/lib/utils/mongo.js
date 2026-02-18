@@ -74,6 +74,9 @@ export async function createFDA(
       query,
       das: {},
       service,
+      status: 'fetching',
+      progress: 0,
+      lastExecution: new Date(),
       ...(servicePath && { servicePath }),
       ...(description && { description }),
     });
@@ -92,6 +95,28 @@ export async function createFDA(
       );
     }
   }
+}
+
+export async function updateFDAStatus(
+  service,
+  fdaId,
+  status,
+  progress,
+  error = null,
+) {
+  const collection = await getCollection();
+
+  await collection.updateOne(
+    { service, fdaId },
+    {
+      $set: {
+        status,
+        progress,
+        lastExecution: new Date(),
+        ...(error && { error }),
+      },
+    },
+  );
 }
 
 export async function storeDA(service, fdaId, daId, description, query) {
