@@ -345,11 +345,13 @@ A FDA is represented by a JSON object with the following fields:
 | `Fiware-Service` |          | string | Tenant or service, using the common mechanism of the FIWARE platform                                                                                           |
 | `servicePath`    |          | string | Hierarchical service path to allow a `FDA` to be queried with authentication or anonimaly. Possible values `/public` and `/private`. Default value `/private`. |
 
-> Internal fields: | Parameter | Optional | Type | Description | | --------------- | -------- | ------ |
-> --------------------------------------------------------------------------------------------- | | `status` | | string
-> | Current FDA execution status (`fetching`, `transforming`, `uploading`, `completed`, `failed`) | | `progress` | |
-> number | Execution progress percentage (0–100) | | `lastExecution` | | string | Timestamp of the last execution
-> attempt (ISO date format) |
+Internal fields:
+
+| Parameter       | Optional | Type   | Description                                                                                   |
+| --------------- | -------- | ------ | --------------------------------------------------------------------------------------------- |
+| `status`        |          | string | Current FDA execution status (`fetching`, `transforming`, `uploading`, `completed`, `failed`) |
+| `progress`      |          | number | Execution progress percentage (0–100)                                                         |
+| `lastExecution` |          | string | Timestamp of the last execution attempt (ISO date format)                                     |
 
 ### FDAs operations
 
