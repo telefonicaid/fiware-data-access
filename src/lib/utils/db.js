@@ -125,9 +125,9 @@ export async function runPreparedStatement(
   }
 
   const stmt = await conn.prepare(query);
+  paramValues = applyParams(paramValues, params);
 
   try {
-    paramValues = applyParams(paramValues, params);
     await stmt.bind(paramValues);
     const result = await stmt.run();
     return result.getRowObjectsJson();
@@ -174,9 +174,9 @@ export async function runPreparedStatementStream(
   }
 
   const stmt = await conn.prepare(query);
+  paramValues = applyParams(paramValues, params);
 
   try {
-    paramValues = applyParams(paramValues, params);
     await stmt.bind(paramValues);
     const stream = await stmt.stream();
 
@@ -200,11 +200,31 @@ export async function runPreparedStatementStream(
 
 function applyParams(reqParams, params = {}) {
   params.forEach((param) => {
-    if (!reqParams[param.column] && param.default) {
-      reqParams[param.column] = param.default;
+    // Params: default
+    if (!reqParams[param.name] && param.default) {
+      reqParams[param.name] = param.default;
+    }
+    // Params: range
+    if (
+      reqParams[param.name] &&
+      param.range &&
+      !isInRange(reqParams[param.name], param.range)
+    ) {
+      throw new FDAError(
+        400,
+        'InvalidDAQuery',
+        `Param "${param.name}" not in valid param range [${param.range}].`,
+      );
     }
   });
   return reqParams;
+}
+
+function isInRange(value, range) {
+  if (value <= range[0] || value >= range[1]) {
+    return false;
+  }
+  return true;
 }
 
 function fdaKey(service, fdaId) {
