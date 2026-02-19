@@ -123,7 +123,7 @@ export async function updateFDAStatus(
 export async function regenerateFDA(service, fdaId) {
   const collection = await getCollection();
 
-  const result = await collection.findOneAndUpdate(
+  const previous = await collection.findOneAndUpdate(
     {
       service,
       fdaId,
@@ -139,7 +139,7 @@ export async function regenerateFDA(service, fdaId) {
     { returnDocument: 'before' },
   );
 
-  if (!result.value) {
+  if (!previous) {
     const existing = await collection.findOne({ service, fdaId });
 
     if (!existing) {
@@ -157,9 +157,15 @@ export async function regenerateFDA(service, fdaId) {
         `FDA ${fdaId} is already being regenerated`,
       );
     }
+
+    throw new FDAError(
+      400,
+      'InvalidState',
+      `FDA ${fdaId} cannot be regenerated from status ${existing.status}`,
+    );
   }
 
-  return result.value;
+  return previous;
 }
 
 export async function storeDA(service, fdaId, daId, description, query) {

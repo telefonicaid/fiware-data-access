@@ -171,15 +171,19 @@ export async function fetchFDA(
   description,
 ) {
   await createFDA(fdaId, query, service, servicePath, description);
-  processFDAAsync(fdaId, query, service).catch((err) => {
+  processFDAAsync(fdaId, query, service).catch(async (err) => {
     console.error(err);
+    await updateFDAStatus(service, fdaId, 'failed', 0, err.message);
   });
 }
 
 export async function updateFDA(service, fdaId) {
   const previous = await regenerateFDA(service, fdaId);
 
-  processFDAAsync(fdaId, previous.query, service).catch(console.error);
+  processFDAAsync(fdaId, previous.query, service).catch(async (err) => {
+    console.error(err);
+    await updateFDAStatus(service, fdaId, 'failed', 0, err.message);
+  });
 }
 
 async function processFDAAsync(fdaId, query, service) {
