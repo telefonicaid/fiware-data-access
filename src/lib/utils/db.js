@@ -200,14 +200,22 @@ export async function runPreparedStatementStream(
 
 function applyParams(reqParams, params = {}) {
   params.forEach((param) => {
+    // Params: required
+    if (!reqParams[param.name] && param.required) {
+      throw new FDAError(
+        400,
+        'InvalidDAQuery',
+        `Missing required param "${param.name}".`,
+      );
+    }
     // Params: default
     if (!reqParams[param.name] && param.default) {
       reqParams[param.name] = param.default;
     }
 
     const paramValue = reqParams[param.name];
-    // Params: type
     if (paramValue) {
+      // Params: type
       if (param.type && !isTypeOf(paramValue, param.type)) {
         throw new FDAError(
           400,
