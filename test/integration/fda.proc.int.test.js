@@ -739,7 +739,7 @@ describe('FDA API - integration (run app as child process)', () => {
   });
 
   test('PUT /fdas/:fdaId triggers AlreadyFetching if concurrent', async () => {
-    const put1 = httpReq({
+    httpReq({
       method: 'PUT',
       url: `${baseUrl}/fdas/${fdaId3}`,
       headers: { 'Fiware-Service': service },
