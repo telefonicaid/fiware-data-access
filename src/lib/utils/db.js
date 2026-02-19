@@ -204,6 +204,18 @@ function applyParams(reqParams, params = {}) {
     if (!reqParams[param.name] && param.default) {
       reqParams[param.name] = param.default;
     }
+    // Params: type
+    if (
+      reqParams[param.name] &&
+      param.type &&
+      !isTypeOf(reqParams[param.name], param.type)
+    ) {
+      throw new FDAError(
+        400,
+        'InvalidDAQuery',
+        `Param "${param.name}" not of valid type (${param.type}).`,
+      );
+    }
     // Params: range
     if (
       reqParams[param.name] &&
@@ -230,6 +242,26 @@ function applyParams(reqParams, params = {}) {
     }
   });
   return reqParams;
+}
+
+function isTypeOf(value, type) {
+  const TYPE_COERCERS = {
+    Numeric: (v) => (Number.isFinite(Number(v)) ? Number(v) : undefined),
+    Boolean: (v) => v === 'true' || v === '1',
+    String: (v) => String(v),
+    Date: (v) => {
+      // decode and replace for json coded values (e.g. + as %2B) and proper format
+      const decoded = decodeURIComponent(v).replace(/([+-]\d{2})$/, '$1:00');
+      return isNaN(new Date(decoded).getTime()) ? undefined : new Date(decoded);
+    },
+  };
+
+  const coercer = TYPE_COERCERS[type];
+  if (!coercer) {
+    throw new FDAError(400, 'InvalidDAQuery', `Invalid type value in params.`);
+  }
+
+  return coercer(value);
 }
 
 function isInRange(value, range) {
