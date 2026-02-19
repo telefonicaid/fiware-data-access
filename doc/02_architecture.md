@@ -29,6 +29,7 @@ Key characteristics:
 -   Stored inside a bucket named after the `Fiware-Service`
 -   Can be regenerated to refresh the data
 -   Parent resource of one or more DAs
+-   Has status, progress and lastExecution fields.
 
 #### Example FDA
 

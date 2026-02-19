@@ -378,10 +378,13 @@ curl -i -X POST http://localhost:8080/fdas \
 Expected response:
 
 ```text
-HTTP/1.1 201 Created
+HTTP/1.1 202 Accepted
+Content-Type: application/json; charset=utf-8
+
+{"id":"fda_alarms","status":"pending"}
 ```
 
-If the response is `201`, the FDA was created successfully!
+If the response is `202`, the FDA was accepted and it will be created.
 
 ### 6. Verify the FDA was created
 
@@ -392,7 +395,7 @@ curl -i -X GET http://localhost:8080/fdas \
   -H "Fiware-Service: my-bucket"
 ```
 
-Expected response (should now contain the FDA):
+Expected response (should now contain the FDA and his status):
 
 ```
 HTTP/1.1 200 OK
@@ -403,6 +406,9 @@ Content-Type: application/json; charset=utf-8
     "_id": "...",
     "fdaId": "fda_alarms",
     "service": "my-bucket",
+    "status":"completed",
+    "progress":100,
+    "lastExecution":"2026-02-19T07:38:21.263Z",
     "servicePath: /public"
     "query": "SELECT * FROM public.alarms",
     "description": "FDA de alarmas del sistema",
@@ -410,6 +416,8 @@ Content-Type: application/json; charset=utf-8
   }
 ]
 ```
+
+> **Note**: to execute queries against an FDA, it will be necesary to has `"status": "completed"`.
 
 ### 7. Create a DA (Data Access) for the FDA and run a query
 

@@ -204,7 +204,7 @@ curl -i -X POST http://localhost:8080/fdas \
 ```json
 {
     "error": "DuplicatedKey",
-    "description": "An FDA with id 'fda_alarms' already exists"
+    {"description":"FDA with id fda_alarms and my-bucket already exists: MongoServerError: E11000 duplicate key error collection: fiware-data-access.fdas index: fdaId_1_service_1 dup key: { fdaId: \"fda_alarms\", service: \"my-bucket\" }"}
 }
 ```
 
@@ -337,14 +337,19 @@ None required.
 
 A FDA is represented by a JSON object with the following fields:
 
-| Parameter       | Optional | Type   | Description                                                                                   |
-| --------------- | -------- | ------ | --------------------------------------------------------------------------------------------- |
-| `id`            |          | string | FDA unique identifier                                                                         |
-| `description`   | ✓        | string | A free text used by the client to describe the FDA                                            |
-| `query`         |          | string | Base `postgreSQL` query to create the file in the bucket-based storage system                 |
-| `status`        |          | string | Current FDA execution status (`fetching`, `transforming`, `uploading`, `completed`, `failed`) |
-| `progress`      |          | number | Execution progress percentage (0–100)                                                         |
-| `lastExecution` |          | string | Timestamp of the last execution attempt (ISO date format)                                     |
+| Parameter        | Optional | Type   | Description                                                                                                                                                    |
+| ---------------- | -------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`             |          | string | FDA unique identifier                                                                                                                                          |
+| `description`    | ✓        | string | A free text used by the client to describe the FDA                                                                                                             |
+| `query`          |          | string | Base `postgreSQL` query to create the file in the bucket-based storage system                                                                                  |
+| `Fiware-Service` |          | string | Tenant or service, using the common mechanism of the FIWARE platform                                                                                           |
+| `servicePath`    |          | string | Hierarchical service path to allow a `FDA` to be queried with authentication or anonimaly. Possible values `/public` and `/private`. Default value `/private`. |
+
+> Internal fields: | Parameter | Optional | Type | Description | | --------------- | -------- | ------ |
+> --------------------------------------------------------------------------------------------- | | `status` | | string
+> | Current FDA execution status (`fetching`, `transforming`, `uploading`, `completed`, `failed`) | | `progress` | |
+> number | Execution progress percentage (0–100) | | `lastExecution` | | string | Timestamp of the last execution
+> attempt (ISO date format) |
 
 ### FDAs operations
 
@@ -398,6 +403,9 @@ _**Example Response:**_
         "query": "SELECT * FROM public.alarms",
         "das": {},
         "service": "my-bucket",
+        "status": "completed",
+        "progress": 100,
+        "lastExecution": "2026-02-19T07:38:21.263Z",
         "servicePath": "/public",
         "description": "FDA de alarmas del sistema"
     }
@@ -517,6 +525,9 @@ _**Example Response:**_
     "query": "SELECT * FROM public.alarms",
     "das": {},
     "service": "my-bucket",
+    "status":"completed",
+    "progress":100,
+    "lastExecution":"2026-02-19T07:38:21.263Z",
     "servicePath": "/public",
     "description": "FDA de alarmas del sistema"
 }
