@@ -337,21 +337,26 @@ None required.
 
 A FDA is represented by a JSON object with the following fields:
 
-| Parameter        | Optional | Type   | Description                                                                                                                                                    |
-| ---------------- | -------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`             |          | string | FDA unique identifier                                                                                                                                          |
-| `description`    | ✓        | string | A free text used by the client to describe the FDA                                                                                                             |
-| `query`          |          | string | Base `postgreSQL` query to create the file in the bucket-based storage system                                                                                  |
-| `Fiware-Service` |          | string | Tenant or service, using the common mechanism of the FIWARE platform                                                                                           |
-| `servicePath`    |          | string | Hierarchical service path to allow a `FDA` to be queried with authentication or anonimaly. Possible values `/public` and `/private`. Default value `/private`. |
+| Parameter            | Optional | Type   | Description                                                                                                                                                    |
+| -------------------- | -------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                 |          | string | FDA unique identifier                                                                                                                                          |
+| `description`        | ✓        | string | A free text used by the client to describe the FDA                                                                                                             |
+| `query`              |          | string | Base `postgreSQL` query to create the file in the bucket-based storage system                                                                                  |
+| `Fiware-Service`     |          | string | Tenant or service, using the common mechanism of the FIWARE platform                                                                                           |
+| `Fiware-ServicePath` | ✓        | string | Hierarchical service path to allow a `FDA` to be queried with authentication or anonimaly. Possible values `/public` and `/private`. Default value `/private`. |
 
-Internal fields:
+#### Operational fields (read-only)
+
+These fields are **provided in responses** but **cannot be included or modified** in POST or PUT requests:
 
 | Parameter       | Optional | Type   | Description                                                                                   |
 | --------------- | -------- | ------ | --------------------------------------------------------------------------------------------- |
 | `status`        |          | string | Current FDA execution status (`fetching`, `transforming`, `uploading`, `completed`, `failed`) |
 | `progress`      |          | number | Execution progress percentage (0–100)                                                         |
 | `lastExecution` |          | string | Timestamp of the last execution attempt (ISO date format)                                     |
+
+> Note: Including operational fields like `progress` or `status` in POST/PUT requests is ignored by the server.
+> Currently this does not return a 400, but the fields will not be updated by the client.
 
 ### FDAs operations
 

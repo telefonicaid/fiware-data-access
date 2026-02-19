@@ -33,6 +33,34 @@ _fdaId_ as the name. This file is updated and removed in unity with the _fda_ in
 When creating a _FDA_ we cannot specify the database from where we want to fetch the data. In _FDA_ we are always gonna
 use the `fiware-service` value as the _database_ name.
 
+---
+
+## FDA Execution Lifecycle
+
+Each `FDA` has **operational fields** (`status`, `progress`, `lastExecution`) that are **read-only** for clients and
+reflect its asynchronous processing state.
+
+### Status & Progress
+
+| Status         | Progress | Description                                      |
+| -------------- | -------- | ------------------------------------------------ |
+| `fetching`     | 0–20     | Data is being retrieved from the source.         |
+| `transforming` | 20–60    | Data is being transformed (e.g., CSV → Parquet). |
+| `uploading`    | 60–80    | Data is being uploaded to object storage.        |
+| `completed`    | 100      | Processing finished successfully.                |
+| `failed`       | 0        | Processing failed at any step.                   |
+
+### Last Execution
+
+`lastExecution` records the timestamp of the last attempt in ISO format.
+
+### Flow
+
+-   On `POST /fdas` or `PUT /fdas/:fdaId`, FDA starts **fetching** (progress 0).
+-   `transforming` → `uploading` as processing steps complete.
+-   On success → `completed` (progress 100).
+-   On error → `failed` (progress 0).
+
 ## 🧭 Navigation
 
 -   [⬅️ Previous: Config And Operational Guide](/doc/04_config_operational_guide.md)
