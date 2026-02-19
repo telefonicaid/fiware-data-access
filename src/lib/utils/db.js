@@ -204,41 +204,33 @@ function applyParams(reqParams, params = {}) {
     if (!reqParams[param.name] && param.default) {
       reqParams[param.name] = param.default;
     }
+
+    const paramValue = reqParams[param.name];
     // Params: type
-    if (
-      reqParams[param.name] &&
-      param.type &&
-      !isTypeOf(reqParams[param.name], param.type)
-    ) {
-      throw new FDAError(
-        400,
-        'InvalidDAQuery',
-        `Param "${param.name}" not of valid type (${param.type}).`,
-      );
-    }
-    // Params: range
-    if (
-      reqParams[param.name] &&
-      param.range &&
-      !isInRange(reqParams[param.name], param.range)
-    ) {
-      throw new FDAError(
-        400,
-        'InvalidDAQuery',
-        `Param "${param.name}" not in valid param range [${param.range}].`,
-      );
-    }
-    // Params: enum
-    if (
-      reqParams[param.name] &&
-      param.enum &&
-      !isInEnum(reqParams[param.name], param.enum)
-    ) {
-      throw new FDAError(
-        400,
-        'InvalidDAQuery',
-        `Param "${param.name}" not in param enum [${param.enum}].`,
-      );
+    if (paramValue) {
+      if (param.type && !isTypeOf(paramValue, param.type)) {
+        throw new FDAError(
+          400,
+          'InvalidDAQuery',
+          `Param "${param.name}" not of valid type (${param.type}).`,
+        );
+      }
+      // Params: range
+      if (param.range && !isInRange(paramValue, param.range)) {
+        throw new FDAError(
+          400,
+          'InvalidDAQuery',
+          `Param "${param.name}" not in valid param range [${param.range}].`,
+        );
+      }
+      // Params: enum
+      if (param.enum && !isInEnum(paramValue, param.enum)) {
+        throw new FDAError(
+          400,
+          'InvalidDAQuery',
+          `Param "${param.name}" not in param enum [${param.enum}].`,
+        );
+      }
     }
   });
   return reqParams;
