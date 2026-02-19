@@ -59,7 +59,7 @@ export async function disconnectClient() {
   logger.debug('MongoDB connection closed');
 }
 
-export async function createFDA(
+export async function createFDAMongo(
   fdaId,
   query,
   service,
@@ -159,7 +159,7 @@ export async function regenerateFDA(service, fdaId) {
     }
 
     throw new FDAError(
-      400,
+      409,
       'InvalidState',
       `FDA ${fdaId} cannot be regenerated from status ${existing.status}`,
     );

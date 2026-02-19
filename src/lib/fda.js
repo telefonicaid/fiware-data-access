@@ -34,7 +34,7 @@ import {
 import { uploadTable } from './utils/pg.js';
 import { getS3Client, dropFile } from './utils/aws.js';
 import {
-  createFDA,
+  createFDAMongo,
   regenerateFDA,
   retrieveFDAs,
   retrieveFDA,
@@ -175,7 +175,7 @@ export async function fetchFDA(
   servicePath,
   description,
 ) {
-  await createFDA(fdaId, query, service, servicePath, description);
+  await createFDAMongo(fdaId, query, service, servicePath, description);
   processFDAAsync(fdaId, query, service).catch(async (err) => {
     console.error(err);
     await updateFDAStatus(service, fdaId, 'failed', 0, err.message);

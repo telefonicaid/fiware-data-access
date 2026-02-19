@@ -92,7 +92,7 @@ app.use((req, res, next) => {
         reqParams: `${JSON.stringify(req.params)}`,
         reqQuery: `${JSON.stringify(req.query)}`,
         reqBody: `${JSON.stringify(req.body)}`,
-        resCode: res.statusCode,
+        resCode: res.status,
         resMsg: res.statusMessage,
         durationMs: Date.now() - start,
         ip: req.ip,
@@ -346,24 +346,24 @@ app.get('/doQuery', async (req, res) => {
   return res.json(result);
 });
 
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  const status = err.status || 500;
+  if (status < 500) {
+    logger.warn(err);
+  } else {
+    logger.error(err);
+  }
+
+  return res.status(status).json({
+    error: err.type || 'InternalServerError',
+    description: err.message,
+  });
+});
+
 if (process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {
     logger.debug(`Server listening at port ${PORT}`);
-  });
-
-  // eslint-disable-next-line no-unused-vars
-  app.use((err, req, res, next) => {
-    const status = err.statusCode || 500;
-    if (status < 500) {
-      logger.warn(err);
-    } else {
-      logger.error(err);
-    }
-
-    return res.status(status).json({
-      error: err.code || 'InternalServerError',
-      description: err.message,
-    });
   });
 
   process.on('SIGINT', shutdown);
