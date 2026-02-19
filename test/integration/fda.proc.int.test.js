@@ -115,6 +115,32 @@ async function connectWithRetry(client, attempts = 25, delayMs = 400) {
   throw lastErr;
 }
 
+async function waitUntilFDACompleted({
+  baseUrl,
+  service,
+  fdaId,
+  timeout = 10000,
+  interval = 300,
+}) {
+  const start = Date.now();
+
+  while (Date.now() - start < timeout) {
+    const res = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/fdas/${encodeURIComponent(fdaId)}`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    if (res.status === 200 && res.json?.status === 'completed') {
+      return res.json;
+    }
+
+    await new Promise((r) => setTimeout(r, interval));
+  }
+
+  throw new Error(`Timeout waiting for FDA ${fdaId} to reach completed state`);
+}
+
 describe('FDA API - integration (run app as child process)', () => {
   let minio;
   let mongo;
@@ -321,7 +347,8 @@ describe('FDA API - integration (run app as child process)', () => {
     if (res.status >= 400) {
       console.error('POST /fdas failed:', res.status, res.json ?? res.text);
     }
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(202);
+    await waitUntilFDACompleted({ baseUrl, service, fdaId });
   });
 
   test('POST /fdas tries to creates an FDA without id and is detected', async () => {
@@ -645,7 +672,8 @@ describe('FDA API - integration (run app as child process)', () => {
         res.json ?? res.text,
       );
     }
-    expect(res.status).toBe(204);
+    expect(res.status).toBe(202);
+    await waitUntilFDACompleted({ baseUrl, service, fdaId });
   });
 
   test('DELETE /fdas/:fdaId removes given FDA', async () => {
@@ -693,32 +721,24 @@ describe('FDA API - integration (run app as child process)', () => {
         postFDA.json ?? postFDA.text,
       );
     }
-    expect(postFDA.status).toBe(201);
+    expect(postFDA.status).toBe(202);
 
-    const getFDA = await httpReq({
-      method: 'GET',
-      url: `${baseUrl}/fdas/${fdaId2}`,
-      headers: { 'Fiware-Service': service },
+    const completedFDA = await waitUntilFDACompleted({
+      baseUrl,
+      service,
+      fdaId,
     });
 
-    const fdaBody = {
+    expect(completedFDA).toMatchObject({
       fdaId: fdaId2,
       query: 'SELECT id, name, age FROM public.users ORDER BY id',
       description: 'users dataset',
       service,
       servicePath,
-    };
-
-    if (getFDA.status >= 400) {
-      console.error(
-        'GET /fdas/:fdaId failed:',
-        getFDA.status,
-        getFDA.json ?? getFDA.text,
-      );
-    }
-    expect(getFDA.status).toBe(200);
-    expect(Object.keys(getFDA.json).length).toBeGreaterThan(0);
-    expect(getFDA.json.fdaId === fdaId2).toBe(true);
-    expect(getFDA.json).toMatchObject(fdaBody);
+      status: 'completed',
+      progress: 100,
+    });
+    expect(completedFDA.lastExecution).toBeDefined();
+    expect(typeof completedFDA.lastExecution).toBe('string');
   });
 });
