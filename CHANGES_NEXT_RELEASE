@@ -1,5 +1,4 @@
 - Fix: use db connection pool for object storage and env var FDA_OBJSTG_MAX_POOL_SIZE
-- Add: use of header Fiware-servicePath for future access control (#61)
 - Fix: make DA identifier immutable (cannot be updated via PUT) (#88)
 - Fix: avoid FROM in DA queries; read_parquet source is injected internally (#37)
 - Fix: remove attributes path and database from post /fdas action and database (#59)
@@ -8,6 +7,8 @@
 - Fix: add lint to test
 - Fix: move runtime dependencies (ajv, dotenv, lodash, @aws-sdk/client-s3) from devDependencies to dependencies in package.json (#72)
 - Fix: improved error responses with proper status code and message (#30)
+- Add: use of header Fiware-servicePath for future access control (#61)
+- Add: status, progress and lastExecution fields in FDAs to support async create/regenerate operations with progress tracking (#34)
 - Add NDJSON support for /query and /doQuery endpoints with streaming capability (#53)
 - Add health endpoint with e2e test coverage (#79)
 - Add logger component for initial, debug, info, warning and error level logs (adding new env vars `FDA_LOG_*`) (#14)
