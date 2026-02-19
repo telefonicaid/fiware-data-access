@@ -726,7 +726,7 @@ describe('FDA API - integration (run app as child process)', () => {
     const completedFDA = await waitUntilFDACompleted({
       baseUrl,
       service,
-      fdaId,
+      fdaId2,
     });
 
     expect(completedFDA).toMatchObject({
