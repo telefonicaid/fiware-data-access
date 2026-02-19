@@ -106,7 +106,9 @@ export async function executeQueryStream({ service, params, req, res }) {
   let cleaned = false;
 
   const cleanup = async () => {
-    if (cleaned) return;
+    if (cleaned) {
+      return;
+    }
     cleaned = true;
 
     try {
@@ -126,7 +128,9 @@ export async function executeQueryStream({ service, params, req, res }) {
     // eslint-disable-next-line no-constant-condition
     while (true) {
       const chunk = await stream.fetchChunk();
-      if (chunk.rowCount === 0) break;
+      if (chunk.rowCount === 0) {
+        break;
+      }
 
       const rows = chunk.getRows();
       const columnNames = stream.columnNames();
