@@ -221,10 +221,7 @@ function applyParams(reqParams, params = {}) {
 }
 
 function isInRange(value, range) {
-  if (value <= range[0] || value >= range[1]) {
-    return false;
-  }
-  return true;
+  return value >= range[0] && value <= range[1];
 }
 
 function fdaKey(service, fdaId) {
