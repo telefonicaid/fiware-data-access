@@ -29,6 +29,7 @@ import {
   getDBConnection,
   releaseDBConnection,
   toParquet,
+  buildDAQuery,
 } from './utils/db.js';
 import { uploadTable } from './utils/pg.js';
 import { getS3Client, dropFile } from './utils/aws.js';
@@ -278,23 +279,3 @@ const getPath = (bucket, path, extension) => {
   const cleanPath = path?.startsWith('/') ? path.slice(1) : path;
   return `${cleanBucket}/${cleanPath}${extension}`;
 };
-
-function buildDAQuery(service, fdaId, userQuery) {
-  if (!userQuery || typeof userQuery !== 'string') {
-    throw new FDAError(400, 'BadRequest', 'Invalid DA query');
-  }
-
-  if (/^\s*from\b/i.test(userQuery)) {
-    throw new FDAError(
-      400,
-      'InvalidDAQuery',
-      'DA query must not include FROM clause at start. It is managed internally.',
-    );
-  }
-
-  const trimmed = userQuery.trim();
-
-  const parquetPath = `s3://${service}/${fdaId}.parquet`;
-
-  return `FROM read_parquet('${parquetPath}') ${trimmed}`;
-}
