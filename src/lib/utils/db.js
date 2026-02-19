@@ -216,12 +216,28 @@ function applyParams(reqParams, params = {}) {
         `Param "${param.name}" not in valid param range [${param.range}].`,
       );
     }
+    // Params: enum
+    if (
+      reqParams[param.name] &&
+      param.enum &&
+      !isInEnum(reqParams[param.name], param.enum)
+    ) {
+      throw new FDAError(
+        400,
+        'InvalidDAQuery',
+        `Param "${param.name}" not in param enum [${param.enum}].`,
+      );
+    }
   });
   return reqParams;
 }
 
 function isInRange(value, range) {
   return value >= range[0] && value <= range[1];
+}
+
+function isInEnum(value, enumValues) {
+  return enumValues.includes(value);
 }
 
 function fdaKey(service, fdaId) {
