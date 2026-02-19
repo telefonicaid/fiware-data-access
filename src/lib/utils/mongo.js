@@ -120,6 +120,48 @@ export async function updateFDAStatus(
   );
 }
 
+export async function regenerateFDA(service, fdaId) {
+  const collection = await getCollection();
+
+  const result = await collection.findOneAndUpdate(
+    {
+      service,
+      fdaId,
+      status: { $in: ['completed', 'failed'] },
+    },
+    {
+      $set: {
+        status: 'fetching',
+        progress: 0,
+        lastExecution: new Date(),
+      },
+    },
+    { returnDocument: 'before' },
+  );
+
+  if (!result.value) {
+    const existing = await collection.findOne({ service, fdaId });
+
+    if (!existing) {
+      throw new FDAError(
+        404,
+        'NotFound',
+        `FDA ${fdaId} not found in service ${service}`,
+      );
+    }
+
+    if (existing.status === 'fetching') {
+      throw new FDAError(
+        409,
+        'AlreadyFetching',
+        `FDA ${fdaId} is already being regenerated`,
+      );
+    }
+  }
+
+  return result.value;
+}
+
 export async function storeDA(service, fdaId, daId, description, query) {
   logger.debug(
     { service, fdaId, daId, description, query },

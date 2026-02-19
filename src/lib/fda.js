@@ -34,6 +34,7 @@ import { uploadTable } from './utils/pg.js';
 import { getS3Client, dropFile } from './utils/aws.js';
 import {
   createFDA,
+  regenerateFDA,
   retrieveFDAs,
   retrieveFDA,
   storeDA,
@@ -176,50 +177,9 @@ export async function fetchFDA(
 }
 
 export async function updateFDA(service, fdaId) {
-  const collection = await getCollection();
+  const previous = await regenerateFDA(service, fdaId);
 
-  const result = await collection.findOneAndUpdate(
-    {
-      service,
-      fdaId,
-      status: { $in: ['completed', 'failed'] }, // block update if already executing
-      // Note: could be a problem if the FDA is stuck in 'fetching' status (crashing), but we can consider it as an edge case for now.
-      // In a future iteration, we could add a timeout mechanism to unblock FDAs stuck in 'fetching' for too long.
-    },
-    {
-      $set: {
-        status: 'fetching',
-        progress: 0,
-        lastExecution: new Date(),
-      },
-    },
-    { returnDocument: 'before' },
-  );
-
-  if (!result.value) {
-    // Can be either:
-    // - FDA not found
-    // - FDA is currently being fetched
-    const existing = await collection.findOne({ service, fdaId });
-
-    if (!existing) {
-      throw new FDAError(
-        404,
-        'NotFound',
-        `FDA ${fdaId} not found in service ${service}`,
-      );
-    }
-
-    if (existing.status === 'fetching') {
-      throw new FDAError(
-        409,
-        'AlreadyFetching',
-        `FDA ${fdaId} is already being regenerated`,
-      );
-    }
-  }
-
-  processFDAAsync(fdaId, result.value.query, service).catch(console.error);
+  processFDAAsync(fdaId, previous.query, service).catch(console.error);
 }
 
 async function processFDAAsync(fdaId, query, service) {
