@@ -160,6 +160,7 @@ describe('FDA API - integration (run app as child process)', () => {
   const servicePath = '/public';
   const fdaId = 'fda1';
   const fdaId2 = 'fda2';
+  const fdaId3 = 'fda3';
   const daId = 'da1';
 
   beforeAll(async () => {
@@ -379,6 +380,34 @@ describe('FDA API - integration (run app as child process)', () => {
       );
     }
     expect(res.status).toBe(400);
+  });
+  test('POST /fdas with duplicate id returns error', async () => {
+    await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas`,
+      headers: { 'Fiware-Service': service },
+      body: {
+        id: fdaId3,
+        query: 'SELECT id FROM public.users',
+        description: 'duplicate test',
+      },
+    });
+
+    const res = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas`,
+      headers: { 'Fiware-Service': service },
+      body: {
+        id: fdaId3, // same id
+        query: 'SELECT id FROM public.users',
+        description: 'duplicate test',
+      },
+    });
+
+    expect(res.status).toBe(409);
+    expect(res.json.error).toBe('DuplicatedKey');
+
+    await waitUntilFDACompleted({ baseUrl, service, fdaId: fdaId3 });
   });
 
   test('GET /fdas returns list', async () => {
@@ -707,6 +736,25 @@ describe('FDA API - integration (run app as child process)', () => {
     }
     expect(res.status).toBe(202);
     await waitUntilFDACompleted({ baseUrl, service, fdaId });
+  });
+
+  test('PUT /fdas/:fdaId triggers AlreadyFetching if concurrent', async () => {
+    const put1 = httpReq({
+      method: 'PUT',
+      url: `${baseUrl}/fdas/${fdaId3}`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    const put2 = await httpReq({
+      method: 'PUT',
+      url: `${baseUrl}/fdas/${fdaId3}`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    expect(put2.status).toBe(409);
+    expect(put2.json.error).toBe('AlreadyFetching');
+
+    await waitUntilFDACompleted({ baseUrl, service, fdaId: fdaId3 });
   });
 
   test('DELETE /fdas/:fdaId removes given FDA', async () => {
