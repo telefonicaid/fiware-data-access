@@ -96,13 +96,19 @@ async function initDuckDB() {
   return instance;
 }
 
-export async function runPreparedStatement(conn, service, fdaId, daId, params) {
+export async function runPreparedStatement(
+  conn,
+  service,
+  fdaId,
+  daId,
+  paramValues,
+) {
   logger.debug(
-    { service, fdaId, daId, params },
+    { service, fdaId, daId, paramValues },
     '[DEBUG]: runPreparedStatement',
   );
 
-  let query = getCachedQuery(service, fdaId, daId);
+  let { query, params } = { ...getCachedQuery(service, fdaId, daId) };
 
   if (!query) {
     const da = await retrieveDA(service, fdaId, daId);
@@ -114,13 +120,15 @@ export async function runPreparedStatement(conn, service, fdaId, daId, params) {
       );
     }
     query = buildDAQuery(service, fdaId, da.query);
-    await storeCachedQuery(conn, service, fdaId, daId, query);
+    params = da.params;
+    await storeCachedQuery(conn, service, fdaId, daId, query, params);
   }
 
   const stmt = await conn.prepare(query);
 
   try {
-    await stmt.bind(params);
+    paramValues = applyParams(paramValues, params);
+    await stmt.bind(paramValues);
     const result = await stmt.run();
     return result.getRowObjectsJson();
   } catch (e) {
@@ -142,14 +150,14 @@ export async function runPreparedStatementStream(
   service,
   fdaId,
   daId,
-  params,
+  paramValues,
 ) {
   logger.debug(
-    { service, fdaId, daId, params },
+    { service, fdaId, daId, paramValues },
     '[DEBUG]: runPreparedStatementStream',
   );
 
-  let query = getCachedQuery(service, fdaId, daId);
+  let { query, params } = { ...getCachedQuery(service, fdaId, daId) };
 
   if (!query) {
     const da = await retrieveDA(service, fdaId, daId);
@@ -161,13 +169,15 @@ export async function runPreparedStatementStream(
       );
     }
     query = buildDAQuery(service, fdaId, da.query);
-    await storeCachedQuery(conn, service, fdaId, daId, query);
+    params = da.params;
+    await storeCachedQuery(conn, service, fdaId, daId, query, params);
   }
 
   const stmt = await conn.prepare(query);
 
   try {
-    await stmt.bind(params);
+    paramValues = applyParams(paramValues, params);
+    await stmt.bind(paramValues);
     const stream = await stmt.stream();
 
     const close = async () => {
@@ -186,6 +196,15 @@ export async function runPreparedStatementStream(
       `Error streaming the prepared statement: ${e}`,
     );
   }
+}
+
+function applyParams(reqParams, params = {}) {
+  params.forEach((param) => {
+    if (!reqParams[param.column] && param.default) {
+      reqParams[param.column] = param.default;
+    }
+  });
+  return reqParams;
 }
 
 function fdaKey(service, fdaId) {
