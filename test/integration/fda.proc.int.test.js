@@ -757,6 +757,32 @@ describe('FDA API - integration (run app as child process)', () => {
     await waitUntilFDACompleted({ baseUrl, service, fdaId: fdaId3 });
   });
 
+  test('PUT /fdas/:fdaId throws InvalidState if FDA in unexpected status', async () => {
+    const client = new MongoClient(mongoUri);
+    await client.connect();
+    const collection = client.db(service).collection('fdas');
+
+    await collection.updateOne(
+      { fdaId: fdaId3, service },
+      { $set: { status: 'transforming' } },
+    );
+
+    const res = await httpReq({
+      method: 'PUT',
+      url: `${baseUrl}/fdas/${fdaId3}`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    expect(res.status).toBe(409);
+    expect(res.json.error).toBe('InvalidState');
+
+    await collection.updateOne(
+      { fdaId: fdaId3 },
+      { $set: { status: 'completed' } },
+    );
+    await client.close();
+  });
+
   test('DELETE /fdas/:fdaId removes given FDA', async () => {
     const deleteFDA = await httpReq({
       method: 'DELETE',
