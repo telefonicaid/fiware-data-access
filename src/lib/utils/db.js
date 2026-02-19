@@ -198,7 +198,11 @@ export async function runPreparedStatementStream(
   }
 }
 
-function applyParams(reqParams, params = {}) {
+function applyParams(reqParams, params) {
+  logger.debug({ reqParams, params }, '[DEBUG]: applyParams');
+  if (!params) {
+    return reqParams;
+  }
   params.forEach((param) => {
     // Params: required
     if (!reqParams[param.name] && param.required) {
