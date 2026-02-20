@@ -342,8 +342,6 @@ A FDA is represented by a JSON object with the following fields:
 | `id`                 |          | string | FDA unique identifier                                                                                                                                          |
 | `description`        | ✓        | string | A free text used by the client to describe the FDA                                                                                                             |
 | `query`              |          | string | Base `postgreSQL` query to create the file in the bucket-based storage system                                                                                  |
-| `Fiware-Service`     |          | string | Tenant or service, using the common mechanism of the FIWARE platform                                                                                           |
-| `Fiware-ServicePath` | ✓        | string | Hierarchical service path to allow a `FDA` to be queried with authentication or anonimaly. Possible values `/public` and `/private`. Default value `/private`. |
 
 #### Operational fields (read-only)
 
