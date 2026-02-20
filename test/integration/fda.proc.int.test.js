@@ -115,6 +115,32 @@ async function connectWithRetry(client, attempts = 25, delayMs = 400) {
   throw lastErr;
 }
 
+async function waitUntilFDACompleted({
+  baseUrl,
+  service,
+  fdaId,
+  timeout = 10000,
+  interval = 300,
+}) {
+  const start = Date.now();
+
+  while (Date.now() - start < timeout) {
+    const res = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/fdas/${encodeURIComponent(fdaId)}`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    if (res.status === 200 && res.json?.status === 'completed') {
+      return res.json;
+    }
+
+    await new Promise((r) => setTimeout(r, interval));
+  }
+
+  throw new Error(`Timeout waiting for FDA ${fdaId} to reach completed state`);
+}
+
 describe('FDA API - integration (run app as child process)', () => {
   let minio;
   let mongo;
@@ -134,6 +160,7 @@ describe('FDA API - integration (run app as child process)', () => {
   const servicePath = '/public';
   const fdaId = 'fda1';
   const fdaId2 = 'fda2';
+  const fdaId3 = 'fda3';
   const daId = 'da1';
 
   beforeAll(async () => {
@@ -328,7 +355,8 @@ describe('FDA API - integration (run app as child process)', () => {
     if (res.status >= 400) {
       console.error('POST /fdas failed:', res.status, res.json ?? res.text);
     }
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(202);
+    await waitUntilFDACompleted({ baseUrl, service, fdaId });
   });
 
   test('POST /fdas tries to creates an FDA without id and is detected', async () => {
@@ -352,6 +380,34 @@ describe('FDA API - integration (run app as child process)', () => {
       );
     }
     expect(res.status).toBe(400);
+  });
+  test('POST /fdas with duplicate id returns error', async () => {
+    await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas`,
+      headers: { 'Fiware-Service': service },
+      body: {
+        id: fdaId3,
+        query: 'SELECT id FROM public.users',
+        description: 'duplicate test',
+      },
+    });
+
+    const res = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas`,
+      headers: { 'Fiware-Service': service },
+      body: {
+        id: fdaId3, // same id
+        query: 'SELECT id FROM public.users',
+        description: 'duplicate test',
+      },
+    });
+
+    expect(res.status).toBe(409);
+    expect(res.json.error).toBe('DuplicatedKey');
+
+    await waitUntilFDACompleted({ baseUrl, service, fdaId: fdaId3 });
   });
 
   test('GET /fdas returns list', async () => {
@@ -678,7 +734,53 @@ describe('FDA API - integration (run app as child process)', () => {
         res.json ?? res.text,
       );
     }
-    expect(res.status).toBe(204);
+    expect(res.status).toBe(202);
+    await waitUntilFDACompleted({ baseUrl, service, fdaId });
+  });
+
+  test('PUT /fdas/:fdaId triggers AlreadyFetching if concurrent', async () => {
+    httpReq({
+      method: 'PUT',
+      url: `${baseUrl}/fdas/${fdaId3}`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    const put2 = await httpReq({
+      method: 'PUT',
+      url: `${baseUrl}/fdas/${fdaId3}`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    expect(put2.status).toBe(409);
+    expect(put2.json.error).toBe('AlreadyFetching');
+
+    await waitUntilFDACompleted({ baseUrl, service, fdaId: fdaId3 });
+  });
+
+  test('PUT /fdas/:fdaId throws InvalidState if FDA in unexpected status', async () => {
+    const client = new MongoClient(mongoUri);
+    await client.connect();
+    const collection = client.db('fiware-data-access').collection('fdas');
+
+    await collection.updateOne(
+      { fdaId: fdaId3, service },
+      { $set: { status: 'transforming' } },
+    );
+
+    const res = await httpReq({
+      method: 'PUT',
+      url: `${baseUrl}/fdas/${fdaId3}`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    expect(res.status).toBe(409);
+    expect(res.json.error).toBe('InvalidState');
+
+    await collection.updateOne(
+      { fdaId: fdaId3, service },
+      { $set: { status: 'completed' } },
+    );
+    await client.close();
   });
 
   test('DELETE /fdas/:fdaId removes given FDA', async () => {
@@ -726,32 +828,24 @@ describe('FDA API - integration (run app as child process)', () => {
         postFDA.json ?? postFDA.text,
       );
     }
-    expect(postFDA.status).toBe(201);
+    expect(postFDA.status).toBe(202);
 
-    const getFDA = await httpReq({
-      method: 'GET',
-      url: `${baseUrl}/fdas/${fdaId2}`,
-      headers: { 'Fiware-Service': service },
+    const completedFDA = await waitUntilFDACompleted({
+      baseUrl,
+      service,
+      fdaId: fdaId2,
     });
 
-    const fdaBody = {
+    expect(completedFDA).toMatchObject({
       fdaId: fdaId2,
       query: 'SELECT id, name, age FROM public.users ORDER BY id',
       description: 'users dataset',
       service,
       servicePath,
-    };
-
-    if (getFDA.status >= 400) {
-      console.error(
-        'GET /fdas/:fdaId failed:',
-        getFDA.status,
-        getFDA.json ?? getFDA.text,
-      );
-    }
-    expect(getFDA.status).toBe(200);
-    expect(Object.keys(getFDA.json).length).toBeGreaterThan(0);
-    expect(getFDA.json.fdaId === fdaId2).toBe(true);
-    expect(getFDA.json).toMatchObject(fdaBody);
+      status: 'completed',
+      progress: 100,
+    });
+    expect(completedFDA.lastFetch).toBeDefined();
+    expect(typeof completedFDA.lastFetch).toBe('string');
   });
 });
