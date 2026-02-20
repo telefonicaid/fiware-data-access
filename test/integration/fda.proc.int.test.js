@@ -845,7 +845,7 @@ describe('FDA API - integration (run app as child process)', () => {
       status: 'completed',
       progress: 100,
     });
-    expect(completedFDA.lastExecution).toBeDefined();
-    expect(typeof completedFDA.lastExecution).toBe('string');
+    expect(completedFDA.lastFetch).toBeDefined();
+    expect(typeof completedFDA.lastFetch).toBe('string');
   });
 });

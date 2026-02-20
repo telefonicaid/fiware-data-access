@@ -349,11 +349,11 @@ A FDA is represented by a JSON object with the following fields:
 
 These fields are **provided in responses** but **cannot be included or modified** in POST or PUT requests:
 
-| Parameter       | Optional | Type   | Description                                                                                   |
-| --------------- | -------- | ------ | --------------------------------------------------------------------------------------------- |
-| `status`        |          | string | Current FDA execution status (`fetching`, `transforming`, `uploading`, `completed`, `failed`) |
-| `progress`      |          | number | Execution progress percentage (0–100)                                                         |
-| `lastExecution` |          | string | Timestamp of the last execution attempt (ISO date format)                                     |
+| Parameter   | Optional | Type   | Description                                                                                   |
+| ----------- | -------- | ------ | --------------------------------------------------------------------------------------------- |
+| `status`    |          | string | Current FDA execution status (`fetching`, `transforming`, `uploading`, `completed`, `failed`) |
+| `progress`  |          | number | Execution progress percentage (0–100)                                                         |
+| `lastFetch` |          | string | Timestamp of the last execution attempt (ISO date format)                                     |
 
 > Note: Including operational fields like `progress` or `status` in POST/PUT requests is ignored by the server.
 > Currently this does not return a 400, but the fields will not be updated by the client.
@@ -412,7 +412,7 @@ _**Example Response:**_
         "service": "my-bucket",
         "status": "completed",
         "progress": 100,
-        "lastExecution": "2026-02-19T07:38:21.263Z",
+        "lastFetch": "2026-02-19T07:38:21.263Z",
         "servicePath": "/public",
         "description": "FDA de alarmas del sistema"
     }
@@ -534,7 +534,7 @@ _**Example Response:**_
     "service": "my-bucket",
     "status":"completed",
     "progress":100,
-    "lastExecution":"2026-02-19T07:38:21.263Z",
+    "lastFetch":"2026-02-19T07:38:21.263Z",
     "servicePath": "/public",
     "description": "FDA de alarmas del sistema"
 }

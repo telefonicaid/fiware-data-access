@@ -37,8 +37,8 @@ use the `fiware-service` value as the _database_ name.
 
 ## FDA Execution Lifecycle
 
-Each `FDA` has **operational fields** (`status`, `progress`, `lastExecution`) that are **read-only** for clients and
-reflect its asynchronous processing state.
+Each `FDA` has **operational fields** (`status`, `progress`, `lastFetch`) that are **read-only** for clients and reflect
+its asynchronous processing state.
 
 ### Status & Progress
 
@@ -52,7 +52,7 @@ reflect its asynchronous processing state.
 
 ### Last Execution
 
-`lastExecution` records the timestamp of the last attempt in ISO format.
+`lastFetch` records the timestamp of the last attempt in ISO format.
 
 ### Flow
 

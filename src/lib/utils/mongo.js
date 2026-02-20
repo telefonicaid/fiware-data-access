@@ -77,7 +77,7 @@ export async function createFDAMongo(
       service,
       status: 'fetching',
       progress: 0,
-      lastExecution: new Date(),
+      lastFetch: new Date(),
       ...(servicePath && { servicePath }),
       ...(description && { description }),
     });
@@ -113,7 +113,7 @@ export async function updateFDAStatus(
       $set: {
         status,
         progress,
-        lastExecution: new Date(),
+        lastFetch: new Date(),
         ...(error && { error }),
       },
     },
@@ -133,7 +133,7 @@ export async function regenerateFDA(service, fdaId) {
       $set: {
         status: 'fetching',
         progress: 0,
-        lastExecution: new Date(),
+        lastFetch: new Date(),
       },
     },
     { returnDocument: 'before' },

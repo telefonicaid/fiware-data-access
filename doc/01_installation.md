@@ -408,7 +408,7 @@ Content-Type: application/json; charset=utf-8
     "service": "my-bucket",
     "status":"completed",
     "progress":100,
-    "lastExecution":"2026-02-19T07:38:21.263Z",
+    "lastFetch":"2026-02-19T07:38:21.263Z",
     "servicePath: /public"
     "query": "SELECT * FROM public.alarms",
     "description": "FDA de alarmas del sistema",
