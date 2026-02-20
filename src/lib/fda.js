@@ -157,12 +157,19 @@ export async function executeQueryStream({ service, params, req, res }) {
   return res.end();
 }
 
-export async function createDA(service, fdaId, daId, description, userQuery) {
+export async function createDA(
+  service,
+  fdaId,
+  daId,
+  description,
+  userQuery,
+  params,
+) {
   const conn = await getDBConnection();
   try {
     const query = buildDAQuery(service, fdaId, userQuery);
-    await storeCachedQuery(conn, service, fdaId, daId, query);
-    storeDA(service, fdaId, daId, description, userQuery);
+    await storeCachedQuery(conn, service, fdaId, daId, query, params);
+    storeDA(service, fdaId, daId, description, userQuery, params);
   } finally {
     await releaseDBConnection(conn);
   }
