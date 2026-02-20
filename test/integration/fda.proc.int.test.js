@@ -135,6 +135,7 @@ describe('FDA API - integration (run app as child process)', () => {
   const fdaId = 'fda1';
   const fdaId2 = 'fda2';
   const daId = 'da1';
+  const daId2 = 'da2';
 
   beforeAll(async () => {
     // Containers
@@ -537,6 +538,142 @@ describe('FDA API - integration (run app as child process)', () => {
       { id: '1', name: 'ana', age: '30' },
       { id: '3', name: 'carlos', age: '40' },
     ]);
+  });
+
+  test('POST /fdas/:fdaId/das + GET /query using default params', async () => {
+    // DuckDB reads parquet generated in  s3://<bucket>/<fdaID>.parquet
+    const daQuery = `
+      SELECT id, name, age
+      WHERE age > $minAge AND name = $name
+      ORDER BY id;
+    `;
+
+    const createDa = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas/${fdaId}/das`,
+      headers: { 'Fiware-Service': service },
+      body: {
+        id: daId2,
+        description: 'get user',
+        query: daQuery,
+        params: [
+          {
+            name: 'name',
+            type: 'String',
+            required: true,
+            enum: ['ana', 'carlos'],
+          },
+          {
+            name: 'minAge',
+            type: 'Numeric',
+            default: 25,
+            range: [20, 50],
+          },
+        ],
+      },
+    });
+
+    if (createDa.status >= 400) {
+      console.error(
+        'POST /das failed:',
+        createDa.status,
+        createDa.json ?? createDa.text,
+      );
+    }
+    expect(createDa.status).toBe(201);
+
+    // Query with name outside of the enum
+    const enumQueryRes = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+        fdaId,
+      )}&daId=${encodeURIComponent(daId2)}&minAge=25&name=fakeNAme`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    if (enumQueryRes.status >= 400) {
+      console.error(
+        'GET /query failed:',
+        enumQueryRes.status,
+        enumQueryRes.json ?? enumQueryRes.text,
+      );
+    }
+    expect(enumQueryRes.status).toBe(400);
+
+    // Query with age outside of the range
+    const rangeQueryRes = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+        fdaId,
+      )}&daId=${encodeURIComponent(daId2)}&minAge=60&name=ana`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    if (rangeQueryRes.status >= 400) {
+      console.error(
+        'GET /query failed:',
+        rangeQueryRes.status,
+        rangeQueryRes.json ?? rangeQueryRes.text,
+      );
+    }
+    expect(rangeQueryRes.status).toBe(400);
+
+    // Good query using default values
+    const defaultsQueryRes = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+        fdaId,
+      )}&daId=${encodeURIComponent(daId2)}&name=carlos`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    if (defaultsQueryRes.status >= 400) {
+      console.error(
+        'GET /query failed:',
+        defaultsQueryRes.status,
+        defaultsQueryRes.json ?? defaultsQueryRes.text,
+      );
+    }
+    expect(defaultsQueryRes.status).toBe(200);
+    expect(defaultsQueryRes.json).toEqual([
+      { id: '3', name: 'carlos', age: '40' },
+    ]);
+
+    // Query without required value
+    const requiredQueryRes = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+        fdaId,
+      )}&daId=${encodeURIComponent(daId2)}&minAge=25`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    if (requiredQueryRes.status >= 400) {
+      console.error(
+        'GET /query failed:',
+        requiredQueryRes.status,
+        requiredQueryRes.json ?? requiredQueryRes.text,
+      );
+    }
+    expect(requiredQueryRes.status).toBe(400);
+
+    // Query without proper type param
+    const typeQueryRes = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+        fdaId,
+      )}&daId=${encodeURIComponent(daId2)}&minAge=text&name=carlos`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    if (typeQueryRes.status >= 400) {
+      console.error(
+        'GET /query failed:',
+        typeQueryRes.status,
+        typeQueryRes.json ?? typeQueryRes.text,
+      );
+    }
+    expect(typeQueryRes.status).toBe(400);
   });
 
   test('GET /query returns NDJSON when Accept: application/x-ndjson', async () => {
