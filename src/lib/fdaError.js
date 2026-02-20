@@ -23,12 +23,12 @@
 // criminal actions it may exercise to protect its rights.
 
 export class FDAError extends Error {
-  constructor(statusCode = 500, code = 'InternalServerError', message) {
+  constructor(status = 500, type = 'InternalServerError', message) {
     super(message);
 
     this.name = this.constructor.name;
-    this.statusCode = statusCode;
-    this.code = code;
+    this.status = status;
+    this.type = type;
 
     Error.captureStackTrace(this, this.constructor);
   }

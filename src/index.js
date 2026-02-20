@@ -27,8 +27,8 @@ import express from 'express';
 import {
   getFDAs,
   fetchFDA,
-  query,
-  queryStream,
+  executeQuery,
+  executeQueryStream,
   createDA,
   getFDA,
   updateFDA,
@@ -40,7 +40,6 @@ import {
 } from './lib/fda.js';
 import { createIndex, disconnectClient } from './lib/utils/mongo.js';
 import { destroyS3Client } from './lib/utils/aws.js';
-import { convertBigInt } from './lib/utils/utils.js';
 import { config } from './lib/fdaConfig.js';
 import {
   initLogger,
@@ -93,7 +92,7 @@ app.use((req, res, next) => {
         reqParams: `${JSON.stringify(req.params)}`,
         reqQuery: `${JSON.stringify(req.query)}`,
         reqBody: `${JSON.stringify(req.body)}`,
-        resCode: res.statusCode,
+        resCode: res.status,
         resMsg: res.statusMessage,
         durationMs: Date.now() - start,
         ip: req.ip,
@@ -142,7 +141,11 @@ app.post('/fdas', async (req, res) => {
   }
 
   await fetchFDA(id, query, service, servicePath, description);
-  return res.sendStatus(201);
+
+  return res.status(202).json({
+    id,
+    status: 'pending',
+  });
 });
 
 app.get('/fdas/:fdaId', async (req, res) => {
@@ -172,7 +175,11 @@ app.put('/fdas/:fdaId', async (req, res) => {
   }
 
   await updateFDA(service, fdaId);
-  return res.sendStatus(204);
+
+  return res.status(202).json({
+    id: fdaId,
+    status: 'pending',
+  });
 });
 
 app.delete('/fdas/:fdaId', async (req, res) => {
@@ -279,47 +286,23 @@ app.get('/query', async (req, res) => {
       description: 'Missing params in the request',
     });
   }
+
   // Content negotiation: check if client wants NDJSON
   if (accept.includes('application/x-ndjson')) {
-    const { stream, cleanup } = await queryStream(service, req.query);
-    req.on('close', () => {
-      cleanup().catch(() => {});
+    return executeQueryStream({
+      service,
+      params: req.query,
+      req,
+      res,
     });
-    res.setHeader('Content-Type', 'application/x-ndjson');
-    try {
-      // Iterate through stream chunks and write NDJSON
-      // eslint-disable-next-line no-constant-condition
-      while (true) {
-        const chunk = await stream.fetchChunk();
-        if (chunk.rowCount === 0) {
-          break;
-        }
-        // Get rows from chunk and write as NDJSON
-        const rows = chunk.getRows();
-        const columnNames = stream.columnNames();
-        for (const row of rows) {
-          const rowObj = {};
-          for (let i = 0; i < columnNames.length; i++) {
-            rowObj[columnNames[i]] = row[i];
-          }
-          // Convert BigInt recursively before stringifying
-          const safeObj = convertBigInt(rowObj);
-          // Handle backpressure if big result
-          const ok = res.write(JSON.stringify(safeObj) + '\n');
-          if (!ok) {
-            await new Promise((resolve) => res.once('drain', resolve));
-          }
-        }
-      }
-    } finally {
-      await cleanup();
-    }
-    return res.end();
-  } else {
-    // Default: return JSON array (backward compatible)
-    const result = await query(service, req.query);
-    return res.json(result);
   }
+
+  const result = await executeQuery({
+    service,
+    params: req.query,
+  });
+
+  return res.json(result);
 });
 
 app.get('/doQuery', async (req, res) => {
@@ -347,66 +330,40 @@ app.get('/doQuery', async (req, res) => {
 
   // Content negotiation: check if client wants NDJSON
   if (accept.includes('application/x-ndjson')) {
-    const { stream, cleanup } = await queryStream(service, updatedParams);
-    req.on('close', () => {
-      cleanup().catch(() => {});
+    return executeQueryStream({
+      service,
+      params: updatedParams,
+      req,
+      res,
     });
-    res.setHeader('Content-Type', 'application/x-ndjson');
-    try {
-      // Iterate through stream chunks and write NDJSON
-      // eslint-disable-next-line no-constant-condition
-      while (true) {
-        const chunk = await stream.fetchChunk();
-        if (chunk.rowCount === 0) {
-          break;
-        }
-
-        // Get rows from chunk and write as NDJSON
-        const rows = chunk.getRows();
-        const columnNames = stream.columnNames();
-        for (const row of rows) {
-          const rowObj = {};
-          for (let i = 0; i < columnNames.length; i++) {
-            rowObj[columnNames[i]] = row[i];
-          }
-          // Convert BigInt recursively before stringifying
-          const safeObj = convertBigInt(rowObj);
-          // Handle backpressure if big result
-          const ok = res.write(JSON.stringify(safeObj) + '\n');
-          if (!ok) {
-            await new Promise((resolve) => res.once('drain', resolve));
-          }
-        }
-      }
-    } finally {
-      await cleanup();
-    }
-    return res.end();
-  } else {
-    // Default: return JSON array (backward compatible)
-    const result = await query(service, updatedParams);
-    return res.json(result);
   }
+
+  const result = await executeQuery({
+    service,
+    params: updatedParams,
+  });
+
+  return res.json(result);
+});
+
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  const status = err.status || 500;
+  if (status < 500) {
+    logger.warn(err);
+  } else {
+    logger.error(err);
+  }
+
+  return res.status(status).json({
+    error: err.type || 'InternalServerError',
+    description: err.message,
+  });
 });
 
 if (process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {
     logger.debug(`Server listening at port ${PORT}`);
-  });
-
-  // eslint-disable-next-line no-unused-vars
-  app.use((err, req, res, next) => {
-    const status = err.statusCode || 500;
-    if (status < 500) {
-      logger.warn(err);
-    } else {
-      logger.error(err);
-    }
-
-    return res.status(status).json({
-      error: err.code || 'InternalServerError',
-      description: err.message,
-    });
   });
 
   process.on('SIGINT', shutdown);

@@ -59,7 +59,7 @@ export async function disconnectClient() {
   logger.debug('MongoDB connection closed');
 }
 
-export async function createFDA(
+export async function createFDAMongo(
   fdaId,
   query,
   service,
@@ -69,11 +69,15 @@ export async function createFDA(
   logger.debug({ fdaId, query, service, description }, '[DEBUG]: createFDA');
   const collection = await getCollection();
   try {
+    // As there is a unique index on (fdaId, service), this will throw an error if an FDA with the same fdaId and service already exists
     await collection.insertOne({
       fdaId,
       query,
       das: {},
       service,
+      status: 'fetching',
+      progress: 0,
+      lastFetch: new Date(),
       ...(servicePath && { servicePath }),
       ...(description && { description }),
     });
@@ -92,6 +96,76 @@ export async function createFDA(
       );
     }
   }
+}
+
+export async function updateFDAStatus(
+  service,
+  fdaId,
+  status,
+  progress,
+  error = null,
+) {
+  const collection = await getCollection();
+
+  await collection.updateOne(
+    { service, fdaId },
+    {
+      $set: {
+        status,
+        progress,
+        lastFetch: new Date(),
+        ...(error && { error }),
+      },
+    },
+  );
+}
+
+export async function regenerateFDA(service, fdaId) {
+  const collection = await getCollection();
+
+  const previous = await collection.findOneAndUpdate(
+    {
+      service,
+      fdaId,
+      status: { $in: ['completed', 'failed'] },
+    },
+    {
+      $set: {
+        status: 'fetching',
+        progress: 0,
+        lastFetch: new Date(),
+      },
+    },
+    { returnDocument: 'before' },
+  );
+
+  if (!previous) {
+    const existing = await collection.findOne({ service, fdaId });
+
+    if (!existing) {
+      throw new FDAError(
+        404,
+        'NotFound',
+        `FDA ${fdaId} not found in service ${service}`,
+      );
+    }
+
+    if (existing.status === 'fetching') {
+      throw new FDAError(
+        409,
+        'AlreadyFetching',
+        `FDA ${fdaId} is already being regenerated`,
+      );
+    }
+
+    throw new FDAError(
+      409,
+      'InvalidState',
+      `FDA ${fdaId} cannot be regenerated from status ${existing.status}`,
+    );
+  }
+
+  return previous;
 }
 
 export async function storeDA(

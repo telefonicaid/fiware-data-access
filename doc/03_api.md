@@ -205,7 +205,7 @@ curl -i -X POST http://localhost:8080/fdas \
 ```json
 {
     "error": "DuplicatedKey",
-    "description": "An FDA with id 'fda_alarms' already exists"
+    {"description":"FDA with id fda_alarms and my-bucket already exists: MongoServerError: E11000 duplicate key error collection: fiware-data-access.fdas index: fdaId_1_service_1 dup key: { fdaId: \"fda_alarms\", service: \"my-bucket\" }"}
 }
 ```
 
@@ -305,7 +305,7 @@ curl -i -X POST http://localhost:8080/fdas \
 
 ## API Routes
 
-## Health Endpoint
+### Health Endpoint
 
 This endpoint allow checking whether the FIWARE Data Access service is running.
 
@@ -313,7 +313,7 @@ It does not require the `Fiware-Service` header and is intended for monitoring p
 
 ---
 
-### Health Check `GET /health`
+#### Health Check `GET /health`
 
 Returns the operational status of the service.
 
@@ -343,6 +343,19 @@ A FDA is represented by a JSON object with the following fields:
 | `id`          |          | string | FDA unique identifier                                                         |
 | `description` | ✓        | string | A free text used by the client to describe the FDA                            |
 | `query`       |          | string | Base `postgreSQL` query to create the file in the bucket-based storage system |
+
+#### Operational fields (read-only)
+
+These fields are **provided in responses** but **cannot be included or modified** in POST or PUT requests:
+
+| Parameter   | Optional | Type   | Description                                                                                   |
+| ----------- | -------- | ------ | --------------------------------------------------------------------------------------------- |
+| `status`    |          | string | Current FDA execution status (`fetching`, `transforming`, `uploading`, `completed`, `failed`) |
+| `progress`  |          | number | Execution progress percentage (0–100)                                                         |
+| `lastFetch` |          | string | Timestamp of the last execution attempt (ISO date format)                                     |
+
+> Note: Including operational fields like `progress` or `status` in POST/PUT requests is ignored by the server.
+> Currently this does not return a 400, but the fields will not be updated by the client.
 
 ### FDAs operations
 
@@ -396,6 +409,9 @@ _**Example Response:**_
         "query": "SELECT * FROM public.alarms",
         "das": {},
         "service": "my-bucket",
+        "status": "completed",
+        "progress": 100,
+        "lastFetch": "2026-02-19T07:38:21.263Z",
         "servicePath": "/public",
         "description": "FDA de alarmas del sistema"
     }
@@ -439,18 +455,22 @@ curl -i -X POST http://localhost:8080/fdas \
 
 _**Response code**_
 
--   Successful operation uses 201 Created
+-   Successful operation uses 202 Accepted (asynchronous processing)
 -   Errors use a non-2xx and (optionally) an error payload. See subsection on [Error Responses](#error-responses) for
     more details.
 
 _**Response headers**_
 
--   Return the header `Location` with the value of the path used to create the FDA (I.E : `/fdas/fda01`) when the
-    creation succeeds (Response code 201).
+None
 
 _**Response payload**_
 
-None
+```json
+{
+    "id": "fda_alarms",
+    "status": "pending"
+}
+```
 
 _**Example Response:**_
 
@@ -511,6 +531,9 @@ _**Example Response:**_
     "query": "SELECT * FROM public.alarms",
     "das": {},
     "service": "my-bucket",
+    "status":"completed",
+    "progress":100,
+    "lastFetch":"2026-02-19T07:38:21.263Z",
     "servicePath": "/public",
     "description": "FDA de alarmas del sistema"
 }
@@ -518,7 +541,8 @@ _**Example Response:**_
 
 #### Regenerate FDA `PUT /fdas/{fdaId}`
 
-Regenerate the FDA, fetching again the source table from DB.
+Regenerate the FDA, fetching again the source table from DB. If the FDA is currently being processed, the operation
+returns `409 Conflict`.
 
 _**Request query parameters**_
 
@@ -536,7 +560,7 @@ None
 
 _**Response code**_
 
--   Successful operation uses 204 No Content
+-   Successful operation uses 202 Accepted (asynchronous regeneration)
 -   Errors use a non-2xx and (optionally) an error payload. See subsection on [Error Responses](#error-responses) for
     more details.
 
@@ -546,7 +570,12 @@ None
 
 _**Response payload**_
 
-None
+```json
+{
+    "id": "fda_alarms",
+    "status": "pending"
+}
+```
 
 #### Delete FDA `DELETE /fdas/{fdaId}`
 
@@ -580,8 +609,6 @@ _**Response payload**_
 
 None
 
-### DAs operations
-
 ### DA payload datamodel
 
 A DA is represented by a JSON object with the following fields:
@@ -607,6 +634,8 @@ Each object in the array `params` can have the following keys:
 | `type`     | ✓        | string  | Type of the param to enforce. Possible values: _Numeric_, _Boolean_, _String_ and _Date_. |
 | `range`    | ✓        | array   | Array with the minimun and maximun value a param can take.                                |
 | `enum`     | ✓        | array   | Array with all the possible values a param can take.                                      |
+
+### DAs operations
 
 #### List DAs `GET /fdas/{fdaId}/das`
 
