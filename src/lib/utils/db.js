@@ -208,7 +208,7 @@ function applyParams(reqParams, params) {
     if (!reqParams[param.name] && param.required) {
       throw new FDAError(
         400,
-        'InvalidDAQuery',
+        'InvalidQueryParam',
         `Missing required param "${param.name}".`,
       );
     }
@@ -223,7 +223,7 @@ function applyParams(reqParams, params) {
       if (param.type && !isTypeOf(paramValue, param.type)) {
         throw new FDAError(
           400,
-          'InvalidDAQuery',
+          'InvalidQueryParam',
           `Param "${param.name}" not of valid type (${param.type}).`,
         );
       }
@@ -231,7 +231,7 @@ function applyParams(reqParams, params) {
       if (param.range && !isInRange(paramValue, param.range)) {
         throw new FDAError(
           400,
-          'InvalidDAQuery',
+          'InvalidQueryParam',
           `Param "${param.name}" not in valid param range [${param.range}].`,
         );
       }
@@ -239,7 +239,7 @@ function applyParams(reqParams, params) {
       if (param.enum && !isInEnum(paramValue, param.enum)) {
         throw new FDAError(
           400,
-          'InvalidDAQuery',
+          'InvalidQueryParam',
           `Param "${param.name}" not in param enum [${param.enum}].`,
         );
       }
@@ -262,7 +262,11 @@ function isTypeOf(value, type) {
 
   const coercer = TYPE_COERCERS[type];
   if (!coercer) {
-    throw new FDAError(400, 'InvalidDAQuery', `Invalid type value in params.`);
+    throw new FDAError(
+      400,
+      'InvalidQueryParam',
+      `Invalid type value in params.`,
+    );
   }
 
   return coercer(value);

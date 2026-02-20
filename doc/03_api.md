@@ -68,6 +68,7 @@ All error responses follow this structure:
 | Code | Status                | Error Code             | Cause                                                                                                                                                                                     |
 | ---- | --------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 400  | Bad Request           | `BadRequest`           | Missing or invalid values in request body, headers, or query parameters. Request errors that do not depend on the FDA status. The `Fiware-Service` header is required for all operations. |
+| 400  | Bad Request           | `InvalidQueryParam`    | Some of the params in the request don't comply with the [params](#params) array restrictions.                                                                                             |
 | 404  | Not Found             | `FDANotFound`          | The requested FDA was not found.                                                                                                                                                          |
 | 404  | Not Found             | `DaNotFound`           | The requested Data Access (DA) was not found.                                                                                                                                             |
 | 409  | Conflict              | `DuplicatedKey`        | The resource already exists in the database. Attempting to create a duplicate resource.                                                                                                   |
@@ -590,8 +591,22 @@ A DA is represented by a JSON object with the following fields:
 | `id`          | (\*)     | string | DA identifier, unique within the associated FDA.                                |
 | `description` | ✓        | string | A free text used by the client to describe the DA                               |
 | `query`       |          | string | Query string, without **FROM**, clause to run over the FDA when invoking the DA |
+| `params`      | ✓        | array  | Array of [param objects](#params) to control param values.                      |
 
 (\*) The `id` field is mandatory when creating a DA (`POST`) and must not be included when updating a DA (`PUT`).
+
+##### Params
+
+Each object in the array `params` can have the following keys:
+
+| Parameter  | Optional | Type    | Description                                                                               |
+| ---------- | -------- | ------- | ----------------------------------------------------------------------------------------- |
+| `name`     |          | string  | Name of the param to control.                                                             |
+| `required` | ✓        | boolean | Tell if the param must be provided by the user. Default value _false_.                    |
+| `default`  | ✓        | string  | Provide a default value for the param in case it isn't provided.                          |
+| `type`     | ✓        | string  | Type of the param to enforce. Possible values: _Numeric_, _Boolean_, _String_ and _Date_. |
+| `range`    | ✓        | array   | Array with the minimun and maximun value a param can take.                                |
+| `enum`     | ✓        | array   | Array with all the possible values a param can take.                                      |
 
 #### List DAs `GET /fdas/{fdaId}/das`
 
