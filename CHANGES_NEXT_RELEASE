@@ -8,7 +8,7 @@
 - Fix: move runtime dependencies (ajv, dotenv, lodash, @aws-sdk/client-s3) from devDependencies to dependencies in package.json (#72)
 - Fix: improved error responses with proper status code and message (#30)
 - Add: use of header Fiware-servicePath for future access control (#61)
-- Add: status, progress and lastExecution fields in FDAs to support async create/regenerate operations with progress tracking (#34)
+- Add: status, progress and lastFetch fields in FDAs to support async create/regenerate operations with progress tracking (#34)
 - Add NDJSON support for /query and /doQuery endpoints with streaming capability (#53)
 - Add health endpoint with e2e test coverage (#79)
 - Add logger component for initial, debug, info, warning and error level logs (adding new env vars `FDA_LOG_*`) (#14)
