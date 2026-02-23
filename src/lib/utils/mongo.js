@@ -168,7 +168,14 @@ export async function regenerateFDA(service, fdaId) {
   return previous;
 }
 
-export async function storeDA(service, fdaId, daId, description, query) {
+export async function storeDA(
+  service,
+  fdaId,
+  daId,
+  description,
+  query,
+  params,
+) {
   logger.debug(
     { service, fdaId, daId, description, query },
     '[DEBUG]: storeDA',
@@ -177,7 +184,7 @@ export async function storeDA(service, fdaId, daId, description, query) {
   try {
     await collection.updateOne(
       { service, fdaId },
-      { $set: { [`das.${daId}`]: { description, query } } },
+      { $set: { [`das.${daId}`]: { description, query, params } } },
     );
   } catch (e) {
     throw new FDAError(
@@ -255,6 +262,7 @@ export async function retrieveDAs(service, fdaId) {
                   id: '$$q.k',
                   description: '$$q.v.description',
                   query: '$$q.v.query',
+                  params: '$$q.v.params',
                 },
               },
             },

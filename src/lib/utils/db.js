@@ -29,7 +29,7 @@ import { config } from '../fdaConfig.js';
 
 let instance = null;
 
-// key: `${service}::${fdaId}` -> Map(daId -> sql query)
+// key: `${service}::${fdaId}` -> Map(daId -> { sql query, params})
 const cachedQueries = new Map();
 const logger = getBasicLogger();
 
@@ -96,13 +96,19 @@ async function initDuckDB() {
   return instance;
 }
 
-export async function runPreparedStatement(conn, service, fdaId, daId, params) {
+export async function runPreparedStatement(
+  conn,
+  service,
+  fdaId,
+  daId,
+  paramValues,
+) {
   logger.debug(
-    { service, fdaId, daId, params },
+    { service, fdaId, daId, paramValues },
     '[DEBUG]: runPreparedStatement',
   );
 
-  let query = getCachedQuery(service, fdaId, daId);
+  let { query, params } = { ...getCachedQuery(service, fdaId, daId) };
 
   if (!query) {
     const da = await retrieveDA(service, fdaId, daId);
@@ -114,13 +120,15 @@ export async function runPreparedStatement(conn, service, fdaId, daId, params) {
       );
     }
     query = buildDAQuery(service, fdaId, da.query);
-    await storeCachedQuery(conn, service, fdaId, daId, query);
+    params = da.params;
+    await storeCachedQuery(conn, service, fdaId, daId, query, params);
   }
 
   const stmt = await conn.prepare(query);
+  paramValues = applyParams(paramValues, params);
 
   try {
-    await stmt.bind(params);
+    await stmt.bind(paramValues);
     const result = await stmt.run();
     return result.getRowObjectsJson();
   } catch (e) {
@@ -142,14 +150,14 @@ export async function runPreparedStatementStream(
   service,
   fdaId,
   daId,
-  params,
+  paramValues,
 ) {
   logger.debug(
-    { service, fdaId, daId, params },
+    { service, fdaId, daId, paramValues },
     '[DEBUG]: runPreparedStatementStream',
   );
 
-  let query = getCachedQuery(service, fdaId, daId);
+  let { query, params } = { ...getCachedQuery(service, fdaId, daId) };
 
   if (!query) {
     const da = await retrieveDA(service, fdaId, daId);
@@ -161,13 +169,15 @@ export async function runPreparedStatementStream(
       );
     }
     query = buildDAQuery(service, fdaId, da.query);
-    await storeCachedQuery(conn, service, fdaId, daId, query);
+    params = da.params;
+    await storeCachedQuery(conn, service, fdaId, daId, query, params);
   }
 
   const stmt = await conn.prepare(query);
+  paramValues = applyParams(paramValues, params);
 
   try {
-    await stmt.bind(params);
+    await stmt.bind(paramValues);
     const stream = await stmt.stream();
 
     const close = async () => {
@@ -188,6 +198,88 @@ export async function runPreparedStatementStream(
   }
 }
 
+function applyParams(reqParams, params) {
+  logger.debug({ reqParams, params }, '[DEBUG]: applyParams');
+  if (!params) {
+    return reqParams;
+  }
+  params.forEach((param) => {
+    // Params: required
+    if (!reqParams[param.name] && param.required) {
+      throw new FDAError(
+        400,
+        'InvalidQueryParam',
+        `Missing required param "${param.name}".`,
+      );
+    }
+    // Params: default
+    if (!reqParams[param.name] && param.default) {
+      reqParams[param.name] = param.default;
+    }
+
+    const paramValue = reqParams[param.name];
+    if (paramValue) {
+      // Params: type
+      if (param.type && !isTypeOf(paramValue, param.type)) {
+        throw new FDAError(
+          400,
+          'InvalidQueryParam',
+          `Param "${param.name}" not of valid type (${param.type}).`,
+        );
+      }
+      // Params: range
+      if (param.range && !isInRange(paramValue, param.range)) {
+        throw new FDAError(
+          400,
+          'InvalidQueryParam',
+          `Param "${param.name}" not in valid param range [${param.range}].`,
+        );
+      }
+      // Params: enum
+      if (param.enum && !isInEnum(paramValue, param.enum)) {
+        throw new FDAError(
+          400,
+          'InvalidQueryParam',
+          `Param "${param.name}" not in param enum [${param.enum}].`,
+        );
+      }
+    }
+  });
+  return reqParams;
+}
+
+function isTypeOf(value, type) {
+  const TYPE_COERCERS = {
+    Numeric: (v) => (Number.isFinite(Number(v)) ? Number(v) : undefined),
+    Boolean: (v) => v === 'true' || v === '1',
+    String: (v) => String(v),
+    Date: (v) => {
+      // decode and replace for json coded values (e.g. + as %2B) and proper format
+      const decoded = decodeURIComponent(v).replace(/([+-]\d{2})$/, '$1:00');
+      return isNaN(new Date(decoded).getTime()) ? undefined : new Date(decoded);
+    },
+  };
+
+  const coercer = TYPE_COERCERS[type];
+  if (!coercer) {
+    throw new FDAError(
+      400,
+      'InvalidQueryParam',
+      `Invalid type value in params.`,
+    );
+  }
+
+  return coercer(value);
+}
+
+function isInRange(value, range) {
+  return value >= range[0] && value <= range[1];
+}
+
+function isInEnum(value, enumValues) {
+  return enumValues.includes(value);
+}
+
 function fdaKey(service, fdaId) {
   return `${service}::${fdaId}`;
 }
@@ -195,7 +287,14 @@ function getCachedQuery(service, fdaId, daId) {
   return cachedQueries.get(fdaKey(service, fdaId))?.get(daId);
 }
 
-export async function storeCachedQuery(conn, service, fdaId, daId, query) {
+export async function storeCachedQuery(
+  conn,
+  service,
+  fdaId,
+  daId,
+  query,
+  params,
+) {
   const key = fdaKey(service, fdaId);
   let fda = cachedQueries.get(key);
 
@@ -207,7 +306,7 @@ export async function storeCachedQuery(conn, service, fdaId, daId, query) {
   // We create the pStatement in DuckDB to check compatibility with FDA baseQuery
   await conn.prepare(query);
 
-  fda.set(daId, query);
+  fda.set(daId, { query, params });
 }
 
 export function toParquet(conn, originPath, resultPath) {
