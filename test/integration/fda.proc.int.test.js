@@ -615,13 +615,13 @@ describe('FDA API - integration (run app as child process)', () => {
         params: [
           {
             name: 'name',
-            type: 'String',
+            type: 'Text',
             required: true,
             enum: ['ana', 'carlos'],
           },
           {
             name: 'minAge',
-            type: 'Numeric',
+            type: 'Number',
             default: 25,
             range: [20, 50],
           },

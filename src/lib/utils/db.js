@@ -250,10 +250,10 @@ function applyParams(reqParams, params) {
 
 function isTypeOf(value, type) {
   const TYPE_COERCERS = {
-    Numeric: (v) => (Number.isFinite(Number(v)) ? Number(v) : undefined),
+    Number: (v) => (Number.isFinite(Number(v)) ? Number(v) : undefined),
     Boolean: (v) => v === 'true' || v === '1',
-    String: (v) => String(v),
-    Date: (v) => {
+    Text: (v) => String(v),
+    DateTime: (v) => {
       // decode and replace for json coded values (e.g. + as %2B) and proper format
       const decoded = decodeURIComponent(v).replace(/([+-]\d{2})$/, '$1:00');
       return isNaN(new Date(decoded).getTime()) ? undefined : new Date(decoded);

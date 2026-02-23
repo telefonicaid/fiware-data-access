@@ -626,14 +626,14 @@ A DA is represented by a JSON object with the following fields:
 
 Each object in the array `params` can have the following keys:
 
-| Parameter  | Optional | Type    | Description                                                                               | Example                 |
-| ---------- | -------- | ------- | ----------------------------------------------------------------------------------------- | ----------------------- |
-| `name`     |          | string  | Name of the param to control.                                                             | `"timeinstant"`         |
-| `required` | ✓        | boolean | Tell if the param must be provided by the user. Default value _false_.                    | `true`                  |
-| `default`  | ✓        | string  | Provide a default value for the param in case it isn't provided.                          | `"defaultValue" `       |
-| `type`     | ✓        | string  | Type of the param to enforce. Possible values: _Numeric_, _Boolean_, _String_ and _Date_. | `"Numeric"  `           |
-| `range`    | ✓        | array   | Array with the minimun and maximun value a param can take.                                | `[10, 14] `             |
-| `enum`     | ✓        | array   | Array with all the possible values a param can take.                                      | `["TUNA", "Bandolera"]` |
+| Parameter  | Optional | Type    | Description                                                                                | Example                 |
+| ---------- | -------- | ------- | ------------------------------------------------------------------------------------------ | ----------------------- |
+| `name`     |          | string  | Name of the param to control.                                                              | `"timeinstant"`         |
+| `required` | ✓        | boolean | Tell if the param must be provided by the user. Default value _false_.                     | `true`                  |
+| `default`  | ✓        | string  | Provide a default value for the param in case it isn't provided.                           | `"defaultValue" `       |
+| `type`     | ✓        | string  | Type of the param to enforce. Possible values: _Number_, _Boolean_, _Text_ and _DateTime_. | `"Number"  `            |
+| `range`    | ✓        | array   | Array with the minimun and maximun value a param can take.                                 | `[10, 14] `             |
+| `enum`     | ✓        | array   | Array with all the possible values a param can take.                                       | `["TUNA", "Bandolera"]` |
 
 ### DAs operations
 
