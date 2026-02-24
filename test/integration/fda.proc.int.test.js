@@ -246,12 +246,13 @@ describe('FDA API - integration (run app as child process)', () => {
           id INT PRIMARY KEY,
           name TEXT,
           age INT,
-          timeinstant TIMESTAMP
+          timeinstant TIMESTAMP,
+          authorized BOOLEAN
         );
       `);
       await pgClient.query(`
-        INSERT INTO public.users (id, name, age, timeinstant)
-        VALUES (1,'ana',30, '2020-08-17T18:25:28.332+01:00'), (2,'bob',20, '2020-08-17T18:25:28.332+01:00'), (3,'carlos',40, '2020-08-17T18:25:28.332+01:00');
+        INSERT INTO public.users (id, name, age, timeinstant, authorized)
+        VALUES (1,'ana',30, '2020-08-17T18:25:28.332+01:00', true), (2,'bob',20, '2020-08-17T18:25:28.332+01:00', true), (3,'carlos',40, '2020-08-17T18:25:28.332+01:00', true);
       `);
 
       await pgClient.end();
@@ -350,7 +351,7 @@ describe('FDA API - integration (run app as child process)', () => {
         id: fdaId,
         // query base to extract from PG to CSV
         query:
-          'SELECT id, name, age, timeinstant FROM public.users ORDER BY id',
+          'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
         description: 'users dataset',
       },
     });
@@ -609,7 +610,7 @@ describe('FDA API - integration (run app as child process)', () => {
 
     expect(rangeUpdateRes.status).toBe(400);
 
-    // Update DA (bad range param)
+    // Update DA (bad range enum)
     const enumUpdateRes = await httpReq({
       method: 'PUT',
       url: `${baseUrl}/fdas/${fdaId}/das/${daIdToUpdate}`,
@@ -668,7 +669,7 @@ describe('FDA API - integration (run app as child process)', () => {
     // DuckDB reads parquet generated in  s3://<bucket>/<fdaID>.parquet
     const daQuery = `
       SELECT id, name, age
-      WHERE age > $minAge AND name = $name AND timeinstant = $timeinstant
+      WHERE age > $minAge AND name = $name AND timeinstant = $timeinstant AND authorized = $authorized
       ORDER BY id;
     `;
 
@@ -697,6 +698,11 @@ describe('FDA API - integration (run app as child process)', () => {
             name: 'timeinstant',
             type: 'DateTime',
             default: '2020-08-17T18:25:28.332+01:00',
+          },
+          {
+            name: 'authorized',
+            type: 'Boolean',
+            default: true,
           },
         ],
       },
@@ -850,6 +856,24 @@ describe('FDA API - integration (run app as child process)', () => {
       );
     }
     expect(dateQueryRes.status).toBe(400);
+
+    // Query without proper date (ISO8601)
+    const boolQueryRes = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+        fdaId,
+      )}&daId=${encodeURIComponent(daId2)}&name=carlos&authorized=notBool`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    if (boolQueryRes.status >= 400) {
+      console.error(
+        'GET /query failed as expected:',
+        boolQueryRes.status,
+        boolQueryRes.json ?? boolQueryRes.text,
+      );
+    }
+    expect(boolQueryRes.status).toBe(400);
   });
 
   test('GET /query returns NDJSON when Accept: application/x-ndjson', async () => {
