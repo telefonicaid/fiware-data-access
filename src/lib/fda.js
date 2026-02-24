@@ -22,6 +22,7 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
+import { getAgenda } from './jobs.js';
 import {
   runPreparedStatement,
   runPreparedStatementStream,
@@ -183,22 +184,29 @@ export async function fetchFDA(
   description,
 ) {
   await createFDAMongo(fdaId, query, service, servicePath, description);
-  processFDAAsync(fdaId, query, service).catch(async (err) => {
-    console.error(err);
-    await updateFDAStatus(service, fdaId, 'failed', 0, err.message);
+
+  const agenda = getAgenda();
+
+  await agenda.now('refresh-fda', {
+    fdaId,
+    query,
+    service,
   });
 }
 
 export async function updateFDA(service, fdaId) {
   const previous = await regenerateFDA(service, fdaId);
 
-  processFDAAsync(fdaId, previous.query, service).catch(async (err) => {
-    console.error(err);
-    await updateFDAStatus(service, fdaId, 'failed', 0, err.message);
+  const agenda = getAgenda();
+
+  await agenda.now('refresh-fda', {
+    fdaId,
+    query: previous.query,
+    service,
   });
 }
 
-async function processFDAAsync(fdaId, query, service) {
+export async function processFDAAsync(fdaId, query, service) {
   try {
     await updateFDAStatus(service, fdaId, 'fetching', 10);
 
@@ -207,6 +215,7 @@ async function processFDAAsync(fdaId, query, service) {
     await updateFDAStatus(service, fdaId, 'completed', 100);
   } catch (err) {
     await updateFDAStatus(service, fdaId, 'failed', 0, err.message);
+    throw err;
   }
 }
 

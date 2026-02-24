@@ -24,6 +24,8 @@
 
 import express from 'express';
 
+import { initAgenda, shutdownAgenda } from './lib/jobs.js';
+import { processFDAAsync } from './lib/fda.js';
 import {
   getFDAs,
   fetchFDA,
@@ -378,10 +380,14 @@ if (process.env.NODE_ENV !== 'test') {
 async function startup() {
   await createIndex();
   initLogger(config);
+
+  await initAgenda();
+
   getInitialLogger(config).fatal('[INIT]: Initializing app');
 }
 
 async function shutdown() {
+  await shutdownAgenda();
   await disconnectClient();
   await destroyS3Client();
   process.exit(0);
