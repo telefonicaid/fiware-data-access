@@ -193,11 +193,15 @@ export async function fetchFDA(
     service,
   });
 
-  await agenda.every('10 minute', 'refresh-fda', {
-    fdaId,
-    query,
-    service,
-  });
+  // unique is not really needed since we check existence before, but it adds an extra layer of safety in case of duplicate calls
+  await agenda.every(
+    '1 minute',
+    'refresh-fda',
+    { fdaId, query, service },
+    {
+      unique: { 'data.fdaId': fdaId },
+    },
+  );
 }
 
 export async function updateFDA(service, fdaId) {
