@@ -153,6 +153,7 @@ describe('FDA API - integration (run app as child process)', () => {
   let pgPort;
 
   let appProc;
+  let workerProc;
   let appPort;
   let baseUrl;
 
@@ -256,15 +257,16 @@ describe('FDA API - integration (run app as child process)', () => {
       await pgClient.end();
       console.log('[TEST] Postgres OK');
     }
-    await startApp();
+
+    await startAppAndWorker();
   });
 
   afterAll(async () => {
-    await stopApp();
+    await stopAppAndWorker();
     await Promise.allSettled([minio?.stop(), mongo?.stop(), postgis?.stop()]);
   });
 
-  async function startApp() {
+  async function startAppAndWorker() {
     // Start app as child process (NOT NODE_ENV=test)
     appPort = await getFreePort();
     baseUrl = `http://127.0.0.1:${appPort}`;
@@ -275,53 +277,82 @@ describe('FDA API - integration (run app as child process)', () => {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: {
         ...process.env,
-
         // IMPORTANT: allow app.listen
         NODE_ENV: 'integration',
         FDA_NODE_ENV: 'development',
-
         FDA_SERVER_PORT: String(appPort),
-
         FDA_PG_USER: 'postgres',
         FDA_PG_PASSWORD: 'postgres',
         FDA_PG_HOST: pgHost,
         FDA_PG_PORT: String(pgPort),
-
         FDA_OBJSTG_USER: 'admin',
         FDA_OBJSTG_PASSWORD: 'admin123',
         FDA_OBJSTG_PROTOCOL: 'http',
         FDA_OBJSTG_ENDPOINT: minioHostPort,
-
         FDA_MONGO_URI: mongoUri,
       },
     });
 
-    appProc.stdout.on('data', (d) => console.log('[APP]', d.toString().trim()));
+    appProc.stdout.on('data', (d) => console.log('[API]', d.toString().trim()));
     appProc.stderr.on('data', (d) =>
-      console.error('[APP-ERR]', d.toString().trim()),
+      console.error('[API-ERR]', d.toString().trim()),
     );
 
-    // Wait until app responds: /fdas without header -> 400 when up
     const start = Date.now();
     // eslint-disable-next-line no-constant-condition
     while (true) {
       try {
-        const res = await httpReq({ method: 'GET', url: `${baseUrl}/fdas` });
-        if (res.status === 400) {
+        const res = await httpReq({ method: 'GET', url: `${baseUrl}/health` });
+        if (res.status === 200) {
           break;
         }
-        // eslint-disable-next-line no-empty
       } catch {}
-      if (Date.now() - start > 30_000) {
-        throw new Error('Timeout waiting app to start');
+      if (Date.now() - start > 30000) {
+        throw new Error('Timeout waiting API to start');
       }
       await new Promise((r) => setTimeout(r, 200));
     }
+    console.log('[TEST] API OK at', baseUrl);
 
-    console.log('[TEST] App OK at', baseUrl);
+    const workerEntry = path.resolve('src/worker.js');
+    workerProc = spawn(process.execPath, [workerEntry], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+        NODE_ENV: 'integration',
+        FDA_NODE_ENV: 'development',
+        FDA_PG_USER: 'postgres',
+        FDA_PG_PASSWORD: 'postgres',
+        FDA_PG_HOST: pgHost,
+        FDA_PG_PORT: String(pgPort),
+        FDA_OBJSTG_USER: 'admin',
+        FDA_OBJSTG_PASSWORD: 'admin123',
+        FDA_OBJSTG_PROTOCOL: 'http',
+        FDA_OBJSTG_ENDPOINT: minioHostPort,
+        FDA_MONGO_URI: mongoUri,
+      },
+    });
+
+    workerProc.stdout.on('data', (d) =>
+      console.log('[WORKER]', d.toString().trim()),
+    );
+    workerProc.stderr.on('data', (d) =>
+      console.error('[WORKER-ERR]', d.toString().trim()),
+    );
+
+    await new Promise((r) => setTimeout(r, 2000));
+    console.log('[TEST] Worker OK');
   }
 
-  async function stopApp() {
+  async function stopAppAndWorker() {
+    if (workerProc) {
+      workerProc.kill('SIGTERM');
+      await new Promise((r) => setTimeout(r, 500));
+      if (!workerProc.killed) {
+        workerProc.kill('SIGKILL');
+      }
+    }
+
     if (appProc) {
       appProc.kill('SIGTERM');
       await new Promise((r) => setTimeout(r, 500));
@@ -813,8 +844,8 @@ describe('FDA API - integration (run app as child process)', () => {
   });
 
   test('GET /query works correctly after app restart', async () => {
-    await stopApp();
-    await startApp();
+    await stopAppAndWorker();
+    await startAppAndWorker();
 
     const res = await httpReq({
       method: 'GET',
@@ -945,7 +976,7 @@ describe('FDA API - integration (run app as child process)', () => {
     expect(getFDA.status).toBe(404);
   });
 
-  test('MongoDB integration: POST /fdas + get /fdas/:fdaId', async () => {
+  test('MongoDB integration: POST /fdas + get /fdas/:fdaId + post /fdas/:fdaId/das + GET /query', async () => {
     const postFDA = await httpReq({
       method: 'POST',
       url: `${baseUrl}/fdas`,
