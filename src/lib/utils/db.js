@@ -198,6 +198,35 @@ export async function runPreparedStatementStream(
   }
 }
 
+export function checkParams(params) {
+  if (params) {
+    params.forEach((param) => {
+      if (param.range) {
+        const range = param.range;
+        if (typeof range[0] !== 'number' || typeof range[1] !== 'number') {
+          throw new FDAError(
+            400,
+            'InvalidParam',
+            `Both values of range param should be of type number".`,
+          );
+        }
+      }
+
+      if (param.enum) {
+        param.enum.forEach((v) => {
+          if (typeof v !== 'string' && typeof v !== 'number') {
+            throw new FDAError(
+              400,
+              'InvalidParam',
+              `Values of enum param should be strings or numbers".`,
+            );
+          }
+        });
+      }
+    });
+  }
+}
+
 function applyParams(reqParams, params) {
   logger.debug({ reqParams, params }, '[DEBUG]: applyParams');
   if (!params) {

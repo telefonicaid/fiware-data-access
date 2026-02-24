@@ -30,6 +30,7 @@ import {
   releaseDBConnection,
   toParquet,
   buildDAQuery,
+  checkParams,
 } from './utils/db.js';
 import { uploadTable } from './utils/pg.js';
 import { getS3Client, dropFile } from './utils/aws.js';
@@ -167,6 +168,7 @@ export async function createDA(
 ) {
   const conn = await getDBConnection();
   try {
+    checkParams(params);
     const query = buildDAQuery(service, fdaId, userQuery);
     await storeCachedQuery(conn, service, fdaId, daId, query, params);
     storeDA(service, fdaId, daId, description, userQuery, params);
