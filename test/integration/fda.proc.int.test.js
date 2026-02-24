@@ -306,7 +306,9 @@ describe('FDA API - integration (run app as child process)', () => {
         if (res.status === 200) {
           break;
         }
-      } catch {}
+      } catch {
+        // ignore, server not up yet
+      }
       if (Date.now() - start > 30000) {
         throw new Error('Timeout waiting API to start');
       }
@@ -976,7 +978,7 @@ describe('FDA API - integration (run app as child process)', () => {
     expect(getFDA.status).toBe(404);
   });
 
-  test('MongoDB integration: POST /fdas + get /fdas/:fdaId + post /fdas/:fdaId/das + GET /query', async () => {
+  test('MongoDB integration: POST /fdas + get /fdas/:fdaId', async () => {
     const postFDA = await httpReq({
       method: 'POST',
       url: `${baseUrl}/fdas`,
