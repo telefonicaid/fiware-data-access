@@ -193,7 +193,7 @@ export async function fetchFDA(
     service,
   });
 
-  await agenda.every('1 minute', 'refresh-fda', {
+  await agenda.every('10 minute', 'refresh-fda', {
     fdaId,
     query,
     service,
