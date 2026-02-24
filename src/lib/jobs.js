@@ -28,8 +28,10 @@ import { config } from './fdaConfig.js';
 
 let agenda;
 
-export async function initAgenda() {
-  if (agenda) return agenda;
+export function initAgenda() {
+  if (agenda) {
+    return agenda;
+  }
 
   agenda = new Agenda({
     backend: new MongoBackend({
