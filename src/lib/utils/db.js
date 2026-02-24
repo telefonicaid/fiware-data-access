@@ -251,12 +251,40 @@ function applyParams(reqParams, params) {
 function isTypeOf(value, type) {
   const TYPE_COERCERS = {
     Number: (v) => (Number.isFinite(Number(v)) ? Number(v) : undefined),
-    Boolean: (v) => v === 'true' || v === '1',
-    Text: (v) => String(v),
+    Boolean: (v) => {
+      if (v === true || v === false) {
+        return v;
+      }
+      if (v === 'true' || v === '1') {
+        return true;
+      }
+      if (v === 'false' || v === '0') {
+        return false;
+      }
+      return undefined;
+    },
+    Text: (v) => (v == null ? undefined : String(v)),
     DateTime: (v) => {
-      // decode and replace for json coded values (e.g. + as %2B) and proper format
-      const decoded = decodeURIComponent(v).replace(/([+-]\d{2})$/, '$1:00');
-      return isNaN(new Date(decoded).getTime()) ? undefined : new Date(decoded);
+      if (typeof v !== 'string') {
+        return undefined;
+      }
+      let decoded;
+      try {
+        decoded = decodeURIComponent(v);
+      } catch {
+        return undefined;
+      }
+
+      // strict ISO 8601 (UTC or offset)
+      const ISO_8601 =
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+
+      if (!ISO_8601.test(decoded)) {
+        return undefined;
+      }
+
+      const date = new Date(decoded);
+      return Number.isNaN(date.getTime()) ? undefined : date;
     },
   };
 
