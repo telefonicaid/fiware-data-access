@@ -250,13 +250,21 @@ export async function getDA(service, fdaId, daId) {
   return da;
 }
 
-export async function putDA(service, fdaId, daId, description, userQuery) {
+export async function putDA(
+  service,
+  fdaId,
+  daId,
+  description,
+  userQuery,
+  params,
+) {
   const conn = await getDBConnection();
 
   try {
+    checkParams(params);
     const query = buildDAQuery(service, fdaId, userQuery);
-    await storeCachedQuery(conn, service, fdaId, daId, query);
-    await updateDA(service, fdaId, daId, description, userQuery);
+    await storeCachedQuery(conn, service, fdaId, daId, query, params);
+    await updateDA(service, fdaId, daId, description, userQuery, params);
   } finally {
     await releaseDBConnection(conn);
   }
