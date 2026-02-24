@@ -192,6 +192,12 @@ export async function fetchFDA(
     query,
     service,
   });
+
+  await agenda.every('1 minute', 'refresh-fda', {
+    fdaId,
+    query,
+    service,
+  });
 }
 
 export async function updateFDA(service, fdaId) {
@@ -236,6 +242,12 @@ export async function deleteFDA(service, fdaId) {
   );
   await dropFile(s3Client, service, getPath('', fdaId, '.parquet'));
   await removeFDA(service, fdaId);
+
+  const agenda = getAgenda();
+  await agenda.cancel({
+    name: 'refresh-fda',
+    'data.fdaId': fdaId,
+  });
 }
 
 export function getDAs(service, fdaId) {

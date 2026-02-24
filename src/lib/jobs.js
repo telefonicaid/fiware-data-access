@@ -36,6 +36,7 @@ export async function initAgenda() {
       address: config.mongo.uri + '/fiware-data-access',
       collection: 'agendaJobs',
     }),
+    removeOnComplete: true,
   });
 
   agenda.on('error', (err) => console.error('Agenda error:', err));
