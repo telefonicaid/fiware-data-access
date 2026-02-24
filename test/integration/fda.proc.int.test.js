@@ -575,6 +575,72 @@ describe('FDA API - integration (run app as child process)', () => {
     expect(secondQuery.json).toEqual([{ id: '1', name: 'ana', age: '30' }]);
   });
 
+  test('PUT /fdas/:fdaId/das/:daId updates DA with incorrect params', async () => {
+    const daIdToUpdate = 'da_update';
+
+    // Update DA (bad range param)
+    const rangeUpdateRes = await httpReq({
+      method: 'PUT',
+      url: `${baseUrl}/fdas/${fdaId}/das/${daIdToUpdate}`,
+      headers: {
+        'Content-Type': 'application/json',
+        'Fiware-Service': service,
+      },
+      body: {
+        id: 'ignored_in_put',
+        description: 'updated filter',
+        params: [
+          {
+            name: 'activity',
+            type: 'Number',
+            range: ['badRange', 14],
+          },
+        ],
+      },
+    });
+
+    if (rangeUpdateRes.status >= 400) {
+      console.error(
+        'PUT /das failed as expected:',
+        rangeUpdateRes.status,
+        rangeUpdateRes.json ?? rangeUpdateRes.text,
+      );
+    }
+
+    expect(rangeUpdateRes.status).toBe(400);
+
+    // Update DA (bad range param)
+    const enumUpdateRes = await httpReq({
+      method: 'PUT',
+      url: `${baseUrl}/fdas/${fdaId}/das/${daIdToUpdate}`,
+      headers: {
+        'Content-Type': 'application/json',
+        'Fiware-Service': service,
+      },
+      body: {
+        id: 'ignored_in_put',
+        description: 'updated filter',
+        params: [
+          {
+            name: 'activity',
+            type: 'Number',
+            enum: ['option', true],
+          },
+        ],
+      },
+    });
+
+    if (enumUpdateRes.status >= 400) {
+      console.error(
+        'PUT /das failed as expected:',
+        enumUpdateRes.status,
+        enumUpdateRes.json ?? enumUpdateRes.text,
+      );
+    }
+
+    expect(enumUpdateRes.status).toBe(400);
+  });
+
   test('GET /query returns JSON array when Accept: application/json', async () => {
     const res = await httpReq({
       method: 'GET',
