@@ -24,35 +24,56 @@
 
 import { executeQuery } from '../fda.js';
 
-export async function handleCdaQuery(req) {
-  const adaptedParams = adaptCdaParams(req.body);
-  const rows = await executeQuery(adaptedParams);
-  return adaptToCdaFormat(rows, adaptedParams);
+export async function handleCdaQuery({ body }) {
+  const { service, fdaId, daId, queryParams } = adaptCdaParams(body);
+
+  const rows = await executeQuery({
+    service,
+    params: {
+      fdaId,
+      daId,
+      ...queryParams,
+    },
+  });
+
+  return adaptToCdaFormat(rows, queryParams);
 }
 
 function adaptCdaParams(body) {
   const { path, dataAccessId, pageSize, pageStart, ...rest } = body;
 
-  const adapted = {};
+  // --------- RESOLVE SERVICE ----------
+  const pathParts = path.split('/').filter(Boolean);
+  const service = pathParts.length <= 1 ? pathParts[0] : pathParts[1];
+
+  const fdaId = body.cda || dataAccessId;
+  const daId = dataAccessId;
+
+  // --------- BUILD QUERY PARAMS ----------
+  const queryParams = {};
 
   for (const [key, value] of Object.entries(rest)) {
     if (key.startsWith('param')) {
       const cleanKey = key.replace(/^param_not_/, '').replace(/^param/, '');
 
-      // TODO: still need to handle "not" logic in the query execution, but for now just clean the key and pass the value as is
-      adapted[cleanKey] = value;
+      queryParams[cleanKey] = value;
     }
   }
 
   if (pageSize !== undefined) {
-    adapted.limit = Number(pageSize);
+    queryParams.limit = Number(pageSize);
   }
 
   if (pageStart !== undefined) {
-    adapted.offset = Number(pageStart);
+    queryParams.offset = Number(pageStart);
   }
 
-  return adapted;
+  return {
+    service,
+    fdaId,
+    daId,
+    queryParams,
+  };
 }
 
 function adaptToCdaFormat(rows, { pageStart = 0, pageSize = 0 }) {

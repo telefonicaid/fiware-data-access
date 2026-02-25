@@ -350,34 +350,9 @@ app.post('/plugin/cda/api/doQuery', async (req, res) => {
     });
   }
 
-  // ================= RESOLVE fdaId and service =================
-  // `cda` may be present in connectionProperties; if not, use same as dataAccessId
-  const fdaId = req.body.cda || dataAccessId;
-
-  // Derive `service` from path:
-  // - If path has no slashes or is just a simple initial like '/alcobendas', take it as is (remove leading slash if present)
-  // - If path has multiple slashes, take the second segment as service (e.g. '/public/alcobendas/verticals/sql' -> 'alcobendas')
-  let service;
-  const pathParts = path.split('/').filter(Boolean); // filter removes empty strings from leading slash
-  if (pathParts.length <= 1) {
-    service = pathParts[0] || path.replace('/', ''); // simple path
-  } else {
-    service = pathParts[1]; // pick second segment as service
-  }
-
-  // ================= PREPARE QUERY PARAMS =================
-  const updatedParams = {
-    ...rest,
-    fdaId,
-    daId: dataAccessId,
-  };
-
   // ================= EXECUTE QUERY =================
   try {
-    // pass service separately to match function signature
-    const result = await handleCdaQuery({
-      body: req.body,
-    });
+    const result = await handleCdaQuery({ body: req.body });
     return res.json(result);
   } catch (err) {
     console.error('Error executing query:', err);
