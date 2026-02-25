@@ -228,7 +228,7 @@ app.post('/fdas/:fdaId/das', async (req, res) => {
   const { id, description, query, params } = req.body;
   const service = req.get('Fiware-Service');
 
-  if (!fdaId || !id || !description || !query || !service) {
+  if (!fdaId || !id || !query || !service) {
     return res.status(400).json({
       error: 'BadRequest',
       description: 'Missing params in the request',
@@ -261,7 +261,7 @@ app.put('/fdas/:fdaId/das/:daId', async (req, res) => {
   validateAllowedFieldsBody(req.body, ['query', 'description', 'params']);
   const { description, query } = req.body;
 
-  if (!service || !fdaId || !daId || !description || !query) {
+  if (!service || !fdaId || !daId || !query) {
     return res.status(400).json({
       error: 'BadRequest',
       description: 'Missing params in the request',

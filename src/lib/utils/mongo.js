@@ -305,11 +305,24 @@ export async function updateDA(service, fdaId, daId, description, query) {
     '[DEBUG]: updateDA',
   );
   const collection = await getCollection();
+
   try {
     const filter = { service, fdaId };
-    const update = { $set: { [`das.${daId}`]: { description, query } } };
 
-    await collection.updateOne(filter, update);
+    const setFields = {};
+    if (description !== undefined) {
+      setFields[`das.${daId}.description`] = description;
+    }
+
+    if (query !== undefined) {
+      setFields[`das.${daId}.query`] = query;
+    }
+
+    if (Object.keys(setFields).length === 0) {
+      return; // nothing to update
+    }
+
+    await collection.updateOne(filter, { $set: setFields });
   } catch (e) {
     throw new FDAError(
       500,
