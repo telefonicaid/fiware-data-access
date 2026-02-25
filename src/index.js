@@ -305,45 +305,43 @@ app.get('/query', async (req, res) => {
   return res.json(result);
 });
 
-app.get('/doQuery', async (req, res) => {
-  const { path, dataAccessId, ...rest } = req.query;
-  const service = req.get('Fiware-Service');
-  const accept = req.get('Accept') || 'application/json';
+app.post('/plugin/cda/api/doQuery', async (req, res) => {
+  const startTime = Date.now();
 
-  if (
-    Object.keys(req.query).length === 0 ||
-    !path ||
-    !dataAccessId ||
-    !service
-  ) {
-    return res.status(400).json({
-      error: 'BadRequest',
-      description: 'Missing params in the request',
-    });
-  }
+  console.log('\n================ CDA REQUEST =================');
 
-  const updatedParams = {
-    ...rest,
-    fdaId: path.split('/').pop(),
-    daId: dataAccessId,
-  };
-
-  // Content negotiation: check if client wants NDJSON
-  if (accept.includes('application/x-ndjson')) {
-    return executeQueryStream({
-      service,
-      params: updatedParams,
-      req,
-      res,
-    });
-  }
-
-  const result = await executeQuery({
-    service,
-    params: updatedParams,
+  console.log('[REQUEST META]');
+  console.log({
+    method: req.method,
+    url: req.originalUrl,
+    contentType: req.get('Content-Type'),
+    accept: req.get('Accept'),
+    fiwareService: req.get('Fiware-Service'),
   });
 
-  return res.json(result);
+  console.log('\n[QUERY PARAMS]');
+  console.dir(req.query, { depth: null });
+
+  console.log('\n[BODY PARAMS]');
+  console.dir(req.body, { depth: null });
+
+  console.log('\n[BODY KEYS]');
+  console.log(Object.keys(req.body || {}));
+
+  console.log('\n[PARAM* DETECTED]');
+  const paramKeys = Object.keys(req.body || {}).filter((k) =>
+    k.startsWith('param'),
+  );
+  console.log(paramKeys);
+
+  console.log('\n[TIMESTAMP]');
+  console.log(`Received at: ${new Date().toISOString()}`);
+
+  console.log('==============================================\n');
+
+  return res.status(200).json({
+    debug: 'CDA request logged',
+  });
 });
 
 // eslint-disable-next-line no-unused-vars
