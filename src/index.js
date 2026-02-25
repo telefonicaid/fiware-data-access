@@ -46,6 +46,7 @@ import {
   getBasicLogger,
   getInitialLogger,
 } from './lib/utils/logger.js';
+import { handleCdaQuery } from './lib/compat/cdaAdapter.js';
 
 export const app = express();
 const PORT = config.port;
@@ -374,9 +375,8 @@ app.post('/plugin/cda/api/doQuery', async (req, res) => {
   // ================= EXECUTE QUERY =================
   try {
     // pass service separately to match function signature
-    const result = await executeQuery({
-      service,
-      params: updatedParams,
+    const result = await handleCdaQuery({
+      body: req.body,
     });
     return res.json(result);
   } catch (err) {
