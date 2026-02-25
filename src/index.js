@@ -176,6 +176,13 @@ app.put('/fdas/:fdaId', async (req, res) => {
     });
   }
 
+  if (Object.keys(req.body).length > 0) {
+    return res.status(400).json({
+      error: 'BadRequest',
+      description: 'PUT /fdas does not accept a request body',
+    });
+  }
+
   await updateFDA(service, fdaId);
 
   return res.status(202).json({
