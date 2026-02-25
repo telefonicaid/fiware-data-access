@@ -143,6 +143,35 @@ curl -i -X POST http://localhost:8080/fdas \
 }
 ```
 
+#### Adding invalid body fields
+
+If any additional fields are included, the request will be rejected with:
+
+-   **400 BadRequest**
+-   `Invalid fields in request body: <field1>, <field2>, ...`
+
+**Request:**
+
+```bash
+curl -i -X PUT http://localhost:8080/fdas/fda_alarms/das/da_all_alarms \
+  -H "Content-Type: application/json" \
+  -H "Fiware-Service: my-bucket" \
+  -d '{
+    "query": "SELECT * LIMIT 5",
+    "description": "Invalid DA",
+    "status": "completed", "progress": 100
+  }'
+```
+
+**Response (400):**
+
+```json
+{
+    "error": "BadRequest",
+    "description": "Invalid fields in request body: status, progress"
+}
+```
+
 #### Resource not found (FDA)
 
 When requesting an FDA that doesn't exist:
@@ -556,7 +585,12 @@ _**Request headers**_
 
 _**Request payload**_
 
-None
+This endpoint does not accept a request body.
+
+If a body is provided, the API will return:
+
+-   **400 BadRequest**
+-   `PUT /fdas does not accept a request body`
 
 _**Response code**_
 
