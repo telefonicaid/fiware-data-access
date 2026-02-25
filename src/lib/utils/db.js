@@ -104,7 +104,7 @@ export async function runPreparedStatement(
   paramValues,
 ) {
   logger.debug(
-    { service, fdaId, daId, paramValues },
+    { service, fdaId, daId, paramValues: JSON.stringify(paramValues) },
     '[DEBUG]: runPreparedStatement',
   );
 
@@ -119,16 +119,31 @@ export async function runPreparedStatement(
         `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`,
       );
     }
+
     query = buildDAQuery(service, fdaId, da.query);
-    params = da.params;
+    params = da.params || [];
     await storeCachedQuery(conn, service, fdaId, daId, query, params);
   }
 
   const stmt = await conn.prepare(query);
-  paramValues = applyParams(paramValues, params);
 
   try {
-    await stmt.bind(paramValues);
+    let boundParams = [];
+
+    if (Array.isArray(params) && params.length > 0) {
+      boundParams = applyParams(paramValues, params);
+
+      if (!Array.isArray(boundParams)) {
+        throw new FDAError(
+          500,
+          'InvalidBindParams',
+          'applyParams did not return an array',
+        );
+      }
+
+      await stmt.bind(boundParams);
+    }
+
     const result = await stmt.run();
     return result.getRowObjectsJson();
   } catch (e) {
