@@ -45,9 +45,7 @@ export function validateAllowedFieldsBody(body, allowedFields) {
   const keys = Object.keys(body);
   const invalid = keys.filter((k) => !allowedFields.includes(k));
   if (invalid.length > 0) {
-    const err = new Error(
-      `Invalid fields in request body: ${invalid.join(', ')}`,
-    );
+    const err = new Error(`Invalid fields in request body, check your request`);
     err.status = 400;
     err.type = 'BadRequest';
     throw err;

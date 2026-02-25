@@ -148,7 +148,7 @@ curl -i -X POST http://localhost:8080/fdas \
 If any additional fields are included, the request will be rejected with:
 
 -   **400 BadRequest**
--   `Invalid fields in request body: <field1>, <field2>, ...`
+-   `Invalid fields in request body, check your request`
 
 **Request:**
 
@@ -168,7 +168,7 @@ curl -i -X PUT http://localhost:8080/fdas/fda_alarms/das/da_all_alarms \
 ```json
 {
     "error": "BadRequest",
-    "description": "Invalid fields in request body: status, progress"
+    "description": "Invalid fields in request body, check your request"
 }
 ```
 
