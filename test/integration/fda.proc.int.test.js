@@ -722,7 +722,7 @@ describe('FDA API - integration (run app as child process)', () => {
       url: `${baseUrl}/fdas/${fdaId}/das`,
       headers: { 'Fiware-Service': service },
       body: {
-        id: daId2,
+        id: `${daId2}_noType`,
         description: 'get user',
         query: daQuery,
         params: [
