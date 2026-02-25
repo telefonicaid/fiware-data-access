@@ -646,6 +646,7 @@ Example array:
     },
     {
         "name": "animalname",
+        "type": "Text",
         "enum": ["TUNA", "Bandolera"]
     },
     {
