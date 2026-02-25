@@ -746,6 +746,64 @@ describe('FDA API - integration (run app as child process)', () => {
     }
     expect(createBadDa.status).toBe(400);
 
+    // Create DA with bad params enum
+    const createBadRangeDa = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas/${fdaId}/das`,
+      headers: { 'Fiware-Service': service },
+      body: {
+        id: daId2,
+        description: 'get user',
+        query: daQuery,
+        params: [
+          {
+            name: 'minAge',
+            type: 'Number',
+            default: 25,
+            range: [60, 50],
+          },
+        ],
+      },
+    });
+
+    if (createBadRangeDa.status >= 400) {
+      console.error(
+        'POST /das failed as expected:',
+        createBadRangeDa.status,
+        createBadRangeDa.json ?? createBadRangeDa.text,
+      );
+    }
+    expect(createBadRangeDa.status).toBe(400);
+
+    // Create DA with bad params enum
+    const badRangeLengthDa = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas/${fdaId}/das`,
+      headers: { 'Fiware-Service': service },
+      body: {
+        id: daId2,
+        description: 'get user',
+        query: daQuery,
+        params: [
+          {
+            name: 'minAge',
+            type: 'Number',
+            default: 25,
+            range: [40, 50, 60],
+          },
+        ],
+      },
+    });
+
+    if (badRangeLengthDa.status >= 400) {
+      console.error(
+        'POST /das failed as expected:',
+        badRangeLengthDa.status,
+        badRangeLengthDa.json ?? badRangeLengthDa.text,
+      );
+    }
+    expect(badRangeLengthDa.status).toBe(400);
+
     // Query with name outside of the enum
     const enumQueryRes = await httpReq({
       method: 'GET',

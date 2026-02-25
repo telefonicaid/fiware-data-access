@@ -203,11 +203,26 @@ export function checkParams(params) {
     params.forEach((param) => {
       if (param.range) {
         const range = param.range;
+
         if (typeof range[0] !== 'number' || typeof range[1] !== 'number') {
           throw new FDAError(
             400,
             'InvalidParam',
             `Both values of range param should be of type number".`,
+          );
+        }
+        if (range[0] > range[1]) {
+          throw new FDAError(
+            400,
+            'InvalidParam',
+            `Fisrt number should be smaller than second number.`,
+          );
+        }
+        if (range.length > 2) {
+          throw new FDAError(
+            400,
+            'InvalidParam',
+            `Range cant have more than two values.`,
           );
         }
       }
