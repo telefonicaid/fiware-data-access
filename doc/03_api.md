@@ -629,9 +629,9 @@ Each object in the array `params` can have the following keys:
 | Parameter  | Optional | Type    | Description                                                                                |
 | ---------- | -------- | ------- | ------------------------------------------------------------------------------------------ |
 | `name`     |          | string  | Name of the param to control.                                                              |
+| `type`     |          | string  | Type of the param to enforce. Possible values: _Number_, _Boolean_, _Text_ and _DateTime_. |
 | `required` | ✓        | boolean | Tell if the param must be provided by the user. Default value _false_.                     |
 | `default`  | ✓        | string  | Provide a default value for the param in case it isn't provided.                           |
-| `type`     |          | string  | Type of the param to enforce. Possible values: _Number_, _Boolean_, _Text_ and _DateTime_. |
 | `range`    | ✓        | array   | Array with the minimun and maximun value (number) a param can take.                        |
 | `enum`     | ✓        | array   | Array with all the possible values (number or text) a param can take.                      |
 
