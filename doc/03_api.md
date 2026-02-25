@@ -641,7 +641,7 @@ Example array:
 [
     {
         "name": "timeinstant",
-        "type": "dateTime",
+        "type": "DateTime",
         "default": "2020-08-17T18:25:28.332+01:00"
     },
     {
