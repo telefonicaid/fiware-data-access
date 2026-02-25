@@ -41,7 +41,7 @@ export function convertBigInt(obj) {
 }
 
 // Validate that the request body only contains allowed fields
-function validateAllowedFieldsBody(body, allowedFields) {
+export function validateAllowedFieldsBody(body, allowedFields) {
   const keys = Object.keys(body);
   const invalid = keys.filter((k) => !allowedFields.includes(k));
   if (invalid.length > 0) {
