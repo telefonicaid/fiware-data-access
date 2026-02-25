@@ -166,10 +166,21 @@ export async function createDA(
   params,
 ) {
   const conn = await getDBConnection();
+
   try {
+    const existing = await retrieveDA(service, fdaId, daId);
+
+    if (existing) {
+      throw new FDAError(
+        409,
+        'DuplicatedKey',
+        `DA ${daId} already exists in FDA ${fdaId}`,
+      );
+    }
+
     const query = buildDAQuery(service, fdaId, userQuery);
     await storeCachedQuery(conn, service, fdaId, daId, query, params);
-    storeDA(service, fdaId, daId, description, userQuery, params);
+    await storeDA(service, fdaId, daId, description, userQuery, params);
   } finally {
     await releaseDBConnection(conn);
   }
