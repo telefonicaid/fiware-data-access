@@ -201,6 +201,18 @@ export async function runPreparedStatementStream(
 export function checkParams(params) {
   if (params) {
     params.forEach((param) => {
+      if (!param.type) {
+        throw new FDAError(
+          400,
+          'InvalidParam',
+          `Type is a mandatory key in every param.`,
+        );
+      }
+
+      if (!Object.keys(TYPE_COERCERS).includes(param.type)) {
+        throw new FDAError(400, 'InvalidParam', `Invalid value in type key.`);
+      }
+
       if (param.range) {
         const range = param.range;
 
@@ -292,46 +304,46 @@ function applyParams(reqParams, params) {
   return reqParams;
 }
 
-function isTypeOf(value, type) {
-  const TYPE_COERCERS = {
-    Number: (v) => (Number.isFinite(Number(v)) ? Number(v) : undefined),
-    Boolean: (v) => {
-      if (v === true || v === false) {
-        return v;
-      }
-      if (v === 'true' || v === '1') {
-        return true;
-      }
-      if (v === 'false' || v === '0') {
-        return false;
-      }
+const TYPE_COERCERS = {
+  Number: (v) => (Number.isFinite(Number(v)) ? Number(v) : undefined),
+  Boolean: (v) => {
+    if (v === true || v === false) {
+      return v;
+    }
+    if (v === 'true' || v === '1') {
+      return true;
+    }
+    if (v === 'false' || v === '0') {
+      return false;
+    }
+    return undefined;
+  },
+  Text: (v) => (v == null ? undefined : String(v)),
+  DateTime: (v) => {
+    if (typeof v !== 'string') {
       return undefined;
-    },
-    Text: (v) => (v == null ? undefined : String(v)),
-    DateTime: (v) => {
-      if (typeof v !== 'string') {
-        return undefined;
-      }
-      let decoded;
-      try {
-        decoded = decodeURIComponent(v);
-      } catch {
-        return undefined;
-      }
+    }
+    let decoded;
+    try {
+      decoded = decodeURIComponent(v);
+    } catch {
+      return undefined;
+    }
 
-      // strict ISO 8601 (UTC or offset)
-      const ISO_8601 =
-        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+    // strict ISO 8601 (UTC or offset)
+    const ISO_8601 =
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 
-      if (!ISO_8601.test(decoded)) {
-        return undefined;
-      }
+    if (!ISO_8601.test(decoded)) {
+      return undefined;
+    }
 
-      const date = new Date(decoded);
-      return Number.isNaN(date.getTime()) ? undefined : date;
-    },
-  };
+    const date = new Date(decoded);
+    return Number.isNaN(date.getTime()) ? undefined : date;
+  },
+};
 
+function isTypeOf(value, type) {
   const coercer = TYPE_COERCERS[type];
   if (!coercer) {
     throw new FDAError(

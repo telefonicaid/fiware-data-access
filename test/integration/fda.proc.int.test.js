@@ -717,7 +717,64 @@ describe('FDA API - integration (run app as child process)', () => {
     }
     expect(createDa.status).toBe(201);
 
-    // Create DA with bad params enum
+    // Create DA with params but no Type
+    const noTypeDa = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas/${fdaId}/das`,
+      headers: { 'Fiware-Service': service },
+      body: {
+        id: daId2,
+        description: 'get user',
+        query: daQuery,
+        params: [
+          {
+            name: 'minAge',
+            default: 25,
+            range: ['badRange', 50],
+          },
+        ],
+      },
+    });
+
+    if (noTypeDa.status >= 400) {
+      console.error(
+        'POST /das failed as expected:',
+        noTypeDa.status,
+        noTypeDa.json ?? noTypeDa.text,
+      );
+    }
+    expect(noTypeDa.status).toBe(400);
+
+    // Create DA with bad params Type (invalid value)
+    const badTypeDa = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas/${fdaId}/das`,
+      headers: { 'Fiware-Service': service },
+      body: {
+        id: daId2,
+        description: 'get user',
+        query: daQuery,
+        params: [
+          {
+            name: 'minAge',
+            type: 'FakeType',
+            default: 25,
+            range: ['badRange', 50],
+          },
+        ],
+      },
+    });
+
+    if (badTypeDa.status >= 400) {
+      console.error(
+        'POST /das failed as expected:',
+        badTypeDa.status,
+        badTypeDa.json ?? badTypeDa.text,
+      );
+    }
+    expect(badTypeDa.status).toBe(400);
+
+    // Create DA with bad params range
     const createBadDa = await httpReq({
       method: 'POST',
       url: `${baseUrl}/fdas/${fdaId}/das`,
@@ -746,7 +803,7 @@ describe('FDA API - integration (run app as child process)', () => {
     }
     expect(createBadDa.status).toBe(400);
 
-    // Create DA with bad params enum
+    // Create DA with bad params range (bad order)
     const createBadRangeDa = await httpReq({
       method: 'POST',
       url: `${baseUrl}/fdas/${fdaId}/das`,
@@ -775,7 +832,7 @@ describe('FDA API - integration (run app as child process)', () => {
     }
     expect(createBadRangeDa.status).toBe(400);
 
-    // Create DA with bad params enum
+    // Create DA with bad params range (bad length)
     const badRangeLengthDa = await httpReq({
       method: 'POST',
       url: `${baseUrl}/fdas/${fdaId}/das`,
