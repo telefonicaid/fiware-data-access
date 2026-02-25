@@ -46,6 +46,7 @@ import {
   getBasicLogger,
   getInitialLogger,
 } from './lib/utils/logger.js';
+import { validateAllowedFieldsBody } from './lib/utils/utils.js';
 
 export const app = express();
 const PORT = config.port;
@@ -129,6 +130,7 @@ app.get('/fdas', async (req, res) => {
 });
 
 app.post('/fdas', async (req, res) => {
+  validateAllowedFieldsBody(req.body, ['id', 'query', 'description']);
   const { id, query, description } = req.body;
   const service = req.get('Fiware-Service');
   const servicePath = req.get('Fiware-ServicePath');
@@ -214,6 +216,8 @@ app.get('/fdas/:fdaId/das', async (req, res) => {
 
 app.post('/fdas/:fdaId/das', async (req, res) => {
   const { fdaId } = req.params;
+
+  validateAllowedFieldsBody(req.body, ['id', 'query', 'description', 'params']);
   const { id, description, query, params } = req.body;
   const service = req.get('Fiware-Service');
 
@@ -246,6 +250,8 @@ app.get('/fdas/:fdaId/das/:daId', async (req, res) => {
 app.put('/fdas/:fdaId/das/:daId', async (req, res) => {
   const { fdaId, daId } = req.params;
   const service = req.get('Fiware-Service');
+
+  validateAllowedFieldsBody(req.body, ['query', 'description', 'params']);
   const { description, query } = req.body;
 
   if (!service || !fdaId || !daId || !description || !query) {
