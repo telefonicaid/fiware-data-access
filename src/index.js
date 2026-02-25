@@ -340,9 +340,52 @@ app.post('/plugin/cda/api/doQuery', async (req, res) => {
 
   console.log('==============================================\n');
 
-  return res.status(200).json({
-    debug: 'CDA request logged',
-  });
+  // ================= BASIC VALIDATION =================
+  const { path, dataAccessId, ...rest } = req.body;
+  if (!path || !dataAccessId) {
+    return res.status(400).json({
+      error: 'BadRequest',
+      description: 'Missing params in the request',
+    });
+  }
+
+  // ================= RESOLVE fdaId and service =================
+  // `cda` may be present in connectionProperties; if not, use same as dataAccessId
+  const fdaId = req.body.cda || dataAccessId;
+
+  // Derive `service` from path:
+  // - If path has no slashes or is just a simple initial like '/alcobendas', take it as is (remove leading slash if present)
+  // - If path has multiple slashes, take the second segment as service (e.g. '/public/alcobendas/verticals/sql' -> 'alcobendas')
+  let service;
+  const pathParts = path.split('/').filter(Boolean); // filter removes empty strings from leading slash
+  if (pathParts.length <= 1) {
+    service = pathParts[0] || path.replace('/', ''); // simple path
+  } else {
+    service = pathParts[1]; // pick second segment as service
+  }
+
+  // ================= PREPARE QUERY PARAMS =================
+  const updatedParams = {
+    ...rest,
+    fdaId,
+    daId: dataAccessId,
+  };
+
+  // ================= EXECUTE QUERY =================
+  try {
+    // pass service separately to match function signature
+    const result = await executeQuery({
+      service,
+      params: updatedParams,
+    });
+    return res.json(result);
+  } catch (err) {
+    console.error('Error executing query:', err);
+    return res.status(500).json({
+      error: 'InternalServerError',
+      description: err.message || 'Unexpected error executing query',
+    });
+  }
 });
 
 // eslint-disable-next-line no-unused-vars
