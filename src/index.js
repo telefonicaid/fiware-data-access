@@ -93,7 +93,7 @@ app.use((req, res, next) => {
         reqParams: `${JSON.stringify(req.params)}`,
         reqQuery: `${JSON.stringify(req.query)}`,
         reqBody: `${JSON.stringify(req.body)}`,
-        resCode: res.status,
+        resCode: res.statusCode,
         resMsg: res.statusMessage,
         durationMs: Date.now() - start,
         ip: req.ip,
