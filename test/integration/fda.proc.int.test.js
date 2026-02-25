@@ -750,7 +750,7 @@ describe('FDA API - integration (run app as child process)', () => {
       url: `${baseUrl}/fdas/${fdaId}/das`,
       headers: { 'Fiware-Service': service },
       body: {
-        id: daId2,
+        id: `${daId2}_badType`,
         description: 'get user',
         query: daQuery,
         params: [
@@ -779,7 +779,7 @@ describe('FDA API - integration (run app as child process)', () => {
       url: `${baseUrl}/fdas/${fdaId}/das`,
       headers: { 'Fiware-Service': service },
       body: {
-        id: daId2,
+        id: `${daId2}_badRange`,
         description: 'get user',
         query: daQuery,
         params: [
@@ -808,7 +808,7 @@ describe('FDA API - integration (run app as child process)', () => {
       url: `${baseUrl}/fdas/${fdaId}/das`,
       headers: { 'Fiware-Service': service },
       body: {
-        id: daId2,
+        id: `${daId2}_badRangeOrder`,
         description: 'get user',
         query: daQuery,
         params: [
@@ -837,7 +837,7 @@ describe('FDA API - integration (run app as child process)', () => {
       url: `${baseUrl}/fdas/${fdaId}/das`,
       headers: { 'Fiware-Service': service },
       body: {
-        id: daId2,
+        id: `${daId2}_badRangeLength`,
         description: 'get user',
         query: daQuery,
         params: [
