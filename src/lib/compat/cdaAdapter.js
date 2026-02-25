@@ -22,7 +22,7 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
-import { executeQuery } from '../fda';
+import { executeQuery } from '../fda.js';
 
 export async function handleCdaQuery(req) {
   const adaptedParams = adaptCdaParams(req.body);
