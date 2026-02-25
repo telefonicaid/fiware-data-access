@@ -259,7 +259,7 @@ app.put('/fdas/:fdaId/das/:daId', async (req, res) => {
   const service = req.get('Fiware-Service');
 
   validateAllowedFieldsBody(req.body, ['query', 'description', 'params']);
-  const { description, query } = req.body;
+  const { description, query, params } = req.body;
 
   if (!service || !fdaId || !daId || !query) {
     return res.status(400).json({
@@ -268,7 +268,7 @@ app.put('/fdas/:fdaId/das/:daId', async (req, res) => {
     });
   }
 
-  await putDA(service, fdaId, daId, description, query);
+  await putDA(service, fdaId, daId, description, query, params);
 
   return res.sendStatus(204);
 });

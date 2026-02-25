@@ -299,9 +299,16 @@ export async function retrieveDA(service, fdaId, daId) {
   }
 }
 
-export async function updateDA(service, fdaId, daId, description, query) {
+export async function updateDA(
+  service,
+  fdaId,
+  daId,
+  description,
+  query,
+  params,
+) {
   logger.debug(
-    { service, fdaId, daId, description, query },
+    { service, fdaId, daId, description, query, params },
     '[DEBUG]: updateDA',
   );
   const collection = await getCollection();
@@ -316,6 +323,10 @@ export async function updateDA(service, fdaId, daId, description, query) {
 
     if (query !== undefined) {
       setFields[`das.${daId}.query`] = query;
+    }
+
+    if (params !== undefined) {
+      setFields[`das.${daId}.params`] = params;
     }
 
     if (Object.keys(setFields).length === 0) {

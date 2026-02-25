@@ -660,14 +660,42 @@ A DA is represented by a JSON object with the following fields:
 
 Each object in the array `params` can have the following keys:
 
-| Parameter  | Optional | Type    | Description                                                                               |
-| ---------- | -------- | ------- | ----------------------------------------------------------------------------------------- |
-| `name`     |          | string  | Name of the param to control.                                                             |
-| `required` | ✓        | boolean | Tell if the param must be provided by the user. Default value _false_.                    |
-| `default`  | ✓        | string  | Provide a default value for the param in case it isn't provided.                          |
-| `type`     | ✓        | string  | Type of the param to enforce. Possible values: _Numeric_, _Boolean_, _String_ and _Date_. |
-| `range`    | ✓        | array   | Array with the minimun and maximun value a param can take.                                |
-| `enum`     | ✓        | array   | Array with all the possible values a param can take.                                      |
+| Parameter  | Optional | Type    | Description                                                                                                                                                                                              |
+| ---------- | -------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`     |          | string  | Name of the param to control.                                                                                                                                                                            |
+| `type`     |          | string  | Type of the param to enforce. Possible values: _Number_, _Boolean_, _Text_ and _DateTime_.                                                                                                               |
+| `required` | ✓        | boolean | Tell if the param must be provided by the user. Default value _false_.                                                                                                                                   |
+| `default`  | ✓        | string  | Provide a default value for the param in case it isn't provided.                                                                                                                                         |
+| `range`    | ✓        | array   | Array with the minimun and maximun value (`Number`) a param can take. The array should be consistent (only two elements and the first one lesser than the second), otherwise an error will be responsed. |
+| `enum`     | ✓        | array   | Array with all the possible values (`Number` or `Text`) a param can take.                                                                                                                                |
+
+Example array:
+
+```
+[
+    {
+        "name": "timeinstant",
+        "type": "DateTime",
+        "default": "2020-08-17T18:25:28.332+01:00"
+    },
+    {
+        "name": "animalname",
+        "type": "Text",
+        "enum": ["TUNA", "Bandolera"]
+    },
+    {
+        "name": "counted",
+        "type": "Boolean",
+        "default": true
+    },
+    {
+        "name": "activity",
+        "type": "Number",
+        "required": true,
+        "range": [10, 14]
+    }
+]
+```
 
 ### DAs operations
 

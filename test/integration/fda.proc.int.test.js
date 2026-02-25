@@ -245,12 +245,14 @@ describe('FDA API - integration (run app as child process)', () => {
         CREATE TABLE public.users (
           id INT PRIMARY KEY,
           name TEXT,
-          age INT
+          age INT,
+          timeinstant TIMESTAMP,
+          authorized BOOLEAN
         );
       `);
       await pgClient.query(`
-        INSERT INTO public.users (id, name, age)
-        VALUES (1,'ana',30), (2,'bob',20), (3,'carlos',40);
+        INSERT INTO public.users (id, name, age, timeinstant, authorized)
+        VALUES (1,'ana',30, '2020-08-17T18:25:28.332+01:00', true), (2,'bob',20, '2020-08-17T18:25:28.332+01:00', true), (3,'carlos',40, '2020-08-17T18:25:28.332+01:00', true);
       `);
 
       await pgClient.end();
@@ -348,7 +350,8 @@ describe('FDA API - integration (run app as child process)', () => {
       body: {
         id: fdaId,
         // query base to extract from PG to CSV
-        query: 'SELECT id, name, age FROM public.users ORDER BY id',
+        query:
+          'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
         description: 'users dataset',
       },
     });
@@ -572,6 +575,72 @@ describe('FDA API - integration (run app as child process)', () => {
     expect(secondQuery.json).toEqual([{ id: '1', name: 'ana', age: '30' }]);
   });
 
+  test('PUT /fdas/:fdaId/das/:daId updates DA with incorrect params', async () => {
+    const daIdToUpdate = 'da_update';
+
+    // Update DA (bad range param)
+    const rangeUpdateRes = await httpReq({
+      method: 'PUT',
+      url: `${baseUrl}/fdas/${fdaId}/das/${daIdToUpdate}`,
+      headers: {
+        'Content-Type': 'application/json',
+        'Fiware-Service': service,
+      },
+      body: {
+        id: 'ignored_in_put',
+        description: 'updated filter',
+        params: [
+          {
+            name: 'activity',
+            type: 'Number',
+            range: ['badRange', 14],
+          },
+        ],
+      },
+    });
+
+    if (rangeUpdateRes.status >= 400) {
+      console.error(
+        'PUT /das failed as expected:',
+        rangeUpdateRes.status,
+        rangeUpdateRes.json ?? rangeUpdateRes.text,
+      );
+    }
+
+    expect(rangeUpdateRes.status).toBe(400);
+
+    // Update DA (bad range enum)
+    const enumUpdateRes = await httpReq({
+      method: 'PUT',
+      url: `${baseUrl}/fdas/${fdaId}/das/${daIdToUpdate}`,
+      headers: {
+        'Content-Type': 'application/json',
+        'Fiware-Service': service,
+      },
+      body: {
+        id: 'ignored_in_put',
+        description: 'updated filter',
+        params: [
+          {
+            name: 'activity',
+            type: 'Number',
+            enum: ['option', true],
+          },
+        ],
+      },
+    });
+
+    if (enumUpdateRes.status >= 400) {
+      console.error(
+        'PUT /das failed as expected:',
+        enumUpdateRes.status,
+        enumUpdateRes.json ?? enumUpdateRes.text,
+      );
+    }
+
+    expect(enumUpdateRes.status).toBe(400);
+  });
+
   test('GET /query returns JSON array when Accept: application/json', async () => {
     const res = await httpReq({
       method: 'GET',
@@ -599,7 +668,7 @@ describe('FDA API - integration (run app as child process)', () => {
     // DuckDB reads parquet generated in  s3://<bucket>/<fdaID>.parquet
     const daQuery = `
       SELECT id, name, age
-      WHERE age > $minAge AND name = $name
+      WHERE age > $minAge AND name = $name AND timeinstant = $timeinstant AND authorized = $authorized
       ORDER BY id;
     `;
 
@@ -614,15 +683,25 @@ describe('FDA API - integration (run app as child process)', () => {
         params: [
           {
             name: 'name',
-            type: 'String',
+            type: 'Text',
             required: true,
             enum: ['ana', 'carlos'],
           },
           {
             name: 'minAge',
-            type: 'Numeric',
+            type: 'Number',
             default: 25,
             range: [20, 50],
+          },
+          {
+            name: 'timeinstant',
+            type: 'DateTime',
+            default: '2020-08-17T18:25:28.332+01:00',
+          },
+          {
+            name: 'authorized',
+            type: 'Boolean',
+            default: true,
           },
         ],
       },
@@ -637,6 +716,150 @@ describe('FDA API - integration (run app as child process)', () => {
     }
     expect(createDa.status).toBe(201);
 
+    // Create DA with params but no Type
+    const noTypeDa = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas/${fdaId}/das`,
+      headers: { 'Fiware-Service': service },
+      body: {
+        id: daId2,
+        description: 'get user',
+        query: daQuery,
+        params: [
+          {
+            name: 'minAge',
+            default: 25,
+            range: ['badRange', 50],
+          },
+        ],
+      },
+    });
+
+    if (noTypeDa.status >= 400) {
+      console.error(
+        'POST /das failed as expected:',
+        noTypeDa.status,
+        noTypeDa.json ?? noTypeDa.text,
+      );
+    }
+    expect(noTypeDa.status).toBe(400);
+
+    // Create DA with bad params Type (invalid value)
+    const badTypeDa = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas/${fdaId}/das`,
+      headers: { 'Fiware-Service': service },
+      body: {
+        id: daId2,
+        description: 'get user',
+        query: daQuery,
+        params: [
+          {
+            name: 'minAge',
+            type: 'FakeType',
+            default: 25,
+            range: ['badRange', 50],
+          },
+        ],
+      },
+    });
+
+    if (badTypeDa.status >= 400) {
+      console.error(
+        'POST /das failed as expected:',
+        badTypeDa.status,
+        badTypeDa.json ?? badTypeDa.text,
+      );
+    }
+    expect(badTypeDa.status).toBe(400);
+
+    // Create DA with bad params range
+    const createBadDa = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas/${fdaId}/das`,
+      headers: { 'Fiware-Service': service },
+      body: {
+        id: daId2,
+        description: 'get user',
+        query: daQuery,
+        params: [
+          {
+            name: 'minAge',
+            type: 'Number',
+            default: 25,
+            range: ['badRange', 50],
+          },
+        ],
+      },
+    });
+
+    if (createBadDa.status >= 400) {
+      console.error(
+        'POST /das failed as expected:',
+        createBadDa.status,
+        createBadDa.json ?? createBadDa.text,
+      );
+    }
+    expect(createBadDa.status).toBe(400);
+
+    // Create DA with bad params range (bad order)
+    const createBadRangeDa = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas/${fdaId}/das`,
+      headers: { 'Fiware-Service': service },
+      body: {
+        id: daId2,
+        description: 'get user',
+        query: daQuery,
+        params: [
+          {
+            name: 'minAge',
+            type: 'Number',
+            default: 25,
+            range: [60, 50],
+          },
+        ],
+      },
+    });
+
+    if (createBadRangeDa.status >= 400) {
+      console.error(
+        'POST /das failed as expected:',
+        createBadRangeDa.status,
+        createBadRangeDa.json ?? createBadRangeDa.text,
+      );
+    }
+    expect(createBadRangeDa.status).toBe(400);
+
+    // Create DA with bad params range (bad length)
+    const badRangeLengthDa = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas/${fdaId}/das`,
+      headers: { 'Fiware-Service': service },
+      body: {
+        id: daId2,
+        description: 'get user',
+        query: daQuery,
+        params: [
+          {
+            name: 'minAge',
+            type: 'Number',
+            default: 25,
+            range: [40, 50, 60],
+          },
+        ],
+      },
+    });
+
+    if (badRangeLengthDa.status >= 400) {
+      console.error(
+        'POST /das failed as expected:',
+        badRangeLengthDa.status,
+        badRangeLengthDa.json ?? badRangeLengthDa.text,
+      );
+    }
+    expect(badRangeLengthDa.status).toBe(400);
+
     // Query with name outside of the enum
     const enumQueryRes = await httpReq({
       method: 'GET',
@@ -648,7 +871,7 @@ describe('FDA API - integration (run app as child process)', () => {
 
     if (enumQueryRes.status >= 400) {
       console.error(
-        'GET /query failed:',
+        'GET /query failed as expected:',
         enumQueryRes.status,
         enumQueryRes.json ?? enumQueryRes.text,
       );
@@ -666,7 +889,7 @@ describe('FDA API - integration (run app as child process)', () => {
 
     if (rangeQueryRes.status >= 400) {
       console.error(
-        'GET /query failed:',
+        'GET /query failed as expected:',
         rangeQueryRes.status,
         rangeQueryRes.json ?? rangeQueryRes.text,
       );
@@ -705,7 +928,7 @@ describe('FDA API - integration (run app as child process)', () => {
 
     if (requiredQueryRes.status >= 400) {
       console.error(
-        'GET /query failed:',
+        'GET /query failed as expected:',
         requiredQueryRes.status,
         requiredQueryRes.json ?? requiredQueryRes.text,
       );
@@ -723,12 +946,48 @@ describe('FDA API - integration (run app as child process)', () => {
 
     if (typeQueryRes.status >= 400) {
       console.error(
-        'GET /query failed:',
+        'GET /query failed as expected:',
         typeQueryRes.status,
         typeQueryRes.json ?? typeQueryRes.text,
       );
     }
     expect(typeQueryRes.status).toBe(400);
+
+    // Query without proper date (ISO8601)
+    const dateQueryRes = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+        fdaId,
+      )}&daId=${encodeURIComponent(daId2)}&name=carlos&timeinstant=2020-08-17%2018:25:28.332%2B01:00`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    if (dateQueryRes.status >= 400) {
+      console.error(
+        'GET /query failed as expected:',
+        dateQueryRes.status,
+        dateQueryRes.json ?? dateQueryRes.text,
+      );
+    }
+    expect(dateQueryRes.status).toBe(400);
+
+    // Query without proper date (ISO8601)
+    const boolQueryRes = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+        fdaId,
+      )}&daId=${encodeURIComponent(daId2)}&name=carlos&authorized=notBool`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    if (boolQueryRes.status >= 400) {
+      console.error(
+        'GET /query failed as expected:',
+        boolQueryRes.status,
+        boolQueryRes.json ?? boolQueryRes.text,
+      );
+    }
+    expect(boolQueryRes.status).toBe(400);
   });
 
   test('GET /query returns NDJSON when Accept: application/x-ndjson', async () => {
