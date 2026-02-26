@@ -442,6 +442,13 @@ describe('FDA API - integration (run app as child process)', () => {
         id: daId,
         description: 'age filter',
         query: daQuery,
+        params: [
+          {
+            name: 'minAge',
+            type: 'Numeric',
+            required: true,
+          },
+        ],
       },
     });
 
@@ -513,6 +520,13 @@ describe('FDA API - integration (run app as child process)', () => {
           WHERE age > $minAge
           ORDER BY id
         `,
+        params: [
+          {
+            name: 'minAge',
+            type: 'Numeric',
+            required: true,
+          },
+        ],
       },
     });
 
@@ -547,6 +561,13 @@ describe('FDA API - integration (run app as child process)', () => {
           AND age < 35
           ORDER BY id
         `,
+        params: [
+          {
+            name: 'minAge',
+            type: 'Numeric',
+            required: true,
+          },
+        ],
       },
     });
 
