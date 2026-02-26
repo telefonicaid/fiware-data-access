@@ -128,19 +128,8 @@ export async function runPreparedStatement(
   const stmt = await conn.prepare(query);
 
   try {
-    let boundParams = {};
-
-    if (Array.isArray(params) && params.length > 0) {
-      // Bind only declared params in the DA metadata, ignore extra received values (if any)
-      boundParams = applyParams(paramValues, params);
-    } else {
-      // No metadata about params, bind all received values (if any)
-      boundParams = paramValues || {};
-    }
-
-    if (Object.keys(boundParams).length > 0) {
-      await stmt.bind(boundParams);
-    }
+    const boundParams = applyParams(paramValues || {}, params);
+    await stmt.bind(boundParams);
 
     const result = await stmt.run();
     return result.getRowObjectsJson();
@@ -193,17 +182,9 @@ export async function runPreparedStatementStream(
   const stmt = await conn.prepare(query);
 
   try {
-    let boundParams = {};
+    const boundParams = applyParams(paramValues || {}, params);
+    await stmt.bind(boundParams);
 
-    if (Array.isArray(params) && params.length > 0) {
-      boundParams = applyParams(paramValues, params);
-    } else {
-      boundParams = paramValues || {};
-    }
-
-    if (Object.keys(boundParams).length > 0) {
-      await stmt.bind(boundParams);
-    }
     const stream = await stmt.stream();
 
     const close = async () => {
