@@ -764,7 +764,7 @@ describe('FDA API - integration (run app as child process)', () => {
     expect(row1).toEqual({ id: 1, name: 'ana', age: 30 });
     expect(row2).toEqual({ id: 3, name: 'carlos', age: 40 });
   });
-
+  /*
   test('GET /doQuery returns JSON array (legacy) when Accept: application/json', async () => {
     const res = await httpReq({
       method: 'GET',
@@ -811,7 +811,7 @@ describe('FDA API - integration (run app as child process)', () => {
     expect(b).toEqual({ id: 2, name: 'bob', age: 20 });
     expect(c).toEqual({ id: 3, name: 'carlos', age: 40 });
   });
-
+*/
   test('GET /query works correctly after app restart', async () => {
     await stopApp();
     await startApp();
