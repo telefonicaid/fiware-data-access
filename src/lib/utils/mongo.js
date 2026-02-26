@@ -299,15 +299,24 @@ export async function retrieveDA(service, fdaId, daId) {
   }
 }
 
-export async function updateDA(service, fdaId, daId, description, query) {
+export async function updateDA(
+  service,
+  fdaId,
+  daId,
+  description,
+  query,
+  params,
+) {
   logger.debug(
-    { service, fdaId, daId, description, query },
+    { service, fdaId, daId, description, query, params },
     '[DEBUG]: updateDA',
   );
   const collection = await getCollection();
   try {
     const filter = { service, fdaId };
-    const update = { $set: { [`das.${daId}`]: { description, query } } };
+    const update = {
+      $set: { [`das.${daId}`]: { description, query, params } },
+    };
 
     await collection.updateOne(filter, update);
   } catch (e) {
