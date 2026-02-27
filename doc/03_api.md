@@ -159,7 +159,7 @@ curl -i -X PUT http://localhost:8080/fdas/fda_alarms/das/da_all_alarms \
   -d '{
     "query": "SELECT * LIMIT 5",
     "description": "Invalid DA",
-    "status": "completed", "progress": 100
+    "foo": "bar"
   }'
 ```
 
