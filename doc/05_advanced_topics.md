@@ -79,6 +79,8 @@ This layer:
 
 -   Translates CDA-style requests into FDA execution calls
 -   Resolves `service` from `path` if not explicitly provided
+-   Resolves `fdaId` from `cda` field if provided, otherwise defaults to `dataAccessId`
+-   Uses `dataAccessId` as DA identifier
 -   Extracts parameters prefixed with `param`
 -   Forwards pagination parameters (`pageSize`, `pageStart`) without transformation
 -   Adapts FDA results into CDA-compatible format:
@@ -104,6 +106,9 @@ This guarantees:
 -   Predictable behavior
 -   No hidden semantics
 -   Backward compatibility without polluting FDA core logic
+
+> In CDA mode, if no explicit `cda` field is provided, the FDA identifier defaults to the same value as `dataAccessId`.
+> This allows a 1:1 mapping between legacy CDA definitions and FDA datasets.
 
 ### Pagination Behavior
 

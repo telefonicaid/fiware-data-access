@@ -1087,13 +1087,14 @@ _**Request body (form-urlencoded)**_
 
 The request body must be sent as `application/x-www-form-urlencoded`.
 
-| Field          | Optional | Description                                              | Example                             |
-| -------------- | -------- | -------------------------------------------------------- | ----------------------------------- |
-| `path`         |          | Path used to resolve service and FDA identifier          | `/public/service/verticals/sql/da1` |
-| `dataAccessId` |          | Identifier of the Data Access (DA) inside the FDA        | `da1`                               |
-| `param*`       | ✓        | Query parameters prefixed with `param`                   | `parammunicipality=NA`              |
-| `pageSize`     | ✓        | Pagination size (must be handled explicitly by the DA)   | `10`                                |
-| `pageStart`    | ✓        | Pagination offset (must be handled explicitly by the DA) | `0`                                 |
+| Field          | Optional | Description                                                                                             | Example                             |
+| -------------- | -------- | ------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| `path`         |          | Path used to resolve service. FDA identifier defaults to `dataAccessId` unless `cda` field is provided. | `/public/service/verticals/sql/da1` |
+| `dataAccessId` |          | Identifier of the Data Access (DA) inside the FDA                                                       | `da1`                               |
+| `cda`          | ✓        | Explicit FDA identifier. If not provided, `dataAccessId` is used as FDA identifier                      | `fda1`                              |
+| `param*`       | ✓        | Query parameters prefixed with `param`                                                                  | `parammunicipality=NA`              |
+| `pageSize`     | ✓        | Pagination size (must be handled explicitly by the DA)                                                  | `10`                                |
+| `pageStart`    | ✓        | Pagination offset (must be handled explicitly by the DA)                                                | `0`                                 |
 
 ---
 
