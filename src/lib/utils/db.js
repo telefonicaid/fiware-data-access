@@ -358,7 +358,7 @@ export function toParquet(conn, originPath, resultPath) {
   );
 }
 
-function buildDAQuery(service, fdaId, userQuery) {
+export function buildDAQuery(service, fdaId, userQuery) {
   if (!userQuery || typeof userQuery !== 'string') {
     throw new FDAError(400, 'BadRequest', 'Invalid DA query');
   }
