@@ -145,7 +145,8 @@ curl -i -X POST http://localhost:8080/fdas \
 
 #### Adding invalid body fields
 
-If any additional fields are included, the request will be rejected with:
+If any field not explicitly allowed for the operation (including read-only or operational fields) is included in the
+request body, the request will be rejected with:
 
 -   **400 BadRequest**
 -   `Invalid fields in request body, check your request`
