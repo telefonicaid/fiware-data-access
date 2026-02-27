@@ -54,18 +54,21 @@ function adaptCdaParams(body) {
 
   for (const [key, value] of Object.entries(rest)) {
     if (key.startsWith('param')) {
-      const cleanKey = key.replace(/^param_not_/, '').replace(/^param/, '');
+      if (key.startsWith('param_not_')) {
+        throw new Error(`param_not_ is not supported yet: ${key}`);
+      }
 
+      const cleanKey = key.replace(/^param/, '');
       queryParams[cleanKey] = value;
     }
   }
 
   if (pageSize !== undefined) {
-    queryParams.limit = Number(pageSize);
+    queryParams.pageSize = Number(pageSize);
   }
 
   if (pageStart !== undefined) {
-    queryParams.offset = Number(pageStart);
+    queryParams.pageStart = Number(pageStart);
   }
 
   return {
@@ -76,20 +79,21 @@ function adaptCdaParams(body) {
   };
 }
 
-function adaptToCdaFormat(rows, { offset = 0, limit = 0 }) {
+function adaptToCdaFormat(rows, { pageStart = 0, pageSize = 0 }) {
   if (!rows.length) {
     return {
       metadata: [],
       resultset: [],
       queryInfo: {
-        pageStart: offset,
-        pageSize: limit,
+        pageStart,
+        pageSize,
         totalRows: 0,
       },
     };
   }
 
-  const totalRows = rows[0].__total || rows.length;
+  const totalRows =
+    rows[0].__total !== undefined ? Number(rows[0].__total) : rows.length;
 
   const cleanedRows = rows.map(({ __total, ...rest }) => rest);
 
@@ -106,8 +110,8 @@ function adaptToCdaFormat(rows, { offset = 0, limit = 0 }) {
     metadata,
     resultset,
     queryInfo: {
-      pageStart: offset,
-      pageSize: limit,
+      pageStart,
+      pageSize,
       totalRows,
     },
   };
