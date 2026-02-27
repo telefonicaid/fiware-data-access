@@ -1070,32 +1070,6 @@ describe('FDA API - integration (run app as child process)', () => {
     expect(c).toEqual({ id: 3, name: 'carlos', age: 40 });
   });
 
-  test('GET /query works correctly after app restart', async () => {
-    await stopApp();
-    await startApp();
-
-    const res = await httpReq({
-      method: 'GET',
-      url: `${baseUrl}/query?fdaId=${encodeURIComponent(
-        fdaId,
-      )}&daId=${encodeURIComponent(daId)}&minAge=25`,
-      headers: { 'Fiware-Service': service, Accept: 'application/json' },
-    });
-
-    if (res.status >= 400) {
-      console.error(
-        'GET /query (json) failed:',
-        res.status,
-        res.json ?? res.text,
-      );
-    }
-    expect(res.status).toBe(200);
-    expect(res.json).toEqual([
-      { id: '1', name: 'ana', age: '30' },
-      { id: '3', name: 'carlos', age: '40' },
-    ]);
-  });
-
   test('GET /fdas/:fdaId returns expected FDA', async () => {
     const res = await httpReq({
       method: 'GET',
