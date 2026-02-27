@@ -298,7 +298,7 @@ describe('FDA API - integration (run app as child process)', () => {
       `);
       await pgClient.query(`
         INSERT INTO public.users (id, name, age, timeinstant, authorized)
-        VALUES (1,'ana',30, '2020-08-17T18:25:28.332+01:00', true), (2,'bob',20, '2020-08-17T18:25:28.332+01:00', true), (3,'carlos',40, '2020-08-17T18:25:28.332+01:00', true);
+        VALUES (1,'ana',30, '2020-08-17T18:25:28.332Z', true), (2,'bob',20, '2020-08-17T18:25:28.332Z', true), (3,'carlos',40, '2020-08-17T18:25:28.332Z', true);
       `);
 
       await pgClient.end();
@@ -494,7 +494,7 @@ describe('FDA API - integration (run app as child process)', () => {
         params: [
           {
             name: 'minAge',
-            type: 'Numeric',
+            type: 'Number',
             required: true,
           },
         ],
@@ -572,7 +572,7 @@ describe('FDA API - integration (run app as child process)', () => {
         params: [
           {
             name: 'minAge',
-            type: 'Numeric',
+            type: 'Number',
             required: true,
           },
         ],
@@ -612,7 +612,7 @@ describe('FDA API - integration (run app as child process)', () => {
         params: [
           {
             name: 'minAge',
-            type: 'Numeric',
+            type: 'Number',
             required: true,
           },
         ],
@@ -763,7 +763,7 @@ describe('FDA API - integration (run app as child process)', () => {
           {
             name: 'timeinstant',
             type: 'DateTime',
-            default: '2020-08-17T18:25:28.332+01:00',
+            default: '2020-08-17T18:25:28.332Z',
           },
           {
             name: 'authorized',
@@ -1122,9 +1122,9 @@ describe('FDA API - integration (run app as child process)', () => {
           LIMIT $pageSize OFFSET $pageStart
         `,
         params: [
-          { name: 'minAge', type: 'Numeric', default: 0 },
-          { name: 'pageSize', type: 'Numeric', default: 10 },
-          { name: 'pageStart', type: 'Numeric', default: 0 },
+          { name: 'minAge', type: 'Number', default: 0 },
+          { name: 'pageSize', type: 'Number', default: 10 },
+          { name: 'pageStart', type: 'Number', default: 0 },
         ],
       },
     });

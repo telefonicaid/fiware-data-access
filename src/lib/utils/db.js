@@ -262,7 +262,7 @@ export function checkParams(params) {
 }
 
 function applyParams(reqParams, params) {
-  logger.debug({ reqParams, params }, '[DEBUG]: applyParams');
+  logger.debug({ reqParams, params }, '[DEBUG]: applyParams start');
 
   if (!Array.isArray(params) || params.length === 0) {
     return {};
@@ -323,6 +323,9 @@ function applyParams(reqParams, params) {
           `Param "${param.name}" not in param enum [${param.enum}].`,
         );
       }
+
+      if (value instanceof Date) value = value.toISOString();
+      if (typeof value === 'boolean') value = value ? 1 : 0;
 
       validated[param.name] = value;
     }
