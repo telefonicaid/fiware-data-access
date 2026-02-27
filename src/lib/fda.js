@@ -25,11 +25,9 @@
 import {
   runPreparedStatement,
   runPreparedStatementStream,
-  storeCachedQuery,
   getDBConnection,
   releaseDBConnection,
   toParquet,
-  buildDAQuery,
   checkParams,
 } from './utils/db.js';
 import { uploadTable } from './utils/pg.js';
@@ -180,8 +178,6 @@ export async function createDA(
     }
 
     checkParams(params);
-    const query = buildDAQuery(service, fdaId, userQuery);
-    await storeCachedQuery(conn, service, fdaId, daId, query, params);
     await storeDA(service, fdaId, daId, description, userQuery, params);
   } finally {
     await releaseDBConnection(conn);
@@ -273,8 +269,6 @@ export async function putDA(
 
   try {
     checkParams(params);
-    const query = buildDAQuery(service, fdaId, userQuery);
-    await storeCachedQuery(conn, service, fdaId, daId, query, params);
     await updateDA(service, fdaId, daId, description, userQuery, params);
   } finally {
     await releaseDBConnection(conn);
