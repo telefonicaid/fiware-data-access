@@ -143,6 +143,36 @@ curl -i -X POST http://localhost:8080/fdas \
 }
 ```
 
+#### Adding invalid body fields
+
+If any field not explicitly allowed for the operation (including read-only or operational fields) is included in the
+request body, the request will be rejected with:
+
+-   **400 BadRequest**
+-   `Invalid fields in request body, check your request`
+
+**Request:**
+
+```bash
+curl -i -X PUT http://localhost:8080/fdas/fda_alarms/das/da_all_alarms \
+  -H "Content-Type: application/json" \
+  -H "Fiware-Service: my-bucket" \
+  -d '{
+    "query": "SELECT * LIMIT 5",
+    "description": "Invalid DA",
+    "foo": "bar"
+  }'
+```
+
+**Response (400):**
+
+```json
+{
+    "error": "BadRequest",
+    "description": "Invalid fields in request body, check your request"
+}
+```
+
 #### Resource not found (FDA)
 
 When requesting an FDA that doesn't exist:
@@ -556,7 +586,12 @@ _**Request headers**_
 
 _**Request payload**_
 
-None
+This endpoint does not accept a request body.
+
+If a body is provided, the API will return:
+
+-   **400 BadRequest**
+-   `PUT /fdas does not accept a request body`
 
 _**Response code**_
 
@@ -626,14 +661,14 @@ A DA is represented by a JSON object with the following fields:
 
 Each object in the array `params` can have the following keys:
 
-| Parameter  | Optional | Type    | Description                                                                                |
-| ---------- | -------- | ------- | ------------------------------------------------------------------------------------------ |
-| `name`     |          | string  | Name of the param to control.                                                              |
-| `type`     |          | string  | Type of the param to enforce. Possible values: _Number_, _Boolean_, _Text_ and _DateTime_. |
-| `required` | ✓        | boolean | Tell if the param must be provided by the user. Default value _false_.                     |
-| `default`  | ✓        | string  | Provide a default value for the param in case it isn't provided.                           |
-| `range`    | ✓        | array   | Array with the minimun and maximun value (`Number`) a param can take. The array should be consistent (only two elements and the first one lesser than the second), otherwise an error will be responsed.                       |
-| `enum`     | ✓        | array   | Array with all the possible values (`Number` or `Text`) a param can take.                      |
+| Parameter  | Optional | Type    | Description                                                                                                                                                                                              |
+| ---------- | -------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`     |          | string  | Name of the param to control.                                                                                                                                                                            |
+| `type`     |          | string  | Type of the param to enforce. Possible values: _Number_, _Boolean_, _Text_ and _DateTime_.                                                                                                               |
+| `required` | ✓        | boolean | Tell if the param must be provided by the user. Default value _false_.                                                                                                                                   |
+| `default`  | ✓        | string  | Provide a default value for the param in case it isn't provided.                                                                                                                                         |
+| `range`    | ✓        | array   | Array with the minimun and maximun value (`Number`) a param can take. The array should be consistent (only two elements and the first one lesser than the second), otherwise an error will be responsed. |
+| `enum`     | ✓        | array   | Array with all the possible values (`Number` or `Text`) a param can take.                                                                                                                                |
 
 Example array:
 
