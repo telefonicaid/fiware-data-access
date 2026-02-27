@@ -350,9 +350,31 @@ app.post('/plugin/cda/api/doQuery', async (req, res) => {
     });
   }
 
-  // ================= EXECUTE QUERY =================
+  // ================= EXECUTE QUERY AND DEBUG =================
   try {
     const result = await handleCdaQuery({ body: req.body });
+
+    console.log('\n================ CDA RESPONSE =================');
+
+    console.log('\n[RESPONSE META]');
+    console.log({
+      status: 200,
+      durationMs: Date.now() - startTime,
+      rows: result?.resultset?.length,
+      totalRows: result?.queryInfo?.totalRows,
+    });
+
+    console.log('\n[METADATA]');
+    console.dir(result?.metadata, { depth: null });
+
+    console.log('\n[QUERY INFO]');
+    console.dir(result?.queryInfo, { depth: null });
+
+    console.log('\n[FIRST 2 ROWS]');
+    console.dir(result?.resultset?.slice(0, 2), { depth: null });
+
+    console.log('\n===============================================\n');
+
     return res.json(result);
   } catch (err) {
     console.error('Error executing query:', err);

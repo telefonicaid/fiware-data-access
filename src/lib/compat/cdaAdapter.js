@@ -76,35 +76,39 @@ function adaptCdaParams(body) {
   };
 }
 
-function adaptToCdaFormat(rows, { pageStart = 0, pageSize = 0 }) {
+function adaptToCdaFormat(rows, { offset = 0, limit = 0 }) {
   if (!rows.length) {
     return {
       metadata: [],
       resultset: [],
       queryInfo: {
-        pageStart,
-        pageSize,
+        pageStart: offset,
+        pageSize: limit,
         totalRows: 0,
       },
     };
   }
 
-  const columns = Object.keys(rows[0]);
+  const totalRows = rows[0].__total || rows.length;
+
+  const cleanedRows = rows.map(({ __total, ...rest }) => rest);
+
+  const columns = Object.keys(cleanedRows[0]);
 
   const metadata = columns.map((colName, index) => ({
     colIndex: index,
     colName,
   }));
 
-  const resultset = rows.map((row) => columns.map((col) => row[col]));
+  const resultset = cleanedRows.map((row) => columns.map((col) => row[col]));
 
   return {
     metadata,
     resultset,
     queryInfo: {
-      pageStart,
-      pageSize,
-      totalRows: resultset.length,
+      pageStart: offset,
+      pageSize: limit,
+      totalRows,
     },
   };
 }
