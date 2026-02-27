@@ -30,6 +30,7 @@ import {
   releaseDBConnection,
   toParquet,
   buildDAQuery,
+  checkParams,
 } from './utils/db.js';
 import { uploadTable } from './utils/pg.js';
 import { getS3Client, dropFile } from './utils/aws.js';
@@ -166,10 +167,22 @@ export async function createDA(
   params,
 ) {
   const conn = await getDBConnection();
+
   try {
+    const existing = await retrieveDA(service, fdaId, daId);
+
+    if (existing) {
+      throw new FDAError(
+        409,
+        'DuplicatedKey',
+        `DA ${daId} already exists in FDA ${fdaId}`,
+      );
+    }
+
+    checkParams(params);
     const query = buildDAQuery(service, fdaId, userQuery);
     await storeCachedQuery(conn, service, fdaId, daId, query, params);
-    storeDA(service, fdaId, daId, description, userQuery, params);
+    await storeDA(service, fdaId, daId, description, userQuery, params);
   } finally {
     await releaseDBConnection(conn);
   }
@@ -259,10 +272,9 @@ export async function putDA(
   const conn = await getDBConnection();
 
   try {
+    checkParams(params);
     const query = buildDAQuery(service, fdaId, userQuery);
-
     await storeCachedQuery(conn, service, fdaId, daId, query, params);
-
     await updateDA(service, fdaId, daId, description, userQuery, params);
   } finally {
     await releaseDBConnection(conn);

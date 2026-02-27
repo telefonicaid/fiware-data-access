@@ -1,3 +1,4 @@
+- Fix: make description field optional in DA creation to match API specification (#97)
 - Add: params array to DA creation (#60)
 - Fix: use db connection pool for object storage and env var FDA_OBJSTG_MAX_POOL_SIZE
 - Fix: make DA identifier immutable (cannot be updated via PUT) (#88)
@@ -8,6 +9,8 @@
 - Fix: add lint to test
 - Fix: move runtime dependencies (ajv, dotenv, lodash, @aws-sdk/client-s3) from devDependencies to dependencies in package.json (#72)
 - Fix: improved error responses with proper status code and message (#30)
+- Add: validation fields in POST and PUT requests (ensure required, and only required, fields are present) (#97)
+- Add: check for existing DA before creation in POST /das to prevent duplicates (#97)
 - Add: use of header Fiware-servicePath for future access control (#61)
 - Add: status, progress and lastFetch fields in FDAs to support async create/regenerate operations with progress tracking (#34)
 - Add NDJSON support for /query and /doQuery endpoints with streaming capability (#53)

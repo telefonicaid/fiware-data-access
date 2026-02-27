@@ -47,6 +47,7 @@ import {
   getInitialLogger,
 } from './lib/utils/logger.js';
 import { handleCdaQuery } from './lib/compat/cdaAdapter.js';
+import { validateAllowedFieldsBody } from './lib/utils/utils.js';
 
 export const app = express();
 const PORT = config.port;
@@ -94,7 +95,7 @@ app.use((req, res, next) => {
         reqParams: `${JSON.stringify(req.params)}`,
         reqQuery: `${JSON.stringify(req.query)}`,
         reqBody: `${JSON.stringify(req.body)}`,
-        resCode: res.status,
+        resCode: res.statusCode,
         resMsg: res.statusMessage,
         durationMs: Date.now() - start,
         ip: req.ip,
@@ -131,6 +132,7 @@ app.get('/fdas', async (req, res) => {
 });
 
 app.post('/fdas', async (req, res) => {
+  validateAllowedFieldsBody(req.body, ['id', 'query', 'description']);
   const { id, query, description } = req.body;
   const service = req.get('Fiware-Service');
   const servicePath = req.get('Fiware-ServicePath');
@@ -176,6 +178,13 @@ app.put('/fdas/:fdaId', async (req, res) => {
     });
   }
 
+  if (req.body && Object.keys(req.body).length > 0) {
+    return res.status(400).json({
+      error: 'BadRequest',
+      description: 'PUT /fdas does not accept a request body',
+    });
+  }
+
   await updateFDA(service, fdaId);
 
   return res.status(202).json({
@@ -216,10 +225,12 @@ app.get('/fdas/:fdaId/das', async (req, res) => {
 
 app.post('/fdas/:fdaId/das', async (req, res) => {
   const { fdaId } = req.params;
+
+  validateAllowedFieldsBody(req.body, ['id', 'query', 'description', 'params']);
   const { id, description, query, params } = req.body;
   const service = req.get('Fiware-Service');
 
-  if (!fdaId || !id || !description || !query || !service) {
+  if (!fdaId || !id || !query || !service) {
     return res.status(400).json({
       error: 'BadRequest',
       description: 'Missing params in the request',
@@ -248,9 +259,11 @@ app.get('/fdas/:fdaId/das/:daId', async (req, res) => {
 app.put('/fdas/:fdaId/das/:daId', async (req, res) => {
   const { fdaId, daId } = req.params;
   const service = req.get('Fiware-Service');
+
+  validateAllowedFieldsBody(req.body, ['query', 'description', 'params']);
   const { description, query, params } = req.body;
 
-  if (!service || !fdaId || !daId || !description || !query || !params) {
+  if (!service || !fdaId || !daId || !query) {
     return res.status(400).json({
       error: 'BadRequest',
       description: 'Missing params in the request',

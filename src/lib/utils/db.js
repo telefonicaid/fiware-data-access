@@ -205,6 +205,62 @@ export async function runPreparedStatementStream(
   }
 }
 
+export function checkParams(params) {
+  if (params) {
+    params.forEach((param) => {
+      if (!param.type) {
+        throw new FDAError(
+          400,
+          'InvalidParam',
+          `Type is a mandatory key in every param.`,
+        );
+      }
+
+      if (!Object.keys(TYPE_COERCERS).includes(param.type)) {
+        throw new FDAError(400, 'InvalidParam', `Invalid value in type key.`);
+      }
+
+      if (param.range) {
+        const range = param.range;
+
+        if (typeof range[0] !== 'number' || typeof range[1] !== 'number') {
+          throw new FDAError(
+            400,
+            'InvalidParam',
+            `Both values of range param should be of type number".`,
+          );
+        }
+        if (range[0] > range[1]) {
+          throw new FDAError(
+            400,
+            'InvalidParam',
+            `Fisrt number should be smaller than second number.`,
+          );
+        }
+        if (range.length > 2) {
+          throw new FDAError(
+            400,
+            'InvalidParam',
+            `Range cant have more than two values.`,
+          );
+        }
+      }
+
+      if (param.enum) {
+        param.enum.forEach((v) => {
+          if (typeof v !== 'string' && typeof v !== 'number') {
+            throw new FDAError(
+              400,
+              'InvalidParam',
+              `Values of enum param should be strings or numbers".`,
+            );
+          }
+        });
+      }
+    });
+  }
+}
+
 function applyParams(reqParams, params) {
   logger.debug({ reqParams, params }, '[DEBUG]: applyParams');
 
@@ -275,18 +331,46 @@ function applyParams(reqParams, params) {
   return validated;
 }
 
-function isTypeOf(value, type) {
-  const TYPE_COERCERS = {
-    Numeric: (v) => (Number.isFinite(Number(v)) ? Number(v) : undefined),
-    Boolean: (v) => v === 'true' || v === '1',
-    String: (v) => String(v),
-    Date: (v) => {
-      // decode and replace for json coded values (e.g. + as %2B) and proper format
-      const decoded = decodeURIComponent(v).replace(/([+-]\d{2})$/, '$1:00');
-      return isNaN(new Date(decoded).getTime()) ? undefined : new Date(decoded);
-    },
-  };
+const TYPE_COERCERS = {
+  Number: (v) => (Number.isFinite(Number(v)) ? Number(v) : undefined),
+  Boolean: (v) => {
+    if (v === true || v === false) {
+      return v;
+    }
+    if (v === 'true' || v === '1') {
+      return true;
+    }
+    if (v === 'false' || v === '0') {
+      return false;
+    }
+    return undefined;
+  },
+  Text: (v) => (v == null ? undefined : String(v)),
+  DateTime: (v) => {
+    if (typeof v !== 'string') {
+      return undefined;
+    }
+    let decoded;
+    try {
+      decoded = decodeURIComponent(v);
+    } catch {
+      return undefined;
+    }
 
+    // strict ISO 8601 (UTC or offset)
+    const ISO_8601 =
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+
+    if (!ISO_8601.test(decoded)) {
+      return undefined;
+    }
+
+    const date = new Date(decoded);
+    return Number.isNaN(date.getTime()) ? undefined : date;
+  },
+};
+
+function isTypeOf(value, type) {
   const coercer = TYPE_COERCERS[type];
   if (!coercer) {
     throw new FDAError(
