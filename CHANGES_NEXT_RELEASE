@@ -9,6 +9,7 @@
 - Fix: add lint to test
 - Fix: move runtime dependencies (ajv, dotenv, lodash, @aws-sdk/client-s3) from devDependencies to dependencies in package.json (#72)
 - Fix: improved error responses with proper status code and message (#30)
+- Add: Pentaho CDA compatibility layer via POST /plugin/cda/api/doQuery with parameter adaptation and CDA response format support (#102)
 - Add: validation fields in POST and PUT requests (ensure required, and only required, fields are present) (#97)
 - Add: check for existing DA before creation in POST /das to prevent duplicates (#97)
 - Add: use of header Fiware-servicePath for future access control (#61)
