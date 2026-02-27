@@ -310,38 +310,6 @@ app.get('/query', async (req, res) => {
 app.post('/plugin/cda/api/doQuery', async (req, res) => {
   const startTime = Date.now();
 
-  console.log('\n================ CDA REQUEST =================');
-
-  console.log('[REQUEST META]');
-  console.log({
-    method: req.method,
-    url: req.originalUrl,
-    contentType: req.get('Content-Type'),
-    accept: req.get('Accept'),
-    fiwareService: req.get('Fiware-Service'),
-  });
-
-  console.log('\n[QUERY PARAMS]');
-  console.dir(req.query, { depth: null });
-
-  console.log('\n[BODY PARAMS]');
-  console.dir(req.body, { depth: null });
-
-  console.log('\n[BODY KEYS]');
-  console.log(Object.keys(req.body || {}));
-
-  console.log('\n[PARAM* DETECTED]');
-  const paramKeys = Object.keys(req.body || {}).filter((k) =>
-    k.startsWith('param'),
-  );
-  console.log(paramKeys);
-
-  console.log('\n[TIMESTAMP]');
-  console.log(`Received at: ${new Date().toISOString()}`);
-
-  console.log('==============================================\n');
-
-  // ================= BASIC VALIDATION =================
   const { path, dataAccessId, ...rest } = req.body;
   if (!path || !dataAccessId) {
     return res.status(400).json({
@@ -350,31 +318,8 @@ app.post('/plugin/cda/api/doQuery', async (req, res) => {
     });
   }
 
-  // ================= EXECUTE QUERY AND DEBUG =================
   try {
     const result = await handleCdaQuery({ body: req.body });
-
-    console.log('\n================ CDA RESPONSE =================');
-
-    console.log('\n[RESPONSE META]');
-    console.log({
-      status: 200,
-      durationMs: Date.now() - startTime,
-      rows: result?.resultset?.length,
-      totalRows: result?.queryInfo?.totalRows,
-    });
-
-    console.log('\n[METADATA]');
-    console.dir(result?.metadata, { depth: null });
-
-    console.log('\n[QUERY INFO]');
-    console.dir(result?.queryInfo, { depth: null });
-
-    console.log('\n[FIRST 2 ROWS]');
-    console.dir(result?.resultset?.slice(0, 2), { depth: null });
-
-    console.log('\n===============================================\n');
-
     return res.json(result);
   } catch (err) {
     console.error('Error executing query:', err);
