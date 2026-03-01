@@ -22,45 +22,17 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
-import { initAgenda, shutdownAgenda } from './lib/jobs.js';
+import { initAgenda } from './lib/jobs.js';
 import { processFDAAsync } from './lib/fda.js';
 
-async function startWorker() {
+export async function startWorker() {
   const agenda = await initAgenda();
 
   agenda.define('refresh-fda', async (job) => {
     const { fdaId, query, service } = job.attrs.data;
-    console.log(`[Worker] Hello, ${fdaId}!`);
     await processFDAAsync(fdaId, query, service);
-  });
-
-  agenda.on('start', (job) => {
-    console.log(`[Worker] Job ${job.attrs.name} starting...`);
-  });
-
-  agenda.on('success', (job) => {
-    console.log(`[Worker] Job ${job.attrs.name} completed successfully`);
-  });
-
-  agenda.on('fail', (err, job) => {
-    console.error(`[Worker] Job ${job.attrs.name} failed:`, err);
   });
 
   await agenda.start();
   console.log('[Worker] Agenda started');
 }
-
-startWorker().catch((err) => {
-  console.error('[Worker] Failed to start:', err);
-  process.exit(1);
-});
-
-process.on('SIGINT', async () => {
-  await shutdownAgenda();
-  process.exit(0);
-});
-
-process.on('SIGTERM', async () => {
-  await shutdownAgenda();
-  process.exit(0);
-});

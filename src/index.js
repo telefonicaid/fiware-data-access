@@ -24,8 +24,8 @@
 
 import express from 'express';
 
-import { initAgenda, shutdownAgenda } from './lib/jobs.js';
-import { processFDAAsync } from './lib/fda.js';
+import { startWorker } from './worker.js';
+import { shutdownAgenda } from './lib/jobs.js';
 import {
   getFDAs,
   fetchFDA,
@@ -364,31 +364,60 @@ app.use((err, req, res, next) => {
 });
 
 if (process.env.NODE_ENV !== 'test') {
-  app.listen(PORT, () => {
-    logger.debug(`Server listening at port ${PORT}`);
-  });
+  startup()
+    .then(() => {
+      if (config.roles.apiServer) {
+        app.listen(PORT, () => {
+          logger.debug(`API Server listening at port ${PORT}`);
+        });
+      }
+
+      if (config.roles.fetcher) {
+        startWorker().catch((err) => {
+          logger.error('[Worker] Failed to start', err);
+          process.exit(1);
+        });
+      }
+    })
+    .catch((err) => {
+      logger.error(`Startup failed: ${err}`);
+      process.exit(1);
+    });
 
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
-
-  startup().catch((err) => {
-    logger.debug(`Startup failed:  ${err}`);
-    process.exit(1);
-  });
 }
 
 async function startup() {
+  if (!config.roles.apiServer && !config.roles.fetcher) {
+    throw new Error('At least one FDA role must be enabled');
+  }
+
   await createIndex();
   initLogger(config);
-
-  await initAgenda();
 
   getInitialLogger(config).fatal('[INIT]: Initializing app');
 }
 
+let shuttingDown = false;
 async function shutdown() {
-  await shutdownAgenda();
-  await disconnectClient();
-  await destroyS3Client();
-  process.exit(0);
+  if (shuttingDown) return;
+  shuttingDown = true;
+
+  logger.info('[SHUTDOWN] Graceful shutdown started');
+
+  try {
+    if (config.roles.fetcher) {
+      await shutdownAgenda();
+    }
+
+    await disconnectClient();
+    await destroyS3Client();
+
+    logger.info('[SHUTDOWN] Completed');
+    process.exit(0);
+  } catch (err) {
+    logger.error('[SHUTDOWN] Failed', err);
+    process.exit(1);
+  }
 }
