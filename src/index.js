@@ -24,7 +24,7 @@
 
 import express from 'express';
 
-import { startWorker } from './worker.js';
+import { startFetcher } from './fetcher.js';
 import { shutdownAgenda, initAgenda } from './lib/jobs.js';
 import {
   getFDAs,
@@ -373,8 +373,8 @@ if (process.env.NODE_ENV !== 'test') {
       }
 
       if (config.roles.fetcher) {
-        startWorker().catch((err) => {
-          logger.error('[Worker] Failed to start', err);
+        startFetcher().catch((err) => {
+          logger.error('[Fetcher] Failed to start', err);
           process.exit(1);
         });
       }

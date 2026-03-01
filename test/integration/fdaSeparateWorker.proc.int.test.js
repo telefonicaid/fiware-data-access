@@ -153,7 +153,7 @@ describe('FDA API - integration (run app as child process)', () => {
   let pgPort;
 
   let appProc;
-  let workerProc;
+  let fetcherProc;
   let appPort;
   let baseUrl;
 
@@ -258,15 +258,15 @@ describe('FDA API - integration (run app as child process)', () => {
       console.log('[TEST] Postgres OK');
     }
 
-    await startAppAndWorker();
+    await startAppAndFetcher();
   });
 
   afterAll(async () => {
-    await stopAppAndWorker();
+    await stopAppAndFetcher();
     await Promise.allSettled([minio?.stop(), mongo?.stop(), postgis?.stop()]);
   });
 
-  async function startAppAndWorker() {
+  async function startAppAndFetcher() {
     const entry = path.resolve('test/helpers/start-app.js');
 
     // API SERVER PROCESS
@@ -322,7 +322,7 @@ describe('FDA API - integration (run app as child process)', () => {
     console.log('[TEST] API OK at', baseUrl);
 
     // FETCHER PROCESS
-    workerProc = spawn(process.execPath, [entry], {
+    fetcherProc = spawn(process.execPath, [entry], {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: {
         ...process.env,
@@ -346,23 +346,23 @@ describe('FDA API - integration (run app as child process)', () => {
       },
     });
 
-    workerProc.stdout.on('data', (d) =>
-      console.log('[WORKER]', d.toString().trim()),
+    fetcherProc.stdout.on('data', (d) =>
+      console.log('[FETCHER]', d.toString().trim()),
     );
-    workerProc.stderr.on('data', (d) =>
-      console.error('[WORKER-ERR]', d.toString().trim()),
+    fetcherProc.stderr.on('data', (d) =>
+      console.error('[FETCHER-ERR]', d.toString().trim()),
     );
 
     await new Promise((r) => setTimeout(r, 2000));
 
-    console.log('[TEST] Worker OK');
+    console.log('[TEST] Fetcher OK');
   }
 
-  async function stopAppAndWorker() {
-    if (workerProc) {
-      workerProc.kill('SIGTERM');
+  async function stopAppAndFetcher() {
+    if (fetcherProc) {
+      fetcherProc.kill('SIGTERM');
       await new Promise((r) => setTimeout(r, 500));
-      if (!workerProc.killed) workerProc.kill('SIGKILL');
+      if (!fetcherProc.killed) fetcherProc.kill('SIGKILL');
     }
 
     if (appProc) {
@@ -854,8 +854,8 @@ describe('FDA API - integration (run app as child process)', () => {
   });
 
   test('GET /query works correctly after app restart', async () => {
-    await stopAppAndWorker();
-    await startAppAndWorker();
+    await stopAppAndFetcher();
+    await startAppAndFetcher();
 
     const res = await httpReq({
       method: 'GET',

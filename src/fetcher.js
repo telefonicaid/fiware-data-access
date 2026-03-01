@@ -25,7 +25,7 @@
 import { getAgenda } from './lib/jobs.js';
 import { processFDAAsync } from './lib/fda.js';
 
-export async function startWorker() {
+export async function startFetcher() {
   const agenda = getAgenda();
 
   agenda.define('refresh-fda', async (job) => {
@@ -34,5 +34,5 @@ export async function startWorker() {
   });
 
   await agenda.start();
-  console.log('[Worker] Agenda started');
+  console.log('[Fetcher] Agenda started');
 }
