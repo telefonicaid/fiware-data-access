@@ -153,7 +153,6 @@ describe('FDA API - integration (run app as child process)', () => {
   let pgPort;
 
   let appProc;
-  let workerProc;
   let appPort;
   let baseUrl;
 
@@ -258,15 +257,15 @@ describe('FDA API - integration (run app as child process)', () => {
       console.log('[TEST] Postgres OK');
     }
 
-    await startAppAndWorker();
+    await startApp();
   });
 
   afterAll(async () => {
-    await stopAppAndWorker();
+    await stopApp();
     await Promise.allSettled([minio?.stop(), mongo?.stop(), postgis?.stop()]);
   });
 
-  async function startAppAndWorker() {
+  async function startApp() {
     // Start app as child process (NOT NODE_ENV=test)
     appPort = await getFreePort();
     baseUrl = `http://127.0.0.1:${appPort}`;
@@ -290,6 +289,8 @@ describe('FDA API - integration (run app as child process)', () => {
         FDA_OBJSTG_PROTOCOL: 'http',
         FDA_OBJSTG_ENDPOINT: minioHostPort,
         FDA_MONGO_URI: mongoUri,
+        FDA_ROLE_APISERVER: 'true',
+        FDA_ROLE_FETCHER: 'true',
       },
     });
 
@@ -315,46 +316,9 @@ describe('FDA API - integration (run app as child process)', () => {
       await new Promise((r) => setTimeout(r, 200));
     }
     console.log('[TEST] API OK at', baseUrl);
-
-    const workerEntry = path.resolve('src/worker.js');
-    workerProc = spawn(process.execPath, [workerEntry], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      env: {
-        ...process.env,
-        NODE_ENV: 'integration',
-        FDA_NODE_ENV: 'development',
-        FDA_PG_USER: 'postgres',
-        FDA_PG_PASSWORD: 'postgres',
-        FDA_PG_HOST: pgHost,
-        FDA_PG_PORT: String(pgPort),
-        FDA_OBJSTG_USER: 'admin',
-        FDA_OBJSTG_PASSWORD: 'admin123',
-        FDA_OBJSTG_PROTOCOL: 'http',
-        FDA_OBJSTG_ENDPOINT: minioHostPort,
-        FDA_MONGO_URI: mongoUri,
-      },
-    });
-
-    workerProc.stdout.on('data', (d) =>
-      console.log('[WORKER]', d.toString().trim()),
-    );
-    workerProc.stderr.on('data', (d) =>
-      console.error('[WORKER-ERR]', d.toString().trim()),
-    );
-
-    await new Promise((r) => setTimeout(r, 2000));
-    console.log('[TEST] Worker OK');
   }
 
-  async function stopAppAndWorker() {
-    if (workerProc) {
-      workerProc.kill('SIGTERM');
-      await new Promise((r) => setTimeout(r, 500));
-      if (!workerProc.killed) {
-        workerProc.kill('SIGKILL');
-      }
-    }
-
+  async function stopApp() {
     if (appProc) {
       appProc.kill('SIGTERM');
       await new Promise((r) => setTimeout(r, 500));
@@ -846,8 +810,8 @@ describe('FDA API - integration (run app as child process)', () => {
   });
 
   test('GET /query works correctly after app restart', async () => {
-    await stopAppAndWorker();
-    await startAppAndWorker();
+    await stopApp();
+    await startApp();
 
     const res = await httpReq({
       method: 'GET',
