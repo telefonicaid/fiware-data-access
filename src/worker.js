@@ -22,11 +22,11 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
-import { initAgenda } from './lib/jobs.js';
+import { getAgenda } from './lib/jobs.js';
 import { processFDAAsync } from './lib/fda.js';
 
 export async function startWorker() {
-  const agenda = await initAgenda();
+  const agenda = getAgenda();
 
   agenda.define('refresh-fda', async (job) => {
     const { fdaId, query, service } = job.attrs.data;

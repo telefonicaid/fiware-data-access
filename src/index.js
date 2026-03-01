@@ -25,7 +25,7 @@
 import express from 'express';
 
 import { startWorker } from './worker.js';
-import { shutdownAgenda } from './lib/jobs.js';
+import { shutdownAgenda, initAgenda } from './lib/jobs.js';
 import {
   getFDAs,
   fetchFDA,
@@ -395,6 +395,10 @@ async function startup() {
 
   await createIndex();
   initLogger(config);
+
+  if (config.roles.apiServer || config.roles.fetcher) {
+    await initAgenda();
+  }
 
   getInitialLogger(config).fatal('[INIT]: Initializing app');
 }
