@@ -54,9 +54,9 @@ jobs:
           npm install
 
       - name: Run tests
-        env:
-          TESTCONTAINERS_RYUK_DISABLED: "true"
-          DOCKER_HOST: "unix:///var/run/docker.sock"
+        #env:
+        #  TESTCONTAINERS_RYUK_DISABLED: "true"
+        #  DOCKER_HOST: "unix:///var/run/docker.sock"
         run: |
           npm test
   coverage:
