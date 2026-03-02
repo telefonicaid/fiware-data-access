@@ -363,13 +363,17 @@ describe('FDA API - integration (run app as child process)', () => {
     if (fetcherProc) {
       fetcherProc.kill('SIGTERM');
       await new Promise((r) => setTimeout(r, 500));
-      if (!fetcherProc.killed) fetcherProc.kill('SIGKILL');
+      if (!fetcherProc.killed) {
+        fetcherProc.kill('SIGKILL');
+      }
     }
 
     if (appProc) {
       appProc.kill('SIGTERM');
       await new Promise((r) => setTimeout(r, 500));
-      if (!appProc.killed) appProc.kill('SIGKILL');
+      if (!appProc.killed) {
+        appProc.kill('SIGKILL');
+      }
     }
   }
 
