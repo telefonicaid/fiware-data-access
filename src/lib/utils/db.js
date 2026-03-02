@@ -102,7 +102,7 @@ export async function runPreparedStatement(
   paramValues,
 ) {
   logger.debug(
-    { service, fdaId, daId, paramValues },
+    { service, fdaId, daId, paramValues: JSON.stringify(paramValues) },
     '[DEBUG]: runPreparedStatement',
   );
 
@@ -117,13 +117,18 @@ export async function runPreparedStatement(
   const query = buildDAQuery(service, fdaId, da.query);
 
   const stmt = await conn.prepare(query);
-  paramValues = applyParams(paramValues, da.params);
 
   try {
-    await stmt.bind(paramValues);
+    const boundParams = applyParams(paramValues || {}, da.params);
+    await stmt.bind(boundParams);
+
     const result = await stmt.run();
     return result.getRowObjectsJson();
   } catch (e) {
+    if (e instanceof FDAError) {
+      throw e;
+    }
+
     throw new FDAError(
       500,
       'DuckDBServerError',
@@ -160,10 +165,11 @@ export async function runPreparedStatementStream(
   const query = buildDAQuery(service, fdaId, da.query);
 
   const stmt = await conn.prepare(query);
-  paramValues = applyParams(paramValues, da.params);
 
   try {
-    await stmt.bind(paramValues);
+    const boundParams = applyParams(paramValues || {}, da.params);
+    await stmt.bind(boundParams);
+
     const stream = await stmt.stream();
 
     const close = async () => {
@@ -241,53 +247,80 @@ export function checkParams(params) {
 }
 
 function applyParams(reqParams, params) {
-  logger.debug({ reqParams, params }, '[DEBUG]: applyParams');
-  if (!params) {
-    return reqParams;
+  logger.debug({ reqParams, params }, '[DEBUG]: applyParams start');
+
+  if (!Array.isArray(params) || params.length === 0) {
+    return {};
   }
-  params.forEach((param) => {
-    // Params: required
-    if (!reqParams[param.name] && param.required) {
+
+  const validated = {};
+
+  for (const param of params) {
+    let value = reqParams[param.name];
+
+    // Required
+    if ((value === undefined || value === null) && param.required) {
       throw new FDAError(
         400,
         'InvalidQueryParam',
         `Missing required param "${param.name}".`,
       );
     }
-    // Params: default
-    if (!reqParams[param.name] && param.default) {
-      reqParams[param.name] = param.default;
+
+    // Default
+    if (
+      (value === undefined || value === null) &&
+      param.default !== undefined
+    ) {
+      value = param.default;
     }
 
-    const paramValue = reqParams[param.name];
-    if (paramValue) {
-      // Params: type
-      if (param.type && !isTypeOf(paramValue, param.type)) {
-        throw new FDAError(
-          400,
-          'InvalidQueryParam',
-          `Param "${param.name}" not of valid type (${param.type}).`,
-        );
+    if (value !== undefined) {
+      // Type coercion
+      if (param.type) {
+        const coerced = isTypeOf(value, param.type);
+
+        if (coerced === undefined) {
+          throw new FDAError(
+            400,
+            'InvalidQueryParam',
+            `Param "${param.name}" not of valid type (${param.type}).`,
+          );
+        }
+
+        value = coerced;
       }
-      // Params: range
-      if (param.range && !isInRange(paramValue, param.range)) {
+
+      // Range
+      if (param.range && !isInRange(value, param.range)) {
         throw new FDAError(
           400,
           'InvalidQueryParam',
           `Param "${param.name}" not in valid param range [${param.range}].`,
         );
       }
-      // Params: enum
-      if (param.enum && !isInEnum(paramValue, param.enum)) {
+
+      // Enum
+      if (param.enum && !isInEnum(value, param.enum)) {
         throw new FDAError(
           400,
           'InvalidQueryParam',
           `Param "${param.name}" not in param enum [${param.enum}].`,
         );
       }
+
+      if (value instanceof Date) {
+        value = value.toISOString();
+      }
+      if (typeof value === 'boolean') {
+        value = value ? 1 : 0;
+      }
+
+      validated[param.name] = value;
     }
-  });
-  return reqParams;
+  }
+
+  return validated;
 }
 
 const TYPE_COERCERS = {
