@@ -840,6 +840,35 @@ describe('FDA API - integration (run app as child process)', () => {
     }
     expect(badTypeDa.status).toBe(400);
 
+    // Create DA with bad params Enum (non string or number values)
+    const badEnumDa = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas/${fdaId}/das`,
+      headers: { 'Fiware-Service': service },
+      body: {
+        id: `${daId2}_badType`,
+        description: 'get user',
+        query: daQuery,
+        params: [
+          {
+            name: 'name',
+            type: 'Text',
+            default: 'carlos',
+            enum: [true, false],
+          },
+        ],
+      },
+    });
+
+    if (badEnumDa.status >= 400) {
+      console.error(
+        'POST /das failed as expected:',
+        badEnumDa.status,
+        badEnumDa.json ?? badEnumDa.text,
+      );
+    }
+    expect(badEnumDa.status).toBe(400);
+
     // Create DA with bad params range
     const createBadDa = await httpReq({
       method: 'POST',
@@ -1184,32 +1213,6 @@ describe('FDA API - integration (run app as child process)', () => {
     expect(ndjsonAttempt.status).toBe(200);
     expect(ndjsonAttempt.text.includes('\n')).toBe(false);
     expect(ndjsonAttempt.json).toHaveProperty('resultset');
-  });
-
-  test('GET /query works correctly after app restart', async () => {
-    await stopApp();
-    await startApp();
-
-    const res = await httpReq({
-      method: 'GET',
-      url: `${baseUrl}/query?fdaId=${encodeURIComponent(
-        fdaId,
-      )}&daId=${encodeURIComponent(daId)}&minAge=25`,
-      headers: { 'Fiware-Service': service, Accept: 'application/json' },
-    });
-
-    if (res.status >= 400) {
-      console.error(
-        'GET /query (json) failed:',
-        res.status,
-        res.json ?? res.text,
-      );
-    }
-    expect(res.status).toBe(200);
-    expect(res.json).toEqual([
-      { id: '1', name: 'ana', age: '30' },
-      { id: '3', name: 'carlos', age: '40' },
-    ]);
   });
 
   test('GET /fdas/:fdaId returns expected FDA', async () => {

@@ -29,8 +29,6 @@ import { config } from '../fdaConfig.js';
 
 let instance = null;
 
-// key: `${service}::${fdaId}` -> Map(daId -> { sql query, params})
-const cachedQueries = new Map();
 const logger = getBasicLogger();
 
 const connectionPool = [];
@@ -108,27 +106,20 @@ export async function runPreparedStatement(
     '[DEBUG]: runPreparedStatement',
   );
 
-  let { query, params } = { ...getCachedQuery(service, fdaId, daId) };
-
-  if (!query) {
-    const da = await retrieveDA(service, fdaId, daId);
-    if (!da?.query) {
-      throw new FDAError(
-        404,
-        'DaNotFound',
-        `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`,
-      );
-    }
-
-    query = buildDAQuery(service, fdaId, da.query);
-    params = da.params || [];
-    await storeCachedQuery(conn, service, fdaId, daId, query, params);
+  const da = await retrieveDA(service, fdaId, daId);
+  if (!da?.query) {
+    throw new FDAError(
+      404,
+      'DaNotFound',
+      `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`,
+    );
   }
+  const query = buildDAQuery(service, fdaId, da.query);
 
   const stmt = await conn.prepare(query);
 
   try {
-    const boundParams = applyParams(paramValues || {}, params);
+    const boundParams = applyParams(paramValues || {}, da.params);
     await stmt.bind(boundParams);
 
     const result = await stmt.run();
@@ -163,26 +154,20 @@ export async function runPreparedStatementStream(
     '[DEBUG]: runPreparedStatementStream',
   );
 
-  let { query, params } = { ...getCachedQuery(service, fdaId, daId) };
-
-  if (!query) {
-    const da = await retrieveDA(service, fdaId, daId);
-    if (!da?.query) {
-      throw new FDAError(
-        404,
-        'DaNotFound',
-        `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`,
-      );
-    }
-    query = buildDAQuery(service, fdaId, da.query);
-    params = da.params;
-    await storeCachedQuery(conn, service, fdaId, daId, query, params);
+  const da = await retrieveDA(service, fdaId, daId);
+  if (!da?.query) {
+    throw new FDAError(
+      404,
+      'DaNotFound',
+      `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`,
+    );
   }
+  const query = buildDAQuery(service, fdaId, da.query);
 
   const stmt = await conn.prepare(query);
 
   try {
-    const boundParams = applyParams(paramValues || {}, params);
+    const boundParams = applyParams(paramValues || {}, da.params);
     await stmt.bind(boundParams);
 
     const stream = await stmt.stream();
@@ -396,35 +381,6 @@ function isInRange(value, range) {
 
 function isInEnum(value, enumValues) {
   return enumValues.includes(value);
-}
-
-function fdaKey(service, fdaId) {
-  return `${service}::${fdaId}`;
-}
-function getCachedQuery(service, fdaId, daId) {
-  return cachedQueries.get(fdaKey(service, fdaId))?.get(daId);
-}
-
-export async function storeCachedQuery(
-  conn,
-  service,
-  fdaId,
-  daId,
-  query,
-  params,
-) {
-  const key = fdaKey(service, fdaId);
-  let fda = cachedQueries.get(key);
-
-  if (!fda) {
-    fda = new Map();
-    cachedQueries.set(key, fda);
-  }
-
-  // We create the pStatement in DuckDB to check compatibility with FDA baseQuery
-  await conn.prepare(query);
-
-  fda.set(daId, { query, params });
 }
 
 export function toParquet(conn, originPath, resultPath) {

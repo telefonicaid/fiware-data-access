@@ -25,12 +25,11 @@
 import {
   runPreparedStatement,
   runPreparedStatementStream,
-  storeCachedQuery,
   getDBConnection,
   releaseDBConnection,
   toParquet,
-  buildDAQuery,
   checkParams,
+  buildDAQuery,
 } from './utils/db.js';
 import { uploadTable } from './utils/pg.js';
 import { getS3Client, dropFile } from './utils/aws.js';
@@ -180,8 +179,8 @@ export async function createDA(
     }
 
     checkParams(params);
-    const query = buildDAQuery(service, fdaId, userQuery);
-    await storeCachedQuery(conn, service, fdaId, daId, query, params);
+    // Call to buildDAQuery to detect undesired FROM clausules in query
+    buildDAQuery(service, fdaId, userQuery);
     await storeDA(service, fdaId, daId, description, userQuery, params);
   } finally {
     await releaseDBConnection(conn);
@@ -273,8 +272,8 @@ export async function putDA(
 
   try {
     checkParams(params);
-    const query = buildDAQuery(service, fdaId, userQuery);
-    await storeCachedQuery(conn, service, fdaId, daId, query, params);
+    // Call to buildDAQuery to detect undesired FROM clausules in query
+    buildDAQuery(service, fdaId, userQuery);
     await updateDA(service, fdaId, daId, description, userQuery, params);
   } finally {
     await releaseDBConnection(conn);
