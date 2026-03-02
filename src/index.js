@@ -335,7 +335,7 @@ app.post('/plugin/cda/api/doQuery', async (req, res) => {
     const result = await handleCdaQuery({ body: req.body });
     return res.json(result);
   } catch (err) {
-    console.error('Error executing query:', err);
+    logger.error('Error executing query:', err);
     return res.status(500).json({
       error: 'InternalServerError',
       description: err.message || 'Unexpected error executing query',
