@@ -305,20 +305,21 @@ describe('FDA API - integration (run app as child process)', () => {
     );
 
     const start = Date.now();
+    // eslint-disable-next-line no-constant-condition
     while (true) {
       try {
-        const res = await httpReq({
-          method: 'GET',
-          url: `${baseUrl}/health`,
-        });
-        if (res.status === 200) break;
-      } catch {}
+        const res = await httpReq({ method: 'GET', url: `${baseUrl}/health` });
+        if (res.status === 200) {
+          break;
+        }
+      } catch {
+        // ignore, server not up yet
+      }
       if (Date.now() - start > 30000) {
         throw new Error('Timeout waiting API to start');
       }
       await new Promise((r) => setTimeout(r, 200));
     }
-
     console.log('[TEST] API OK at', baseUrl);
 
     // FETCHER PROCESS
