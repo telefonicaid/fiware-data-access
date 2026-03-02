@@ -840,6 +840,35 @@ describe('FDA API - integration (run app as child process)', () => {
     }
     expect(badTypeDa.status).toBe(400);
 
+    // Create DA with bad params Enum (non string or number values)
+    const badEnumDa = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas/${fdaId}/das`,
+      headers: { 'Fiware-Service': service },
+      body: {
+        id: `${daId2}_badType`,
+        description: 'get user',
+        query: daQuery,
+        params: [
+          {
+            name: 'name',
+            type: 'Text',
+            default: 'carlos',
+            enum: [true, false],
+          },
+        ],
+      },
+    });
+
+    if (badEnumDa.status >= 400) {
+      console.error(
+        'POST /das failed as expected:',
+        badEnumDa.status,
+        badEnumDa.json ?? badEnumDa.text,
+      );
+    }
+    expect(badEnumDa.status).toBe(400);
+
     // Create DA with bad params range
     const createBadDa = await httpReq({
       method: 'POST',
