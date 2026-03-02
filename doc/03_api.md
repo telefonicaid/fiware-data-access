@@ -1114,8 +1114,8 @@ The response follows CDA-compatible structure:
 
 ```json
 {
-    "metadata": [{ "colIndex": 0, "colName": "column1" }],
-    "resultset": [["value1", "value2"]],
+    "metadata": [{ "colIndex": 0, "colName": "column1" }, ...],
+    "resultset": [["value1", "value2", ...]],
     "queryInfo": {
         "pageStart": 0,
         "pageSize": 10,
