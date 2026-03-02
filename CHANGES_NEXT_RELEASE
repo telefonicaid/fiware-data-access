@@ -1,3 +1,4 @@
+- Update: remove DA queries memory cache (#103)
 - Fix: make description field optional in DA creation to match API specification (#97)
 - Add: params array to DA creation (#60)
 - Fix: use db connection pool for object storage and env var FDA_OBJSTG_MAX_POOL_SIZE
