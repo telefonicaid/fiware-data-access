@@ -452,7 +452,7 @@ export function buildDAQuery(service, fdaId, userQuery) {
 
   const parquetPath = `s3://${service}/${fdaId}.parquet`;
 
-  return `FROM read_parquet('${parquetPath}') ${trimmed}`; // TO DISCUSS: implementation by adding FROM clause at the beginning of the query
+  return `FROM read_parquet('${parquetPath}') ${trimmed}`;
 }
 
 async function configureConn(conn) {
