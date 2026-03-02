@@ -91,6 +91,52 @@ function httpReq({ method, url, headers, body }) {
   });
 }
 
+function httpFormReq({ method, url, headers, form }) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+
+    const body = new URLSearchParams(form).toString();
+
+    const req = http.request(
+      {
+        method,
+        hostname: u.hostname,
+        port: u.port,
+        path: u.pathname + u.search,
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Length': Buffer.byteLength(body),
+          ...(headers || {}),
+        },
+        timeout: 30_000,
+      },
+      (res) => {
+        let data = '';
+        res.setEncoding('utf8');
+        res.on('data', (c) => (data += c));
+        res.on('end', () => {
+          resolve({
+            status: res.statusCode,
+            text: data,
+            json: (() => {
+              try {
+                return JSON.parse(data);
+              } catch {
+                return null;
+              }
+            })(),
+          });
+        });
+      },
+    );
+
+    req.on('timeout', () => req.destroy(new Error('timeout')));
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
+
 function getFreePort() {
   return new Promise((resolve) => {
     const srv = net.createServer();
@@ -252,7 +298,7 @@ describe('FDA API - integration (run app as child process)', () => {
       `);
       await pgClient.query(`
         INSERT INTO public.users (id, name, age, timeinstant, authorized)
-        VALUES (1,'ana',30, '2020-08-17T18:25:28.332+01:00', true), (2,'bob',20, '2020-08-17T18:25:28.332+01:00', true), (3,'carlos',40, '2020-08-17T18:25:28.332+01:00', true);
+        VALUES (1,'ana',30, '2020-08-17T18:25:28.332Z', true), (2,'bob',20, '2020-08-17T18:25:28.332Z', true), (3,'carlos',40, '2020-08-17T18:25:28.332Z', true);
       `);
 
       await pgClient.end();
@@ -445,6 +491,13 @@ describe('FDA API - integration (run app as child process)', () => {
         id: daId,
         description: 'age filter',
         query: daQuery,
+        params: [
+          {
+            name: 'minAge',
+            type: 'Number',
+            required: true,
+          },
+        ],
       },
     });
 
@@ -516,6 +569,13 @@ describe('FDA API - integration (run app as child process)', () => {
           WHERE age > $minAge
           ORDER BY id
         `,
+        params: [
+          {
+            name: 'minAge',
+            type: 'Number',
+            required: true,
+          },
+        ],
       },
     });
 
@@ -549,6 +609,13 @@ describe('FDA API - integration (run app as child process)', () => {
           AND age < 35
           ORDER BY id
         `,
+        params: [
+          {
+            name: 'minAge',
+            type: 'Number',
+            required: true,
+          },
+        ],
       },
     });
 
@@ -696,7 +763,7 @@ describe('FDA API - integration (run app as child process)', () => {
           {
             name: 'timeinstant',
             type: 'DateTime',
-            default: '2020-08-17T18:25:28.332+01:00',
+            default: '2020-08-17T18:25:28.332Z',
           },
           {
             name: 'authorized',
@@ -1023,51 +1090,100 @@ describe('FDA API - integration (run app as child process)', () => {
     expect(row2).toEqual({ id: 3, name: 'carlos', age: 40 });
   });
 
-  test('GET /doQuery returns JSON array (legacy) when Accept: application/json', async () => {
-    const res = await httpReq({
-      method: 'GET',
-      url: `${baseUrl}/doQuery?path=/fdas/${encodeURIComponent(
-        fdaId,
-      )}&dataAccessId=${encodeURIComponent(daId)}&minAge=15`,
-      headers: { 'Fiware-Service': service, Accept: 'application/json' },
+  test('POST /plugin/cda/api/doQuery behaves as CDA compatibility layer', async () => {
+    const cdaFdaId = 'fda_da_cda';
+    const cdaDaId = 'fda_da_cda';
+
+    const createFda = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas`,
+      headers: { 'Fiware-Service': service },
+      body: {
+        id: cdaFdaId,
+        query: 'SELECT id, name, age FROM public.users ORDER BY id',
+        description: 'users dataset for CDA',
+      },
+    });
+
+    expect(createFda.status).toBe(202);
+    await waitUntilFDACompleted({ baseUrl, service, fdaId: cdaFdaId });
+
+    const createDa = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas/${cdaFdaId}/das`,
+      headers: { 'Fiware-Service': service },
+      body: {
+        id: cdaDaId,
+        description: 'CDA test DA',
+        query: `
+          SELECT id, name, age, COUNT(*) OVER() AS __total
+          WHERE age >= $minAge
+          ORDER BY id
+          LIMIT $pageSize OFFSET $pageStart
+        `,
+        params: [
+          { name: 'minAge', type: 'Number', default: 0 },
+          { name: 'pageSize', type: 'Number', default: 10 },
+          { name: 'pageStart', type: 'Number', default: 0 },
+        ],
+      },
+    });
+
+    expect(createDa.status).toBe(201);
+
+    const res = await httpFormReq({
+      method: 'POST',
+      url: `${baseUrl}/plugin/cda/api/doQuery`,
+      headers: { 'Fiware-Service': service },
+      form: {
+        path: `/public/${service}/verticals/sql/${cdaDaId}`,
+        dataAccessId: cdaDaId,
+        paramminAge: '0',
+        pageSize: '2',
+        pageStart: '0',
+      },
     });
 
     if (res.status >= 400) {
-      console.error('GET /doQuery failed:', res.status, res.json ?? res.text);
+      console.error('CDA doQuery failed:', res.status, res.json ?? res.text);
     }
-    expect(res.status).toBe(200);
-    expect(res.json).toEqual([
-      { id: '1', name: 'ana', age: '30' },
-      { id: '2', name: 'bob', age: '20' },
-      { id: '3', name: 'carlos', age: '40' },
-    ]);
-  });
 
-  test('GET /doQuery returns NDJSON when Accept: application/x-ndjson', async () => {
-    const res = await httpReq({
-      method: 'GET',
-      url: `${baseUrl}/doQuery?path=/fdas/${encodeURIComponent(
-        fdaId,
-      )}&dataAccessId=${encodeURIComponent(daId)}&minAge=15`,
-      headers: { 'Fiware-Service': service, Accept: 'application/x-ndjson' },
+    expect(res.status).toBe(200);
+
+    expect(res.json).toHaveProperty('metadata');
+    expect(res.json).toHaveProperty('resultset');
+    expect(res.json).toHaveProperty('queryInfo');
+
+    expect(Array.isArray(res.json.metadata)).toBe(true);
+    expect(res.json.metadata[0]).toHaveProperty('colIndex');
+    expect(res.json.metadata[0]).toHaveProperty('colName');
+
+    expect(Array.isArray(res.json.resultset)).toBe(true);
+    expect(Array.isArray(res.json.resultset[0])).toBe(true);
+    expect(res.json.resultset.length).toBe(2);
+
+    expect(res.json.queryInfo.pageStart).toBe(0);
+    expect(res.json.queryInfo.pageSize).toBe(2);
+    expect(res.json.queryInfo.totalRows).toBe(3);
+
+    const ndjsonAttempt = await httpFormReq({
+      method: 'POST',
+      url: `${baseUrl}/plugin/cda/api/doQuery`,
+      headers: {
+        'Fiware-Service': service,
+        Accept: 'application/x-ndjson',
+      },
+      form: {
+        path: `/public/${service}/verticals/sql/${cdaDaId}`,
+        dataAccessId: cdaDaId,
+        pageSize: '2',
+        pageStart: '0',
+      },
     });
 
-    if (res.status >= 400) {
-      console.error('GET /doQuery NDJSON failed:', res.status, res.text);
-    }
-    expect(res.status).toBe(200);
-    expect(res.text).toBeDefined();
-
-    const lines = res.text.split('\n').filter((l) => l.trim());
-    expect(lines.length).toBe(3);
-
-    const a = JSON.parse(lines[0]);
-    const b = JSON.parse(lines[1]);
-    const c = JSON.parse(lines[2]);
-
-    expect(a).toEqual({ id: 1, name: 'ana', age: 30 });
-    expect(b).toEqual({ id: 2, name: 'bob', age: 20 });
-    expect(c).toEqual({ id: 3, name: 'carlos', age: 40 });
+    expect(ndjsonAttempt.status).toBe(200);
+    expect(ndjsonAttempt.text.includes('\n')).toBe(false);
+    expect(ndjsonAttempt.json).toHaveProperty('resultset');
   });
 
   test('GET /query works correctly after app restart', async () => {

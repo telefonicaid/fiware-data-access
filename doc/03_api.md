@@ -23,7 +23,7 @@
         -   [Delete DA](#delete-da-delete-fdasfdaiddasdaid)
 -   [Non RESTful operations](#non-restful-operations)
     -   [Query](#query-get-query)
-    -   [DoQuery (Pentaho CDA legacy support)](#query-get-doquery-pentaho-cda-legacy-support)
+    -   [DoQuery (Pentaho CDA legacy support)](#query-post-plugincdaapidoquery-pentaho-cda-legacy-support)
 -   [Navigation](#-navigation)
 
 ## Introduction
@@ -1064,29 +1064,39 @@ curl -i -X GET "http://localhost:8080/query?fdaId=fda_alarms&daId=da_all_alarms"
   -H "Accept: application/x-ndjson"
 ```
 
-#### Query `GET /doQuery` (Pentaho CDA legacy support)
+#### Query `POST /plugin/cda/api/doQuery` (Pentaho CDA legacy support)
 
-Same operation implemented by Pentaho CDA, in order to provide backward compatibility with existing CDA clients with
-minimal impact. This method is a kind of wrapper of `query`
+This endpoint provides backward compatibility with legacy Pentaho CDA clients.
 
-_**Request query parameters**_
+It acts as a wrapper over the internal FDA query execution engine, adapting CDA-style requests into FDA-compatible
+executions and transforming the response into CDA-compatible format.
 
-| Header         | Optional | Description                                                                 | Example        |
-| -------------- | -------- | --------------------------------------------------------------------------- | -------------- |
-| `path`         |          | Path to the `fda`. Right now only uses the last bit to retrieve the `fdaId` | `/public/fda1` |
-| `dataAccessId` |          | Id of the `da`. Must be unique inside each `fda`                            | `da1`          |
-
-Additionally the necessary parameters for the query must be included with the previous ones.
+This endpoint does **not** execute queries directly. It delegates execution to the FDA query engine.
 
 _**Request headers**_
 
-| Header           | Optional | Description                                                          | Example     |
-| ---------------- | -------- | -------------------------------------------------------------------- | ----------- |
-| `Fiware-Service` |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket` |
+| Header           | Optional | Description                                                              | Example            |
+| ---------------- | -------- | ------------------------------------------------------------------------ | ------------------ |
+| `Content-Type`   |          | Must be `application/x-www-form-urlencoded`                              | —                  |
+| `Fiware-Service` | ✓        | Tenant/service name. If not present, it is derived from the `path` field | `my-bucket`        |
+| `Accept`         | ✓        | Currently ignored (response is always JSON CDA format)                   | `application/json` |
 
-_**Request payload**_
+---
 
-None
+_**Request body (form-urlencoded)**_
+
+The request body must be sent as `application/x-www-form-urlencoded`.
+
+| Field          | Optional | Description                                                                                             | Example                             |
+| -------------- | -------- | ------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| `path`         |          | Path used to resolve service. FDA identifier defaults to `dataAccessId` unless `cda` field is provided. | `/public/service/verticals/sql/da1` |
+| `dataAccessId` |          | Identifier of the Data Access (DA) inside the FDA                                                       | `da1`                               |
+| `cda`          | ✓        | Explicit FDA identifier. If not provided, `dataAccessId` is used as FDA identifier                      | `fda1`                              |
+| `param*`       | ✓        | Query parameters prefixed with `param`                                                                  | `parammunicipality=NA`              |
+| `pageSize`     | ✓        | Pagination size (must be handled explicitly by the DA)                                                  | `10`                                |
+| `pageStart`    | ✓        | Pagination offset (must be handled explicitly by the DA)                                                | `0`                                 |
+
+---
 
 _**Response code**_
 
@@ -1096,67 +1106,47 @@ _**Response code**_
 
 _**Response headers**_
 
-Successful operations return `Content-Type` header with `application/json` value.
+Successful responses return `Content-Type` header with `application/json` value.
 
 _**Response payload**_
 
-The payload is an array of JSON objects, each one being a record result of the stored parameterized query.
+The response follows CDA-compatible structure:
 
-_**Content negotiation (JSON / NDJSON)**_
-
--   By default the endpoint returns a full JSON array (`application/json`). This is the backward-compatible behaviour.
--   If the client sets the `Accept: application/x-ndjson` header the server responds with
-    `Content-Type: application/x-ndjson` and streams one JSON object per line (NDJSON). This is useful for large results
-    and streaming processing.
--   NDJSON output will have numeric types for integer columns (BigInt values are converted to numbers before
-    serialization).
+```json
+{
+    "metadata": [{ "colIndex": 0, "colName": "column1" }, ...],
+    "resultset": [["value1", "value2", ...]],
+    "queryInfo": {
+        "pageStart": 0,
+        "pageSize": 10,
+        "totalRows": 120
+    }
+}
+```
 
 _**Example Request:**_
 
 ```bash
-curl -i -X GET "http://localhost:8080/doQuery?path=/public/fda_alarms&dataAccessId=da_all_alarms" \
-  -H "Fiware-Service: my-bucket"
+curl -i -X POST "http://localhost:8085/plugin/cda/api/doQuery" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -H "Fiware-Service: my-bucket" \
+  -d "path=/public/my-bucket/verticals/sql/da1" \
+  -d "dataAccessId=da1" \
+  -d "pageSize=10"
 ```
 
 _**Example Response:**_
 
 ```json
-[
-    {
-        "entityid": "alarm_nosignal_001",
-        "entitytype": "template",
-        "__ALERTDESCRIPTION__": "Regla que evalua si llegan medidas",
-        "__NAME__": "nosignal_001",
-        "__SEVERITY__": "medium",
-        "__TIME_BETWEEN_NOTIF__": "3600000",
-        "templateid": "alarm_nosenal_usuario",
-        "__ATTR__": null,
-        "__OPER__": null,
-        "__UMBRAL__": null,
-        "created_at": "2026-02-11 10:41:17.960528"
-    },
-    {
-        "entityid": "alarm_threshold_04",
-        "entitytype": "template",
-        "__ALERTDESCRIPTION__": "Alerta de nivel de llenado por superación de umbral",
-        "__NAME__": "threshold_04",
-        "__SEVERITY__": "medium",
-        "__TIME_BETWEEN_NOTIF__": "1800000",
-        "templateid": "comparacion_umbral_usuario",
-        "__ATTR__": "fillingLevel",
-        "__OPER__": ">=",
-        "__UMBRAL__": 0.9,
-        "created_at": "2026-02-11 10:41:17.960528"
+{
+    "metadata": [{ "colIndex": 0, "colName": "column1" }],
+    "resultset": [["value1", "value2"]],
+    "queryInfo": {
+        "pageStart": 0,
+        "pageSize": 10,
+        "totalRows": 2
     }
-]
-```
-
-_**Example Request (NDJSON):**_
-
-```bash
-curl -i -X GET "http://localhost:8080/doQuery?path=/public/fda_alarms&dataAccessId=da_all_alarms" \
-  -H "Fiware-Service: my-bucket" \
-  -H "Accept: application/x-ndjson"
+}
 ```
 
 ---

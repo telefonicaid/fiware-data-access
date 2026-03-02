@@ -61,6 +61,82 @@ its asynchronous processing state.
 -   On success → `completed` (progress 100).
 -   On error → `failed` (progress 0).
 
+---
+
+## Pentaho CDA Compatibility Layer
+
+FDA includes a compatibility layer to support legacy Pentaho CDA clients.
+
+### Endpoint
+
+```
+POST /plugin/cda/api/doQuery
+```
+
+### Purpose
+
+This layer:
+
+-   Translates CDA-style requests into FDA execution calls
+-   Resolves `service` from `path` if not explicitly provided
+-   Resolves `fdaId` from `cda` field if provided, otherwise defaults to `dataAccessId`
+-   Uses `dataAccessId` as DA identifier
+-   Extracts parameters prefixed with `param`
+-   Forwards pagination parameters (`pageSize`, `pageStart`) without transformation
+-   Adapts FDA results into CDA-compatible format:
+
+    -   `{ metadata, resultset, queryInfo }`
+
+### Architectural Principle
+
+The compatibility layer is intentionally thin.
+
+It:
+
+-   Does **not** enforce query semantics
+-   Does **not** modify parameter naming
+-   Does **not** inject sorting or pagination logic
+-   Does **not** implement operator logic
+
+All query behavior (filters, pagination, sorting) must be explicitly defined at the DA level.
+
+This guarantees:
+
+-   Clean separation between transport and execution
+-   Predictable behavior
+-   No hidden semantics
+-   Backward compatibility without polluting FDA core logic
+
+> In CDA mode, if no explicit `cda` field is provided, the FDA identifier defaults to the same value as `dataAccessId`.
+> This allows a 1:1 mapping between legacy CDA definitions and FDA datasets.
+
+### Pagination Behavior
+
+If the DA includes a `__total` field in its result:
+
+```
+queryInfo.totalRows = __total
+```
+
+Otherwise:
+
+```
+queryInfo.totalRows = resultset.length
+```
+
+### Limitations
+
+Currently unsupported features:
+
+-   `param_not_` operator
+-   Dynamic comparison operators (`>`, `<`, `!=`)
+-   Dynamic sorting
+-   NDJSON streaming in CDA mode
+
+These may be implemented in future versions if required.
+
+---
+
 ## 🧭 Navigation
 
 -   [⬅️ Previous: Config And Operational Guide](/doc/04_config_operational_guide.md)

@@ -46,6 +46,7 @@ import {
   getBasicLogger,
   getInitialLogger,
 } from './lib/utils/logger.js';
+import { handleCdaQuery } from './lib/compat/cdaAdapter.js';
 import { validateAllowedFieldsBody } from './lib/utils/utils.js';
 
 export const app = express();
@@ -53,6 +54,7 @@ const PORT = config.port;
 const logger = getBasicLogger();
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 app.use((req, res, next) => {
   const oldSend = res.send;
@@ -318,45 +320,27 @@ app.get('/query', async (req, res) => {
   return res.json(result);
 });
 
-app.get('/doQuery', async (req, res) => {
-  const { path, dataAccessId, ...rest } = req.query;
-  const service = req.get('Fiware-Service');
-  const accept = req.get('Accept') || 'application/json';
+app.post('/plugin/cda/api/doQuery', async (req, res) => {
+  const startTime = Date.now();
 
-  if (
-    Object.keys(req.query).length === 0 ||
-    !path ||
-    !dataAccessId ||
-    !service
-  ) {
+  const { path, dataAccessId, ...rest } = req.body;
+  if (!path || !dataAccessId) {
     return res.status(400).json({
       error: 'BadRequest',
       description: 'Missing params in the request',
     });
   }
 
-  const updatedParams = {
-    ...rest,
-    fdaId: path.split('/').pop(),
-    daId: dataAccessId,
-  };
-
-  // Content negotiation: check if client wants NDJSON
-  if (accept.includes('application/x-ndjson')) {
-    return executeQueryStream({
-      service,
-      params: updatedParams,
-      req,
-      res,
+  try {
+    const result = await handleCdaQuery({ body: req.body });
+    return res.json(result);
+  } catch (err) {
+    logger.error('Error executing query:', err);
+    return res.status(500).json({
+      error: 'InternalServerError',
+      description: err.message || 'Unexpected error executing query',
     });
   }
-
-  const result = await executeQuery({
-    service,
-    params: updatedParams,
-  });
-
-  return res.json(result);
 });
 
 // eslint-disable-next-line no-unused-vars
