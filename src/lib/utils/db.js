@@ -324,8 +324,12 @@ function applyParams(reqParams, params) {
         );
       }
 
-      if (value instanceof Date) value = value.toISOString();
-      if (typeof value === 'boolean') value = value ? 1 : 0;
+      if (value instanceof Date) {
+        value = value.toISOString();
+      }
+      if (typeof value === 'boolean') {
+        value = value ? 1 : 0;
+      }
 
       validated[param.name] = value;
     }
