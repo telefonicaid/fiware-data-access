@@ -29,8 +29,6 @@ import { config } from '../fdaConfig.js';
 
 let instance = null;
 
-// key: `${service}::${fdaId}` -> Map(daId -> { sql query, params})
-const cachedQueries = new Map();
 const logger = getBasicLogger();
 
 const connectionPool = [];
@@ -104,34 +102,33 @@ export async function runPreparedStatement(
   paramValues,
 ) {
   logger.debug(
-    { service, fdaId, daId, paramValues },
+    { service, fdaId, daId, paramValues: JSON.stringify(paramValues) },
     '[DEBUG]: runPreparedStatement',
   );
 
-  let { query, params } = { ...getCachedQuery(service, fdaId, daId) };
-
-  if (!query) {
-    const da = await retrieveDA(service, fdaId, daId);
-    if (!da?.query) {
-      throw new FDAError(
-        404,
-        'DaNotFound',
-        `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`,
-      );
-    }
-    query = buildDAQuery(service, fdaId, da.query);
-    params = da.params;
-    await storeCachedQuery(conn, service, fdaId, daId, query, params);
+  const da = await retrieveDA(service, fdaId, daId);
+  if (!da?.query) {
+    throw new FDAError(
+      404,
+      'DaNotFound',
+      `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`,
+    );
   }
+  const query = buildDAQuery(service, fdaId, da.query);
 
   const stmt = await conn.prepare(query);
-  paramValues = applyParams(paramValues, params);
 
   try {
-    await stmt.bind(paramValues);
+    const boundParams = applyParams(paramValues || {}, da.params);
+    await stmt.bind(boundParams);
+
     const result = await stmt.run();
     return result.getRowObjectsJson();
   } catch (e) {
+    if (e instanceof FDAError) {
+      throw e;
+    }
+
     throw new FDAError(
       500,
       'DuckDBServerError',
@@ -157,27 +154,22 @@ export async function runPreparedStatementStream(
     '[DEBUG]: runPreparedStatementStream',
   );
 
-  let { query, params } = { ...getCachedQuery(service, fdaId, daId) };
-
-  if (!query) {
-    const da = await retrieveDA(service, fdaId, daId);
-    if (!da?.query) {
-      throw new FDAError(
-        404,
-        'DaNotFound',
-        `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`,
-      );
-    }
-    query = buildDAQuery(service, fdaId, da.query);
-    params = da.params;
-    await storeCachedQuery(conn, service, fdaId, daId, query, params);
+  const da = await retrieveDA(service, fdaId, daId);
+  if (!da?.query) {
+    throw new FDAError(
+      404,
+      'DaNotFound',
+      `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`,
+    );
   }
+  const query = buildDAQuery(service, fdaId, da.query);
 
   const stmt = await conn.prepare(query);
-  paramValues = applyParams(paramValues, params);
 
   try {
-    await stmt.bind(paramValues);
+    const boundParams = applyParams(paramValues || {}, da.params);
+    await stmt.bind(boundParams);
+
     const stream = await stmt.stream();
 
     const close = async () => {
@@ -198,68 +190,179 @@ export async function runPreparedStatementStream(
   }
 }
 
-function applyParams(reqParams, params) {
-  logger.debug({ reqParams, params }, '[DEBUG]: applyParams');
-  if (!params) {
-    return reqParams;
+export function checkParams(params) {
+  if (params) {
+    params.forEach((param) => {
+      if (!param.type) {
+        throw new FDAError(
+          400,
+          'InvalidParam',
+          `Type is a mandatory key in every param.`,
+        );
+      }
+
+      if (!Object.keys(TYPE_COERCERS).includes(param.type)) {
+        throw new FDAError(400, 'InvalidParam', `Invalid value in type key.`);
+      }
+
+      if (param.range) {
+        const range = param.range;
+
+        if (typeof range[0] !== 'number' || typeof range[1] !== 'number') {
+          throw new FDAError(
+            400,
+            'InvalidParam',
+            `Both values of range param should be of type number".`,
+          );
+        }
+        if (range[0] > range[1]) {
+          throw new FDAError(
+            400,
+            'InvalidParam',
+            `Fisrt number should be smaller than second number.`,
+          );
+        }
+        if (range.length > 2) {
+          throw new FDAError(
+            400,
+            'InvalidParam',
+            `Range cant have more than two values.`,
+          );
+        }
+      }
+
+      if (param.enum) {
+        param.enum.forEach((v) => {
+          if (typeof v !== 'string' && typeof v !== 'number') {
+            throw new FDAError(
+              400,
+              'InvalidParam',
+              `Values of enum param should be strings or numbers".`,
+            );
+          }
+        });
+      }
+    });
   }
-  params.forEach((param) => {
-    // Params: required
-    if (!reqParams[param.name] && param.required) {
+}
+
+function applyParams(reqParams, params) {
+  logger.debug({ reqParams, params }, '[DEBUG]: applyParams start');
+
+  if (!Array.isArray(params) || params.length === 0) {
+    return {};
+  }
+
+  const validated = {};
+
+  for (const param of params) {
+    let value = reqParams[param.name];
+
+    // Required
+    if ((value === undefined || value === null) && param.required) {
       throw new FDAError(
         400,
         'InvalidQueryParam',
         `Missing required param "${param.name}".`,
       );
     }
-    // Params: default
-    if (!reqParams[param.name] && param.default) {
-      reqParams[param.name] = param.default;
+
+    // Default
+    if (
+      (value === undefined || value === null) &&
+      param.default !== undefined
+    ) {
+      value = param.default;
     }
 
-    const paramValue = reqParams[param.name];
-    if (paramValue) {
-      // Params: type
-      if (param.type && !isTypeOf(paramValue, param.type)) {
-        throw new FDAError(
-          400,
-          'InvalidQueryParam',
-          `Param "${param.name}" not of valid type (${param.type}).`,
-        );
+    if (value !== undefined) {
+      // Type coercion
+      if (param.type) {
+        const coerced = isTypeOf(value, param.type);
+
+        if (coerced === undefined) {
+          throw new FDAError(
+            400,
+            'InvalidQueryParam',
+            `Param "${param.name}" not of valid type (${param.type}).`,
+          );
+        }
+
+        value = coerced;
       }
-      // Params: range
-      if (param.range && !isInRange(paramValue, param.range)) {
+
+      // Range
+      if (param.range && !isInRange(value, param.range)) {
         throw new FDAError(
           400,
           'InvalidQueryParam',
           `Param "${param.name}" not in valid param range [${param.range}].`,
         );
       }
-      // Params: enum
-      if (param.enum && !isInEnum(paramValue, param.enum)) {
+
+      // Enum
+      if (param.enum && !isInEnum(value, param.enum)) {
         throw new FDAError(
           400,
           'InvalidQueryParam',
           `Param "${param.name}" not in param enum [${param.enum}].`,
         );
       }
+
+      if (value instanceof Date) {
+        value = value.toISOString();
+      }
+      if (typeof value === 'boolean') {
+        value = value ? 1 : 0;
+      }
+
+      validated[param.name] = value;
     }
-  });
-  return reqParams;
+  }
+
+  return validated;
 }
 
-function isTypeOf(value, type) {
-  const TYPE_COERCERS = {
-    Numeric: (v) => (Number.isFinite(Number(v)) ? Number(v) : undefined),
-    Boolean: (v) => v === 'true' || v === '1',
-    String: (v) => String(v),
-    Date: (v) => {
-      // decode and replace for json coded values (e.g. + as %2B) and proper format
-      const decoded = decodeURIComponent(v).replace(/([+-]\d{2})$/, '$1:00');
-      return isNaN(new Date(decoded).getTime()) ? undefined : new Date(decoded);
-    },
-  };
+const TYPE_COERCERS = {
+  Number: (v) => (Number.isFinite(Number(v)) ? Number(v) : undefined),
+  Boolean: (v) => {
+    if (v === true || v === false) {
+      return v;
+    }
+    if (v === 'true' || v === '1') {
+      return true;
+    }
+    if (v === 'false' || v === '0') {
+      return false;
+    }
+    return undefined;
+  },
+  Text: (v) => (v == null ? undefined : String(v)),
+  DateTime: (v) => {
+    if (typeof v !== 'string') {
+      return undefined;
+    }
+    let decoded;
+    try {
+      decoded = decodeURIComponent(v);
+    } catch {
+      return undefined;
+    }
 
+    // strict ISO 8601 (UTC or offset)
+    const ISO_8601 =
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+
+    if (!ISO_8601.test(decoded)) {
+      return undefined;
+    }
+
+    const date = new Date(decoded);
+    return Number.isNaN(date.getTime()) ? undefined : date;
+  },
+};
+
+function isTypeOf(value, type) {
   const coercer = TYPE_COERCERS[type];
   if (!coercer) {
     throw new FDAError(
@@ -278,35 +381,6 @@ function isInRange(value, range) {
 
 function isInEnum(value, enumValues) {
   return enumValues.includes(value);
-}
-
-function fdaKey(service, fdaId) {
-  return `${service}::${fdaId}`;
-}
-function getCachedQuery(service, fdaId, daId) {
-  return cachedQueries.get(fdaKey(service, fdaId))?.get(daId);
-}
-
-export async function storeCachedQuery(
-  conn,
-  service,
-  fdaId,
-  daId,
-  query,
-  params,
-) {
-  const key = fdaKey(service, fdaId);
-  let fda = cachedQueries.get(key);
-
-  if (!fda) {
-    fda = new Map();
-    cachedQueries.set(key, fda);
-  }
-
-  // We create the pStatement in DuckDB to check compatibility with FDA baseQuery
-  await conn.prepare(query);
-
-  fda.set(daId, { query, params });
 }
 
 export function toParquet(conn, originPath, resultPath) {

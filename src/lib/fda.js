@@ -26,10 +26,10 @@ import { getAgenda } from './jobs.js';
 import {
   runPreparedStatement,
   runPreparedStatementStream,
-  storeCachedQuery,
   getDBConnection,
   releaseDBConnection,
   toParquet,
+  checkParams,
   buildDAQuery,
 } from './utils/db.js';
 import { uploadTable } from './utils/pg.js';
@@ -167,10 +167,22 @@ export async function createDA(
   params,
 ) {
   const conn = await getDBConnection();
+
   try {
-    const query = buildDAQuery(service, fdaId, userQuery);
-    await storeCachedQuery(conn, service, fdaId, daId, query, params);
-    storeDA(service, fdaId, daId, description, userQuery, params);
+    const existing = await retrieveDA(service, fdaId, daId);
+
+    if (existing) {
+      throw new FDAError(
+        409,
+        'DuplicatedKey',
+        `DA ${daId} already exists in FDA ${fdaId}`,
+      );
+    }
+
+    checkParams(params);
+    // Call to buildDAQuery to detect undesired FROM clausules in query
+    buildDAQuery(service, fdaId, userQuery);
+    await storeDA(service, fdaId, daId, description, userQuery, params);
   } finally {
     await releaseDBConnection(conn);
   }
@@ -316,13 +328,21 @@ export async function getDA(service, fdaId, daId) {
   return da;
 }
 
-export async function putDA(service, fdaId, daId, description, userQuery) {
+export async function putDA(
+  service,
+  fdaId,
+  daId,
+  description,
+  userQuery,
+  params,
+) {
   const conn = await getDBConnection();
 
   try {
-    const query = buildDAQuery(service, fdaId, userQuery);
-    await storeCachedQuery(conn, service, fdaId, daId, query);
-    await updateDA(service, fdaId, daId, description, userQuery);
+    checkParams(params);
+    // Call to buildDAQuery to detect undesired FROM clausules in query
+    buildDAQuery(service, fdaId, userQuery);
+    await updateDA(service, fdaId, daId, description, userQuery, params);
   } finally {
     await releaseDBConnection(conn);
   }
