@@ -405,14 +405,17 @@ Content-Type: application/json; charset=utf-8
   {
     "_id": "...",
     "fdaId": "fda_alarms",
-    "service": "my-bucket",
-    "status":"completed",
-    "progress":100,
-    "lastFetch":"2026-02-19T07:38:21.263Z",
-    "servicePath: /public"
     "query": "SELECT * FROM public.alarms",
-    "description": "FDA de alarmas del sistema",
-    "das": {}
+    "das": {},
+    "service": "my-bucket",
+    "status": "fetching",
+    "progress": 10,
+    "lastFetch": null,
+    "refreshPolicy": {
+      "type": "none"
+    },
+    "servicePath": "/public",
+    "description": "FDA de alarmas del sistema"
   }
 ]
 ```
