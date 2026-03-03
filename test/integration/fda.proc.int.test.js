@@ -646,7 +646,7 @@ describe('FDA API - integration (run app as child process)', () => {
 
     if (enumQueryRes.status >= 400) {
       console.error(
-        'GET /query failed:',
+        'GET /query failed as expected:',
         enumQueryRes.status,
         enumQueryRes.json ?? enumQueryRes.text,
       );
@@ -664,7 +664,7 @@ describe('FDA API - integration (run app as child process)', () => {
 
     if (rangeQueryRes.status >= 400) {
       console.error(
-        'GET /query failed:',
+        'GET /query failed as expected:',
         rangeQueryRes.status,
         rangeQueryRes.json ?? rangeQueryRes.text,
       );
@@ -703,7 +703,7 @@ describe('FDA API - integration (run app as child process)', () => {
 
     if (requiredQueryRes.status >= 400) {
       console.error(
-        'GET /query failed:',
+        'GET /query failed as expected:',
         requiredQueryRes.status,
         requiredQueryRes.json ?? requiredQueryRes.text,
       );
@@ -721,7 +721,7 @@ describe('FDA API - integration (run app as child process)', () => {
 
     if (typeQueryRes.status >= 400) {
       console.error(
-        'GET /query failed:',
+        'GET /query failed as expected:',
         typeQueryRes.status,
         typeQueryRes.json ?? typeQueryRes.text,
       );
