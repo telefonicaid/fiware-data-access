@@ -135,7 +135,6 @@ export async function regenerateFDA(service, fdaId) {
       $set: {
         status: 'fetching',
         progress: 0,
-        lastFetch: new Date(),
       },
     },
     { returnDocument: 'before' },
