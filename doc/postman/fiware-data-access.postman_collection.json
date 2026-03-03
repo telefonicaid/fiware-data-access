@@ -1,0 +1,399 @@
+{
+	"info": {
+		"_postman_id": "232dbad8-2ca5-4136-be27-2063e9620add",
+		"name": "fiware-data-access",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "25871624"
+	},
+	"item": [
+		{
+			"name": "Create DA",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Fiware-Service",
+						"value": "alcobendas",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"id\": \"{{daId}}\",\n    \"description\": \"Filter the animals by name, breed and time.\",\n    \"query\": \"SELECT * WHERE animalname = $animalname AND timeinstant = $timeinstant AND activity = $activity;\",\n    \"params\": [\n        {\n            \"name\": \"timeinstant\", \n            \"type\": \"DateTime\",\n            \"default\": \"2020-08-17T18:25:28.332+01:00\"\n        },\n        {\n            \"name\": \"animalname\", \n            \"type\": \"Text\",\n            \"enum\": [\"TUNA\", \"Bandolera\"]\n        },\n        {\n            \"name\": \"activity\",\n            \"required\": true,\n            \"type\": \"Number\",\n            \"default\": 16,\n            \"range\": [10, 14] \n        }\n    ]\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{url}}/fdas/{{fdaId}}/das",
+					"host": [
+						"{{url}}"
+					],
+					"path": [
+						"fdas",
+						"{{fdaId}}",
+						"das"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "query",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Fiware-Service",
+						"value": "{{Fiware-Service}}",
+						"type": "text"
+					},
+					{
+						"key": "Accept",
+						"value": "application/x-ndjson",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "{{url}}/query?fdaId={{fdaId}}&daId={{daId}}&animalname=TUNA&timeinstant=2020-08-17T18:25:28.332%2B01:00&activity=12",
+					"host": [
+						"{{url}}"
+					],
+					"path": [
+						"query"
+					],
+					"query": [
+						{
+							"key": "path",
+							"value": "my-bucket/performance/widgetsvalidation_lifestockmonitoring_animal.parquet",
+							"disabled": true
+						},
+						{
+							"key": "fdaId",
+							"value": "{{fdaId}}"
+						},
+						{
+							"key": "daId",
+							"value": "{{daId}}"
+						},
+						{
+							"key": "animalname",
+							"value": "TUNA"
+						},
+						{
+							"key": "animalbreed",
+							"value": "Merina",
+							"disabled": true
+						},
+						{
+							"key": "timeinstant",
+							"value": "2020-08-17T18:25:28.332%2B01:00"
+						},
+						{
+							"key": "activity",
+							"value": "12"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Create FDA",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Fiware-Service",
+						"value": "{{Fiware-Service}}",
+						"type": "text"
+					},
+					{
+						"key": "Fiware-ServicePath",
+						"value": "{{Fiware-ServicePath}}",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"id\": \"{{fdaId}}\",\n    \"query\": \"SELECT * FROM alcobendas.widgetsvalidation_lifestockmonitoring_animal\",\n    \"description\": \"FDA 1 para la bd alcobendas\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{url}}/fdas",
+					"host": [
+						"{{url}}"
+					],
+					"path": [
+						"fdas"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get FDAs",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Fiware-Service",
+						"value": "{{Fiware-Service}}",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "{{url}}/fdas",
+					"host": [
+						"{{url}}"
+					],
+					"path": [
+						"fdas"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get FDA",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Fiware-Service",
+						"value": "{{Fiware-Service}}",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "{{url}}/fdas/{{fdaId}}",
+					"host": [
+						"{{url}}"
+					],
+					"path": [
+						"fdas",
+						"{{fdaId}}"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Regenerate FDA",
+			"request": {
+				"method": "PUT",
+				"header": [
+					{
+						"key": "Fiware-Service",
+						"value": "{{Fiware-Service}}",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "{{url}}/fdas/{{fdaId}}",
+					"host": [
+						"{{url}}"
+					],
+					"path": [
+						"fdas",
+						"{{fdaId}}"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Delete FDA",
+			"request": {
+				"method": "DELETE",
+				"header": [
+					{
+						"key": "Fiware-Service",
+						"value": "{{Fiware-Service}}",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "{{url}}/fdas/{{fdaId}}",
+					"host": [
+						"{{url}}"
+					],
+					"path": [
+						"fdas",
+						"{{fdaId}}"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get DAs",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Fiware-Service",
+						"value": "{{Fiware-Service}}",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "{{url}}/fdas/{{fdaId}}/das",
+					"host": [
+						"{{url}}"
+					],
+					"path": [
+						"fdas",
+						"{{fdaId}}",
+						"das"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get DA",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Fiware-Service",
+						"value": "{{Fiware-Service}}",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "{{url}}/fdas/{{fdaId}}/das/{{daId}}",
+					"host": [
+						"{{url}}"
+					],
+					"path": [
+						"fdas",
+						"{{fdaId}}",
+						"das",
+						"{{daId}}"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Put DA",
+			"request": {
+				"method": "PUT",
+				"header": [
+					{
+						"key": "Fiware-Service",
+						"value": "{{Fiware-Service}}",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"description\": \"New description\",\n    \"query\": \"SELECT * WHERE animalname = $animalname AND animalbreed = $animalbreed;\",\n    \"params\": [        \n        {\n            \"name\": \"activity\",\n            \"required\": true,\n            \"type\": \"Number\",\n            \"default\": 16,\n            \"range\": [10, 14] \n        }\n    ]\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{url}}/fdas/{{fdaId}}/das/{{daId}}",
+					"host": [
+						"{{url}}"
+					],
+					"path": [
+						"fdas",
+						"{{fdaId}}",
+						"das",
+						"{{daId}}"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Delete DA",
+			"request": {
+				"method": "DELETE",
+				"header": [
+					{
+						"key": "Fiware-Service",
+						"value": "{{Fiware-Service}}",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "{{url}}/fdas/{{fdaId}}/das/{{daId}}",
+					"host": [
+						"{{url}}"
+					],
+					"path": [
+						"fdas",
+						"{{fdaId}}",
+						"das",
+						"{{daId}}"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "doQuery (CDA compatibility)",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/x-www-form-urlencoded"
+					},
+					{
+						"key": "Fiware-Service",
+						"value": "my-bucket"
+					}
+				],
+				"body": {
+					"mode": "urlencoded",
+					"urlencoded": [
+						{
+							"key": "path",
+							"value": "/public/my-bucket/verticals/sql/da1",
+							"type": "text"
+						},
+						{
+							"key": "dataAccessId",
+							"value": "da1",
+							"type": "text"
+						},
+						{
+							"key": "pageSize",
+							"value": "10",
+							"type": "text"
+						}
+					]
+				},
+				"url": {
+					"raw": "http://localhost:8085/plugin/cda/api/doQuery",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8085",
+					"path": [
+						"plugin",
+						"cda",
+						"api",
+						"doQuery"
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}
