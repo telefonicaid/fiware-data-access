@@ -231,37 +231,10 @@ export async function fetchFDA(
   }
 }
 
-export async function updateFDA(service, fdaId, newRefreshPolicy = null) {
+export async function updateFDA(service, fdaId) {
   const previous = await regenerateFDA(service, fdaId);
 
   const agenda = getAgenda();
-
-  // CLEANUP previous scheduled jobs if policy has changed
-  if (
-    newRefreshPolicy &&
-    (newRefreshPolicy.type === 'interval' || newRefreshPolicy.type === 'cron')
-  ) {
-    await agenda.cancel({
-      name: 'refresh-fda',
-      'data.fdaId': fdaId,
-    });
-
-    await agenda.every(
-      newRefreshPolicy.value,
-      'refresh-fda',
-      {
-        fdaId,
-        query: previous.query,
-        service,
-      },
-      {
-        unique: {
-          name: 'refresh-fda',
-          'data.fdaId': fdaId,
-        },
-      },
-    );
-  }
 
   // Execute refresh immediately (when a fetcher is free)
   await agenda.now('refresh-fda', {
