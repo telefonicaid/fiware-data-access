@@ -66,11 +66,6 @@
 					],
 					"query": [
 						{
-							"key": "path",
-							"value": "my-bucket/performance/widgetsvalidation_lifestockmonitoring_animal.parquet",
-							"disabled": true
-						},
-						{
 							"key": "fdaId",
 							"value": "{{fdaId}}"
 						},
@@ -81,11 +76,6 @@
 						{
 							"key": "animalname",
 							"value": "TUNA"
-						},
-						{
-							"key": "animalbreed",
-							"value": "Merina",
-							"disabled": true
 						},
 						{
 							"key": "timeinstant",
@@ -355,7 +345,7 @@
 					},
 					{
 						"key": "Fiware-Service",
-						"value": "my-bucket"
+						"value": "{{Fiware-Service}}"
 					}
 				],
 				"body": {
@@ -363,12 +353,12 @@
 					"urlencoded": [
 						{
 							"key": "path",
-							"value": "/public/my-bucket/verticals/sql/da1",
+							"value": "{{Fiware-ServicePath}}/{{Fiware-Service}}/verticals/sql/{{daId}}",
 							"type": "text"
 						},
 						{
 							"key": "dataAccessId",
-							"value": "da1",
+							"value": "{{daId}}",
 							"type": "text"
 						},
 						{
