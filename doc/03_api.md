@@ -567,6 +567,7 @@ _**Example Response:**_
     "status":"completed",
     "progress":100,
     "lastFetch":"2026-02-19T07:38:21.263Z",
+    "refreshPolicy": { "type": "interval", "value": "1 hour" },
     "servicePath": "/public",
     "description": "FDA de alarmas del sistema"
 }
