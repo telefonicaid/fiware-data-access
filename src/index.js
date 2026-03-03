@@ -131,7 +131,7 @@ app.get('/fdas', async (req, res) => {
 });
 
 app.post('/fdas', async (req, res) => {
-  const { id, query, description } = req.body;
+  const { id, query, description, refreshPolicy } = req.body;
   const service = req.get('Fiware-Service');
   const servicePath = req.get('Fiware-ServicePath');
 
@@ -142,7 +142,16 @@ app.post('/fdas', async (req, res) => {
     });
   }
 
-  await fetchFDA(id, query, service, servicePath, description);
+  const finalRefreshPolicy = refreshPolicy ?? { type: 'none' };
+
+  await fetchFDA(
+    id,
+    query,
+    service,
+    servicePath,
+    description,
+    finalRefreshPolicy,
+  );
 
   return res.status(202).json({
     id,

@@ -182,33 +182,76 @@ export async function fetchFDA(
   service,
   servicePath,
   description,
+  refreshPolicy,
 ) {
-  await createFDAMongo(fdaId, query, service, servicePath, description);
+  await createFDAMongo(
+    fdaId,
+    query,
+    service,
+    servicePath,
+    description,
+    refreshPolicy,
+  );
 
   const agenda = getAgenda();
 
+  // Execute first fetch immediately (when a fetcher is free)
   await agenda.now('refresh-fda', {
     fdaId,
     query,
     service,
   });
 
-  // unique is not really needed since we check existence before, but it adds an extra layer of safety in case of duplicate calls
-  await agenda.every(
-    '1 minute',
-    'refresh-fda',
-    { fdaId, query, service },
-    {
-      unique: { 'data.fdaId': fdaId },
-    },
-  );
+  // Schedule refreshes according to policy
+  if (refreshPolicy?.type === 'interval' || refreshPolicy?.type === 'cron') {
+    // unique is not really needed since we check existence before, but it adds an extra layer of safety in case of duplicate calls
+    await agenda.every(
+      refreshPolicy.value,
+      'refresh-fda',
+      { fdaId, query, service },
+      {
+        unique: {
+          name: 'refresh-fda',
+          'data.fdaId': fdaId,
+        },
+      },
+    );
+  }
 }
 
-export async function updateFDA(service, fdaId) {
+export async function updateFDA(service, fdaId, newRefreshPolicy = null) {
   const previous = await regenerateFDA(service, fdaId);
 
   const agenda = getAgenda();
 
+  // CLEANUP previous scheduled jobs if policy has changed
+  if (
+    (newRefreshPolicy && newRefreshPolicy.type === 'interval') ||
+    newRefreshPolicy.type === 'cron'
+  ) {
+    await agenda.cancel({
+      name: 'refresh-fda',
+      'data.fdaId': fdaId,
+    });
+
+    await agenda.every(
+      newRefreshPolicy.value,
+      'refresh-fda',
+      {
+        fdaId,
+        query: previous.query,
+        service,
+      },
+      {
+        unique: {
+          name: 'refresh-fda',
+          'data.fdaId': fdaId,
+        },
+      },
+    );
+  }
+
+  // Execute refresh immediately (when a fetcher is free)
   await agenda.now('refresh-fda', {
     fdaId,
     query: previous.query,

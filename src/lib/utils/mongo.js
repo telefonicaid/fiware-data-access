@@ -65,6 +65,7 @@ export async function createFDAMongo(
   service,
   servicePath,
   description,
+  refreshPolicy,
 ) {
   logger.debug({ fdaId, query, service, description }, '[DEBUG]: createFDA');
   const collection = await getCollection();
@@ -77,7 +78,8 @@ export async function createFDAMongo(
       service,
       status: 'fetching',
       progress: 0,
-      lastFetch: new Date(),
+      lastFetch: null,
+      refreshPolicy: refreshPolicy ?? { type: 'none' },
       ...(servicePath && { servicePath }),
       ...(description && { description }),
     });
@@ -113,7 +115,7 @@ export async function updateFDAStatus(
       $set: {
         status,
         progress,
-        lastFetch: new Date(),
+        ...(status === 'completed' && { lastFetch: new Date() }),
         ...(error && { error }),
       },
     },
