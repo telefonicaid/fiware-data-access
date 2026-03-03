@@ -24,6 +24,9 @@
 
 import { getAgenda } from './lib/jobs.js';
 import { processFDAAsync } from './lib/fda.js';
+import { getBasicLogger } from './lib/utils/logger.js';
+
+const logger = getBasicLogger();
 
 export async function startFetcher() {
   const agenda = getAgenda();
@@ -34,5 +37,5 @@ export async function startFetcher() {
   });
 
   await agenda.start();
-  console.log('[Fetcher] Agenda started');
+  logger.log('[Fetcher] Agenda started');
 }
