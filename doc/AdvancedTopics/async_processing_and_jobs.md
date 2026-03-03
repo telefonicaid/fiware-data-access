@@ -14,6 +14,7 @@ This document explains:
 -   How jobs are persisted in Mongo
 -   How execution state is tracked
 -   Cron and recurring execution capabilities
+-   Backoff strategies and failure handling
 
 ---
 
@@ -27,13 +28,13 @@ Originally, FDA processing was synchronous. That caused:
 -   Tight coupling between HTTP and data processing
 -   Limited scalability
 
-With the new model:
+With the current asynchronous model:
 
 -   API returns immediately (`202 Accepted`)
--   Execution state is persisted
+-   Execution state is persisted in Mongo
 -   Jobs survive restarts
 -   Processing can be distributed
--   Horizontal scaling becomes possible
+-   Horizontal scaling becomes possible across nodes
 
 ---
 
@@ -110,13 +111,13 @@ For example:
 -   5 Fetcher replicas
 -   All sharing the same MongoDB
 
-Because jobs are persisted in Mongo, any fetcher instance can process them.
+Because jobs are persisted in Mongo, any fetcher instance can pick them up safely.
 
 ---
 
 ## 5. Agenda Integration
 
-We use **agenda** as a Mongo-backed job scheduler.
+We use **Agenda** as a Mongo-backed job scheduler.
 
 ### Initialization
 
@@ -134,6 +135,10 @@ Agenda:
 -   Distributed locking
 -   Retry support
 -   Concurrency control
+-   Supports backoff strategies
+
+Reference:
+[Agenda – Defining Job Processors](https://github.com/agenda/agenda?tab=readme-ov-file#defining-job-processors)
 
 ---
 
@@ -180,23 +185,20 @@ Example document:
 
 ### Important Fields
 
-| Field            | Meaning                    |
-| ---------------- | -------------------------- |
-| `name`           | Job type                   |
-| `data`           | Business payload           |
-| `nextRunAt`      | Next scheduled execution   |
-| `lockedAt`       | Distributed lock timestamp |
-| `failCount`      | Retry tracking             |
-| `repeatInterval` | Recurring execution config |
-| `lastRunAt`      | Last execution start       |
-| `lastFinishedAt` | Last execution end         |
+| Field            | Meaning                           |
+| ---------------- | --------------------------------- |
+| `name`           | Job type                          |
+| `data`           | Business payload                  |
+| `nextRunAt`      | Next scheduled execution          |
+| `lockedAt`       | Distributed lock timestamp        |
+| `failCount`      | Retry tracking                    |
+| `failReason`     | Reason for failure                |
+| `repeatInterval` | Recurring execution configuration |
+| `lastRunAt`      | Last execution start              |
+| `lastFinishedAt` | Last execution end                |
 
-Because jobs live in Mongo:
-
--   They survive crashes
--   They are visible for debugging
--   They allow observability
--   They enable distributed execution
+> **Key Implementation Detail:** Agenda ensures distributed locking (`lockedAt` + `lockLifetime`). No need to implement
+> manual locks in Mongo, avoiding blocked or stale jobs.
 
 ---
 
@@ -217,20 +219,15 @@ agenda.define('refresh-fda', async (job) => {
 });
 ```
 
-Each job:
+Notes:
 
--   Registers itself in Agenda
+-   Each job registers itself in Agenda
 -   Encapsulates business logic
--   Updates FDA status in Mongo
--   Handles errors & retries
+-   Updates FDA status in Mongo (`fetching` → `completed` / `failed`)
+-   Handles errors & retries automatically via Agenda
 
-Typical lifecycle inside a job:
-
-1. `status = fetching`
-2. Fetch from PostgreSQL
-3. Transform data
-4. Upload to object storage
-5. Update status → `completed` or `failed`
+> **Tip:** Use `async` or the `done` callback correctly to ensure job unlock. See
+> [Agenda – Job Processors](https://github.com/agenda/agenda?tab=readme-ov-file#defining-job-processors).
 
 ---
 
@@ -272,33 +269,36 @@ This means:
 
 ---
 
-## 9. MongoDB as Execution State Backbone
+## 9. Failure Handling & Backoff Strategies
 
-MongoDB now stores:
+Agenda supports automatic retry with configurable backoff:
 
--   FDA configuration
--   Operational fields:
+-   **Constant:** Same delay every retry
+-   **Linear:** Delay increases by a fixed amount
+-   **Exponential:** Delay multiplies by factor
+-   **Preset strategies:** `aggressive()`, `standard()`, `relaxed()`
+-   **Custom functions:** Implement your own delay sequence
+-   **Conditional retry:** Only retry for specific errors using `when()`
 
-    -   `status`
-    -   `progress`
-    -   `lastFetch`
+Example:
 
--   Agenda job metadata
+```js
+agenda.define(
+    'send-email',
+    async (job) => {
+        await sendEmail(job.attrs.data);
+    },
+    {
+        backoff: agenda.backoffStrategies.standard(),
+    },
+);
+```
 
-This guarantees:
+> **Important:** `failCount` tracks attempts. Retry logic is per-job, not global. Repeating jobs (`every()`) will retry
+> immediately if failed, then continue normal schedule.
 
--   Crash recovery
--   State traceability
--   Idempotent execution
--   Observability
--   Horizontal scaling safety
-
-Mongo is effectively the **single source of truth** for:
-
--   What should run
--   What is running
--   What failed
--   What finished
+See
+[Agenda – Automatic Retry with Backoff](https://github.com/agenda/agenda?tab=readme-ov-file#automatic-retry-with-backoff).
 
 ---
 
@@ -353,29 +353,40 @@ PUT /fdas/:fdaId
 Flow:
 
 1. FDA metadata saved in Mongo
-2. Agenda job scheduled
+2. Agenda job scheduled (`agenda.now()` for immediate fetch, `agenda.every()` for recurring)
 3. HTTP `202 Accepted` returned
 4. Fetcher picks up job
-5. Mongo updated through lifecycle
-
-Status transitions are defined in:
-
-`Advanced Topics → FDA Execution Lifecycle`
+5. Mongo updated throughout lifecycle
 
 ---
 
-## 12. Failure Handling & Recovery
+## 12. Observability & State Tracking
 
-If `processFDAAsync()` throws:
+MongoDB stores:
 
--   Agenda marks the job as failed
--   `failCount` is incremented
--   `failedAt` and `failReason` are stored
+-   FDA metadata & operational fields (`status`, `progress`, `lastFetch`)
+-   Agenda job metadata (`lockedAt`, `failCount`, `nextRunAt`)
 
-There is currently:
+This guarantees:
 
--   No custom retry logic
--   No backoff strategy
--   No dead-letter handling
+-   Crash recovery
+-   State traceability
+-   Idempotent execution
+-   Observability across multiple nodes
+-   Horizontal scaling safety
 
-Failure behavior relies entirely on Agenda’s built-in mechanics.
+MongoDB is effectively the **single source of truth** for what should run, what is running, and what failed.
+
+---
+
+## Summary of Key Implementation Details
+
+-   `processFDAAsync()` handles status updates (`fetching` → `completed` / `failed`)
+-   Agenda locks jobs automatically; manual `isRunning` flags are unnecessary
+-   Recurring jobs and cron schedules are persisted in `repeatInterval`
+-   Backoff strategies handle retries in a controlled manner
+-   Multiple node instances can process the same queue safely using `lockLifetime`
+
+## References
+
+-   [Agenda GitHub Repository](https://github.com/agenda/agenda)
