@@ -404,7 +404,7 @@ These fields are **provided in responses** but **cannot be included or modified*
 | ----------- | -------- | ------ | --------------------------------------------------------------------------------------------- |
 | `status`    |          | string | Current FDA execution status (`fetching`, `transforming`, `uploading`, `completed`, `failed`) |
 | `progress`  |          | number | Execution progress percentage (0–100)                                                         |
-| `lastFetch` |          | string | Timestamp of the last execution attempt (ISO date format)                                     |
+| `lastFetch` |          | string | Timestamp of the last fetch (ISO date format)                                                 |
 
 > Note: Including operational fields like `progress` or `status` in POST/PUT requests is ignored by the server.
 > Currently this does not return a 400, but the fields will not be updated by the client.

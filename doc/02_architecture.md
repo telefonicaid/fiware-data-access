@@ -131,6 +131,10 @@ Each document corresponds to one FDA:
 -   **description**: FDA description
 -   **query**: SQL query used to generate the Parquet file
 -   **das**: keymap of DAs associated with the FDA
+-   **refreshPolicy**: object defining automatic refresh behaviour (`none`, `interval`, or `cron`)
+-   **status**: current execution status (`fetching`, `transforming`, `uploading`, `completed`, `failed`)
+-   **progress**: execution progress percentage (0–100)
+-   **lastFetch**: timestamp of the last fetch (ISO date)
 
 Each DA contains:
 
@@ -146,6 +150,13 @@ Each DA contains:
     "description": "Description for the first FDA",
     "query": "SELECT population, timeinstant FROM exampleSchema.exampleTable",
     "servicePath": "/public",
+    "service": "fiwareService",
+    "progress": 10,
+    "lastFetch": null,
+    "refreshPolicy": {
+        "type": "interval",
+        "value": "1 hour"
+    },
     "das": {
         "da1": {
             "description": "First DA querying timeInstant and population.",
@@ -155,10 +166,31 @@ Each DA contains:
             "description": "Second DA querying timeInstant and gender.",
             "query": "SELECT * WHERE gender = $gender AND timeinstant = $timeinstant;"
         }
-    },
-    "service": "fiwareService"
+    }
 }
 ```
+
+### Agenda Jobs Collection
+
+When automatic refresh or manual regeneration is enabled, the system uses Agenda with MongoDB as a backend.
+
+Agenda persists jobs in a separate MongoDB collection:
+
+-   **Collection name**: `agendaJobs`
+-   **Purpose**: Stores background jobs for FDA refresh and regeneration
+-   **Managed by**: Agenda (not manually modified by application code)
+
+Each document represents one scheduled or running job and includes:
+
+-   Job metadata (`name`, `data`, `nextRunAt`)
+-   Locking information (`lockedAt`, `lockLifetime`)
+-   Retry tracking (`failCount`, `failReason`)
+-   Execution timestamps (`lastRunAt`, `lastFinishedAt`)
+
+> This collection is internal to Agenda and should not be modified directly.
+
+> More details about asynchronous processing and job persistence can be found in
+> [Advanced Topics – Async Processing and Jobs](/doc/AdvancedTopics/async_processing_and_jobs.md#6-job-persistence-in-mongodb).
 
 ---
 
