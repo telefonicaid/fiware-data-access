@@ -226,8 +226,8 @@ export async function updateFDA(service, fdaId, newRefreshPolicy = null) {
 
   // CLEANUP previous scheduled jobs if policy has changed
   if (
-    (newRefreshPolicy && newRefreshPolicy.type === 'interval') ||
-    newRefreshPolicy.type === 'cron'
+    newRefreshPolicy &&
+    (newRefreshPolicy.type === 'interval' || newRefreshPolicy.type === 'cron')
   ) {
     await agenda.cancel({
       name: 'refresh-fda',
