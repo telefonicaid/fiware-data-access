@@ -1329,6 +1329,10 @@ describe('FDA API - integration (run app as child process)', () => {
         // query base to extract from PG to CSV
         query: 'SELECT id, name, age FROM public.users ORDER BY id',
         description: 'users dataset',
+        refreshPolicy: {
+          type: 'interval',
+          value: '1 hour',
+        },
       },
     });
 
@@ -1355,6 +1359,10 @@ describe('FDA API - integration (run app as child process)', () => {
       servicePath,
       status: 'completed',
       progress: 100,
+      refreshPolicy: {
+        type: 'interval',
+        value: '1 hour',
+      },
     });
     expect(completedFDA.lastFetch).toBeDefined();
     expect(typeof completedFDA.lastFetch).toBe('string');
