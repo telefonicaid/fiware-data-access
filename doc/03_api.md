@@ -338,11 +338,12 @@ None required.
 
 A FDA is represented by a JSON object with the following fields:
 
-| Parameter     | Optional | Type   | Description                                                                   |
-| ------------- | -------- | ------ | ----------------------------------------------------------------------------- |
-| `id`          |          | string | FDA unique identifier                                                         |
-| `description` | ✓        | string | A free text used by the client to describe the FDA                            |
-| `query`       |          | string | Base `postgreSQL` query to create the file in the bucket-based storage system |
+| Parameter       | Optional | Type   | Description                                                                   |
+| --------------- | -------- | ------ | ----------------------------------------------------------------------------- | ---------- | ------------------------- |
+| `id`            |          | string | FDA unique identifier                                                         |
+| `description`   | ✓        | string | A free text used by the client to describe the FDA                            |
+| `query`         |          | string | Base `postgreSQL` query to create the file in the bucket-based storage system |
+| `refreshPolicy` | ✓        | object | Optional policy for automatic refresh. Format: `{ type: "none"                | "interval" | "cron", value?: string }` |
 
 #### Operational fields (read-only)
 
@@ -412,6 +413,7 @@ _**Example Response:**_
         "status": "completed",
         "progress": 100,
         "lastFetch": "2026-02-19T07:38:21.263Z",
+        "refreshPolicy": { "type": "interval", "value": "1 hour" },
         "servicePath": "/public",
         "description": "FDA de alarmas del sistema"
     }
@@ -449,7 +451,8 @@ curl -i -X POST http://localhost:8080/fdas \
   -d '{
     "id": "fda_alarms",
     "query": "SELECT * FROM public.alarms",
-    "description": "FDA de alarmas del sistema"
+    "description": "FDA de alarmas del sistema",
+    "refreshPolicy": { "type": "interval", "value": "1 hour" }
   }'
 ```
 

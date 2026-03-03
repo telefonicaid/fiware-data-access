@@ -17,6 +17,7 @@ An **FDA** represents a **materialized dataset** in the system. It:
 -   Stores the result as a **Parquet file**
 -   Saves the file in a **bucket-based object storage system**
 -   Acts as the **base dataset** for one or more DAs
+-   Supports an optional `refreshPolicy` that defines how the FDA is automatically refreshed (none, interval, or cron)
 
 In simple terms:
 
@@ -27,9 +28,9 @@ Key characteristics:
 -   Created from a base SQL query
 -   Physically stored as a Parquet file
 -   Stored inside a bucket named after the `Fiware-Service`
--   Can be regenerated to refresh the data
+-   Can be regenerated (manually or configured) to refresh the data
 -   Parent resource of one or more DAs
--   Has status, progress and lastFetch fields.
+-   Has status, progress and lastFetch fields, and an optional refreshPolicy.
 
 #### Example FDA
 
@@ -43,7 +44,11 @@ Content-Type: application/json
 {
     "id": "animals_fda",
     "description": "All animal activity records",
-    "query": "SELECT * FROM animal_activity"
+    "query": "SELECT * FROM animal_activity",
+    "refreshPolicy": {
+        "type": "cron",
+        "value": "0 * * * *"
+    }
 }
 ```
 

@@ -37,6 +37,18 @@ Variables related to the environment of the application:
 | `FDA_NODE_ENV`    | ✓        | string | Level of the node environment. Possible values are `development` and `production`. Value is `development` by default. |
 | `FDA_SERVER_PORT` | ✓        | number | Port used by FDA server. Value is `8080` by default.                                                                  |
 
+#### Instance Roles
+
+Variables that define which components of the application are executed by this instance:
+
+| Variable             | Optional | Type    | Description                                                                                              |
+| -------------------- | -------- | ------- | -------------------------------------------------------------------------------------------------------- |
+| `FDA_ROLE_APISERVER` | ✓        | boolean | If `true`, the instance runs the API server to handle HTTP requests. Default `true`.                     |
+| `FDA_ROLE_FETCHER`   | ✓        | boolean | If `true`, the instance runs the fetcher responsible for regenerating and updating FDAs. Default `true`. |
+
+> Note: By default, an instance runs both roles (API server and Fetcher). You can disable one to separate
+> responsibilities.
+
 ### PostgreSQL
 
 Variables related to `PostgreSQL` client:
@@ -58,7 +70,7 @@ Variabes related to the object bucket-based storage system:
 | `FDA_OBJSTG_PASSWORD`      |          | string | Password to connect to the object bucket-based storage system.                                       |
 | `FDA_OBJSTG_PROTOCOL`      | ✓        | string | Protocol (http or https) to connect to the object bucket-based storage system. Default value `https` |
 | `FDA_OBJSTG_ENDPOINT`      |          | string | Endpoint (host and port) to connect to the object bucket-based storage system.                       |
-| `FDA_OBJSTG_MAX_POOL_SIZE` |  ✓        | number | Max Pool size for connections pool for object storage. Default is 10                                 |
+| `FDA_OBJSTG_MAX_POOL_SIZE` | ✓        | number | Max Pool size for connections pool for object storage. Default is 10                                 |
 
 ### MongoDB
 
@@ -98,6 +110,10 @@ FDA_OBJSTG_PASSWORD=examplePass
 
 # MONGODB
 FDA_MONGO_URI=mongodb://exampleUser:examplePassword@endpoint:port
+
+# Instance Roles
+FDA_ROLE_APISERVER=true
+FDA_ROLE_FETCHER=true
 ```
 
 ---
