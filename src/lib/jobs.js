@@ -25,7 +25,7 @@
 import { Agenda } from 'agenda';
 import { MongoBackend } from '@agendajs/mongo-backend';
 import { config } from './fdaConfig.js';
-import { getBasicLogger } from './lib/utils/logger.js';
+import { getBasicLogger } from './utils/logger.js';
 
 const logger = getBasicLogger();
 
@@ -59,6 +59,6 @@ export function getAgenda() {
 export async function shutdownAgenda() {
   if (agenda) {
     await agenda.drain();
-    logger.log('[Jobs] Agenda drained');
+    logger.info('[Jobs] Agenda drained');
   }
 }

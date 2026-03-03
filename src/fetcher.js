@@ -37,5 +37,5 @@ export async function startFetcher() {
   });
 
   await agenda.start();
-  logger.log('[Fetcher] Agenda started');
+  logger.info('[Fetcher] Agenda started');
 }
