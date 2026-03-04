@@ -387,7 +387,7 @@ Defines how and when the FDA should be automatically refreshed.
 ##### Semantics
 
 -   `none` (default): No automatic refresh is scheduled.
--   `interval`: Uses Agenda human interval format (e.g. `5 minutes`, `1 hour`).
+-   `interval`: Uses Agenda [human interval](https://github.com/agenda/human-interval) format (e.g. `5 minutes`, `1 hour`).
 -   `cron`: Uses a cron expression (e.g. `0 * * * *`).
 
 If omitted, the default policy is:
