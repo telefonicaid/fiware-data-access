@@ -95,6 +95,14 @@ const envVarsSchema = {
       type: 'number',
       default: 100,
     },
+    FDA_ROLE_APISERVER: {
+      type: 'boolean',
+      default: true,
+    },
+    FDA_ROLE_FETCHER: {
+      type: 'boolean',
+      default: true,
+    },
   },
 };
 
@@ -130,5 +138,9 @@ export const config = {
     level: envVars.FDA_LOG_LEVEL,
     comp: envVars.FDA_LOG_COMP,
     resSize: envVars.FDA_LOG_RES_SIZE,
+  },
+  roles: {
+    apiServer: envVars.FDA_ROLE_APISERVER,
+    fetcher: envVars.FDA_ROLE_FETCHER,
   },
 };

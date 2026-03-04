@@ -56,10 +56,28 @@ its asynchronous processing state.
 
 ### Flow
 
--   On `POST /fdas` or `PUT /fdas/:fdaId`, FDA starts **fetching** (progress 0).
+-   On `POST /fdas` or `PUT /fdas/:fdaId`, FDA starts **fetching** (progress 0). If a `refreshPolicy` is defined,
+    subsequent refreshes are scheduled via the job system (agenda).
 -   `transforming` → `uploading` as processing steps complete.
 -   On success → `completed` (progress 100).
 -   On error → `failed` (progress 0).
+
+---
+
+## Asynchronous Processing & Job System
+
+`FDA` executes heavy data operations using a background job system based on **agenda**. Jobs are persisted in
+**MongoDB** and executed outside the HTTP lifecycle.
+
+This architecture:
+
+-   Decouples API from processing logic
+-   Improves scalability
+-   Enables state persistence and recovery
+-   Provides execution traceability and respects FDA `refreshPolicy` to schedule automatic refreshes.
+
+👉 Full documentation available at:
+[`Async Processing & Job Architecture`](/doc/AdvancedTopics/async_processing_and_jobs.md)
 
 ---
 

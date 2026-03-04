@@ -199,6 +199,7 @@ describe('FDA API - integration (run app as child process)', () => {
   let pgPort;
 
   let appProc;
+  let fetcherProc;
   let appPort;
   let baseUrl;
 
@@ -305,40 +306,44 @@ describe('FDA API - integration (run app as child process)', () => {
       console.log('[TEST] Postgres OK');
     }
 
-    await startApp();
+    await startAppAndFetcher();
   });
 
   afterAll(async () => {
-    await stopApp();
+    await stopAppAndFetcher();
     await Promise.allSettled([minio?.stop(), mongo?.stop(), postgis?.stop()]);
   });
 
-  async function startApp() {
-    // Start app as child process (NOT NODE_ENV=test)
+  async function startAppAndFetcher() {
+    const entry = path.resolve('test/helpers/start-app.js');
+
+    // API SERVER PROCESS
     appPort = await getFreePort();
     baseUrl = `http://127.0.0.1:${appPort}`;
-
-    const entry = path.resolve('test/helpers/start-app.js');
 
     appProc = spawn(process.execPath, [entry], {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: {
         ...process.env,
-        // IMPORTANT: allow app.listen
         NODE_ENV: 'integration',
         FDA_NODE_ENV: 'development',
+
         FDA_SERVER_PORT: String(appPort),
+
+        FDA_ROLE_APISERVER: 'true',
+        FDA_ROLE_FETCHER: 'false',
+
         FDA_PG_USER: 'postgres',
         FDA_PG_PASSWORD: 'postgres',
         FDA_PG_HOST: pgHost,
         FDA_PG_PORT: String(pgPort),
+
         FDA_OBJSTG_USER: 'admin',
         FDA_OBJSTG_PASSWORD: 'admin123',
         FDA_OBJSTG_PROTOCOL: 'http',
         FDA_OBJSTG_ENDPOINT: minioHostPort,
+
         FDA_MONGO_URI: mongoUri,
-        FDA_ROLE_APISERVER: 'true',
-        FDA_ROLE_FETCHER: 'true',
       },
     });
 
@@ -364,9 +369,53 @@ describe('FDA API - integration (run app as child process)', () => {
       await new Promise((r) => setTimeout(r, 200));
     }
     console.log('[TEST] API OK at', baseUrl);
+
+    // FETCHER PROCESS
+    fetcherProc = spawn(process.execPath, [entry], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+        NODE_ENV: 'integration',
+        FDA_NODE_ENV: 'development',
+
+        FDA_ROLE_APISERVER: 'false',
+        FDA_ROLE_FETCHER: 'true',
+
+        FDA_PG_USER: 'postgres',
+        FDA_PG_PASSWORD: 'postgres',
+        FDA_PG_HOST: pgHost,
+        FDA_PG_PORT: String(pgPort),
+
+        FDA_OBJSTG_USER: 'admin',
+        FDA_OBJSTG_PASSWORD: 'admin123',
+        FDA_OBJSTG_PROTOCOL: 'http',
+        FDA_OBJSTG_ENDPOINT: minioHostPort,
+
+        FDA_MONGO_URI: mongoUri,
+      },
+    });
+
+    fetcherProc.stdout.on('data', (d) =>
+      console.log('[FETCHER]', d.toString().trim()),
+    );
+    fetcherProc.stderr.on('data', (d) =>
+      console.error('[FETCHER-ERR]', d.toString().trim()),
+    );
+
+    await new Promise((r) => setTimeout(r, 2000));
+
+    console.log('[TEST] Fetcher OK');
   }
 
-  async function stopApp() {
+  async function stopAppAndFetcher() {
+    if (fetcherProc) {
+      fetcherProc.kill('SIGTERM');
+      await new Promise((r) => setTimeout(r, 500));
+      if (!fetcherProc.killed) {
+        fetcherProc.kill('SIGKILL');
+      }
+    }
+
     if (appProc) {
       appProc.kill('SIGTERM');
       await new Promise((r) => setTimeout(r, 500));

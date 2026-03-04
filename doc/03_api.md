@@ -368,11 +368,33 @@ None required.
 
 A FDA is represented by a JSON object with the following fields:
 
-| Parameter     | Optional | Type   | Description                                                                   |
-| ------------- | -------- | ------ | ----------------------------------------------------------------------------- |
-| `id`          |          | string | FDA unique identifier                                                         |
-| `description` | ✓        | string | A free text used by the client to describe the FDA                            |
-| `query`       |          | string | Base `postgreSQL` query to create the file in the bucket-based storage system |
+| Parameter       | Optional | Type   | Description                                                                   |
+| --------------- | -------- | ------ | ----------------------------------------------------------------------------- |
+| `id`            |          | string | FDA unique identifier                                                         |
+| `description`   | ✓        | string | A free text used by the client to describe the FDA                            |
+| `query`         |          | string | Base `postgreSQL` query to create the file in the bucket-based storage system |
+| `refreshPolicy` | ✓        | object | Optional policy for automatic refresh.                                        |
+
+#### Refresh Policy object
+
+Defines how and when the FDA should be automatically refreshed.
+
+| Field   | Optional | Type   | Description                                                                                                   |
+| ------- | -------- | ------ | ------------------------------------------------------------------------------------------------------------- |
+| `type`  |          | string | Refresh strategy. One of: `none`, `interval`, `cron`.                                                         |
+| `value` | ✓        | string | Required if `type` is `interval` or `cron`. Represents a human interval (e.g. `1 hour`) or a cron expression. |
+
+##### Semantics
+
+-   `none` (default): No automatic refresh is scheduled.
+-   `interval`: Uses Agenda [human interval](https://github.com/agenda/human-interval) format (e.g. `5 minutes`, `1 hour`).
+-   `cron`: Uses a cron expression (e.g. `0 * * * *`).
+
+If omitted, the default policy is:
+
+```json
+{ "type": "none" }
+```
 
 #### Operational fields (read-only)
 
@@ -382,7 +404,7 @@ These fields are **provided in responses** but **cannot be included or modified*
 | ----------- | -------- | ------ | --------------------------------------------------------------------------------------------- |
 | `status`    |          | string | Current FDA execution status (`fetching`, `transforming`, `uploading`, `completed`, `failed`) |
 | `progress`  |          | number | Execution progress percentage (0–100)                                                         |
-| `lastFetch` |          | string | Timestamp of the last execution attempt (ISO date format)                                     |
+| `lastFetch` |          | string | Timestamp of the last fetch (ISO date format)                                                 |
 
 > Note: Including operational fields like `progress` or `status` in POST/PUT requests is ignored by the server.
 > Currently this does not return a 400, but the fields will not be updated by the client.
@@ -442,6 +464,7 @@ _**Example Response:**_
         "status": "completed",
         "progress": 100,
         "lastFetch": "2026-02-19T07:38:21.263Z",
+        "refreshPolicy": { "type": "interval", "value": "1 hour" },
         "servicePath": "/public",
         "description": "FDA de alarmas del sistema"
     }
@@ -479,7 +502,8 @@ curl -i -X POST http://localhost:8080/fdas \
   -d '{
     "id": "fda_alarms",
     "query": "SELECT * FROM public.alarms",
-    "description": "FDA de alarmas del sistema"
+    "description": "FDA de alarmas del sistema",
+    "refreshPolicy": { "type": "interval", "value": "1 hour" }
   }'
 ```
 
@@ -564,6 +588,7 @@ _**Example Response:**_
     "status":"completed",
     "progress":100,
     "lastFetch":"2026-02-19T07:38:21.263Z",
+    "refreshPolicy": { "type": "interval", "value": "1 hour" },
     "servicePath": "/public",
     "description": "FDA de alarmas del sistema"
 }
@@ -657,7 +682,7 @@ A DA is represented by a JSON object with the following fields:
 
 (\*) The `id` field is mandatory when creating a DA (`POST`) and must not be included when updating a DA (`PUT`).
 
-##### Params
+#### Params
 
 Each object in the array `params` can have the following keys:
 
