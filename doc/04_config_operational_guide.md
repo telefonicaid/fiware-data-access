@@ -101,23 +101,23 @@ FDA_SERVER_PORT=8080
 FDA_ROLE_APISERVER=true
 FDA_ROLE_FETCHER=true
 
-## POSTGRESQL
+# POSTGRESQL
 FDA_PG_USER=exampleUser
 FDA_PG_PASSWORD=examplePass
 FDA_PG_HOST=exampleHost
 FDA_PG_PORT=5432
 
-## Object Bucket-Based Storage System
+# Object Bucket-Based Storage System
 FDA_OBJSTG_USER=exampleUser
 FDA_OBJSTG_PASSWORD=examplePass
 FDA_OBJSTG_PROTOCOL=http
 FDA_OBJSTG_ENDPOINT=endpoint:port
 FDA_OBJSTG_MAX_POOL_SIZE=10
 
-## MongoDB
+# MONGODB
 FDA_MONGO_URI=mongodb://exampleUser:examplePassword@endpoint:port
 
-## Logger
+# Logger
 FDA_LOG_LEVEL=INFO
 FDA_LOG_COMP=FDA
 FDA_LOG_RES_SIZE=100
