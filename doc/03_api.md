@@ -41,6 +41,9 @@ There is a dependency relationship between the two types, as the _das_ belongs t
 The datamodel associated to this API (i.e. how fdas and das are modeled in MongoDB) is out of the scope of this
 document.
 
+Aditionally all the API routes described in this document are included in a [Postman collection](./postman/README.md) to
+ease the use of the app.
+
 ## Error responses
 
 FDA uses HTTP status codes and specific error codes to communicate the result of API operations. When an error occurs,
