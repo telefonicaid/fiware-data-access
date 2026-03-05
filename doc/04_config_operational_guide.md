@@ -97,7 +97,7 @@ Variables related to MongoDB:
 FDA_NODE_ENV=development
 FDA_SERVER_PORT=8080
 
-# Roles
+# Instance Roles
 FDA_ROLE_APISERVER=true
 FDA_ROLE_FETCHER=true
 
