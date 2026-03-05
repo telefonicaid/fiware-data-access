@@ -108,7 +108,7 @@
 				],
 				"body": {
 					"mode": "raw",
-					"raw": "{\n    \"id\": \"{{fdaId}}\",\n    \"query\": \"SELECT * FROM alcobendas.widgetsvalidation_lifestockmonitoring_animal\",\n    \"description\": \"FDA 1 para la bd alcobendas\"\n}",
+					"raw": "{\n    \"id\": \"{{fdaId}}\",\n    \"query\": \"SELECT * FROM alcobendas.widgetsvalidation_lifestockmonitoring_animal\",\n    \"description\": \"FDA 1 para la bd alcobendas\",\n    \"refreshPolicy\": { \"type\": \"interval\", \"value\": \"1 hour\" }\n}",
 					"options": {
 						"raw": {
 							"language": "json"
