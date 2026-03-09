@@ -45,7 +45,8 @@ async function getCollection() {
     }
     isConnected = true;
   }
-  const db = client.db('fiware-data-access');
+  const db = client.db();
+  logger.debug('MongoDB connection to db %s', db.databaseName);
   return db.collection('fdas');
 }
 
