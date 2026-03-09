@@ -383,18 +383,17 @@ function isInEnum(value, enumValues) {
   return enumValues.includes(value);
 }
 
-export function toParquet(conn, originPath, resultPath, partition) {
+export function toParquet(conn, originPath, resultPath, partitionType) {
   logger.debug({ originPath, resultPath }, '[DEBUG]: toParquet');
 
-  if (partition) {
-    // COMPRESSION ZSTD: very common in data lakes, consider using it
+  if (partitionType) {
+    const { cols, partitionBy } = getPartitionConf(partitionType);
+
+    // COMPRESSION ZSTD: very common in data lakes, consider using it (configurable in fda)
     return conn.run(
-      `COPY ( SELECT *, 
-                year(timeinstant) as year,
-                month(timeinstant) as month,
-                day(timeinstant) as day
+      `COPY ( SELECT ${cols}
                 FROM read_csv_auto('s3://${originPath}')) 
-      TO 's3://${resultPath}' (FORMAT PARQUET, PARTITION_BY (year, month, day), COMPRESSION ZSTD);`,
+      TO 's3://${resultPath}' (FORMAT PARQUET, ${partitionBy} COMPRESSION ZSTD);`,
     );
   } else {
     return conn.run(
@@ -402,6 +401,52 @@ export function toParquet(conn, originPath, resultPath, partition) {
       TO 's3://${resultPath}' (FORMAT PARQUET);`,
     );
   }
+}
+
+function getPartitionConf(partitionType) {
+  const PARTITIONS = {
+    day: {
+      columns: `
+      year(timeinstant) as year,
+      month(timeinstant) as month,
+      day(timeinstant) as day
+    `,
+      partitionBy: 'year, month, day',
+    },
+    month: {
+      columns: `
+      year(timeinstant) as year,
+      month(timeinstant) as month
+    `,
+      partitionBy: 'year, month',
+    },
+    year: {
+      columns: `
+      year(timeinstant) as year
+    `,
+      partitionBy: 'year',
+    },
+    none: {
+      columns: '',
+      partitionBy: '',
+    },
+  };
+
+  const partitionConf = PARTITIONS[partitionType];
+  if (!partitionConf) {
+    throw new FDAError(
+      404,
+      'DaNotFound',
+      `Incorrect partition type: ${partitionType}.`,
+    );
+  }
+
+  const cols = partitionConf.columns ? `*, ${partitionConf.columns}` : '*';
+  const partitionBy = partitionConf.partitionBy
+    ? `PARTITION_BY (${partitionConf.partitionBy}),`
+    : '';
+
+  return { cols, partitionBy };
 }
 
 export function buildDAQuery(service, fdaId, userQuery, partitioned) {
