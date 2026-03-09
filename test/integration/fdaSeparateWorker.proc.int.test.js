@@ -1320,7 +1320,7 @@ describe('FDA API - integration (run app as child process)', () => {
   test('PUT /fdas/:fdaId throws InvalidState if FDA in unexpected status', async () => {
     const client = new MongoClient(mongoUri);
     await client.connect();
-    const collection = client.db('fiware-data-access').collection('fdas');
+    const collection = client.db().collection('fdas');
 
     await collection.updateOne(
       { fdaId: fdaId3, service },
