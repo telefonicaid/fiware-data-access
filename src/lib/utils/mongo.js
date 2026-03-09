@@ -45,7 +45,6 @@ async function getCollection() {
     }
     isConnected = true;
   }
-  const db = client.db('fiware-data-access');
   return db.collection('fdas');
 }
 
