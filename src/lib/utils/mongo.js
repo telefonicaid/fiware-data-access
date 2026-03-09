@@ -45,6 +45,8 @@ async function getCollection() {
     }
     isConnected = true;
   }
+  const db = client.db();
+  logger.debug('MongoDB connection to db %s', client.db().databaseName);
   return db.collection('fdas');
 }
 
