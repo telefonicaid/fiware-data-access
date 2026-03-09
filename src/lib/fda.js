@@ -272,6 +272,7 @@ export async function deleteFDA(service, fdaId) {
     config.objstg.usr,
     config.objstg.pass,
   );
+  // TODO no se esta borrando el csv correctamente en los casos de partition
   await dropFile(s3Client, service, getPath('', fdaId, '.parquet'));
   await removeFDA(service, fdaId);
 
@@ -338,9 +339,11 @@ async function uploadTableToObjStg(service, database, query, bucket, path) {
   try {
     await updateFDAStatus(service, path, 'transforming', 60);
     const parquetPath = getPath(bucket, path, '.parquet');
-    await toParquet(conn, getPath(bucket, path, '.csv'), parquetPath);
+    await toParquet(conn, getPath(bucket, path, '.csv'), parquetPath, true);
     await updateFDAStatus(service, path, 'uploading', 80);
     await dropFile(s3Client, bucket, `${path}.csv`);
+  } catch (e) {
+    throw new FDAError(500, 'UploadError', e.message);
   } finally {
     await releaseDBConnection(conn);
   }

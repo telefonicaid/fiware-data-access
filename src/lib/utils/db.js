@@ -114,7 +114,7 @@ export async function runPreparedStatement(
       `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`,
     );
   }
-  const query = buildDAQuery(service, fdaId, da.query);
+  const query = buildDAQuery(service, fdaId, da.query, true);
 
   const stmt = await conn.prepare(query);
 
@@ -162,7 +162,7 @@ export async function runPreparedStatementStream(
       `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`,
     );
   }
-  const query = buildDAQuery(service, fdaId, da.query);
+  const query = buildDAQuery(service, fdaId, da.query, true);
 
   const stmt = await conn.prepare(query);
 
@@ -383,15 +383,28 @@ function isInEnum(value, enumValues) {
   return enumValues.includes(value);
 }
 
-export function toParquet(conn, originPath, resultPath) {
+export function toParquet(conn, originPath, resultPath, partition) {
   logger.debug({ originPath, resultPath }, '[DEBUG]: toParquet');
-  return conn.run(
-    `COPY ( SELECT * FROM read_csv_auto('s3://${originPath}')) 
-    TO 's3://${resultPath}' (FORMAT PARQUET);`,
-  );
+
+  if (partition) {
+    // COMPRESSION ZSTD: very common in data lakes, consider using it
+    return conn.run(
+      `COPY ( SELECT *, 
+                year(timeinstant) as year,
+                month(timeinstant) as month,
+                day(timeinstant) as day
+                FROM read_csv_auto('s3://${originPath}')) 
+      TO 's3://${resultPath}' (FORMAT PARQUET, PARTITION_BY (year, month, day), COMPRESSION ZSTD);`,
+    );
+  } else {
+    return conn.run(
+      `COPY ( SELECT * FROM read_csv_auto('s3://${originPath}')) 
+      TO 's3://${resultPath}' (FORMAT PARQUET);`,
+    );
+  }
 }
 
-export function buildDAQuery(service, fdaId, userQuery) {
+export function buildDAQuery(service, fdaId, userQuery, partitioned) {
   if (!userQuery || typeof userQuery !== 'string') {
     throw new FDAError(400, 'BadRequest', 'Invalid DA query');
   }
@@ -408,7 +421,11 @@ export function buildDAQuery(service, fdaId, userQuery) {
 
   const parquetPath = `s3://${service}/${fdaId}.parquet`;
 
-  return `FROM read_parquet('${parquetPath}') ${trimmed}`;
+  if (partitioned) {
+    return `FROM read_parquet('${parquetPath}/**/*.parquet') ${trimmed}`;
+  } else {
+    return `FROM read_parquet('${parquetPath}') ${trimmed}`;
+  }
 }
 
 async function configureConn(conn) {
