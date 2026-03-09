@@ -228,7 +228,7 @@ describe('FDA API - integration (run app as child process)', () => {
       .withExposedPorts(27017)
       .withWaitStrategy(Wait.forLogMessage(/Waiting for connections/))
       .start();
-    mongoUri = `mongodb://${mongo.getHost()}:${mongo.getMappedPort(27017)}`;
+    mongoUri = `mongodb://${mongo.getHost()}:${mongo.getMappedPort(27017)}/test-db`;
 
     postgis = await new GenericContainer('postgis/postgis:15-3.3')
       .withEnvironment({
