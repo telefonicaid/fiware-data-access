@@ -422,6 +422,13 @@ function getPartitionConf(partitionType, timeColumn = 'none') {
     `,
       partitionBy: 'year, month, day',
     },
+    week: {
+      columns: `
+      year(${timeColumn}) as year,
+      strftime(${timeColumn}, '%Y-%W') as week
+      `,
+      partitionBy: 'year, week',
+    },
     month: {
       columns: `
       year(${timeColumn}) as year,
