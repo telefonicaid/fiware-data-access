@@ -383,11 +383,17 @@ function isInEnum(value, enumValues) {
   return enumValues.includes(value);
 }
 
-export function toParquet(conn, originPath, resultPath, partitionType) {
+export function toParquet(
+  conn,
+  originPath,
+  resultPath,
+  partitionType,
+  timeColumn,
+) {
   logger.debug({ originPath, resultPath }, '[DEBUG]: toParquet');
 
   if (partitionType) {
-    const { cols, partitionBy } = getPartitionConf(partitionType);
+    const { cols, partitionBy } = getPartitionConf(partitionType, timeColumn);
 
     // COMPRESSION ZSTD: very common in data lakes, consider using it (configurable in fda)
     return conn.run(
@@ -403,26 +409,33 @@ export function toParquet(conn, originPath, resultPath, partitionType) {
   }
 }
 
-function getPartitionConf(partitionType) {
+function getPartitionConf(partitionType, timeColumn) {
+  if (typeof timeColumn !== 'string') {
+    throw new FDAError(
+      400,
+      'PartitionError',
+      `Incorrect partition type: ${partitionType}.`,
+    );
+  }
   const PARTITIONS = {
     day: {
       columns: `
-      year(timeinstant) as year,
-      month(timeinstant) as month,
-      day(timeinstant) as day
+      year(${timeColumn}) as year,
+      month(${timeColumn}) as month,
+      day(${timeColumn}) as day
     `,
       partitionBy: 'year, month, day',
     },
     month: {
       columns: `
-      year(timeinstant) as year,
-      month(timeinstant) as month
+      year(${timeColumn}) as year,
+      month(${timeColumn}) as month
     `,
       partitionBy: 'year, month',
     },
     year: {
       columns: `
-      year(timeinstant) as year
+      year(${timeColumn}) as year
     `,
       partitionBy: 'year',
     },
@@ -435,8 +448,8 @@ function getPartitionConf(partitionType) {
   const partitionConf = PARTITIONS[partitionType];
   if (!partitionConf) {
     throw new FDAError(
-      404,
-      'DaNotFound',
+      400,
+      'PartitionError',
       `Incorrect partition type: ${partitionType}.`,
     );
   }
