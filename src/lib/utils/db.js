@@ -114,6 +114,7 @@ export async function runPreparedStatement(
       `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`,
     );
   }
+  // TODO be careful with the hardcoded true
   const query = buildDAQuery(service, fdaId, da.query, true);
 
   const stmt = await conn.prepare(query);
@@ -162,6 +163,7 @@ export async function runPreparedStatementStream(
       `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`,
     );
   }
+  // TODO be careful with the hardcoded true
   const query = buildDAQuery(service, fdaId, da.query, true);
 
   const stmt = await conn.prepare(query);
@@ -389,27 +391,21 @@ export function toParquet(
   resultPath,
   partitionType,
   timeColumn,
+  compression,
 ) {
   logger.debug({ originPath, resultPath }, '[DEBUG]: toParquet');
 
-  if (partitionType) {
-    const { cols, partitionBy } = getPartitionConf(partitionType, timeColumn);
+  const { cols, partitionBy } = getPartitionConf(partitionType, timeColumn);
+  const compressionString = compression ? `, COMPRESSION ZSTD` : '';
 
-    // COMPRESSION ZSTD: very common in data lakes, consider using it (configurable in fda)
-    return conn.run(
-      `COPY ( SELECT ${cols}
+  return conn.run(
+    `COPY ( SELECT ${cols}
                 FROM read_csv_auto('s3://${originPath}')) 
-      TO 's3://${resultPath}' (FORMAT PARQUET, ${partitionBy} COMPRESSION ZSTD);`,
-    );
-  } else {
-    return conn.run(
-      `COPY ( SELECT * FROM read_csv_auto('s3://${originPath}')) 
-      TO 's3://${resultPath}' (FORMAT PARQUET);`,
-    );
-  }
+      TO 's3://${resultPath}' (FORMAT PARQUET ${partitionBy} ${compressionString});`,
+  );
 }
 
-function getPartitionConf(partitionType, timeColumn) {
+function getPartitionConf(partitionType, timeColumn = 'none') {
   if (typeof timeColumn !== 'string') {
     throw new FDAError(
       400,
@@ -456,7 +452,7 @@ function getPartitionConf(partitionType, timeColumn) {
 
   const cols = partitionConf.columns ? `*, ${partitionConf.columns}` : '*';
   const partitionBy = partitionConf.partitionBy
-    ? `PARTITION_BY (${partitionConf.partitionBy}),`
+    ? `, PARTITION_BY (${partitionConf.partitionBy})`
     : '';
 
   return { cols, partitionBy };
