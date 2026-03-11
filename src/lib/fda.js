@@ -195,6 +195,8 @@ export async function fetchFDA(
   servicePath,
   description,
   refreshPolicy,
+  timeColumn,
+  objStgConf,
 ) {
   await createFDAMongo(
     fdaId,
@@ -212,6 +214,8 @@ export async function fetchFDA(
     fdaId,
     query,
     service,
+    timeColumn,
+    objStgConf,
   });
 
   // Schedule refreshes according to policy
@@ -220,7 +224,7 @@ export async function fetchFDA(
     await agenda.every(
       refreshPolicy.value,
       'refresh-fda',
-      { fdaId, query, service },
+      { fdaId, query, service, timeColumn, objStgConf },
       {
         unique: {
           name: 'refresh-fda',
@@ -229,6 +233,50 @@ export async function fetchFDA(
       },
     );
   }
+
+  if (refreshPolicy?.type === 'window') {
+    const { interval, windowQuery } = getUpdateWindow(
+      refreshPolicy.value,
+      query,
+      timeColumn,
+    );
+
+    // unique is not really needed since we check existence before, but it adds an extra layer of safety in case of duplicate calls
+    await agenda.every(
+      interval,
+      'refresh-fda',
+      { fdaId, windowQuery, service, timeColumn, objStgConf },
+      {
+        unique: {
+          name: 'refresh-fda',
+          'data.fdaId': fdaId,
+        },
+      },
+    );
+  }
+}
+
+function getUpdateWindow(windowType, query, timeColumn) {
+  const slidingWindow = {
+    hourly: {
+      interval: '0 * * * *',
+      windowQuery: `SELECT * FROM (${query}) q WHERE ${timeColumn} >= NOW() - INTERVAL '1 hour'`,
+    },
+    daily: {
+      interval: '0 0 * * *',
+      windowQuery: `SELECT * FROM (${query}) q WHERE ${timeColumn} >= NOW() - INTERVAL '1 day'`,
+    },
+    weekly: {
+      interval: '0 0 * * 0',
+      windowQuery: `SELECT * FROM (${query}) q WHERE ${timeColumn} >= NOW() - INTERVAL '1 week'`,
+    },
+    monthly: {
+      interval: '0 0 1 * *',
+      windowQuery: `SELECT * FROM (${query}) q WHERE ${timeColumn} >= NOW() - INTERVAL '1 month'`,
+    },
+  };
+
+  return slidingWindow[windowType];
 }
 
 export async function updateFDA(service, fdaId) {
@@ -244,11 +292,25 @@ export async function updateFDA(service, fdaId) {
   });
 }
 
-export async function processFDAAsync(fdaId, query, service) {
+export async function processFDAAsync(
+  fdaId,
+  query,
+  service,
+  timeColumn,
+  objStgConf,
+) {
   try {
     await updateFDAStatus(service, fdaId, 'fetching', 10);
 
-    await uploadTableToObjStg(service, service, query, service, fdaId);
+    await uploadTableToObjStg(
+      service,
+      service,
+      query,
+      service,
+      fdaId,
+      timeColumn,
+      objStgConf,
+    );
 
     await updateFDAStatus(service, fdaId, 'completed', 100);
   } catch (err) {
@@ -326,7 +388,15 @@ export async function deleteDA(service, fdaId, daId) {
   await removeDA(service, fdaId, daId);
 }
 
-async function uploadTableToObjStg(service, database, query, bucket, path) {
+async function uploadTableToObjStg(
+  service,
+  database,
+  query,
+  bucket,
+  path,
+  timeColumn,
+  objStgConf,
+) {
   const s3Client = getS3Client(
     `${config.objstg.protocol}://${config.objstg.endpoint}`,
     config.objstg.usr,
@@ -339,7 +409,14 @@ async function uploadTableToObjStg(service, database, query, bucket, path) {
   try {
     await updateFDAStatus(service, path, 'transforming', 60);
     const parquetPath = getPath(bucket, path, '.parquet');
-    await toParquet(conn, getPath(bucket, path, '.csv'), parquetPath, true);
+    await toParquet(
+      conn,
+      getPath(bucket, path, '.csv'),
+      parquetPath,
+      timeColumn,
+      objStgConf.partition,
+      objStgConf.compression,
+    );
     await updateFDAStatus(service, path, 'uploading', 80);
     await dropFile(s3Client, bucket, `${path}.csv`);
   } catch (e) {

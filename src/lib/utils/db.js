@@ -389,8 +389,8 @@ export function toParquet(
   conn,
   originPath,
   resultPath,
-  partitionType,
   timeColumn,
+  partitionType,
   compression,
 ) {
   logger.debug({ originPath, resultPath }, '[DEBUG]: toParquet');
