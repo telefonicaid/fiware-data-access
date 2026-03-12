@@ -114,7 +114,8 @@ export async function runPreparedStatement(
       `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`,
     );
   }
-  const query = buildDAQuery(service, fdaId, da.query);
+  // TODO be careful with the hardcoded true
+  const query = buildDAQuery(service, fdaId, da.query, true);
 
   const stmt = await conn.prepare(query);
 
@@ -162,7 +163,8 @@ export async function runPreparedStatementStream(
       `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`,
     );
   }
-  const query = buildDAQuery(service, fdaId, da.query);
+  // TODO be careful with the hardcoded true
+  const query = buildDAQuery(service, fdaId, da.query, true);
 
   const stmt = await conn.prepare(query);
 
@@ -383,15 +385,83 @@ function isInEnum(value, enumValues) {
   return enumValues.includes(value);
 }
 
-export function toParquet(conn, originPath, resultPath) {
+export function toParquet(
+  conn,
+  originPath,
+  resultPath,
+  timeColumn,
+  partitionType,
+  compression,
+) {
   logger.debug({ originPath, resultPath }, '[DEBUG]: toParquet');
+
+  const { cols, partitionBy } = getPartitionConf(partitionType, timeColumn);
+  const compressionString = compression ? `, COMPRESSION ZSTD` : '';
+
   return conn.run(
-    `COPY ( SELECT * FROM read_csv_auto('s3://${originPath}')) 
-    TO 's3://${resultPath}' (FORMAT PARQUET);`,
+    `COPY ( SELECT ${cols}
+                FROM read_csv_auto('s3://${originPath}')) 
+      TO 's3://${resultPath}' (FORMAT PARQUET ${partitionBy} ${compressionString});`,
   );
 }
 
-export function buildDAQuery(service, fdaId, userQuery) {
+function getPartitionConf(partitionType = 'none', timeColumn) {
+  if (!timeColumn && partitionType !== 'none') {
+    throw new FDAError(400, 'PartitionError', `Missing timeColumn value.`);
+  }
+  const PARTITIONS = {
+    day: {
+      columns: `
+      year(${timeColumn}) as year,
+      month(${timeColumn}) as month,
+      day(${timeColumn}) as day
+    `,
+      partitionBy: 'year, month, day',
+    },
+    week: {
+      columns: `
+      year(${timeColumn}) as year,
+      strftime(${timeColumn}, '%Y-%W') as week
+      `,
+      partitionBy: 'year, week',
+    },
+    month: {
+      columns: `
+      year(${timeColumn}) as year,
+      month(${timeColumn}) as month
+    `,
+      partitionBy: 'year, month',
+    },
+    year: {
+      columns: `
+      year(${timeColumn}) as year
+    `,
+      partitionBy: 'year',
+    },
+    none: {
+      columns: '',
+      partitionBy: '',
+    },
+  };
+
+  const partitionConf = PARTITIONS[partitionType];
+  if (!partitionConf) {
+    throw new FDAError(
+      400,
+      'PartitionError',
+      `Incorrect partition type: ${partitionType}.`,
+    );
+  }
+
+  const cols = partitionConf.columns ? `*, ${partitionConf.columns}` : '*';
+  const partitionBy = partitionConf.partitionBy
+    ? `, PARTITION_BY (${partitionConf.partitionBy})`
+    : '';
+
+  return { cols, partitionBy };
+}
+
+export function buildDAQuery(service, fdaId, userQuery, partitioned) {
   if (!userQuery || typeof userQuery !== 'string') {
     throw new FDAError(400, 'BadRequest', 'Invalid DA query');
   }
@@ -408,7 +478,11 @@ export function buildDAQuery(service, fdaId, userQuery) {
 
   const parquetPath = `s3://${service}/${fdaId}.parquet`;
 
-  return `FROM read_parquet('${parquetPath}') ${trimmed}`;
+  if (partitioned) {
+    return `FROM read_parquet('${parquetPath}/**/*.parquet') ${trimmed}`;
+  } else {
+    return `FROM read_parquet('${parquetPath}') ${trimmed}`;
+  }
 }
 
 async function configureConn(conn) {

@@ -33,7 +33,7 @@ import {
   buildDAQuery,
 } from './utils/db.js';
 import { uploadTable } from './utils/pg.js';
-import { getS3Client, dropFile } from './utils/aws.js';
+import { getS3Client, dropFile, moveObject, listObjects } from './utils/aws.js';
 import {
   createFDAMongo,
   regenerateFDA,
@@ -195,6 +195,8 @@ export async function fetchFDA(
   servicePath,
   description,
   refreshPolicy,
+  timeColumn,
+  objStgConf,
 ) {
   await createFDAMongo(
     fdaId,
@@ -203,6 +205,8 @@ export async function fetchFDA(
     servicePath,
     description,
     refreshPolicy,
+    timeColumn,
+    objStgConf,
   );
 
   const agenda = getAgenda();
@@ -212,6 +216,8 @@ export async function fetchFDA(
     fdaId,
     query,
     service,
+    timeColumn,
+    objStgConf,
   });
 
   // Schedule refreshes according to policy
@@ -220,7 +226,7 @@ export async function fetchFDA(
     await agenda.every(
       refreshPolicy.value,
       'refresh-fda',
-      { fdaId, query, service },
+      { fdaId, query, service, timeColumn, objStgConf },
       {
         unique: {
           name: 'refresh-fda',
@@ -229,6 +235,57 @@ export async function fetchFDA(
       },
     );
   }
+
+  if (refreshPolicy?.type === 'window') {
+    const { interval, windowQuery } = getUpdateWindow(
+      refreshPolicy.value,
+      query,
+      timeColumn,
+    );
+
+    // partitionFlag lets us know we are refreshing already existing partitioned files for performance purposes
+    await agenda.every(
+      interval,
+      'refresh-fda',
+      {
+        fdaId,
+        query: windowQuery,
+        service,
+        timeColumn,
+        objStgConf,
+        partitionFlag: true,
+      },
+      {
+        unique: {
+          name: 'refresh-fda',
+          'data.fdaId': fdaId,
+        },
+      },
+    );
+  }
+}
+
+function getUpdateWindow(windowType, query, timeColumn) {
+  const slidingWindow = {
+    hourly: {
+      interval: '0 * * * *',
+      windowQuery: `SELECT * FROM (${query}) q WHERE ${timeColumn} >= NOW() - INTERVAL '1 hour'`,
+    },
+    daily: {
+      interval: '0 0 * * *',
+      windowQuery: `SELECT * FROM (${query}) q WHERE ${timeColumn} >= NOW() - INTERVAL '1 day'`,
+    },
+    weekly: {
+      interval: '0 0 * * 0',
+      windowQuery: `SELECT * FROM (${query}) q WHERE ${timeColumn} >= NOW() - INTERVAL '1 week'`,
+    },
+    monthly: {
+      interval: '0 0 1 * *',
+      windowQuery: `SELECT * FROM (${query}) q WHERE ${timeColumn} >= NOW() - INTERVAL '1 month'`,
+    },
+  };
+
+  return slidingWindow[windowType];
 }
 
 export async function updateFDA(service, fdaId) {
@@ -241,14 +298,32 @@ export async function updateFDA(service, fdaId) {
     fdaId,
     query: previous.query,
     service,
+    timeColumn: previous.timeColumn,
+    objStgConf: previous.objStgConf,
   });
 }
 
-export async function processFDAAsync(fdaId, query, service) {
+export async function processFDAAsync(
+  fdaId,
+  query,
+  service,
+  timeColumn,
+  objStgConf,
+  partitionFlag,
+) {
   try {
     await updateFDAStatus(service, fdaId, 'fetching', 10);
 
-    await uploadTableToObjStg(service, service, query, service, fdaId);
+    await uploadTableToObjStg(
+      service,
+      service,
+      query,
+      service,
+      fdaId,
+      timeColumn,
+      objStgConf,
+      partitionFlag,
+    );
 
     await updateFDAStatus(service, fdaId, 'completed', 100);
   } catch (err) {
@@ -272,6 +347,7 @@ export async function deleteFDA(service, fdaId) {
     config.objstg.usr,
     config.objstg.pass,
   );
+  // TODO no se esta borrando el csv correctamente en los casos de partition
   await dropFile(s3Client, service, getPath('', fdaId, '.parquet'));
   await removeFDA(service, fdaId);
 
@@ -325,7 +401,16 @@ export async function deleteDA(service, fdaId, daId) {
   await removeDA(service, fdaId, daId);
 }
 
-async function uploadTableToObjStg(service, database, query, bucket, path) {
+async function uploadTableToObjStg(
+  service,
+  database,
+  query,
+  bucket,
+  path,
+  timeColumn,
+  objStgConf,
+  partitionFlag,
+) {
   const s3Client = getS3Client(
     `${config.objstg.protocol}://${config.objstg.endpoint}`,
     config.objstg.usr,
@@ -337,10 +422,41 @@ async function uploadTableToObjStg(service, database, query, bucket, path) {
   const conn = await getDBConnection();
   try {
     await updateFDAStatus(service, path, 'transforming', 60);
-    const parquetPath = getPath(bucket, path, '.parquet');
-    await toParquet(conn, getPath(bucket, path, '.csv'), parquetPath);
+
+    // DuckDB cant overwrite files in Minio, so for partitioned files we upload them in a tmp file and the move them
+    // We only do this for files that already exist (partitionFlag=true) so upload performance on partitions doesnt get affected
+    const parquetPath = partitionFlag
+      ? getPath(bucket, 'tmp/' + path, '.parquet')
+      : getPath(bucket, path, '.parquet');
+
+    await toParquet(
+      conn,
+      getPath(bucket, path, '.csv'),
+      parquetPath,
+      timeColumn,
+      objStgConf.partition,
+      objStgConf.compression,
+    );
+
+    if (partitionFlag) {
+      const objectsList = await listObjects(
+        s3Client,
+        bucket,
+        `tmp/${path}.parquet`,
+      );
+      await moveObject(
+        s3Client,
+        bucket,
+        `${bucket}/${objectsList}`,
+        objectsList[0].replace('tmp/', ''),
+      );
+      await dropFile(s3Client, bucket, objectsList[0]);
+    }
+
     await updateFDAStatus(service, path, 'uploading', 80);
     await dropFile(s3Client, bucket, `${path}.csv`);
+  } catch (e) {
+    throw new FDAError(500, 'UploadError', e.message);
   } finally {
     await releaseDBConnection(conn);
   }

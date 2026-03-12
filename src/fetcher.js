@@ -32,8 +32,27 @@ export async function startFetcher() {
   const agenda = getAgenda();
 
   agenda.define('refresh-fda', async (job) => {
-    const { fdaId, query, service } = job.attrs.data;
-    await processFDAAsync(fdaId, query, service);
+    const {
+      fdaId,
+      query,
+      service,
+      timeColumn,
+      objStgConf,
+      partitionFlag = false,
+    } = job.attrs.data;
+    // Should agenda also log errors?
+    try {
+      await processFDAAsync(
+        fdaId,
+        query,
+        service,
+        timeColumn,
+        objStgConf,
+        partitionFlag,
+      );
+    } catch (e) {
+      console.log('Fetcher error: ', e);
+    }
   });
 
   await agenda.start();
