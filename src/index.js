@@ -139,6 +139,8 @@ app.post('/fdas', async (req, res) => {
     'query',
     'description',
     'refreshPolicy',
+    'timeColumn',
+    'objStgConf',
   ]);
   const { id, query, description, refreshPolicy, timeColumn, objStgConf } =
     req.body;

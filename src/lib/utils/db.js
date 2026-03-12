@@ -405,13 +405,9 @@ export function toParquet(
   );
 }
 
-function getPartitionConf(partitionType, timeColumn = 'none') {
-  if (typeof timeColumn !== 'string') {
-    throw new FDAError(
-      400,
-      'PartitionError',
-      `Incorrect partition type: ${partitionType}.`,
-    );
+function getPartitionConf(partitionType = 'none', timeColumn) {
+  if (!timeColumn && partitionType !== 'none') {
+    throw new FDAError(400, 'PartitionError', `Missing timeColumn value.`);
   }
   const PARTITIONS = {
     day: {

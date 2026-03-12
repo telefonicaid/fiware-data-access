@@ -33,7 +33,7 @@ import {
   buildDAQuery,
 } from './utils/db.js';
 import { uploadTable } from './utils/pg.js';
-import { getS3Client, dropFile } from './utils/aws.js';
+import { getS3Client, dropFile, moveObject, listObjects } from './utils/aws.js';
 import {
   createFDAMongo,
   regenerateFDA,
@@ -205,6 +205,8 @@ export async function fetchFDA(
     servicePath,
     description,
     refreshPolicy,
+    timeColumn,
+    objStgConf,
   );
 
   const agenda = getAgenda();
@@ -241,11 +243,18 @@ export async function fetchFDA(
       timeColumn,
     );
 
-    // unique is not really needed since we check existence before, but it adds an extra layer of safety in case of duplicate calls
+    // partitionFlag lets us know we are refreshing already existing partitioned files for performance purposes
     await agenda.every(
       interval,
       'refresh-fda',
-      { fdaId, windowQuery, service, timeColumn, objStgConf },
+      {
+        fdaId,
+        query: windowQuery,
+        service,
+        timeColumn,
+        objStgConf,
+        partitionFlag: true,
+      },
       {
         unique: {
           name: 'refresh-fda',
@@ -289,6 +298,8 @@ export async function updateFDA(service, fdaId) {
     fdaId,
     query: previous.query,
     service,
+    timeColumn: previous.timeColumn,
+    objStgConf: previous.objStgConf,
   });
 }
 
@@ -298,6 +309,7 @@ export async function processFDAAsync(
   service,
   timeColumn,
   objStgConf,
+  partitionFlag,
 ) {
   try {
     await updateFDAStatus(service, fdaId, 'fetching', 10);
@@ -310,6 +322,7 @@ export async function processFDAAsync(
       fdaId,
       timeColumn,
       objStgConf,
+      partitionFlag,
     );
 
     await updateFDAStatus(service, fdaId, 'completed', 100);
@@ -396,6 +409,7 @@ async function uploadTableToObjStg(
   path,
   timeColumn,
   objStgConf,
+  partitionFlag,
 ) {
   const s3Client = getS3Client(
     `${config.objstg.protocol}://${config.objstg.endpoint}`,
@@ -408,7 +422,13 @@ async function uploadTableToObjStg(
   const conn = await getDBConnection();
   try {
     await updateFDAStatus(service, path, 'transforming', 60);
-    const parquetPath = getPath(bucket, path, '.parquet');
+
+    // DuckDB cant overwrite files in Minio, so for partitioned files we upload them in a tmp file and the move them
+    // We only do this for files that already exist (partitionFlag=true) so upload performance on partitions doesnt get affected
+    const parquetPath = partitionFlag
+      ? getPath(bucket, 'tmp/' + path, '.parquet')
+      : getPath(bucket, path, '.parquet');
+
     await toParquet(
       conn,
       getPath(bucket, path, '.csv'),
@@ -417,6 +437,22 @@ async function uploadTableToObjStg(
       objStgConf.partition,
       objStgConf.compression,
     );
+
+    if (partitionFlag) {
+      const objectsList = await listObjects(
+        s3Client,
+        bucket,
+        `tmp/${path}.parquet`,
+      );
+      await moveObject(
+        s3Client,
+        bucket,
+        `${bucket}/${objectsList}`,
+        objectsList[0].replace('tmp/', ''),
+      );
+      await dropFile(s3Client, bucket, objectsList[0]);
+    }
+
     await updateFDAStatus(service, path, 'uploading', 80);
     await dropFile(s3Client, bucket, `${path}.csv`);
   } catch (e) {

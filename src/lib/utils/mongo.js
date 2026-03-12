@@ -66,6 +66,8 @@ export async function createFDAMongo(
   servicePath,
   description,
   refreshPolicy,
+  timeColumn,
+  objStgConf,
 ) {
   logger.debug({ fdaId, query, service, description }, '[DEBUG]: createFDA');
   const collection = await getCollection();
@@ -82,6 +84,8 @@ export async function createFDAMongo(
       refreshPolicy: refreshPolicy ?? { type: 'none' },
       ...(servicePath && { servicePath }),
       ...(description && { description }),
+      timeColumn,
+      objStgConf,
     });
   } catch (e) {
     if (e.code === 11000) {
