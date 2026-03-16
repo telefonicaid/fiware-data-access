@@ -574,6 +574,20 @@ describe('FDA API - integration (run app as child process)', () => {
       fdaId: pendingFdaId,
       timeout: 30000,
     });
+
+    const queryAfterCompletion = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+        pendingFdaId,
+      )}&daId=${encodeURIComponent(pendingDaId)}&minAge=20`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    expect(queryAfterCompletion.status).toBe(200);
+    expect(queryAfterCompletion.json).toEqual([
+      { id: '1', name: 'ana', age: '30' },
+      { id: '3', name: 'carlos', age: '40' },
+    ]);
   });
 
   test('GET /fdas returns list', async () => {
