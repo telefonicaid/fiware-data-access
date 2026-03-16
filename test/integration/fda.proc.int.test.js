@@ -613,6 +613,47 @@ describe('FDA API - integration (run app as child process)', () => {
     ]);
   });
 
+  test('GET /fdas/:fdaId/das and GET /fdas/:fdaId/das/:daId return stored DA and DaNotFound for unknown DA', async () => {
+    const listRes = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/fdas/${fdaId}/das`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    if (listRes.status >= 400) {
+      console.error(
+        'GET /fdas/:fdaId/das failed:',
+        listRes.status,
+        listRes.json ?? listRes.text,
+      );
+    }
+
+    expect(listRes.status).toBe(200);
+    expect(Array.isArray(listRes.json)).toBe(true);
+    expect(listRes.json.some((x) => x.id === daId)).toBe(true);
+
+    const getRes = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/fdas/${fdaId}/das/${daId}`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    expect(getRes.status).toBe(200);
+    expect(getRes.json).toMatchObject({
+      id: daId,
+      description: 'age filter',
+    });
+
+    const missingRes = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/fdas/${fdaId}/das/da_does_not_exist`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    expect(missingRes.status).toBe(404);
+    expect(missingRes.json.error).toBe('DaNotFound');
+  });
+
   test('POST /fdas/:fdaId/das rejects query with FROM clause', async () => {
     const badQuery = `
       FROM read_parquet('s3://some/path')
