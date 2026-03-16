@@ -358,6 +358,17 @@ Flow:
 4. Fetcher picks up job
 5. Mongo updated throughout lifecycle
 
+### Query availability during first fetch
+
+To keep early DA validation without waiting for the first asynchronous job completion:
+
+-   FDA provisioning creates the canonical `${fdaId}.parquet` synchronously from a one-row snapshot.
+-   DA create/update validates compatibility using DuckDB `prepare` against that parquet.
+-   Query execution is blocked until the first successful fetch has completed (`lastFetch` exists), returning
+    `409 FDAUnavailable` beforehand.
+-   After the first successful fetch, queries can still run during later `fetching` states using the last available
+    parquet snapshot.
+
 ---
 
 ## 12. Observability & State Tracking
