@@ -332,6 +332,7 @@ describe('FDA API - integration (run app as child process)', () => {
 
         FDA_ROLE_APISERVER: 'true',
         FDA_ROLE_FETCHER: 'false',
+        FDA_ROLE_SYNCQUERIES: 'true',
 
         FDA_PG_USER: 'postgres',
         FDA_PG_PASSWORD: 'postgres',
@@ -380,6 +381,7 @@ describe('FDA API - integration (run app as child process)', () => {
 
         FDA_ROLE_APISERVER: 'false',
         FDA_ROLE_FETCHER: 'true',
+        FDA_ROLE_SYNCQUERIES: 'false',
 
         FDA_PG_USER: 'postgres',
         FDA_PG_PASSWORD: 'postgres',
@@ -775,6 +777,85 @@ describe('FDA API - integration (run app as child process)', () => {
       { id: '1', name: 'ana', age: '30' },
       { id: '3', name: 'carlos', age: '40' },
     ]);
+  });
+
+  test('GET /query with fresh=true runs query against PostgreSQL source', async () => {
+    const daFreshId = 'da_fresh_users';
+
+    const createDa = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas/${fdaId}/das`,
+      headers: { 'Fiware-Service': service },
+      body: {
+        id: daFreshId,
+        description: 'fresh query test',
+        query: `
+          SELECT id, name, age
+          WHERE age > $minAge
+          ORDER BY id
+        `,
+        params: [
+          {
+            name: 'minAge',
+            type: 'Number',
+            required: true,
+          },
+        ],
+      },
+    });
+
+    expect(createDa.status).toBe(201);
+
+    const insertedId = 1001;
+    const pgClient = new Client({
+      host: pgHost,
+      port: pgPort,
+      user: 'postgres',
+      password: 'postgres',
+      database: service,
+      connectionTimeoutMillis: 10_000,
+    });
+
+    await connectWithRetry(pgClient);
+
+    try {
+      await pgClient.query(
+        `INSERT INTO public.users (id, name, age, timeinstant, authorized)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [insertedId, 'diana', 35, '2020-08-17T18:25:28.332Z', true],
+      );
+
+      const cachedRes = await httpReq({
+        method: 'GET',
+        url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+          fdaId,
+        )}&daId=${encodeURIComponent(daFreshId)}&minAge=25`,
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect(cachedRes.status).toBe(200);
+      expect(cachedRes.json.map((x) => x.name)).toEqual(['ana', 'carlos']);
+
+      const freshRes = await httpReq({
+        method: 'GET',
+        url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+          fdaId,
+        )}&daId=${encodeURIComponent(daFreshId)}&minAge=25&fresh=true`,
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect(freshRes.status).toBe(200);
+      expect(freshRes.json.map((x) => x.name)).toEqual([
+        'ana',
+        'carlos',
+        'diana',
+      ]);
+    } finally {
+      await pgClient.query('DELETE FROM public.users WHERE id = $1', [
+        insertedId,
+      ]);
+      await pgClient.end();
+    }
   });
 
   test('POST /fdas/:fdaId/das + GET /query using default params', async () => {
