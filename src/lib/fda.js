@@ -334,26 +334,21 @@ export async function deleteDA(service, fdaId, daId) {
   await removeDA(service, fdaId, daId);
 }
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function uploadTableToObjStg(service, database, query, bucket, path) {
   const s3Client = getS3Client(
     `${config.objstg.protocol}://${config.objstg.endpoint}`,
     config.objstg.usr,
     config.objstg.pass,
   );
-  await sleep(20000);
   await updateFDAStatus(service, path, 'fetching', 20);
   await uploadTable(s3Client, bucket, database, query, path);
 
   const conn = await getDBConnection();
   try {
-    await sleep(2000);
     await updateFDAStatus(service, path, 'transforming', 60);
     const parquetPath = getPath(bucket, path, '.parquet');
     await toParquet(conn, getPath(bucket, path, '.csv'), parquetPath);
-    await sleep(2000);
     await updateFDAStatus(service, path, 'uploading', 80);
-    await sleep(2000);
     await dropFile(s3Client, bucket, `${path}.csv`);
   } finally {
     await releaseDBConnection(conn);
