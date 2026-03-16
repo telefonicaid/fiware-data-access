@@ -31,8 +31,9 @@ import {
   toParquet,
   checkParams,
   buildDAQuery,
+  resolveDAParams,
 } from './utils/db.js';
-import { uploadTable } from './utils/pg.js';
+import { uploadTable, getPgClient } from './utils/pg.js';
 import { getS3Client, dropFile } from './utils/aws.js';
 import {
   createFDAMongo,
@@ -68,7 +69,11 @@ export async function getFDA(service, fdaId) {
   return fda;
 }
 
-export async function executeQuery({ service, params }) {
+export async function executeQuery({ service, params, fresh = false }) {
+  if (fresh) {
+    return executeFreshQuery({ service, params });
+  }
+
   const { fdaId, daId, ...rest } = params;
 
   const conn = await getDBConnection();
@@ -80,7 +85,17 @@ export async function executeQuery({ service, params }) {
   }
 }
 
-export async function executeQueryStream({ service, params, req, res }) {
+export async function executeQueryStream({
+  service,
+  params,
+  req,
+  res,
+  fresh = false,
+}) {
+  if (fresh) {
+    return executeFreshQueryStream({ service, params, res });
+  }
+
   const { fdaId, daId, ...rest } = params;
 
   const conn = await getDBConnection();
@@ -156,6 +171,160 @@ export async function executeQueryStream({ service, params, req, res }) {
   }
 
   return res.end();
+}
+
+async function executeFreshQuery({ service, params }) {
+  if (!config.roles.syncQueries) {
+    throw new FDAError(
+      503,
+      'SyncQueriesDisabled',
+      'Fresh query mode is disabled in this instance',
+    );
+  }
+
+  const { text, values } = await buildFreshQueryStatement(service, params);
+
+  const pgClient = getPgClient(
+    config.pg.usr,
+    config.pg.pass,
+    config.pg.host,
+    config.pg.port,
+    service,
+  );
+
+  try {
+    await pgClient.connect();
+    const result = await pgClient.query(text, values);
+    return convertBigInt(result.rows);
+  } catch (e) {
+    if (e instanceof FDAError) {
+      throw e;
+    }
+
+    throw new FDAError(
+      500,
+      'PostgresServerError',
+      `Error running fresh query: ${e.message}`,
+    );
+  } finally {
+    await pgClient.end();
+  }
+}
+
+async function executeFreshQueryStream({ service, params, res }) {
+  const rows = await executeFreshQuery({ service, params });
+
+  res.setHeader('Content-Type', 'application/x-ndjson');
+  for (const row of rows) {
+    res.write(JSON.stringify(row) + '\n');
+  }
+
+  return res.end();
+}
+
+async function buildFreshQueryStatement(service, params) {
+  const { fdaId, daId, ...rest } = params;
+
+  const da = await retrieveDA(service, fdaId, daId);
+  if (!da?.query) {
+    throw new FDAError(
+      404,
+      'DaNotFound',
+      `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`,
+    );
+  }
+
+  const fda = await retrieveFDA(service, fdaId);
+  if (!fda?.query) {
+    throw new FDAError(
+      404,
+      'FDANotFound',
+      `FDA ${fdaId} not found in service ${service}`,
+    );
+  }
+
+  const validatedParams = resolveDAParams(rest || {}, da.params);
+  const freshBaseQuery = buildFreshDAQuery(fda.query, da.query);
+
+  return replaceNamedParamsWithPositional(freshBaseQuery, validatedParams);
+}
+
+function buildFreshDAQuery(fdaQuery, daQuery) {
+  const cleanFdaQuery = removeTrailingSemicolon(fdaQuery?.trim() || '');
+  const cleanDaQuery = removeTrailingSemicolon(daQuery?.trim() || '');
+
+  if (!cleanDaQuery || /^from\b/i.test(cleanDaQuery)) {
+    throw new FDAError(
+      400,
+      'InvalidDAQuery',
+      'DA query must not include FROM clause at start. It is managed internally.',
+    );
+  }
+
+  if (!/^select\b/i.test(cleanDaQuery)) {
+    throw new FDAError(
+      400,
+      'InvalidDAQuery',
+      'Fresh query mode requires DA query to start with SELECT.',
+    );
+  }
+
+  const selectTail = cleanDaQuery.replace(/^select\s+/i, '');
+  const clauseMatch = selectTail.match(
+    /\b(where|group\s+by|having|order\s+by|limit|offset)\b/i,
+  );
+
+  const projection = clauseMatch
+    ? selectTail.slice(0, clauseMatch.index).trim()
+    : selectTail.trim();
+  const clauses = clauseMatch ? selectTail.slice(clauseMatch.index).trim() : '';
+
+  if (!projection) {
+    throw new FDAError(
+      400,
+      'InvalidDAQuery',
+      'DA query must contain a SELECT projection.',
+    );
+  }
+
+  if (/\bfrom\b/i.test(projection)) {
+    throw new FDAError(
+      400,
+      'InvalidDAQuery',
+      'DA query must not include FROM clause. It is managed internally.',
+    );
+  }
+
+  const trailing = clauses ? ` ${clauses}` : '';
+  return `SELECT ${projection} FROM (${cleanFdaQuery}) AS fda_source${trailing}`;
+}
+
+function replaceNamedParamsWithPositional(query, params) {
+  const indexes = new Map();
+  const values = [];
+
+  const text = query.replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (_m, name) => {
+    if (!Object.prototype.hasOwnProperty.call(params, name)) {
+      throw new FDAError(
+        400,
+        'InvalidQueryParam',
+        `Missing required param "${name}".`,
+      );
+    }
+
+    if (!indexes.has(name)) {
+      indexes.set(name, values.length + 1);
+      values.push(params[name]);
+    }
+
+    return `$${indexes.get(name)}`;
+  });
+
+  return { text, values };
+}
+
+function removeTrailingSemicolon(query) {
+  return query.replace(/;+\s*$/, '');
 }
 
 export async function createDA(
