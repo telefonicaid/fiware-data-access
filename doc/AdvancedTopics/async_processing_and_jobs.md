@@ -74,6 +74,10 @@ FDA_ROLE_FETCHER: {
   type: 'boolean',
   default: true,
 },
+FDA_ROLE_SYNCQUERIES: {
+  type: 'boolean',
+  default: false,
+},
 ```
 
 Startup logic:
@@ -95,6 +99,9 @@ if (config.roles.fetcher) {
 | API-only        | ✅  | ❌      | Edge service, request intake |
 | Fetcher-only    | ❌  | ✅      | Dedicated worker node        |
 | Mixed (default) | ✅  | ✅      | Simple deployments           |
+
+`FDA_ROLE_SYNCQUERIES` is an additional API capability flag (not a standalone worker role): when enabled, the API
+accepts `fresh=true` in `GET /query` to execute DA queries directly on PostgreSQL.
 
 ### Why This Matters
 
