@@ -411,6 +411,25 @@ export function buildDAQuery(service, fdaId, userQuery) {
   return `FROM read_parquet('${parquetPath}') ${trimmed}`;
 }
 
+export async function validateDAQuery(conn, service, fdaId, userQuery) {
+  const query = buildDAQuery(service, fdaId, userQuery);
+
+  let stmt;
+  try {
+    stmt = await conn.prepare(query);
+  } catch (e) {
+    throw new FDAError(
+      400,
+      'InvalidDAQuery',
+      `DA query is not compatible with FDA ${fdaId}: ${e.message || e}`,
+    );
+  } finally {
+    if (stmt && typeof stmt.close === 'function') {
+      await stmt.close();
+    }
+  }
+}
+
 async function configureConn(conn) {
   await conn.run('LOAD httpfs;');
   await conn.run(`

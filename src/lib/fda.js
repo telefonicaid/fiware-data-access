@@ -30,7 +30,7 @@ import {
   releaseDBConnection,
   toParquet,
   checkParams,
-  buildDAQuery,
+  validateDAQuery,
 } from './utils/db.js';
 import { uploadTable } from './utils/pg.js';
 import { getS3Client, dropFile } from './utils/aws.js';
@@ -71,6 +71,8 @@ export async function getFDA(service, fdaId) {
 export async function executeQuery({ service, params }) {
   const { fdaId, daId, ...rest } = params;
 
+  await ensureFDAReadyForQuery(service, fdaId);
+
   const conn = await getDBConnection();
 
   try {
@@ -82,6 +84,8 @@ export async function executeQuery({ service, params }) {
 
 export async function executeQueryStream({ service, params, req, res }) {
   const { fdaId, daId, ...rest } = params;
+
+  await ensureFDAReadyForQuery(service, fdaId);
 
   const conn = await getDBConnection();
 
@@ -180,8 +184,7 @@ export async function createDA(
     }
 
     checkParams(params);
-    // Call to buildDAQuery to detect undesired FROM clausules in query
-    buildDAQuery(service, fdaId, userQuery);
+    await validateDAQuery(conn, service, fdaId, userQuery);
     await storeDA(service, fdaId, daId, description, userQuery, params);
   } finally {
     await releaseDBConnection(conn);
@@ -204,6 +207,13 @@ export async function fetchFDA(
     description,
     refreshPolicy,
   );
+
+  try {
+    await createOneRowParquetSync(service, fdaId, query);
+  } catch (err) {
+    await rollbackFDAProvisioning(service, fdaId);
+    throw err;
+  }
 
   const agenda = getAgenda();
 
@@ -313,8 +323,7 @@ export async function putDA(
 
   try {
     checkParams(params);
-    // Call to buildDAQuery to detect undesired FROM clausules in query
-    buildDAQuery(service, fdaId, userQuery);
+    await validateDAQuery(conn, service, fdaId, userQuery);
     await updateDA(service, fdaId, daId, description, userQuery, params);
   } finally {
     await releaseDBConnection(conn);
@@ -325,25 +334,90 @@ export async function deleteDA(service, fdaId, daId) {
   await removeDA(service, fdaId, daId);
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function uploadTableToObjStg(service, database, query, bucket, path) {
   const s3Client = getS3Client(
     `${config.objstg.protocol}://${config.objstg.endpoint}`,
     config.objstg.usr,
     config.objstg.pass,
   );
+  await sleep(20000);
   await updateFDAStatus(service, path, 'fetching', 20);
   await uploadTable(s3Client, bucket, database, query, path);
 
   const conn = await getDBConnection();
   try {
+    await sleep(2000);
     await updateFDAStatus(service, path, 'transforming', 60);
     const parquetPath = getPath(bucket, path, '.parquet');
     await toParquet(conn, getPath(bucket, path, '.csv'), parquetPath);
+    await sleep(2000);
     await updateFDAStatus(service, path, 'uploading', 80);
+    await sleep(2000);
     await dropFile(s3Client, bucket, `${path}.csv`);
   } finally {
     await releaseDBConnection(conn);
   }
+}
+
+async function ensureFDAReadyForQuery(service, fdaId) {
+  const fda = await retrieveFDA(service, fdaId);
+
+  if (!fda) {
+    throw new FDAError(
+      404,
+      'FDANotFound',
+      `FDA ${fdaId} not found in service ${service}`,
+    );
+  }
+
+  // Queries are blocked only before the first successful fetch.
+  if (!fda.lastFetch) {
+    throw new FDAError(
+      409,
+      'FDAUnavailable',
+      `FDA ${fdaId} is not queryable yet because the first fetch has not completed`,
+    );
+  }
+}
+
+async function createOneRowParquetSync(service, fdaId, query) {
+  const s3Client = getS3Client(
+    `${config.objstg.protocol}://${config.objstg.endpoint}`,
+    config.objstg.usr,
+    config.objstg.pass,
+  );
+
+  const oneRowQuery = buildOneRowQuery(query);
+  await uploadTable(s3Client, service, service, oneRowQuery, fdaId);
+
+  const conn = await getDBConnection();
+  try {
+    const parquetPath = getPath(service, fdaId, '.parquet');
+    await toParquet(conn, getPath(service, fdaId, '.csv'), parquetPath);
+    await dropFile(s3Client, service, `${fdaId}.csv`);
+  } finally {
+    await releaseDBConnection(conn);
+  }
+}
+
+function buildOneRowQuery(query) {
+  const normalizedQuery = query.trim().replace(/;+\s*$/, '');
+  return `SELECT * FROM (${normalizedQuery}) AS fda_one_row LIMIT 1`;
+}
+
+async function rollbackFDAProvisioning(service, fdaId) {
+  const s3Client = getS3Client(
+    `${config.objstg.protocol}://${config.objstg.endpoint}`,
+    config.objstg.usr,
+    config.objstg.pass,
+  );
+
+  await Promise.allSettled([
+    dropFile(s3Client, service, `${fdaId}.csv`),
+    dropFile(s3Client, service, `${fdaId}.parquet`),
+    removeFDA(service, fdaId),
+  ]);
 }
 
 const getPath = (bucket, path, extension) => {
