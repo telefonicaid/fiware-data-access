@@ -103,6 +103,10 @@ const envVarsSchema = {
       type: 'boolean',
       default: true,
     },
+    FDA_ROLE_SYNCQUERIES: {
+      type: 'boolean',
+      default: false,
+    },
   },
 };
 
@@ -142,5 +146,6 @@ export const config = {
   roles: {
     apiServer: envVars.FDA_ROLE_APISERVER,
     fetcher: envVars.FDA_ROLE_FETCHER,
+    syncQueries: envVars.FDA_ROLE_SYNCQUERIES,
   },
 };
