@@ -333,6 +333,7 @@ describe('FDA API - integration (run app as child process)', () => {
         FDA_ROLE_APISERVER: 'true',
         FDA_ROLE_FETCHER: 'false',
         FDA_ROLE_SYNCQUERIES: 'true',
+        FDA_MAX_CONCURRENT_FRESH_QUERIES: '1',
 
         FDA_PG_USER: 'postgres',
         FDA_PG_PASSWORD: 'postgres',
@@ -382,6 +383,7 @@ describe('FDA API - integration (run app as child process)', () => {
         FDA_ROLE_APISERVER: 'false',
         FDA_ROLE_FETCHER: 'true',
         FDA_ROLE_SYNCQUERIES: 'false',
+        FDA_MAX_CONCURRENT_FRESH_QUERIES: '1',
 
         FDA_PG_USER: 'postgres',
         FDA_PG_PASSWORD: 'postgres',
@@ -856,6 +858,58 @@ describe('FDA API - integration (run app as child process)', () => {
       ]);
       await pgClient.end();
     }
+  });
+
+  test('GET /query with fresh=true returns 429 when max concurrent fresh queries is reached', async () => {
+    const daFreshLimitId = 'da_fresh_limit';
+
+    const createDa = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas/${fdaId}/das`,
+      headers: { 'Fiware-Service': service },
+      body: {
+        id: daFreshLimitId,
+        description: 'fresh query concurrency limit test',
+        query: `
+          SELECT id, name, age, pg_sleep(0.8) AS delay
+          WHERE age > $minAge
+          ORDER BY id
+        `,
+        params: [
+          {
+            name: 'minAge',
+            type: 'Number',
+            required: true,
+          },
+        ],
+      },
+    });
+
+    expect(createDa.status).toBe(201);
+
+    const firstFreshRequest = httpReq({
+      method: 'GET',
+      url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+        fdaId,
+      )}&daId=${encodeURIComponent(daFreshLimitId)}&minAge=0&fresh=true`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    await new Promise((r) => setTimeout(r, 100));
+
+    const secondFreshRes = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+        fdaId,
+      )}&daId=${encodeURIComponent(daFreshLimitId)}&minAge=0&fresh=true`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    expect(secondFreshRes.status).toBe(429);
+    expect(secondFreshRes.json.error).toBe('TooManyFreshQueries');
+
+    const firstFreshRes = await firstFreshRequest;
+    expect(firstFreshRes.status).toBe(200);
   });
 
   test('POST /fdas/:fdaId/das + GET /query using default params', async () => {
