@@ -510,6 +510,90 @@ describe('FDA API - integration (run app as child process)', () => {
     await waitUntilFDACompleted({ baseUrl, service, fdaId: fdaId3 });
   });
 
+  test('POST /fdas pending allows DA creation but rejects /query until first completion', async () => {
+    const pendingFdaId = 'fda_pending_first_fetch';
+    const pendingDaId = 'da_pending_first_fetch';
+
+    const createFda = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas`,
+      headers: { 'Fiware-Service': service },
+      body: {
+        id: pendingFdaId,
+        // Force a long first fetch to keep the FDA non-queryable for this test.
+        query:
+          'SELECT id, name, age FROM public.users, (SELECT pg_sleep(6)) AS delayed_fetch',
+        description: 'pending fda test',
+      },
+    });
+
+    expect(createFda.status).toBe(202);
+
+    const createDa = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas/${pendingFdaId}/das`,
+      headers: { 'Fiware-Service': service },
+      body: {
+        id: pendingDaId,
+        description: 'pending da test',
+        query: `
+          SELECT id, name, age
+          WHERE age > $minAge
+          ORDER BY id
+        `,
+        params: [
+          {
+            name: 'minAge',
+            type: 'Number',
+            required: true,
+          },
+        ],
+      },
+    });
+
+    expect(createDa.status).toBe(201);
+
+    const queryRes = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+        pendingFdaId,
+      )}&daId=${encodeURIComponent(pendingDaId)}&minAge=20`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    if (queryRes.status >= 400) {
+      console.error(
+        'GET /query failed as expected while FDA is pending:',
+        queryRes.status,
+        queryRes.json ?? queryRes.text,
+      );
+    }
+
+    expect(queryRes.status).toBe(409);
+    expect(queryRes.json.error).toBe('FDAUnavailable');
+
+    await waitUntilFDACompleted({
+      baseUrl,
+      service,
+      fdaId: pendingFdaId,
+      timeout: 30000,
+    });
+
+    const queryAfterCompletion = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+        pendingFdaId,
+      )}&daId=${encodeURIComponent(pendingDaId)}&minAge=20`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    expect(queryAfterCompletion.status).toBe(200);
+    expect(queryAfterCompletion.json).toEqual([
+      { id: '1', name: 'ana', age: '30' },
+      { id: '3', name: 'carlos', age: '40' },
+    ]);
+  });
+
   test('GET /fdas returns list', async () => {
     const res = await httpReq({
       method: 'GET',
@@ -580,6 +664,47 @@ describe('FDA API - integration (run app as child process)', () => {
       { id: '1', name: 'ana', age: '30' },
       { id: '3', name: 'carlos', age: '40' },
     ]);
+  });
+
+  test('GET /fdas/:fdaId/das and GET /fdas/:fdaId/das/:daId return stored DA and DaNotFound for unknown DA', async () => {
+    const listRes = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/fdas/${fdaId}/das`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    if (listRes.status >= 400) {
+      console.error(
+        'GET /fdas/:fdaId/das failed:',
+        listRes.status,
+        listRes.json ?? listRes.text,
+      );
+    }
+
+    expect(listRes.status).toBe(200);
+    expect(Array.isArray(listRes.json)).toBe(true);
+    expect(listRes.json.some((x) => x.id === daId)).toBe(true);
+
+    const getRes = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/fdas/${fdaId}/das/${daId}`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    expect(getRes.status).toBe(200);
+    expect(getRes.json).toMatchObject({
+      id: daId,
+      description: 'age filter',
+    });
+
+    const missingRes = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/fdas/${fdaId}/das/da_does_not_exist`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    expect(missingRes.status).toBe(404);
+    expect(missingRes.json.error).toBe('DaNotFound');
   });
 
   test('POST /fdas/:fdaId/das rejects query with FROM clause', async () => {

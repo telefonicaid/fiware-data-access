@@ -76,6 +76,7 @@ All error responses follow this structure:
 | 404  | Not Found             | `DaNotFound`           | The requested Data Access (DA) was not found.                                                                                                                                             |
 | 409  | Conflict              | `DuplicatedKey`        | The resource already exists in the database. Attempting to create a duplicate resource.                                                                                                   |
 | 429  | Too Many Requests     | `TooManyFreshQueries`  | The number of concurrent `fresh=true` queries exceeded `FDA_MAX_CONCURRENT_FRESH_QUERIES`.                                                                                                |
+| 409  | Conflict              | `FDAUnavailable`       | FDA `exampleId` is not queryable yet because the first fetch has not completed.                                                                                                           |
 | 500  | Internal Server Error | `S3ServerError`        | An error occurred in the S3 object storage component.                                                                                                                                     |
 | 500  | Internal Server Error | `DuckDBServerError`    | An error occurred in the DuckDB component.                                                                                                                                                |
 | 500  | Internal Server Error | `MongoDBServerError`   | An error occurred in the MongoDB component.                                                                                                                                               |
@@ -412,8 +413,8 @@ These fields are **provided in responses** but **cannot be included or modified*
 | `progress`  |          | number | Execution progress percentage (0–100)                                                         |
 | `lastFetch` |          | string | Timestamp of the last fetch (ISO date format)                                                 |
 
-> Note: Including operational fields like `progress` or `status` in POST/PUT requests is ignored by the server.
-> Currently this does not return a 400, but the fields will not be updated by the client.
+> Note: Including operational fields like `progress` or `status` in POST/PUT requests is ignored by the server. Requests
+> including these fields are rejected with `400 BadRequest`.
 
 ### FDAs operations
 
@@ -1009,8 +1010,17 @@ None
 _**Response code**_
 
 -   Successful operation uses 200 OK
+-   If the FDA has not completed its first fetch yet, operation uses 409 Conflict with `FDAUnavailable`
 -   Errors use a non-2xx and (optionally) an error payload. See subsection on [Error Responses](#error-responses) for
     more details.
+
+_**Behavior note**_
+
+-   DA creation is allowed while an FDA is still processing the first fetch, using an internal one-row synchronous
+    parquet snapshot to validate DA query compatibility.
+-   Query execution is blocked until the first successful fetch is completed (`lastFetch` available).
+-   After that first completion, query execution is allowed even if a later regeneration is in progress, returning the
+    last available parquet snapshot.
 
 _**Response headers**_
 
