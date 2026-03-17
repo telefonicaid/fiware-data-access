@@ -861,18 +861,21 @@ describe('FDA API - integration (run app as child process)', () => {
     expect(firstFreshRes.status).toBe(200);
   });
 
-  test('GET /query with fresh=true returns NDJSON streamed from PostgreSQL', async () => {
-    const daFreshStreamId = 'da_fresh_stream';
+  test('GET /query with fresh=true streams NDJSON progressively from PostgreSQL (real streaming)', async () => {
+    const daFreshStreamId = 'da_fresh_stream_real';
 
+    const TOTAL_ROWS = 600; // Forces multiple batches
+
+    // Create DA with delay to force progressive streaming
     const createDa = await httpReq({
       method: 'POST',
       url: `${baseUrl}/fdas/${fdaId}/das`,
       headers: { 'Fiware-Service': service },
       body: {
         id: daFreshStreamId,
-        description: 'fresh ndjson test',
+        description: 'fresh ndjson real streaming test',
         query: `
-          SELECT id, name, age
+          SELECT id, name, age, pg_sleep(0.01)
           ORDER BY id
         `,
       },
@@ -880,23 +883,97 @@ describe('FDA API - integration (run app as child process)', () => {
 
     expect(createDa.status).toBe(201);
 
-    const freshNdjsonRes = await httpReq({
-      method: 'GET',
-      url: `${baseUrl}/query?fdaId=${encodeURIComponent(
-        fdaId,
-      )}&daId=${encodeURIComponent(daFreshStreamId)}&fresh=true`,
-      headers: {
-        'Fiware-Service': service,
-        Accept: 'application/x-ndjson',
-      },
+    // Insertar muchos datos
+    const pgClient = new Client({
+      host: pgHost,
+      port: pgPort,
+      user: 'postgres',
+      password: 'postgres',
+      database: service,
     });
 
-    expect(freshNdjsonRes.status).toBe(200);
+    await connectWithRetry(pgClient);
 
-    const lines = freshNdjsonRes.text.split('\n').filter((line) => line.trim());
-    expect(lines).toHaveLength(3);
-    expect(JSON.parse(lines[0])).toEqual({ id: 1, name: 'ana', age: 30 });
-    expect(JSON.parse(lines[2])).toEqual({ id: 3, name: 'carlos', age: 40 });
+    const extraIds = [];
+
+    try {
+      for (let i = 0; i < TOTAL_ROWS; i++) {
+        const id = 1000 + i;
+        extraIds.push(id);
+        await pgClient.query(
+          `INSERT INTO public.users (id, name, age, timeinstant, authorized)
+          VALUES ($1, $2, $3, NOW(), true)`,
+          [id, `user_${i}`, 20 + (i % 50)],
+        );
+      }
+
+      // Real streaming request
+      const url = new URL(
+        `${baseUrl}/query?fdaId=${encodeURIComponent(
+          fdaId,
+        )}&daId=${encodeURIComponent(daFreshStreamId)}&fresh=true`,
+      );
+
+      const chunks = [];
+      let receivedChunks = 0;
+      let firstChunkTime = null;
+
+      await new Promise((resolve, reject) => {
+        const req = http.request(
+          {
+            method: 'GET',
+            hostname: url.hostname,
+            port: url.port,
+            path: url.pathname + url.search,
+            headers: {
+              'Fiware-Service': service,
+              Accept: 'application/x-ndjson',
+            },
+          },
+          (res) => {
+            expect(res.statusCode).toBe(200);
+            expect(res.headers['content-type']).toContain(
+              'application/x-ndjson',
+            );
+
+            res.setEncoding('utf8');
+
+            res.on('data', (chunk) => {
+              receivedChunks++;
+
+              if (!firstChunkTime) {
+                firstChunkTime = Date.now();
+              }
+
+              chunks.push(chunk);
+            });
+
+            res.on('end', resolve);
+          },
+        );
+
+        req.on('error', reject);
+        req.end();
+      });
+
+      // Verify streaming
+      expect(receivedChunks).toBeGreaterThan(1); // Multiple chunks
+      expect(firstChunkTime).not.toBeNull(); // First chunk received
+
+      // Parse and validate NDJSON
+      const fullText = chunks.join('');
+      const lines = fullText
+        .trim()
+        .split('\n')
+        .map((l) => JSON.parse(l));
+
+      expect(lines.length).toBeGreaterThanOrEqual(3 + TOTAL_ROWS);
+      expect(lines[0]).toMatchObject({ id: 1, name: 'ana' });
+      expect(lines[lines.length - 1].name).toMatch(/^user_/);
+    } finally {
+      await pgClient.query(`DELETE FROM public.users WHERE id >= 1000`);
+      await pgClient.end();
+    }
   });
 
   test('GET /query rejects invalid fresh query param', async () => {
