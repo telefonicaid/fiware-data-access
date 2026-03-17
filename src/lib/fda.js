@@ -23,6 +23,8 @@
 // criminal actions it may exercise to protect its rights.
 
 import { getAgenda } from './jobs.js';
+import { promisify } from 'node:util';
+import Cursor from 'pg-cursor';
 import {
   runPreparedStatement,
   runPreparedStatementStream,
@@ -51,6 +53,9 @@ import {
 import { convertBigInt } from './utils/utils.js';
 import { config } from './fdaConfig.js';
 import { FDAError } from './fdaError.js';
+
+const FRESH_CURSOR_BATCH_SIZE = 250;
+let activeFreshQueries = 0;
 
 export function getFDAs(service) {
   return retrieveFDAs(service);
@@ -93,7 +98,7 @@ export async function executeQueryStream({
   fresh = false,
 }) {
   if (fresh) {
-    return executeFreshQueryStream({ service, params, res });
+    return executeFreshQueryStream({ service, params, req, res });
   }
 
   const { fdaId, daId, ...rest } = params;
@@ -179,28 +184,28 @@ export async function executeQueryStream({
 }
 
 async function executeFreshQuery({ service, params }) {
-  if (!config.roles.syncQueries) {
-    throw new FDAError(
-      503,
-      'SyncQueriesDisabled',
-      'Fresh query mode is disabled in this instance',
-    );
-  }
+  assertFreshQueriesEnabled();
 
-  const { text, values } = await buildFreshQueryStatement(service, params);
-
-  const pgClient = getPgClient(
-    config.pg.usr,
-    config.pg.pass,
-    config.pg.host,
-    config.pg.port,
-    service,
-  );
-
+  const releaseFreshSlot = acquireFreshQuerySlot();
   try {
+    const { text, values } = await buildFreshQueryStatement(service, params);
+
+    const pgClient = getPgClient(
+      config.pg.usr,
+      config.pg.pass,
+      config.pg.host,
+      config.pg.port,
+      service,
+    );
+
     await pgClient.connect();
-    const result = await pgClient.query(text, values);
-    return convertBigInt(result.rows);
+
+    try {
+      const result = await pgClient.query(text, values);
+      return convertBigInt(result.rows);
+    } finally {
+      await pgClient.end();
+    }
   } catch (e) {
     if (e instanceof FDAError) {
       throw e;
@@ -212,19 +217,127 @@ async function executeFreshQuery({ service, params }) {
       `Error running fresh query: ${e.message}`,
     );
   } finally {
-    await pgClient.end();
+    releaseFreshSlot();
   }
 }
 
-async function executeFreshQueryStream({ service, params, res }) {
-  const rows = await executeFreshQuery({ service, params });
+async function executeFreshQueryStream({ service, params, req, res }) {
+  assertFreshQueriesEnabled();
 
-  res.setHeader('Content-Type', 'application/x-ndjson');
-  for (const row of rows) {
-    res.write(JSON.stringify(row) + '\n');
+  const releaseFreshSlot = acquireFreshQuerySlot();
+  let pgClient;
+  let cursor;
+  let cleaned = false;
+
+  const cleanup = async () => {
+    if (cleaned) {
+      return;
+    }
+
+    cleaned = true;
+
+    try {
+      if (cursor) {
+        const closeCursor = promisify(cursor.close.bind(cursor));
+        await closeCursor().catch(() => {});
+      }
+    } finally {
+      if (pgClient) {
+        await pgClient.end().catch(() => {});
+      }
+    }
+  };
+
+  try {
+    const { text, values } = await buildFreshQueryStatement(service, params);
+
+    pgClient = getPgClient(
+      config.pg.usr,
+      config.pg.pass,
+      config.pg.host,
+      config.pg.port,
+      service,
+    );
+
+    req.on('close', () => {
+      cleanup().catch(() => {});
+    });
+
+    await pgClient.connect();
+
+    cursor = pgClient.query(new Cursor(text, values));
+    const readCursor = promisify(cursor.read.bind(cursor));
+
+    res.setHeader('Content-Type', 'application/x-ndjson');
+
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const rows = await readCursor(FRESH_CURSOR_BATCH_SIZE);
+      if (rows.length === 0) {
+        break;
+      }
+
+      for (const row of rows) {
+        const safeObj = convertBigInt(row);
+        const ok = res.write(JSON.stringify(safeObj) + '\n');
+        if (!ok) {
+          await new Promise((resolve) => res.once('drain', resolve));
+        }
+      }
+    }
+  } catch (e) {
+    if (e instanceof FDAError) {
+      throw e;
+    }
+
+    throw new FDAError(
+      500,
+      'PostgresServerError',
+      `Error streaming fresh query: ${e.message}`,
+    );
+  } finally {
+    await cleanup();
+    releaseFreshSlot();
   }
 
   return res.end();
+}
+
+function assertFreshQueriesEnabled() {
+  if (!config.roles.syncQueries) {
+    throw new FDAError(
+      503,
+      'SyncQueriesDisabled',
+      'Fresh query mode is disabled in this instance',
+    );
+  }
+}
+
+function acquireFreshQuerySlot() {
+  const parsedMax = Number(config.freshQueries.maxConcurrent);
+  const maxFreshQueries = Number.isFinite(parsedMax)
+    ? Math.max(1, parsedMax)
+    : 5;
+
+  if (activeFreshQueries >= maxFreshQueries) {
+    throw new FDAError(
+      429,
+      'TooManyFreshQueries',
+      `Too many concurrent fresh queries (limit ${maxFreshQueries})`,
+    );
+  }
+
+  activeFreshQueries += 1;
+
+  let released = false;
+  return () => {
+    if (released) {
+      return;
+    }
+
+    released = true;
+    activeFreshQueries = Math.max(0, activeFreshQueries - 1);
+  };
 }
 
 async function buildFreshQueryStatement(service, params) {
@@ -499,21 +612,26 @@ export async function deleteDA(service, fdaId, daId) {
   await removeDA(service, fdaId, daId);
 }
 
+//const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function uploadTableToObjStg(service, database, query, bucket, path) {
   const s3Client = getS3Client(
     `${config.objstg.protocol}://${config.objstg.endpoint}`,
     config.objstg.usr,
     config.objstg.pass,
   );
+  //await sleep(20000);
   await updateFDAStatus(service, path, 'fetching', 20);
   await uploadTable(s3Client, bucket, database, query, path);
 
   const conn = await getDBConnection();
   try {
+    //await sleep(2000);
     await updateFDAStatus(service, path, 'transforming', 60);
     const parquetPath = getPath(bucket, path, '.parquet');
     await toParquet(conn, getPath(bucket, path, '.csv'), parquetPath);
+    //await sleep(2000);
     await updateFDAStatus(service, path, 'uploading', 80);
+    //await sleep(2000);
     await dropFile(s3Client, bucket, `${path}.csv`);
   } finally {
     await releaseDBConnection(conn);

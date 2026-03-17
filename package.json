@@ -34,6 +34,7 @@
     "mongodb": "~7.0.0",
     "pg": "~8.16.3",
     "pg-copy-streams": "~7.0.0",
+    "pg-cursor": "~2.19.0",
     "uuid": "~11.1.0"
   },
   "devDependencies": {
