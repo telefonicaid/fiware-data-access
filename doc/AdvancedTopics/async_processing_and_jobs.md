@@ -103,6 +103,9 @@ if (config.roles.fetcher) {
 `FDA_ROLE_SYNCQUERIES` is an additional API capability flag (not a standalone worker role): when enabled, the API
 accepts `fresh=true` in `GET /query` to execute DA queries directly on PostgreSQL.
 
+To protect API workers from overload, fresh-query concurrency is bounded by `FDA_MAX_CONCURRENT_FRESH_QUERIES` (default
+`5`). Extra requests return `429 TooManyFreshQueries`.
+
 ### Why This Matters
 
 This enables:

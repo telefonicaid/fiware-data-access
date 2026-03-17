@@ -75,6 +75,7 @@ All error responses follow this structure:
 | 404  | Not Found             | `FDANotFound`          | The requested FDA was not found.                                                                                                                                                          |
 | 404  | Not Found             | `DaNotFound`           | The requested Data Access (DA) was not found.                                                                                                                                             |
 | 409  | Conflict              | `DuplicatedKey`        | The resource already exists in the database. Attempting to create a duplicate resource.                                                                                                   |
+| 429  | Too Many Requests     | `TooManyFreshQueries`  | The number of concurrent `fresh=true` queries exceeded `FDA_MAX_CONCURRENT_FRESH_QUERIES`.                                                                                                |
 | 500  | Internal Server Error | `S3ServerError`        | An error occurred in the S3 object storage component.                                                                                                                                     |
 | 500  | Internal Server Error | `DuckDBServerError`    | An error occurred in the DuckDB component.                                                                                                                                                |
 | 500  | Internal Server Error | `MongoDBServerError`   | An error occurred in the MongoDB component.                                                                                                                                               |
@@ -1028,6 +1029,8 @@ _**Content negotiation (JSON / NDJSON)**_
     or streaming consumers.
 -   NDJSON output uses numeric types for integer columns (BigInt values are converted to numbers before serialization).
 -   The `fresh` parameter can be combined with both output modes (`application/json` and `application/x-ndjson`).
+-   With `fresh=true` and `Accept: application/x-ndjson`, results are streamed incrementally from PostgreSQL using a
+    cursor to avoid loading full result sets in memory.
 
 _**Example Request (without parameters):**_
 
