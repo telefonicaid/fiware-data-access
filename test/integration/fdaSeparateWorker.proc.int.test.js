@@ -912,6 +912,57 @@ describe('FDA API - integration (run app as child process)', () => {
     expect(firstFreshRes.status).toBe(200);
   });
 
+  test('GET /query with fresh=true returns NDJSON streamed from PostgreSQL', async () => {
+    const daFreshStreamId = 'da_fresh_stream';
+
+    const createDa = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas/${fdaId}/das`,
+      headers: { 'Fiware-Service': service },
+      body: {
+        id: daFreshStreamId,
+        description: 'fresh ndjson test',
+        query: `
+          SELECT id, name, age
+          ORDER BY id
+        `,
+      },
+    });
+
+    expect(createDa.status).toBe(201);
+
+    const freshNdjsonRes = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+        fdaId,
+      )}&daId=${encodeURIComponent(daFreshStreamId)}&fresh=true`,
+      headers: {
+        'Fiware-Service': service,
+        Accept: 'application/x-ndjson',
+      },
+    });
+
+    expect(freshNdjsonRes.status).toBe(200);
+
+    const lines = freshNdjsonRes.text.split('\n').filter((line) => line.trim());
+    expect(lines).toHaveLength(3);
+    expect(JSON.parse(lines[0])).toEqual({ id: 1, name: 'ana', age: 30 });
+    expect(JSON.parse(lines[2])).toEqual({ id: 3, name: 'carlos', age: 40 });
+  });
+
+  test('GET /query rejects invalid fresh query param', async () => {
+    const res = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+        fdaId,
+      )}&daId=${encodeURIComponent(daId)}&minAge=25&fresh=maybe`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.json.error).toBe('BadRequest');
+  });
+
   test('POST /fdas/:fdaId/das + GET /query using default params', async () => {
     // DuckDB reads parquet generated in  s3://<bucket>/<fdaID>.parquet
     const daQuery = `
