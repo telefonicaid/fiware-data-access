@@ -935,17 +935,43 @@ describe('FDA API - integration (run app as child process)', () => {
   });
 
   test('GET /query with fresh=true returns 429 when max concurrent fresh queries is reached', async () => {
+    const fdaFreshLimitId = 'fda_fresh_limit';
     const daFreshLimitId = 'da_fresh_limit';
+
+    const createFda = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas`,
+      headers: {
+        'Fiware-Service': service,
+        'Fiware-ServicePath': servicePath,
+      },
+      body: {
+        id: fdaFreshLimitId,
+        description: 'fresh query concurrency limit test fda',
+        query:
+          'SELECT id, name, age FROM public.users, (SELECT pg_sleep(0.8)) AS delayed_fetch',
+      },
+    });
+
+    expect(createFda.status).toBe(202);
+
+    await waitUntilFDACompleted({
+      baseUrl,
+      service,
+      fdaId: fdaFreshLimitId,
+      timeout: 20000,
+      interval: 300,
+    });
 
     const createDa = await httpReq({
       method: 'POST',
-      url: `${baseUrl}/fdas/${fdaId}/das`,
+      url: `${baseUrl}/fdas/${fdaFreshLimitId}/das`,
       headers: { 'Fiware-Service': service },
       body: {
         id: daFreshLimitId,
         description: 'fresh query concurrency limit test',
         query: `
-          SELECT id, name, age, pg_sleep(0.8) AS delay
+          SELECT id, name, age
           WHERE age > $minAge
           ORDER BY id
         `,
@@ -964,7 +990,7 @@ describe('FDA API - integration (run app as child process)', () => {
     const firstFreshRequest = httpReq({
       method: 'GET',
       url: `${baseUrl}/query?fdaId=${encodeURIComponent(
-        fdaId,
+        fdaFreshLimitId,
       )}&daId=${encodeURIComponent(daFreshLimitId)}&minAge=0&fresh=true`,
       headers: { 'Fiware-Service': service },
     });
@@ -974,7 +1000,7 @@ describe('FDA API - integration (run app as child process)', () => {
     const secondFreshRes = await httpReq({
       method: 'GET',
       url: `${baseUrl}/query?fdaId=${encodeURIComponent(
-        fdaId,
+        fdaFreshLimitId,
       )}&daId=${encodeURIComponent(daFreshLimitId)}&minAge=0&fresh=true`,
       headers: { 'Fiware-Service': service },
     });
@@ -987,20 +1013,45 @@ describe('FDA API - integration (run app as child process)', () => {
   });
 
   test('GET /query with fresh=true streams NDJSON progressively from PostgreSQL (real streaming)', async () => {
+    const fdaFreshStreamId = 'fda_fresh_stream_real';
     const daFreshStreamId = 'da_fresh_stream_real';
 
     const TOTAL_ROWS = 600; // Forces multiple batches
 
-    // Create DA with delay to force progressive streaming
+    const createFda = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas`,
+      headers: {
+        'Fiware-Service': service,
+        'Fiware-ServicePath': servicePath,
+      },
+      body: {
+        id: fdaFreshStreamId,
+        description: 'fresh ndjson real streaming test fda',
+        query: 'SELECT id, name, age FROM public.users',
+      },
+    });
+
+    expect(createFda.status).toBe(202);
+
+    await waitUntilFDACompleted({
+      baseUrl,
+      service,
+      fdaId: fdaFreshStreamId,
+      timeout: 20000,
+      interval: 300,
+    });
+
+    // Create DA for fresh NDJSON streaming
     const createDa = await httpReq({
       method: 'POST',
-      url: `${baseUrl}/fdas/${fdaId}/das`,
+      url: `${baseUrl}/fdas/${fdaFreshStreamId}/das`,
       headers: { 'Fiware-Service': service },
       body: {
         id: daFreshStreamId,
         description: 'fresh ndjson real streaming test',
         query: `
-          SELECT id, name, age, pg_sleep(0.01)
+          SELECT id, name, age
           ORDER BY id
         `,
       },
@@ -1035,7 +1086,7 @@ describe('FDA API - integration (run app as child process)', () => {
       // Real streaming request
       const url = new URL(
         `${baseUrl}/query?fdaId=${encodeURIComponent(
-          fdaId,
+          fdaFreshStreamId,
         )}&daId=${encodeURIComponent(daFreshStreamId)}&fresh=true`,
       );
 
