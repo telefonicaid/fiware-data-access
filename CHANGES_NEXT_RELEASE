@@ -1,1 +1,2 @@
 - Fix: move mongo data base name into mongo uri (#115)
+- Add: DA validation with FDA snapshot and query gating until first fetch completes (#97)
