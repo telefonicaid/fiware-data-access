@@ -24,6 +24,8 @@
 
 import { FDAError } from '../fdaError.js';
 
+let activeFreshQueries = 0;
+
 // Convert BigInt values to numbers for JSON serialization
 export function convertBigInt(obj) {
   if (typeof obj === 'bigint') {
@@ -85,4 +87,41 @@ export function parseBooleanQueryParam(value, name) {
     'BadRequest',
     `Query param "${name}" must be a boolean.`,
   );
+}
+
+export function assertFreshQueriesEnabled(isEnabled) {
+  if (!isEnabled) {
+    throw new FDAError(
+      503,
+      'SyncQueriesDisabled',
+      'Fresh query mode is disabled in this instance',
+    );
+  }
+}
+
+export function acquireFreshQuerySlot(maxConcurrent) {
+  const parsedMax = Number(maxConcurrent);
+  const maxFreshQueries = Number.isFinite(parsedMax)
+    ? Math.max(1, parsedMax)
+    : 5;
+
+  if (activeFreshQueries >= maxFreshQueries) {
+    throw new FDAError(
+      429,
+      'TooManyFreshQueries',
+      `Too many concurrent fresh queries (limit ${maxFreshQueries})`,
+    );
+  }
+
+  activeFreshQueries += 1;
+
+  let released = false;
+  return () => {
+    if (released) {
+      return;
+    }
+
+    released = true;
+    activeFreshQueries = Math.max(0, activeFreshQueries - 1);
+  };
 }
