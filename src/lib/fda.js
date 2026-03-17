@@ -141,6 +141,7 @@ export async function executeQueryStream({
   res.setHeader('Content-Type', 'application/x-ndjson');
 
   try {
+    const columnNames = stream.columnNames();
     // eslint-disable-next-line no-constant-condition
     while (true) {
       const chunk = await stream.fetchChunk();
@@ -149,7 +150,8 @@ export async function executeQueryStream({
       }
 
       const rows = chunk.getRows();
-      const columnNames = stream.columnNames();
+
+      const lines = [];
 
       for (const row of rows) {
         const rowObj = {};
@@ -159,11 +161,14 @@ export async function executeQueryStream({
         }
 
         const safeObj = convertBigInt(rowObj);
+        lines.push(JSON.stringify(safeObj));
+      }
 
-        const ok = res.write(JSON.stringify(safeObj) + '\n');
-        if (!ok) {
-          await new Promise((resolve) => res.once('drain', resolve));
-        }
+      const payload = lines.join('\n') + '\n';
+
+      const ok = res.write(payload);
+      if (!ok) {
+        await new Promise((resolve) => res.once('drain', resolve));
       }
     }
   } finally {
