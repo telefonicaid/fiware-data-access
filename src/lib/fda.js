@@ -30,7 +30,6 @@ import {
   releaseDBConnection,
   toParquet,
   checkParams,
-  buildDAQuery,
   resolveDAParams,
   validateDAQuery,
 } from './utils/db.js';
