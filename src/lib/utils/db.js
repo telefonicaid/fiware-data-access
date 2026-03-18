@@ -438,10 +438,6 @@ function getPartitionConf(partitionType = 'none', timeColumn) {
     `,
       partitionBy: 'year',
     },
-    none: {
-      columns: '',
-      partitionBy: '',
-    },
   };
 
   const partitionConf = PARTITIONS[partitionType];
