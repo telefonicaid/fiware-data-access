@@ -51,3 +51,17 @@ export function validateAllowedFieldsBody(body, allowedFields) {
     throw err;
   }
 }
+
+export function getWindowDate(windowSize) {
+  const now = new Date();
+
+  const map = {
+    day: () => now.setDate(now.getDate() - 1),
+    week: () => now.setDate(now.getDate() - 7),
+    month: () => now.setMonth(now.getMonth() - 1),
+    year: () => now.setFullYear(now.getFullYear() - 1),
+  };
+
+  map[windowSize]?.();
+  return map[windowSize] ? now : undefined;
+}

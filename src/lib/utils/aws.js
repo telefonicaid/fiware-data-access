@@ -29,6 +29,7 @@ import {
   HeadBucketCommand,
   CopyObjectCommand,
   ListObjectsV2Command,
+  DeleteObjectsCommand,
 } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 import { FDAError } from '../fdaError.js';
@@ -90,6 +91,26 @@ export async function dropFile(s3Client, bucket, path) {
       500,
       'S3ServerError',
       `Error deleting file ${path} in bucket ${bucket}: ${e}`,
+    );
+  }
+}
+
+export async function dropFiles(s3Client, bucket, objsToRemove) {
+  logger.debug({ bucket, objsToRemove }, '[DEBUG]: dropFiles');
+  try {
+    await s3Client.send(
+      new DeleteObjectsCommand({
+        Bucket: bucket,
+        Delete: {
+          Objects: objsToRemove.map((k) => ({ Key: k })),
+        },
+      }),
+    );
+  } catch (e) {
+    throw new FDAError(
+      500,
+      'S3ServerError',
+      `Error deleting multiple objects ${objsToRemove} in bucket ${bucket}: ${e}`,
     );
   }
 }

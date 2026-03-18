@@ -485,6 +485,32 @@ export function buildDAQuery(service, fdaId, userQuery, partitioned) {
   }
 }
 
+export function extractDate(path) {
+  const year = path.match(/year=(\d{4})/)?.[1];
+  const month = path.match(/month=(\d{1,2})/)?.[1];
+  const day = path.match(/day=(\d{1,2})/)?.[1];
+  const weekMatch = path.match(/week=(\d{4})-(\d{1,2})/);
+
+  const week = weekMatch?.[2]; // second group = week number
+
+  if (year && month && day) {
+    return new Date(Date.UTC(year, month - 1, day));
+  }
+
+  if (year && month) {
+    return new Date(Date.UTC(year, month - 1, 1));
+  }
+
+  if (year && week) {
+    const d = new Date(Date.UTC(year, 0, 1 + (week - 1) * 7));
+    const dayNum = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+    return d;
+  }
+
+  return null;
+}
+
 async function configureConn(conn) {
   await conn.run('LOAD httpfs;');
   await conn.run(`

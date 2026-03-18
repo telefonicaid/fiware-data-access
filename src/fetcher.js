@@ -23,7 +23,7 @@
 // criminal actions it may exercise to protect its rights.
 
 import { getAgenda } from './lib/jobs.js';
-import { processFDAAsync } from './lib/fda.js';
+import { cleanPartition, processFDAAsync } from './lib/fda.js';
 import { getBasicLogger } from './lib/utils/logger.js';
 
 const logger = getBasicLogger();
@@ -50,6 +50,15 @@ export async function startFetcher() {
         objStgConf,
         partitionFlag,
       );
+    } catch (e) {
+      console.log('Fetcher error: ', e);
+    }
+  });
+
+  agenda.define('clean-partition', async (job) => {
+    const { fdaId, service, windowSize, objStgConf } = job.attrs.data;
+    try {
+      await cleanPartition(service, fdaId, windowSize, objStgConf);
     } catch (e) {
       console.log('Fetcher error: ', e);
     }

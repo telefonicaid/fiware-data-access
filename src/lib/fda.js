@@ -31,9 +31,16 @@ import {
   toParquet,
   checkParams,
   buildDAQuery,
+  extractDate,
 } from './utils/db.js';
 import { uploadTable } from './utils/pg.js';
-import { getS3Client, dropFile, moveObject, listObjects } from './utils/aws.js';
+import {
+  getS3Client,
+  dropFile,
+  moveObject,
+  listObjects,
+  dropFiles,
+} from './utils/aws.js';
 import {
   createFDAMongo,
   regenerateFDA,
@@ -47,7 +54,7 @@ import {
   removeDA,
   updateFDAStatus,
 } from './utils/mongo.js';
-import { convertBigInt } from './utils/utils.js';
+import { convertBigInt, getWindowDate } from './utils/utils.js';
 import { config } from './fdaConfig.js';
 import { FDAError } from './fdaError.js';
 
@@ -234,6 +241,24 @@ export async function fetchFDA(
         },
       },
     );
+
+    const { deleteInterval, windowSize } = refreshPolicy;
+    await agenda.every(
+      deleteInterval,
+      'clean-partition',
+      {
+        fdaId,
+        service,
+        windowSize,
+        objStgConf,
+      },
+      {
+        unique: {
+          name: 'refresh-fda',
+          'data.fdaId': fdaId,
+        },
+      },
+    );
   }
 
   if (refreshPolicy?.type === 'window') {
@@ -254,6 +279,24 @@ export async function fetchFDA(
         timeColumn,
         objStgConf,
         partitionFlag: true,
+      },
+      {
+        unique: {
+          name: 'refresh-fda',
+          'data.fdaId': fdaId,
+        },
+      },
+    );
+
+    const { deleteInterval, windowSize } = refreshPolicy;
+    await agenda.every(
+      deleteInterval,
+      'clean-partition',
+      {
+        fdaId,
+        service,
+        windowSize,
+        objStgConf,
       },
       {
         unique: {
@@ -399,6 +442,44 @@ export async function putDA(
 
 export async function deleteDA(service, fdaId, daId) {
   await removeDA(service, fdaId, daId);
+}
+
+export async function cleanPartition(service, fdaId, windowSize, objStgConf) {
+  if (!objStgConf?.partition) {
+    // DEBATE: With no partitioned folders doesn't make much sense to clean cause we'd had a FDA with no file
+    throw new FDAError(
+      404,
+      'CleaningError',
+      `Removing a non partitioned FDA ${fdaId}.`,
+    );
+  }
+
+  const cutoff = getWindowDate(windowSize);
+  if (!cutoff) {
+    throw new FDAError(
+      404,
+      'CleaningError',
+      `Incorrect window size in refresh policy.`,
+    );
+  }
+
+  const s3Client = getS3Client(
+    `${config.objstg.protocol}://${config.objstg.endpoint}`,
+    config.objstg.usr,
+    config.objstg.pass,
+  );
+
+  const objPaths = await listObjects(s3Client, service, fdaId);
+
+  const partitionsToRemove = [];
+  for (const path of objPaths) {
+    const partitionDate = extractDate(path);
+
+    if (partitionDate < cutoff) {
+      partitionsToRemove.push(path);
+    }
+  }
+  await dropFiles(s3Client, service, partitionsToRemove);
 }
 
 async function uploadTableToObjStg(
