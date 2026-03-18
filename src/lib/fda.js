@@ -243,22 +243,31 @@ export async function fetchFDA(
     );
 
     const { deleteInterval, windowSize } = refreshPolicy;
-    await agenda.every(
-      deleteInterval,
-      'clean-partition',
-      {
-        fdaId,
-        service,
-        windowSize,
-        objStgConf,
-      },
-      {
-        unique: {
-          name: 'refresh-fda',
-          'data.fdaId': fdaId,
+    if (deleteInterval && windowSize) {
+      await agenda.every(
+        deleteInterval,
+        'clean-partition',
+        {
+          fdaId,
+          service,
+          windowSize,
+          objStgConf,
         },
-      },
-    );
+        {
+          unique: {
+            name: 'refresh-fda',
+            'data.fdaId': fdaId,
+          },
+        },
+      );
+    }
+    if (deleteInterval && !windowSize) {
+      throw new FDAError(
+        400,
+        'InvalidParam',
+        `Window size is required with a delete interval.`,
+      );
+    }
   }
 
   if (refreshPolicy?.type === 'window') {
@@ -289,22 +298,31 @@ export async function fetchFDA(
     );
 
     const { deleteInterval, windowSize } = refreshPolicy;
-    await agenda.every(
-      deleteInterval,
-      'clean-partition',
-      {
-        fdaId,
-        service,
-        windowSize,
-        objStgConf,
-      },
-      {
-        unique: {
-          name: 'refresh-fda',
-          'data.fdaId': fdaId,
+    if (deleteInterval && windowSize) {
+      await agenda.every(
+        deleteInterval,
+        'clean-partition',
+        {
+          fdaId,
+          service,
+          windowSize,
+          objStgConf,
         },
-      },
-    );
+        {
+          unique: {
+            name: 'refresh-fda',
+            'data.fdaId': fdaId,
+          },
+        },
+      );
+    }
+    if (deleteInterval && !windowSize) {
+      throw new FDAError(
+        400,
+        'InvalidParam',
+        `Window size is required with a delete interval.`,
+      );
+    }
   }
 }
 
@@ -448,7 +466,7 @@ export async function cleanPartition(service, fdaId, windowSize, objStgConf) {
   if (!objStgConf?.partition) {
     // DEBATE: With no partitioned folders doesn't make much sense to clean cause we'd had a FDA with no file
     throw new FDAError(
-      404,
+      400,
       'CleaningError',
       `Removing a non partitioned FDA ${fdaId}.`,
     );
@@ -457,7 +475,7 @@ export async function cleanPartition(service, fdaId, windowSize, objStgConf) {
   const cutoff = getWindowDate(windowSize);
   if (!cutoff) {
     throw new FDAError(
-      404,
+      400,
       'CleaningError',
       `Incorrect window size in refresh policy.`,
     );
