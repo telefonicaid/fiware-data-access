@@ -37,8 +37,12 @@ const mongoMocks = {
   updateFDAStatus: jest.fn(),
 };
 
-await jest.unstable_mockModule('../../src/lib/jobs.js', () => ({
+const jobsMocks = {
   getAgenda: jest.fn(),
+};
+
+await jest.unstable_mockModule('../../src/lib/jobs.js', () => ({
+  getAgenda: jobsMocks.getAgenda,
 }));
 
 await jest.unstable_mockModule('../../src/lib/utils/db.js', () => ({
@@ -85,10 +89,16 @@ await jest.unstable_mockModule('../../src/lib/fdaConfig.js', () => ({
     freshQueries: {
       maxConcurrent: 2,
     },
+    objstg: {
+      protocol: 'http',
+      endpoint: 'minio:9000',
+      usr: 'user',
+      pass: 'pass',
+    },
   },
 }));
 
-const { executeQuery, executeQueryStream } = await import(
+const { executeQuery, executeQueryStream, fetchFDA } = await import(
   '../../src/lib/fda.js'
 );
 
@@ -344,5 +354,89 @@ describe('fda fresh query execution', () => {
         fresh: true,
       }),
     ).rejects.toBe(streamError);
+  });
+});
+
+describe('fetchFDA', () => {
+  const agenda = {
+    now: jest.fn(),
+    every: jest.fn(),
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    awsMocks.getS3Client.mockReturnValue({});
+    awsMocks.dropFile.mockResolvedValue(undefined);
+    mongoMocks.createFDAMongo.mockResolvedValue(undefined);
+    mongoMocks.removeFDA.mockResolvedValue(undefined);
+    dbMocks.getDBConnection.mockResolvedValue({});
+    dbMocks.releaseDBConnection.mockResolvedValue(undefined);
+    dbMocks.toParquet.mockResolvedValue(undefined);
+    pgMocks.uploadTable.mockResolvedValue(undefined);
+    jobsMocks.getAgenda.mockReturnValue(agenda);
+    agenda.now.mockResolvedValue(undefined);
+    agenda.every.mockResolvedValue(undefined);
+  });
+
+  test('creates one-row parquet synchronously and schedules immediate fetch', async () => {
+    await fetchFDA('fda1', 'SELECT id FROM users;', 'svc', '/svc', 'test FDA', {
+      type: 'none',
+    });
+
+    expect(mongoMocks.createFDAMongo).toHaveBeenCalledWith(
+      'fda1',
+      'SELECT id FROM users;',
+      'svc',
+      '/svc',
+      'test FDA',
+      { type: 'none' },
+    );
+    expect(pgMocks.uploadTable).toHaveBeenCalledWith(
+      {},
+      'svc',
+      'svc',
+      'SELECT * FROM (SELECT id FROM users) AS fda_one_row LIMIT 1',
+      'fda1',
+    );
+    expect(dbMocks.toParquet).toHaveBeenCalledWith(
+      {},
+      'svc/fda1.csv',
+      'svc/fda1.parquet',
+    );
+    expect(awsMocks.dropFile).toHaveBeenCalledWith({}, 'svc', 'fda1.csv');
+    expect(agenda.now).toHaveBeenCalledWith('refresh-fda', {
+      fdaId: 'fda1',
+      query: 'SELECT id FROM users;',
+      service: 'svc',
+    });
+    expect(agenda.every).not.toHaveBeenCalled();
+  });
+
+  test('schedules periodic refresh for interval policy', async () => {
+    await fetchFDA('fda1', 'SELECT 1', 'svc', '/svc', 'desc', {
+      type: 'interval',
+      value: '10 minutes',
+    });
+
+    expect(agenda.every).toHaveBeenCalledWith(
+      '10 minutes',
+      'refresh-fda',
+      { fdaId: 'fda1', query: 'SELECT 1', service: 'svc' },
+      { unique: { name: 'refresh-fda', 'data.fdaId': 'fda1' } },
+    );
+  });
+
+  test('rolls back FDA provisioning and rethrows when parquet creation fails', async () => {
+    const uploadError = new Error('S3 unreachable');
+    pgMocks.uploadTable.mockRejectedValue(uploadError);
+
+    await expect(
+      fetchFDA('fda1', 'SELECT 1', 'svc', '/svc', 'desc', { type: 'none' }),
+    ).rejects.toBe(uploadError);
+
+    expect(mongoMocks.removeFDA).toHaveBeenCalledWith('svc', 'fda1');
+    expect(awsMocks.dropFile).toHaveBeenCalledWith({}, 'svc', 'fda1.csv');
+    expect(awsMocks.dropFile).toHaveBeenCalledWith({}, 'svc', 'fda1.parquet');
+    expect(agenda.now).not.toHaveBeenCalled();
   });
 });
