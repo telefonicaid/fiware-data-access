@@ -88,8 +88,13 @@ jobs:
           DOCKER_HOST: "unix:///var/run/docker.sock"
         run: npm run test:coverage:integration
 
+      - name: Validate coverage inputs
+        run: |
+          test -f coverage/unit/lcov.info
+          test -f coverage/integration/lcov.info
+
       - name: Merge coverage reports
-        run: npx --yes lcov-result-merger 'coverage/unit/lcov.info' 'coverage/integration/lcov.info' coverage/lcov.info
+        run: npx --yes lcov-result-merger 'coverage/*/lcov.info' coverage/lcov.info
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4
