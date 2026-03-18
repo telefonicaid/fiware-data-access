@@ -41,13 +41,18 @@ Variables related to the environment of the application:
 
 Variables that define which components of the application are executed by this instance:
 
-| Variable             | Optional | Type    | Description                                                                                              |
-| -------------------- | -------- | ------- | -------------------------------------------------------------------------------------------------------- |
-| `FDA_ROLE_APISERVER` | ✓        | boolean | If `true`, the instance runs the API server to handle HTTP requests. Default `true`.                     |
-| `FDA_ROLE_FETCHER`   | ✓        | boolean | If `true`, the instance runs the fetcher responsible for regenerating and updating FDAs. Default `true`. |
+| Variable                           | Optional | Type    | Description                                                                                                                                        |
+| ---------------------------------- | -------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FDA_ROLE_APISERVER`               | ✓        | boolean | If `true`, the instance runs the API server to handle HTTP requests. Default `true`.                                                               |
+| `FDA_ROLE_FETCHER`                 | ✓        | boolean | If `true`, the instance runs the fetcher responsible for regenerating and updating FDAs. Default `true`.                                           |
+| `FDA_ROLE_SYNCQUERIES`             | ✓        | boolean | If `true`, the API instance accepts `fresh=true` queries and executes them directly against PostgreSQL. Default `false`.                           |
+| `FDA_MAX_CONCURRENT_FRESH_QUERIES` | ✓        | number  | Maximum number of concurrent `fresh=true` queries accepted by the API instance. Additional requests return `429 TooManyFreshQueries`. Default `5`. |
 
 > Note: By default, an instance runs both roles (API server and Fetcher). You can disable one to separate
 > responsibilities.
+
+> Note: `FDA_ROLE_SYNCQUERIES` is only used by the API server role. It is recommended to enable it only in API instances
+> that should allow fresh (non-cached) queries.
 
 ### PostgreSQL
 
@@ -100,6 +105,8 @@ FDA_SERVER_PORT=8080
 # Instance Roles
 FDA_ROLE_APISERVER=true
 FDA_ROLE_FETCHER=true
+FDA_ROLE_SYNCQUERIES=true
+FDA_MAX_CONCURRENT_FRESH_QUERIES=5
 
 # POSTGRESQL
 FDA_PG_USER=exampleUser

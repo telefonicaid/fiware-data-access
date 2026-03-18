@@ -312,6 +312,10 @@ function applyParams(reqParams, params) {
   return validated;
 }
 
+export function resolveDAParams(reqParams, params) {
+  return applyParams(reqParams, params);
+}
+
 const TYPE_COERCERS = {
   Number: (v) => (Number.isFinite(Number(v)) ? Number(v) : undefined),
   Boolean: (v) => {

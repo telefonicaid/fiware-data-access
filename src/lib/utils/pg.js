@@ -23,7 +23,9 @@
 // criminal actions it may exercise to protect its rights.
 
 import pg from 'pg';
+import { promisify } from 'node:util';
 import { to as copyTo } from 'pg-copy-streams';
+import Cursor from 'pg-cursor';
 import { newUpload } from './aws.js';
 import { config } from '../fdaConfig.js';
 import { FDAError } from '../fdaError.js';
@@ -82,5 +84,86 @@ export async function uploadTable(s3Client, bucket, database, query, path) {
   } finally {
     pgStream.destroy();
     await pgClient.end();
+  }
+}
+
+export async function runPgQuery(database, text, values) {
+  const pgClient = getPgClient(
+    config.pg.usr,
+    config.pg.pass,
+    config.pg.host,
+    config.pg.port,
+    database,
+  );
+
+  try {
+    await pgClient.connect();
+    const result = await pgClient.query(text, values);
+    return result.rows;
+  } catch (e) {
+    if (e instanceof FDAError) {
+      throw e;
+    }
+
+    throw new FDAError(
+      500,
+      'PostgresServerError',
+      `Error running fresh query: ${e.message}`,
+    );
+  } finally {
+    await pgClient.end().catch(() => {});
+  }
+}
+
+export async function createPgCursorReader(database, text, values, batchSize) {
+  const pgClient = getPgClient(
+    config.pg.usr,
+    config.pg.pass,
+    config.pg.host,
+    config.pg.port,
+    database,
+  );
+
+  let cursor;
+  let cleaned = false;
+
+  const close = async () => {
+    if (cleaned) {
+      return;
+    }
+
+    cleaned = true;
+
+    try {
+      if (cursor) {
+        const closeCursor = promisify(cursor.close.bind(cursor));
+        await closeCursor().catch(() => {});
+      }
+    } finally {
+      await pgClient.end().catch(() => {});
+    }
+  };
+
+  try {
+    await pgClient.connect();
+    cursor = pgClient.query(new Cursor(text, values));
+    const readCursor = promisify(cursor.read.bind(cursor));
+
+    return {
+      readNextChunk: () => readCursor(batchSize),
+      close,
+    };
+  } catch (e) {
+    await close();
+
+    if (e instanceof FDAError) {
+      throw e;
+    }
+
+    throw new FDAError(
+      500,
+      'PostgresServerError',
+      `Error streaming fresh query: ${e.message}`,
+    );
   }
 }

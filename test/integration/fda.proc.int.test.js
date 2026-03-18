@@ -339,6 +339,8 @@ describe('FDA API - integration (run app as child process)', () => {
         FDA_MONGO_URI: mongoUri,
         FDA_ROLE_APISERVER: 'true',
         FDA_ROLE_FETCHER: 'true',
+        FDA_ROLE_SYNCQUERIES: 'true',
+        FDA_MAX_CONCURRENT_FRESH_QUERIES: '1',
       },
     });
 
@@ -851,6 +853,316 @@ describe('FDA API - integration (run app as child process)', () => {
       { id: '1', name: 'ana', age: '30' },
       { id: '3', name: 'carlos', age: '40' },
     ]);
+  });
+
+  test('GET /query with fresh=true runs query against PostgreSQL source', async () => {
+    const daFreshId = 'da_fresh_users';
+
+    const createDa = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas/${fdaId}/das`,
+      headers: { 'Fiware-Service': service },
+      body: {
+        id: daFreshId,
+        description: 'fresh query test',
+        query: `
+          SELECT id, name, age
+          WHERE age > $minAge
+          ORDER BY id
+        `,
+        params: [
+          {
+            name: 'minAge',
+            type: 'Number',
+            required: true,
+          },
+        ],
+      },
+    });
+
+    expect(createDa.status).toBe(201);
+
+    const insertedId = 1001;
+    const pgClient = new Client({
+      host: pgHost,
+      port: pgPort,
+      user: 'postgres',
+      password: 'postgres',
+      database: service,
+      connectionTimeoutMillis: 10_000,
+    });
+
+    await connectWithRetry(pgClient);
+
+    try {
+      await pgClient.query(
+        `INSERT INTO public.users (id, name, age, timeinstant, authorized)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [insertedId, 'diana', 35, '2020-08-17T18:25:28.332Z', true],
+      );
+
+      const cachedRes = await httpReq({
+        method: 'GET',
+        url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+          fdaId,
+        )}&daId=${encodeURIComponent(daFreshId)}&minAge=25`,
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect(cachedRes.status).toBe(200);
+      expect(cachedRes.json.map((x) => x.name)).toEqual(['ana', 'carlos']);
+
+      const freshRes = await httpReq({
+        method: 'GET',
+        url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+          fdaId,
+        )}&daId=${encodeURIComponent(daFreshId)}&minAge=25&fresh=true`,
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect(freshRes.status).toBe(200);
+      expect(freshRes.json.map((x) => x.name)).toEqual([
+        'ana',
+        'carlos',
+        'diana',
+      ]);
+    } finally {
+      await pgClient.query('DELETE FROM public.users WHERE id = $1', [
+        insertedId,
+      ]);
+      await pgClient.end();
+    }
+  });
+
+  test('GET /query with fresh=true returns 429 when max concurrent fresh queries is reached', async () => {
+    const fdaFreshLimitId = 'fda_fresh_limit';
+    const daFreshLimitId = 'da_fresh_limit';
+
+    const createFda = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas`,
+      headers: {
+        'Fiware-Service': service,
+        'Fiware-ServicePath': servicePath,
+      },
+      body: {
+        id: fdaFreshLimitId,
+        description: 'fresh query concurrency limit test fda',
+        query:
+          'SELECT id, name, age FROM public.users, (SELECT pg_sleep(0.8)) AS delayed_fetch',
+      },
+    });
+
+    expect(createFda.status).toBe(202);
+
+    await waitUntilFDACompleted({
+      baseUrl,
+      service,
+      fdaId: fdaFreshLimitId,
+      timeout: 20000,
+      interval: 300,
+    });
+
+    const createDa = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas/${fdaFreshLimitId}/das`,
+      headers: { 'Fiware-Service': service },
+      body: {
+        id: daFreshLimitId,
+        description: 'fresh query concurrency limit test',
+        query: `
+          SELECT id, name, age
+          WHERE age > $minAge
+          ORDER BY id
+        `,
+        params: [
+          {
+            name: 'minAge',
+            type: 'Number',
+            required: true,
+          },
+        ],
+      },
+    });
+
+    expect(createDa.status).toBe(201);
+
+    const firstFreshRequest = httpReq({
+      method: 'GET',
+      url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+        fdaFreshLimitId,
+      )}&daId=${encodeURIComponent(daFreshLimitId)}&minAge=0&fresh=true`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    await new Promise((r) => setTimeout(r, 100));
+
+    const secondFreshRes = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+        fdaFreshLimitId,
+      )}&daId=${encodeURIComponent(daFreshLimitId)}&minAge=0&fresh=true`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    expect(secondFreshRes.status).toBe(429);
+    expect(secondFreshRes.json.error).toBe('TooManyFreshQueries');
+
+    const firstFreshRes = await firstFreshRequest;
+    expect(firstFreshRes.status).toBe(200);
+  });
+
+  test('GET /query with fresh=true streams NDJSON progressively from PostgreSQL (real streaming)', async () => {
+    const fdaFreshStreamId = 'fda_fresh_stream_real';
+    const daFreshStreamId = 'da_fresh_stream_real';
+
+    const TOTAL_ROWS = 600; // Forces multiple batches
+
+    const createFda = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas`,
+      headers: {
+        'Fiware-Service': service,
+        'Fiware-ServicePath': servicePath,
+      },
+      body: {
+        id: fdaFreshStreamId,
+        description: 'fresh ndjson real streaming test fda',
+        query: 'SELECT id, name, age FROM public.users',
+      },
+    });
+
+    expect(createFda.status).toBe(202);
+
+    await waitUntilFDACompleted({
+      baseUrl,
+      service,
+      fdaId: fdaFreshStreamId,
+      timeout: 20000,
+      interval: 300,
+    });
+
+    // Create DA for fresh NDJSON streaming
+    const createDa = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas/${fdaFreshStreamId}/das`,
+      headers: { 'Fiware-Service': service },
+      body: {
+        id: daFreshStreamId,
+        description: 'fresh ndjson real streaming test',
+        query: `
+          SELECT id, name, age
+          ORDER BY id
+        `,
+      },
+    });
+
+    expect(createDa.status).toBe(201);
+
+    // Insertar muchos datos
+    const pgClient = new Client({
+      host: pgHost,
+      port: pgPort,
+      user: 'postgres',
+      password: 'postgres',
+      database: service,
+    });
+
+    await connectWithRetry(pgClient);
+
+    const extraIds = [];
+
+    try {
+      for (let i = 0; i < TOTAL_ROWS; i++) {
+        const id = 1000 + i;
+        extraIds.push(id);
+        await pgClient.query(
+          `INSERT INTO public.users (id, name, age, timeinstant, authorized)
+          VALUES ($1, $2, $3, NOW(), true)`,
+          [id, `user_${i}`, 20 + (i % 50)],
+        );
+      }
+
+      // Real streaming request
+      const url = new URL(
+        `${baseUrl}/query?fdaId=${encodeURIComponent(
+          fdaFreshStreamId,
+        )}&daId=${encodeURIComponent(daFreshStreamId)}&fresh=true`,
+      );
+
+      const chunks = [];
+      let receivedChunks = 0;
+      let firstChunkTime = null;
+
+      await new Promise((resolve, reject) => {
+        const req = http.request(
+          {
+            method: 'GET',
+            hostname: url.hostname,
+            port: url.port,
+            path: url.pathname + url.search,
+            headers: {
+              'Fiware-Service': service,
+              Accept: 'application/x-ndjson',
+            },
+          },
+          (res) => {
+            expect(res.statusCode).toBe(200);
+            expect(res.headers['content-type']).toContain(
+              'application/x-ndjson',
+            );
+
+            res.setEncoding('utf8');
+
+            res.on('data', (chunk) => {
+              receivedChunks++;
+
+              if (!firstChunkTime) {
+                firstChunkTime = Date.now();
+              }
+
+              chunks.push(chunk);
+            });
+
+            res.on('end', resolve);
+          },
+        );
+
+        req.on('error', reject);
+        req.end();
+      });
+
+      // Verify streaming
+      expect(receivedChunks).toBeGreaterThan(1); // Multiple chunks
+      expect(firstChunkTime).not.toBeNull(); // First chunk received
+
+      // Parse and validate NDJSON
+      const fullText = chunks.join('');
+      const lines = fullText
+        .trim()
+        .split('\n')
+        .map((l) => JSON.parse(l));
+
+      expect(lines.length).toBeGreaterThanOrEqual(3 + TOTAL_ROWS);
+      expect(lines[0]).toMatchObject({ id: 1, name: 'ana' });
+      expect(lines[lines.length - 1].name).toMatch(/^user_/);
+    } finally {
+      await pgClient.query(`DELETE FROM public.users WHERE id >= 1000`);
+      await pgClient.end();
+    }
+  });
+
+  test('GET /query rejects invalid fresh query param', async () => {
+    const res = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+        fdaId,
+      )}&daId=${encodeURIComponent(daId)}&minAge=25&fresh=maybe`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.json.error).toBe('BadRequest');
   });
 
   test('POST /fdas/:fdaId/das + GET /query using default params', async () => {

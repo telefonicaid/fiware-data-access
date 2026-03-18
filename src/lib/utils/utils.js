@@ -22,6 +22,10 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
+import { FDAError } from '../fdaError.js';
+
+let activeFreshQueries = 0;
+
 // Convert BigInt values to numbers for JSON serialization
 export function convertBigInt(obj) {
   if (typeof obj === 'bigint') {
@@ -50,4 +54,74 @@ export function validateAllowedFieldsBody(body, allowedFields) {
     err.type = 'BadRequest';
     throw err;
   }
+}
+
+export function parseBooleanQueryParam(value, name) {
+  if (value === undefined) {
+    return false;
+  }
+
+  if (value === true || value === false) {
+    return value;
+  }
+
+  if (typeof value !== 'string') {
+    throw new FDAError(
+      400,
+      'BadRequest',
+      `Query param "${name}" must be a boolean.`,
+    );
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'true' || normalized === '1') {
+    return true;
+  }
+
+  if (normalized === 'false' || normalized === '0') {
+    return false;
+  }
+
+  throw new FDAError(
+    400,
+    'BadRequest',
+    `Query param "${name}" must be a boolean.`,
+  );
+}
+
+export function assertFreshQueriesEnabled(isEnabled) {
+  if (!isEnabled) {
+    throw new FDAError(
+      503,
+      'SyncQueriesDisabled',
+      'Fresh query mode is disabled in this instance',
+    );
+  }
+}
+
+export function acquireFreshQuerySlot(maxConcurrent) {
+  const parsedMax = Number(maxConcurrent);
+  const maxFreshQueries = Number.isFinite(parsedMax)
+    ? Math.max(1, parsedMax)
+    : 5;
+
+  if (activeFreshQueries >= maxFreshQueries) {
+    throw new FDAError(
+      429,
+      'TooManyFreshQueries',
+      `Too many concurrent fresh queries (limit ${maxFreshQueries})`,
+    );
+  }
+
+  activeFreshQueries += 1;
+
+  let released = false;
+  return () => {
+    if (released) {
+      return;
+    }
+
+    released = true;
+    activeFreshQueries = Math.max(0, activeFreshQueries - 1);
+  };
 }

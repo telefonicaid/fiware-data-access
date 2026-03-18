@@ -75,11 +75,13 @@ All error responses follow this structure:
 | 404  | Not Found             | `FDANotFound`          | The requested FDA was not found.                                                                                                                                                          |
 | 404  | Not Found             | `DaNotFound`           | The requested Data Access (DA) was not found.                                                                                                                                             |
 | 409  | Conflict              | `DuplicatedKey`        | The resource already exists in the database. Attempting to create a duplicate resource.                                                                                                   |
+| 429  | Too Many Requests     | `TooManyFreshQueries`  | The number of concurrent `fresh=true` queries exceeded `FDA_MAX_CONCURRENT_FRESH_QUERIES`.                                                                                                |
 | 409  | Conflict              | `FDAUnavailable`       | FDA `exampleId` is not queryable yet because the first fetch has not completed.                                                                                                           |
 | 500  | Internal Server Error | `S3ServerError`        | An error occurred in the S3 object storage component.                                                                                                                                     |
 | 500  | Internal Server Error | `DuckDBServerError`    | An error occurred in the DuckDB component.                                                                                                                                                |
 | 500  | Internal Server Error | `MongoDBServerError`   | An error occurred in the MongoDB component.                                                                                                                                               |
 | 503  | Service Unavailable   | `UploadError`          | Connection error with the PostgreSQL database component.                                                                                                                                  |
+| 503  | Service Unavailable   | `SyncQueriesDisabled`  | A request was sent with `fresh=true` but the API instance is running with `FDA_ROLE_SYNCQUERIES=false`.                                                                                   |
 | 503  | Service Unavailable   | `MongoConnectionError` | Connection error with the MongoDB component.                                                                                                                                              |
 
 ### Common error scenarios
@@ -987,10 +989,11 @@ Runs a stored parameterized query. The value of the parameters must be included 
 
 _**Request query parameters**_
 
-| Header  | Optional | Description                                                          | Example |
-| ------- | -------- | -------------------------------------------------------------------- | ------- |
-| `fdaId` |          | Id of the `fda`. Must be unique in combination with `Fiware-Service` | `fda1`  |
-| `daId`  |          | Id of the `da`. Must be unique inside each `fda`                     | `da1`   |
+| Header  | Optional | Description                                                                                                                                              | Example |
+| ------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| `fdaId` |          | Id of the `fda`. Must be unique in combination with `Fiware-Service`                                                                                     | `fda1`  |
+| `daId`  |          | Id of the `da`. Must be unique inside each `fda`                                                                                                         | `da1`   |
+| `fresh` | ✓        | If `true`, executes the DA directly against PostgreSQL instead of the cached Parquet snapshot. Requires `FDA_ROLE_SYNCQUERIES=true` in the API instance. | `true`  |
 
 Additionally the necessary parameters for the query must be included with the previous ones.
 
@@ -1035,6 +1038,9 @@ _**Content negotiation (JSON / NDJSON)**_
     `Content-Type: application/x-ndjson` and streams one JSON object per line (NDJSON). Use this for large result sets
     or streaming consumers.
 -   NDJSON output uses numeric types for integer columns (BigInt values are converted to numbers before serialization).
+-   The `fresh` parameter can be combined with both output modes (`application/json` and `application/x-ndjson`).
+-   With `fresh=true` and `Accept: application/x-ndjson`, results are streamed incrementally from PostgreSQL using a
+    cursor to avoid loading full result sets in memory.
 
 _**Example Request (without parameters):**_
 
@@ -1101,6 +1107,13 @@ _**Example Request (NDJSON):**_
 curl -i -X GET "http://localhost:8080/query?fdaId=fda_alarms&daId=da_all_alarms" \
   -H "Fiware-Service: my-bucket" \
   -H "Accept: application/x-ndjson"
+```
+
+_**Example Request (fresh query on PostgreSQL):**_
+
+```bash
+curl -i -X GET "http://localhost:8080/query?fdaId=fda_alarms&daId=da_filter_by_name&pattern=%nosignal%&fresh=true" \
+  -H "Fiware-Service: my-bucket"
 ```
 
 #### Query `POST /plugin/cda/api/doQuery` (Pentaho CDA legacy support)
