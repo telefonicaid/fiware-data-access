@@ -15,7 +15,9 @@
     "prettier": "prettier --config .prettierrc.json --write '**/**/**/**/*.js' '**/**/**/*.js' '**/**/*.js' '**/*.js' '*.js'",
     "start": "node src/index.js",
     "test": "NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
-    "test:coverage": "NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules c8 --reporter=lcov --reporter=text-summary --reports-dir=coverage jest --runInBand"
+    "test:coverage": "NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules c8 --reporter=lcov --reporter=text-summary --reports-dir=coverage jest --runInBand",
+    "test:coverage:unit": "NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules c8 --reporter=lcov --reporter=text-summary --reports-dir=coverage/unit jest --runInBand test/unit",
+    "test:coverage:integration": "NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules c8 --reporter=lcov --reporter=text-summary --reports-dir=coverage/integration jest --runInBand test/integration"
   },
   "engines": {
     "node": ">=24"

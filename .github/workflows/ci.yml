@@ -74,16 +74,22 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Run unit tests with coverage
+        run: npm run test:coverage:unit
+
       - name: Docker info
         run: |
           docker version
           docker info
 
-      - name: Run tests with coverage
+      - name: Run integration tests with coverage
         env:
           TESTCONTAINERS_RYUK_DISABLED: "true"
           DOCKER_HOST: "unix:///var/run/docker.sock"
-        run: npm run test:coverage
+        run: npm run test:coverage:integration
+
+      - name: Merge coverage reports
+        run: npx --yes lcov-result-merger 'coverage/unit/lcov.info' 'coverage/integration/lcov.info' coverage/lcov.info
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4
