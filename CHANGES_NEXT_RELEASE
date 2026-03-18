@@ -1,4 +1,4 @@
 - Fix: move mongo data base name into mongo uri (#115)
-- Feat: add fresh query mode (`GET /query?fresh=true`) with PostgreSQL execution and new runtime flag `FDA_ROLE_SYNCQUERIES` (#66)
-- Feat: add fresh query concurrency guard via `FDA_MAX_CONCURRENT_FRESH_QUERIES` and `429 TooManyFreshQueries` (#66)
+- Add: fresh query mode (`GET /query?fresh=true`) with PostgreSQL execution and new runtime flag `FDA_ROLE_SYNCQUERIES` (#66)
+- Add: fresh query concurrency guard via `FDA_MAX_CONCURRENT_FRESH_QUERIES` and `429 TooManyFreshQueries` (#66)
 - Add: DA validation with FDA snapshot and query gating until first fetch completes (#97)
