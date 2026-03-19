@@ -408,8 +408,10 @@ export async function deleteFDA(service, fdaId) {
     config.objstg.usr,
     config.objstg.pass,
   );
-  // TODO no se esta borrando el csv correctamente en los casos de partition
-  await dropFile(s3Client, service, getPath('', fdaId, '.parquet'));
+  // This way we remove FDAs independently of if theyre partitioned or not
+  const objPaths = await listObjects(s3Client, service, fdaId);
+  await dropFiles(s3Client, service, objPaths);
+
   await removeFDA(service, fdaId);
 
   const agenda = getAgenda();
