@@ -417,6 +417,10 @@ export async function deleteFDA(service, fdaId) {
     name: 'refresh-fda',
     'data.fdaId': fdaId,
   });
+  await agenda.cancel({
+    name: 'clean-partition',
+    'data.fdaId': fdaId,
+  });
 }
 
 export function getDAs(service, fdaId) {
