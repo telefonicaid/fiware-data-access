@@ -361,6 +361,7 @@ export async function updateFDA(service, fdaId) {
     service,
     timeColumn: previous.timeColumn,
     objStgConf: previous.objStgConf,
+    partitionFlag: true,
   });
 }
 
@@ -549,13 +550,15 @@ async function uploadTableToObjStg(
         bucket,
         `tmp/${path}.parquet`,
       );
-      await moveObject(
-        s3Client,
-        bucket,
-        `${bucket}/${objectsList}`,
-        objectsList[0].replace('tmp/', ''),
-      );
-      await dropFile(s3Client, bucket, objectsList[0]);
+      for (const tempPartition of objectsList) {
+        await moveObject(
+          s3Client,
+          bucket,
+          `${bucket}/${tempPartition}`,
+          tempPartition.replace('tmp/', ''),
+        );
+        await dropFile(s3Client, bucket, tempPartition);
+      }
     }
 
     await updateFDAStatus(service, path, 'uploading', 80);
