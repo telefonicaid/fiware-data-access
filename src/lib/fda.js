@@ -563,7 +563,15 @@ function getUpdateWindow(windowType, query, timeColumn) {
     },
   };
 
-  return slidingWindow[windowType];
+  const window = slidingWindow[windowType];
+  if (!window) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Invalid window type: ${windowType}.`,
+    );
+  }
+  return window;
 }
 
 export async function updateFDA(service, fdaId) {
@@ -593,6 +601,7 @@ export async function processFDAAsync(
   try {
     await updateFDAStatus(service, fdaId, 'fetching', 10);
 
+    console.log(objStgConf, '~~~~~~~~');
     await uploadTableToObjStg(
       service,
       service,
@@ -751,6 +760,7 @@ async function uploadTableToObjStg(
       ? getPath(bucket, 'tmp/' + path, '.parquet')
       : getPath(bucket, path, '.parquet');
 
+    console.log(objStgConf.partition, '********');
     await toParquet(
       conn,
       getPath(bucket, path, '.csv'),

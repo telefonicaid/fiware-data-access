@@ -187,6 +187,32 @@ async function waitUntilFDACompleted({
   throw new Error(`Timeout waiting for FDA ${fdaId} to reach completed state`);
 }
 
+async function waitUntilFDAFailed({
+  baseUrl,
+  service,
+  fdaId,
+  timeout = 10000,
+  interval = 300,
+}) {
+  const start = Date.now();
+
+  while (Date.now() - start < timeout) {
+    const res = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/fdas/${encodeURIComponent(fdaId)}`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    if (res.status === 200 && res.json?.status === 'failed') {
+      return res.json;
+    }
+
+    await new Promise((r) => setTimeout(r, interval));
+  }
+
+  throw new Error(`Timeout waiting for FDA ${fdaId} to reach completed state`);
+}
+
 describe('FDA API - integration (run app as child process)', () => {
   let minio;
   let mongo;
@@ -406,6 +432,136 @@ describe('FDA API - integration (run app as child process)', () => {
     }
     expect(res.status).toBe(202);
     await waitUntilFDACompleted({ baseUrl, service, fdaId });
+  });
+
+  test('POST /fdas creates an FDA with various refresh policies', async () => {
+    // Test with a window refresh policy (weekly) and partitioned by day, without compression, with a window size of 1 day
+    const res = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas`,
+      headers: { 'Fiware-Service': service },
+      body: {
+        id: 'fda_refresh',
+        // query base to extract from PG to CSV
+        query:
+          'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+        description: 'users dataset',
+        refreshPolicy: {
+          type: 'window',
+          value: 'weekly',
+          deleteInterval: '0 0 * * *',
+          windowSize: 'day',
+        },
+        timeColumn: 'timeinstant',
+        objStgConf: {
+          partition: 'day',
+          compression: false,
+        },
+      },
+    });
+
+    if (res.status >= 400) {
+      console.error('POST /fdas failed:', res.status, res.json ?? res.text);
+    }
+    expect(res.status).toBe(202);
+    await waitUntilFDACompleted({ baseUrl, service, fdaId: 'fda_refresh' });
+
+    // Test with a window refresh policy (weekly) and partitioned by day, without compression, with a window size of 1 day
+    const res2 = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas`,
+      headers: { 'Fiware-Service': service },
+      body: {
+        id: 'fda_refresh2',
+        // query base to extract from PG to CSV
+        query:
+          'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+        description: 'users dataset',
+        refreshPolicy: {
+          type: 'window',
+          value: 'weekly',
+          deleteInterval: '0 0 * * *',
+          windowSize: 'week',
+        },
+        timeColumn: 'timeinstant',
+        objStgConf: {
+          partition: 'week',
+          compression: false,
+        },
+      },
+    });
+
+    if (res2.status >= 400) {
+      console.error('POST /fdas failed:', res2.status, res2.json ?? res2.text);
+    }
+    expect(res2.status).toBe(202);
+    await waitUntilFDACompleted({ baseUrl, service, fdaId: 'fda_refresh2' });
+
+    // Test with partition type but no time column, should return error as time column is required for partitioning
+    const res3 = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas`,
+      headers: { 'Fiware-Service': service },
+      body: {
+        id: 'fda_refresh3',
+        // query base to extract from PG to CSV
+        query:
+          'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+        description: 'users dataset',
+        refreshPolicy: {
+          type: 'window',
+          value: 'monthly',
+          deleteInterval: '0 0 * * *',
+          windowSize: 'month',
+        },
+        objStgConf: {
+          partition: 'month',
+          compression: false,
+        },
+      },
+    });
+
+    if (res3.status >= 400) {
+      console.error('POST /fdas failed:', res3.status, res3.json ?? res3.text);
+    }
+    expect(res3.status).toBe(202);
+    const fdaResult = await waitUntilFDAFailed({
+      baseUrl,
+      service,
+      fdaId: 'fda_refresh3',
+    });
+    expect(fdaResult.status).toBe('failed');
+    expect(fdaResult.error).toBe('Missing timeColumn value.');
+
+    // Test with invalid partition type
+    const res4 = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/fdas`,
+      headers: { 'Fiware-Service': service },
+      body: {
+        id: 'fda_refresh4',
+        // query base to extract from PG to CSV
+        query:
+          'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+        description: 'users dataset',
+        refreshPolicy: {
+          type: 'window',
+          value: 'yearly',
+          deleteInterval: '0 0 * * *',
+          windowSize: 'year',
+        },
+        timeColumn: 'timeinstant',
+        objStgConf: {
+          partition: 'fakePartition',
+          compression: false,
+        },
+      },
+    });
+
+    if (res4.status >= 400) {
+      console.error('POST /fdas failed:', res4.status, res4.json ?? res4.text);
+    }
+    expect(res4.status).toBe(400);
   });
 
   test('POST /fdas tries to creates an FDA without id and is detected', async () => {
