@@ -122,9 +122,16 @@ await jest.unstable_mockModule('../../src/lib/fdaConfig.js', () => ({
   },
 }));
 
-const { executeQuery, executeQueryStream, fetchFDA } = await import(
-  '../../src/lib/fda.js'
-);
+const {
+  executeQuery,
+  executeQueryStream,
+  fetchFDA,
+  updateFDA,
+  processFDAAsync,
+  deleteFDA,
+  getDA,
+  putDA,
+} = await import('../../src/lib/fda.js');
 
 function createReqRes() {
   const reqHandlers = {};
@@ -462,5 +469,203 @@ describe('fetchFDA', () => {
     expect(awsMocks.dropFile).toHaveBeenCalledWith({}, 'svc', 'fda1.csv');
     expect(awsMocks.dropFile).toHaveBeenCalledWith({}, 'svc', 'fda1.parquet');
     expect(agenda.now).not.toHaveBeenCalled();
+  });
+});
+
+describe('updateFDA', () => {
+  const agenda = {
+    now: jest.fn(),
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jobsMocks.getAgenda.mockReturnValue(agenda);
+    agenda.now.mockResolvedValue(undefined);
+    mongoMocks.regenerateFDA.mockResolvedValue({
+      query: 'SELECT id FROM users',
+    });
+  });
+
+  test('regenerates FDA and schedules refresh job immediately', async () => {
+    await updateFDA('svc', 'fda42');
+
+    expect(mongoMocks.regenerateFDA).toHaveBeenCalledWith('svc', 'fda42');
+    expect(agenda.now).toHaveBeenCalledWith('refresh-fda', {
+      fdaId: 'fda42',
+      query: 'SELECT id FROM users',
+      service: 'svc',
+    });
+  });
+});
+
+describe('processFDAAsync', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    awsMocks.getS3Client.mockReturnValue({});
+    awsMocks.dropFile.mockResolvedValue(undefined);
+    dbMocks.getDBConnection.mockResolvedValue({});
+    dbMocks.releaseDBConnection.mockResolvedValue(undefined);
+    dbMocks.toParquet.mockResolvedValue(undefined);
+    pgMocks.uploadTable.mockResolvedValue(undefined);
+    mongoMocks.updateFDAStatus.mockResolvedValue(undefined);
+  });
+
+  test('updates status through successful async FDA processing lifecycle', async () => {
+    await processFDAAsync('fda1', 'SELECT 1', 'svc');
+
+    expect(mongoMocks.updateFDAStatus).toHaveBeenNthCalledWith(
+      1,
+      'svc',
+      'fda1',
+      'fetching',
+      10,
+    );
+    expect(mongoMocks.updateFDAStatus).toHaveBeenNthCalledWith(
+      2,
+      'svc',
+      'fda1',
+      'fetching',
+      20,
+    );
+    expect(mongoMocks.updateFDAStatus).toHaveBeenNthCalledWith(
+      3,
+      'svc',
+      'fda1',
+      'transforming',
+      60,
+    );
+    expect(mongoMocks.updateFDAStatus).toHaveBeenNthCalledWith(
+      4,
+      'svc',
+      'fda1',
+      'uploading',
+      80,
+    );
+    expect(mongoMocks.updateFDAStatus).toHaveBeenNthCalledWith(
+      5,
+      'svc',
+      'fda1',
+      'completed',
+      100,
+    );
+  });
+
+  test('marks FDA as failed and rethrows when upload fails', async () => {
+    pgMocks.uploadTable.mockRejectedValue(new Error('upload failed'));
+
+    await expect(processFDAAsync('fda2', 'SELECT 2', 'svc')).rejects.toThrow(
+      'upload failed',
+    );
+
+    expect(mongoMocks.updateFDAStatus).toHaveBeenCalledWith(
+      'svc',
+      'fda2',
+      'failed',
+      0,
+      'upload failed',
+    );
+  });
+});
+
+describe('deleteFDA', () => {
+  const agenda = {
+    cancel: jest.fn(),
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jobsMocks.getAgenda.mockReturnValue(agenda);
+    agenda.cancel.mockResolvedValue(undefined);
+    awsMocks.getS3Client.mockReturnValue({});
+    awsMocks.dropFile.mockResolvedValue(undefined);
+    mongoMocks.removeFDA.mockResolvedValue(undefined);
+  });
+
+  test('drops parquet, removes FDA and cancels agenda job', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({ _id: 'mongo-id' });
+
+    await deleteFDA('svc', 'fdaA');
+
+    expect(awsMocks.dropFile).toHaveBeenCalledWith({}, 'svc', '/fdaA.parquet');
+    expect(mongoMocks.removeFDA).toHaveBeenCalledWith('svc', 'fdaA');
+    expect(agenda.cancel).toHaveBeenCalledWith({
+      name: 'refresh-fda',
+      'data.fdaId': 'fdaA',
+    });
+  });
+
+  test('throws FDANotFound when FDA does not exist', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue(undefined);
+
+    await expect(deleteFDA('svc', 'missing')).rejects.toMatchObject({
+      status: 404,
+      type: 'FDANotFound',
+    });
+
+    expect(awsMocks.getS3Client).not.toHaveBeenCalled();
+  });
+});
+
+describe('DA access and update helpers', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    dbMocks.getDBConnection.mockResolvedValue({});
+    dbMocks.releaseDBConnection.mockResolvedValue(undefined);
+    dbMocks.validateDAQuery.mockResolvedValue(undefined);
+    dbMocks.checkParams.mockReturnValue(undefined);
+    mongoMocks.updateDA.mockResolvedValue(undefined);
+  });
+
+  test('getDA returns DA and injects daId into response', async () => {
+    mongoMocks.retrieveDA.mockResolvedValue({
+      description: 'demo',
+      query: 'SELECT 1',
+    });
+
+    await expect(getDA('svc', 'fdaA', 'daA')).resolves.toEqual({
+      id: 'daA',
+      description: 'demo',
+      query: 'SELECT 1',
+    });
+  });
+
+  test('getDA throws DaNotFound when DA does not exist', async () => {
+    mongoMocks.retrieveDA.mockResolvedValue(undefined);
+
+    await expect(getDA('svc', 'fdaA', 'missing')).rejects.toMatchObject({
+      status: 404,
+      type: 'DaNotFound',
+    });
+  });
+
+  test('putDA validates and updates DA', async () => {
+    await putDA('svc', 'fdaA', 'daA', 'desc', 'SELECT id', [{ name: 'id' }]);
+
+    expect(dbMocks.checkParams).toHaveBeenCalledWith([{ name: 'id' }]);
+    expect(dbMocks.validateDAQuery).toHaveBeenCalledWith(
+      {},
+      'svc',
+      'fdaA',
+      'SELECT id',
+    );
+    expect(mongoMocks.updateDA).toHaveBeenCalledWith(
+      'svc',
+      'fdaA',
+      'daA',
+      'desc',
+      'SELECT id',
+      [{ name: 'id' }],
+    );
+    expect(dbMocks.releaseDBConnection).toHaveBeenCalledWith({});
+  });
+
+  test('putDA always releases DB connection when validation fails', async () => {
+    dbMocks.validateDAQuery.mockRejectedValue(new Error('invalid DA query'));
+
+    await expect(
+      putDA('svc', 'fdaA', 'daA', 'desc', 'SELECT id', []),
+    ).rejects.toThrow('invalid DA query');
+
+    expect(dbMocks.releaseDBConnection).toHaveBeenCalledWith({});
   });
 });
