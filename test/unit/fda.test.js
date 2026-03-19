@@ -34,6 +34,7 @@ const dbMocks = {
   checkParams: jest.fn(),
   resolveDAParams: jest.fn(),
   validateDAQuery: jest.fn(),
+  extractDate: jest.fn(),
 };
 
 const pgMocks = {
@@ -45,6 +46,9 @@ const pgMocks = {
 const awsMocks = {
   getS3Client: jest.fn(),
   dropFile: jest.fn(),
+  dropFiles: jest.fn(),
+  moveObject: jest.fn(),
+  listObjects: jest.fn(),
 };
 
 const mongoMocks = {
@@ -78,6 +82,7 @@ await jest.unstable_mockModule('../../src/lib/utils/db.js', () => ({
   checkParams: dbMocks.checkParams,
   resolveDAParams: dbMocks.resolveDAParams,
   validateDAQuery: dbMocks.validateDAQuery,
+  extractDate: dbMocks.extractDate,
 }));
 
 await jest.unstable_mockModule('../../src/lib/utils/pg.js', () => ({
@@ -89,6 +94,9 @@ await jest.unstable_mockModule('../../src/lib/utils/pg.js', () => ({
 await jest.unstable_mockModule('../../src/lib/utils/aws.js', () => ({
   getS3Client: awsMocks.getS3Client,
   dropFile: awsMocks.dropFile,
+  dropFiles: awsMocks.dropFiles,
+  moveObject: awsMocks.moveObject,
+  listObjects: awsMocks.listObjects,
 }));
 
 await jest.unstable_mockModule('../../src/lib/utils/mongo.js', () => ({
@@ -403,9 +411,17 @@ describe('fetchFDA', () => {
   });
 
   test('creates one-row parquet synchronously and schedules immediate fetch', async () => {
-    await fetchFDA('fda1', 'SELECT id FROM users;', 'svc', '/svc', 'test FDA', {
-      type: 'none',
-    });
+    await fetchFDA(
+      'fda1',
+      'SELECT id FROM users;',
+      'svc',
+      '/svc',
+      'test FDA',
+      {
+        type: 'none',
+      },
+      'timeinstant',
+    );
 
     expect(mongoMocks.createFDAMongo).toHaveBeenCalledWith(
       'fda1',
@@ -414,6 +430,8 @@ describe('fetchFDA', () => {
       '/svc',
       'test FDA',
       { type: 'none' },
+      'timeinstant',
+      undefined,
     );
     expect(pgMocks.uploadTable).toHaveBeenCalledWith(
       {},
@@ -432,6 +450,8 @@ describe('fetchFDA', () => {
       fdaId: 'fda1',
       query: 'SELECT id FROM users;',
       service: 'svc',
+      timeColumn: 'timeinstant',
+      objStgConf: undefined,
     });
     expect(agenda.every).not.toHaveBeenCalled();
   });
