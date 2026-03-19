@@ -49,7 +49,10 @@ import {
   getInitialLogger,
 } from './lib/utils/logger.js';
 import { handleCdaQuery } from './lib/compat/cdaAdapter.js';
-import { validateAllowedFieldsBody } from './lib/utils/utils.js';
+import {
+  validateAllowedFieldsBody,
+  parseBooleanQueryParam,
+} from './lib/utils/utils.js';
 
 export const app = express();
 const PORT = config.port;
@@ -316,6 +319,10 @@ app.get('/query', async (req, res) => {
   const { fdaId, daId } = req.query;
   const service = req.get('Fiware-Service');
   const accept = req.get('Accept') || 'application/json';
+  const fresh = parseBooleanQueryParam(req.query.fresh, 'fresh');
+
+  const queryParams = { ...req.query };
+  delete queryParams.fresh;
 
   if (Object.keys(req.query).length === 0 || !fdaId || !daId || !service) {
     return res.status(400).json({
@@ -328,15 +335,17 @@ app.get('/query', async (req, res) => {
   if (accept.includes('application/x-ndjson')) {
     return executeQueryStream({
       service,
-      params: req.query,
+      params: queryParams,
       req,
       res,
+      fresh,
     });
   }
 
   const result = await executeQuery({
     service,
-    params: req.query,
+    params: queryParams,
+    fresh,
   });
 
   return res.json(result);

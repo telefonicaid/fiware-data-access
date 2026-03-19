@@ -100,10 +100,16 @@ export async function runPreparedStatement(
   fdaId,
   daId,
   paramValues,
+  streaming = false,
 ) {
+  const method = streaming
+    ? 'runPreparedStatementStream'
+    : 'runPreparedStatement';
   logger.debug(
-    { service, fdaId, daId, paramValues: JSON.stringify(paramValues) },
-    '[DEBUG]: runPreparedStatement',
+    streaming
+      ? { service, fdaId, daId, paramValues }
+      : { service, fdaId, daId, paramValues: JSON.stringify(paramValues) },
+    `[DEBUG]: ${method}`,
   );
 
   const da = await retrieveDA(service, fdaId, daId);
@@ -124,21 +130,35 @@ export async function runPreparedStatement(
     const boundParams = applyParams(paramValues || {}, da.params);
     await stmt.bind(boundParams);
 
+    if (streaming) {
+      const stream = await stmt.stream();
+      const close = async () => {
+        if (typeof stmt.close === 'function') {
+          await stmt.close();
+        }
+      };
+      return { stream, close };
+    }
+
     const result = await stmt.run();
     return result.getRowObjectsJson();
   } catch (e) {
+    if (streaming && typeof stmt.close === 'function') {
+      await stmt.close();
+    }
+
     if (e instanceof FDAError) {
       throw e;
     }
 
+    const action = streaming ? 'streaming' : 'running';
     throw new FDAError(
       500,
       'DuckDBServerError',
-      `Error running the prepared statement: ${e}`,
+      `Error ${action} the prepared statement: ${e}`,
     );
   } finally {
-    // release statement resources
-    if (typeof stmt.close === 'function') {
+    if (!streaming && typeof stmt.close === 'function') {
       await stmt.close();
     }
   }
@@ -151,47 +171,14 @@ export async function runPreparedStatementStream(
   daId,
   paramValues,
 ) {
-  logger.debug(
-    { service, fdaId, daId, paramValues },
-    '[DEBUG]: runPreparedStatementStream',
+  return await runPreparedStatement(
+    conn,
+    service,
+    fdaId,
+    daId,
+    paramValues,
+    true,
   );
-
-  const da = await retrieveDA(service, fdaId, daId);
-  if (!da?.query) {
-    throw new FDAError(
-      404,
-      'DaNotFound',
-      `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`,
-    );
-  }
-
-  const { objStgConf } = await retrieveFDA(service, fdaId);
-  const query = buildDAQuery(service, fdaId, da.query, objStgConf?.partition);
-
-  const stmt = await conn.prepare(query);
-
-  try {
-    const boundParams = applyParams(paramValues || {}, da.params);
-    await stmt.bind(boundParams);
-
-    const stream = await stmt.stream();
-
-    const close = async () => {
-      if (typeof stmt.close === 'function') {
-        await stmt.close();
-      }
-    };
-    return { stream, close };
-  } catch (e) {
-    if (typeof stmt.close === 'function') {
-      await stmt.close();
-    }
-    throw new FDAError(
-      500,
-      'DuckDBServerError',
-      `Error streaming the prepared statement: ${e}`,
-    );
-  }
 }
 
 export function checkParams(params) {
@@ -325,6 +312,10 @@ function applyParams(reqParams, params) {
   }
 
   return validated;
+}
+
+export function resolveDAParams(reqParams, params) {
+  return applyParams(reqParams, params);
 }
 
 const TYPE_COERCERS = {
@@ -515,6 +506,25 @@ export function extractDate(path) {
   }
 
   return null;
+}
+
+export async function validateDAQuery(conn, service, fdaId, userQuery) {
+  const query = buildDAQuery(service, fdaId, userQuery);
+
+  let stmt;
+  try {
+    stmt = await conn.prepare(query);
+  } catch (e) {
+    throw new FDAError(
+      400,
+      'InvalidDAQuery',
+      `DA query is not compatible with FDA ${fdaId}: ${e.message || e}`,
+    );
+  } finally {
+    if (stmt && typeof stmt.close === 'function') {
+      await stmt.close();
+    }
+  }
 }
 
 async function configureConn(conn) {

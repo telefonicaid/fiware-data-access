@@ -114,6 +114,13 @@ Data flow:
 3. DA queries are executed on Parquet datasets using DuckDB
 4. Results are returned as JSON via the API
 
+Optional fresh mode:
+
+-   For use cases that require real-time data, `GET /query` supports `fresh=true`.
+-   In this mode the DA is executed directly on PostgreSQL using the FDA base query as source (without waiting for the
+    next FDA refresh cycle).
+-   Fresh mode is controlled per instance with `FDA_ROLE_SYNCQUERIES`.
+
 ---
 
 ## Database Model

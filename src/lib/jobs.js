@@ -38,7 +38,7 @@ export function initAgenda() {
 
   agenda = new Agenda({
     backend: new MongoBackend({
-      address: config.mongo.uri + '/fiware-data-access',
+      address: config.mongo.uri,
       collection: 'agendaJobs',
     }),
     removeOnComplete: true,

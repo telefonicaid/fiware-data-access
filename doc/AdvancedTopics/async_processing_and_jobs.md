@@ -74,6 +74,10 @@ FDA_ROLE_FETCHER: {
   type: 'boolean',
   default: true,
 },
+FDA_ROLE_SYNCQUERIES: {
+  type: 'boolean',
+  default: false,
+},
 ```
 
 Startup logic:
@@ -95,6 +99,12 @@ if (config.roles.fetcher) {
 | API-only        | ✅  | ❌      | Edge service, request intake |
 | Fetcher-only    | ❌  | ✅      | Dedicated worker node        |
 | Mixed (default) | ✅  | ✅      | Simple deployments           |
+
+`FDA_ROLE_SYNCQUERIES` is an additional API capability flag (not a standalone worker role): when enabled, the API
+accepts `fresh=true` in `GET /query` to execute DA queries directly on PostgreSQL.
+
+To protect API workers from overload, fresh-query concurrency is bounded by `FDA_MAX_CONCURRENT_FRESH_QUERIES` (default
+`5`). Extra requests return `429 TooManyFreshQueries`.
 
 ### Why This Matters
 
@@ -357,6 +367,17 @@ Flow:
 3. HTTP `202 Accepted` returned
 4. Fetcher picks up job
 5. Mongo updated throughout lifecycle
+
+### Query availability during first fetch
+
+To keep early DA validation without waiting for the first asynchronous job completion:
+
+-   FDA provisioning creates the canonical `${fdaId}.parquet` synchronously from a one-row snapshot.
+-   DA create/update validates compatibility using DuckDB `prepare` against that parquet.
+-   Query execution is blocked until the first successful fetch has completed (`lastFetch` exists), returning
+    `409 FDAUnavailable` beforehand.
+-   After the first successful fetch, queries can still run during later `fetching` states using the last available
+    parquet snapshot.
 
 ---
 

@@ -30,10 +30,11 @@ import {
   releaseDBConnection,
   toParquet,
   checkParams,
-  buildDAQuery,
+  resolveDAParams,
+  validateDAQuery,
   extractDate,
 } from './utils/db.js';
-import { uploadTable } from './utils/pg.js';
+import { uploadTable, runPgQuery, createPgCursorReader } from './utils/pg.js';
 import {
   getS3Client,
   dropFile,
@@ -54,9 +55,16 @@ import {
   removeDA,
   updateFDAStatus,
 } from './utils/mongo.js';
-import { convertBigInt, getWindowDate } from './utils/utils.js';
+import {
+  convertBigInt,
+  getWindowDate,
+  assertFreshQueriesEnabled,
+  acquireFreshQuerySlot,
+} from './utils/utils.js';
 import { config } from './fdaConfig.js';
 import { FDAError } from './fdaError.js';
+
+const FRESH_CURSOR_BATCH_SIZE = 250;
 
 export function getFDAs(service) {
   return retrieveFDAs(service);
@@ -75,8 +83,14 @@ export async function getFDA(service, fdaId) {
   return fda;
 }
 
-export async function executeQuery({ service, params }) {
+export async function executeQuery({ service, params, fresh = false }) {
+  if (fresh) {
+    return executeFreshQuery({ service, params });
+  }
+
   const { fdaId, daId, ...rest } = params;
+
+  await ensureFDAReadyForQuery(service, fdaId);
 
   const conn = await getDBConnection();
 
@@ -87,8 +101,20 @@ export async function executeQuery({ service, params }) {
   }
 }
 
-export async function executeQueryStream({ service, params, req, res }) {
+export async function executeQueryStream({
+  service,
+  params,
+  req,
+  res,
+  fresh = false,
+}) {
+  if (fresh) {
+    return executeFreshQueryStream({ service, params, req, res });
+  }
+
   const { fdaId, daId, ...rest } = params;
+
+  await ensureFDAReadyForQuery(service, fdaId);
 
   const conn = await getDBConnection();
 
@@ -133,6 +159,7 @@ export async function executeQueryStream({ service, params, req, res }) {
   res.setHeader('Content-Type', 'application/x-ndjson');
 
   try {
+    const columnNames = stream.columnNames();
     // eslint-disable-next-line no-constant-condition
     while (true) {
       const chunk = await stream.fetchChunk();
@@ -141,7 +168,8 @@ export async function executeQueryStream({ service, params, req, res }) {
       }
 
       const rows = chunk.getRows();
-      const columnNames = stream.columnNames();
+
+      const lines = [];
 
       for (const row of rows) {
         const rowObj = {};
@@ -151,11 +179,14 @@ export async function executeQueryStream({ service, params, req, res }) {
         }
 
         const safeObj = convertBigInt(rowObj);
+        lines.push(JSON.stringify(safeObj));
+      }
 
-        const ok = res.write(JSON.stringify(safeObj) + '\n');
-        if (!ok) {
-          await new Promise((resolve) => res.once('drain', resolve));
-        }
+      const payload = lines.join('\n') + '\n';
+
+      const ok = res.write(payload);
+      if (!ok) {
+        await new Promise((resolve) => res.once('drain', resolve));
       }
     }
   } finally {
@@ -163,6 +194,186 @@ export async function executeQueryStream({ service, params, req, res }) {
   }
 
   return res.end();
+}
+
+async function executeFreshQuery({ service, params }) {
+  assertFreshQueriesEnabled(config.roles.syncQueries);
+
+  const releaseFreshSlot = acquireFreshQuerySlot(
+    config.freshQueries.maxConcurrent,
+  );
+  try {
+    const { text, values } = await buildFreshQueryStatement(service, params);
+
+    const rows = await runPgQuery(service, text, values);
+    return convertBigInt(rows);
+  } catch (e) {
+    if (e instanceof FDAError) {
+      throw e;
+    }
+
+    throw e;
+  } finally {
+    releaseFreshSlot();
+  }
+}
+
+async function executeFreshQueryStream({ service, params, req, res }) {
+  assertFreshQueriesEnabled(config.roles.syncQueries);
+
+  const releaseFreshSlot = acquireFreshQuerySlot(
+    config.freshQueries.maxConcurrent,
+  );
+  let cursorReader;
+
+  try {
+    const { text, values } = await buildFreshQueryStatement(service, params);
+
+    cursorReader = await createPgCursorReader(
+      service,
+      text,
+      values,
+      FRESH_CURSOR_BATCH_SIZE,
+    );
+
+    req.on('close', () => {
+      cursorReader?.close().catch(() => {});
+    });
+
+    res.setHeader('Content-Type', 'application/x-ndjson');
+
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const rows = await cursorReader.readNextChunk();
+      if (rows.length === 0) {
+        break;
+      }
+
+      for (const row of rows) {
+        const safeObj = convertBigInt(row);
+        const ok = res.write(JSON.stringify(safeObj) + '\n');
+        if (!ok) {
+          await new Promise((resolve) => res.once('drain', resolve));
+        }
+      }
+    }
+  } catch (e) {
+    if (e instanceof FDAError) {
+      throw e;
+    }
+
+    throw e;
+  } finally {
+    await cursorReader?.close();
+    releaseFreshSlot();
+  }
+
+  return res.end();
+}
+
+async function buildFreshQueryStatement(service, params) {
+  const { fdaId, daId, ...rest } = params;
+
+  const da = await retrieveDA(service, fdaId, daId);
+  if (!da?.query) {
+    throw new FDAError(
+      404,
+      'DaNotFound',
+      `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`,
+    );
+  }
+
+  const fda = await retrieveFDA(service, fdaId);
+  if (!fda?.query) {
+    throw new FDAError(
+      404,
+      'FDANotFound',
+      `FDA ${fdaId} not found in service ${service}`,
+    );
+  }
+
+  const validatedParams = resolveDAParams(rest || {}, da.params);
+  const freshBaseQuery = buildFreshDAQuery(fda.query, da.query);
+
+  return replaceNamedParamsWithPositional(freshBaseQuery, validatedParams);
+}
+
+function buildFreshDAQuery(fdaQuery, daQuery) {
+  const cleanFdaQuery = removeTrailingSemicolon(fdaQuery?.trim() || '');
+  const cleanDaQuery = removeTrailingSemicolon(daQuery?.trim() || '');
+
+  if (!cleanDaQuery || /^from\b/i.test(cleanDaQuery)) {
+    throw new FDAError(
+      400,
+      'InvalidDAQuery',
+      'DA query must not include FROM clause at start. It is managed internally.',
+    );
+  }
+
+  if (!/^select\b/i.test(cleanDaQuery)) {
+    throw new FDAError(
+      400,
+      'InvalidDAQuery',
+      'Fresh query mode requires DA query to start with SELECT.',
+    );
+  }
+
+  const selectTail = cleanDaQuery.replace(/^select\s+/i, '');
+  const clauseMatch = selectTail.match(
+    /\b(where|group\s+by|having|order\s+by|limit|offset)\b/i,
+  );
+
+  const projection = clauseMatch
+    ? selectTail.slice(0, clauseMatch.index).trim()
+    : selectTail.trim();
+  const clauses = clauseMatch ? selectTail.slice(clauseMatch.index).trim() : '';
+
+  if (!projection) {
+    throw new FDAError(
+      400,
+      'InvalidDAQuery',
+      'DA query must contain a SELECT projection.',
+    );
+  }
+
+  if (/\bfrom\b/i.test(projection)) {
+    throw new FDAError(
+      400,
+      'InvalidDAQuery',
+      'DA query must not include FROM clause. It is managed internally.',
+    );
+  }
+
+  const trailing = clauses ? ` ${clauses}` : '';
+  return `SELECT ${projection} FROM (${cleanFdaQuery}) AS fda_source${trailing}`;
+}
+
+function replaceNamedParamsWithPositional(query, params) {
+  const indexes = new Map();
+  const values = [];
+
+  const text = query.replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (_m, name) => {
+    if (!Object.prototype.hasOwnProperty.call(params, name)) {
+      throw new FDAError(
+        400,
+        'InvalidQueryParam',
+        `Missing required param "${name}".`,
+      );
+    }
+
+    if (!indexes.has(name)) {
+      indexes.set(name, values.length + 1);
+      values.push(params[name]);
+    }
+
+    return `$${indexes.get(name)}`;
+  });
+
+  return { text, values };
+}
+
+function removeTrailingSemicolon(query) {
+  return query.replace(/;+\s*$/, '');
 }
 
 export async function createDA(
@@ -187,8 +398,7 @@ export async function createDA(
     }
 
     checkParams(params);
-    // Call to buildDAQuery to detect undesired FROM clausules in query
-    buildDAQuery(service, fdaId, userQuery);
+    await validateDAQuery(conn, service, fdaId, userQuery);
     await storeDA(service, fdaId, daId, description, userQuery, params);
   } finally {
     await releaseDBConnection(conn);
@@ -215,6 +425,13 @@ export async function fetchFDA(
     timeColumn,
     objStgConf,
   );
+
+  try {
+    await createOneRowParquetSync(service, fdaId, query);
+  } catch (err) {
+    await rollbackFDAProvisioning(service, fdaId);
+    throw err;
+  }
 
   const agenda = getAgenda();
 
@@ -457,8 +674,7 @@ export async function putDA(
 
   try {
     checkParams(params);
-    // Call to buildDAQuery to detect undesired FROM clausules in query
-    buildDAQuery(service, fdaId, userQuery);
+    await validateDAQuery(conn, service, fdaId, userQuery);
     await updateDA(service, fdaId, daId, description, userQuery, params);
   } finally {
     await releaseDBConnection(conn);
@@ -568,6 +784,66 @@ async function uploadTableToObjStg(
   } finally {
     await releaseDBConnection(conn);
   }
+}
+
+async function ensureFDAReadyForQuery(service, fdaId) {
+  const fda = await retrieveFDA(service, fdaId);
+
+  if (!fda) {
+    throw new FDAError(
+      404,
+      'FDANotFound',
+      `FDA ${fdaId} not found in service ${service}`,
+    );
+  }
+
+  // Queries are blocked only before the first successful fetch.
+  if (!fda.lastFetch) {
+    throw new FDAError(
+      409,
+      'FDAUnavailable',
+      `FDA ${fdaId} is not queryable yet because the first fetch has not completed`,
+    );
+  }
+}
+
+async function createOneRowParquetSync(service, fdaId, query) {
+  const s3Client = getS3Client(
+    `${config.objstg.protocol}://${config.objstg.endpoint}`,
+    config.objstg.usr,
+    config.objstg.pass,
+  );
+
+  const oneRowQuery = buildOneRowQuery(query);
+  await uploadTable(s3Client, service, service, oneRowQuery, fdaId);
+
+  const conn = await getDBConnection();
+  try {
+    const parquetPath = getPath(service, fdaId, '.parquet');
+    await toParquet(conn, getPath(service, fdaId, '.csv'), parquetPath);
+    await dropFile(s3Client, service, `${fdaId}.csv`);
+  } finally {
+    await releaseDBConnection(conn);
+  }
+}
+
+function buildOneRowQuery(query) {
+  const normalizedQuery = query.trim().replace(/;+\s*$/, '');
+  return `SELECT * FROM (${normalizedQuery}) AS fda_one_row LIMIT 1`;
+}
+
+async function rollbackFDAProvisioning(service, fdaId) {
+  const s3Client = getS3Client(
+    `${config.objstg.protocol}://${config.objstg.endpoint}`,
+    config.objstg.usr,
+    config.objstg.pass,
+  );
+
+  await Promise.allSettled([
+    dropFile(s3Client, service, `${fdaId}.csv`),
+    dropFile(s3Client, service, `${fdaId}.parquet`),
+    removeFDA(service, fdaId),
+  ]);
 }
 
 const getPath = (bucket, path, extension) => {
