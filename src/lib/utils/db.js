@@ -22,7 +22,7 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
-import { retrieveDA } from './mongo.js';
+import { retrieveDA, retrieveFDA } from './mongo.js';
 import { FDAError } from '../fdaError.js';
 import { getBasicLogger } from './logger.js';
 import { config } from '../fdaConfig.js';
@@ -114,8 +114,9 @@ export async function runPreparedStatement(
       `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`,
     );
   }
-  // TODO be careful with the hardcoded true
-  const query = buildDAQuery(service, fdaId, da.query, true);
+
+  const { objStgConf } = await retrieveFDA(service, fdaId);
+  const query = buildDAQuery(service, fdaId, da.query, objStgConf?.partition);
 
   const stmt = await conn.prepare(query);
 
@@ -163,8 +164,9 @@ export async function runPreparedStatementStream(
       `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`,
     );
   }
-  // TODO be careful with the hardcoded true
-  const query = buildDAQuery(service, fdaId, da.query, true);
+
+  const { objStgConf } = await retrieveFDA(service, fdaId);
+  const query = buildDAQuery(service, fdaId, da.query, objStgConf?.partition);
 
   const stmt = await conn.prepare(query);
 
@@ -438,6 +440,10 @@ function getPartitionConf(partitionType = 'none', timeColumn) {
     `,
       partitionBy: 'year',
     },
+    none: {
+      columns: '',
+      partitionBy: '',
+    },
   };
 
   const partitionConf = PARTITIONS[partitionType];
@@ -457,7 +463,11 @@ function getPartitionConf(partitionType = 'none', timeColumn) {
   return { cols, partitionBy };
 }
 
-export function buildDAQuery(service, fdaId, userQuery, partitioned) {
+export function buildDAQuery(service, fdaId, userQuery, partition) {
+  logger.debug(
+    { service, fdaId, userQuery, partition },
+    '[DEBUG]: buildDAQuery',
+  );
   if (!userQuery || typeof userQuery !== 'string') {
     throw new FDAError(400, 'BadRequest', 'Invalid DA query');
   }
@@ -474,7 +484,7 @@ export function buildDAQuery(service, fdaId, userQuery, partitioned) {
 
   const parquetPath = `s3://${service}/${fdaId}.parquet`;
 
-  if (partitioned) {
+  if (partition) {
     return `FROM read_parquet('${parquetPath}/**/*.parquet') ${trimmed}`;
   } else {
     return `FROM read_parquet('${parquetPath}') ${trimmed}`;
