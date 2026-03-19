@@ -1,0 +1,619 @@
+// Copyright 2025 Telefónica Soluciones de Informática y Comunicaciones de España, S.A.U.
+// PROJECT: fiware-data-access
+//
+// This software and / or computer program has been developed by Telefónica Soluciones
+// de Informática y Comunicaciones de España, S.A.U (hereinafter TSOL) and is protected
+// as copyright by the applicable legislation on intellectual property.
+//
+// It belongs to TSOL, and / or its licensors, the exclusive rights of reproduction,
+// distribution, public communication and transformation, and any economic right on it,
+// all without prejudice of the moral rights of the authors mentioned above. It is expressly
+// forbidden to decompile, disassemble, reverse engineer, sublicense or otherwise transmit
+// by any means, translate or create derivative works of the software and / or computer
+// programs, and perform with respect to all or part of such programs, any type of exploitation.
+//
+// Any use of all or part of the software and / or computer program will require the
+// express written consent of TSOL. In all cases, it will be necessary to make
+// an express reference to TSOL ownership in the software and / or computer
+// program.
+//
+// Non-fulfillment of the provisions set forth herein and, in general, any violation of
+// the peaceful possession and ownership of these rights will be prosecuted by the means
+// provided in both Spanish and international law. TSOL reserves any civil or
+// criminal actions it may exercise to protect its rights.
+
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  jest,
+  test,
+} from '@jest/globals';
+import request from 'supertest';
+
+const fetcherMocks = {
+  startFetcher: jest.fn(),
+};
+
+const jobsMocks = {
+  shutdownAgenda: jest.fn(),
+  initAgenda: jest.fn(),
+};
+
+const fdaMocks = {
+  getFDAs: jest.fn(),
+  fetchFDA: jest.fn(),
+  executeQuery: jest.fn(),
+  executeQueryStream: jest.fn(),
+  createDA: jest.fn(),
+  getFDA: jest.fn(),
+  updateFDA: jest.fn(),
+  deleteFDA: jest.fn(),
+  getDAs: jest.fn(),
+  getDA: jest.fn(),
+  putDA: jest.fn(),
+  deleteDA: jest.fn(),
+};
+
+const mongoMocks = {
+  createIndex: jest.fn(),
+  disconnectClient: jest.fn(),
+};
+
+const awsMocks = {
+  destroyS3Client: jest.fn(),
+};
+
+const loggerMock = {
+  info: jest.fn(),
+  warn: jest.fn(),
+  error: jest.fn(),
+  debug: jest.fn(),
+};
+
+const initialLoggerMock = {
+  fatal: jest.fn(),
+};
+
+const cdaMocks = {
+  handleCdaQuery: jest.fn(),
+};
+
+const utilsMocks = {
+  validateAllowedFieldsBody: jest.fn(),
+  parseBooleanQueryParam: jest.fn(),
+};
+
+const originalNodeEnv = process.env.NODE_ENV;
+
+function resetModuleMocks() {
+  fetcherMocks.startFetcher.mockReset().mockResolvedValue(undefined);
+
+  jobsMocks.shutdownAgenda.mockReset().mockResolvedValue(undefined);
+  jobsMocks.initAgenda.mockReset().mockResolvedValue(undefined);
+
+  fdaMocks.getFDAs.mockReset().mockResolvedValue([]);
+  fdaMocks.fetchFDA.mockReset().mockResolvedValue(undefined);
+  fdaMocks.executeQuery.mockReset().mockResolvedValue([{ ok: true }]);
+  fdaMocks.executeQueryStream.mockReset().mockImplementation(({ res }) => {
+    res.status(200).send('streamed');
+  });
+  fdaMocks.createDA.mockReset().mockResolvedValue(undefined);
+  fdaMocks.getFDA.mockReset().mockResolvedValue({ fdaId: 'fda1' });
+  fdaMocks.updateFDA.mockReset().mockResolvedValue(undefined);
+  fdaMocks.deleteFDA.mockReset().mockResolvedValue(undefined);
+  fdaMocks.getDAs.mockReset().mockResolvedValue([]);
+  fdaMocks.getDA.mockReset().mockResolvedValue({ id: 'da1' });
+  fdaMocks.putDA.mockReset().mockResolvedValue(undefined);
+  fdaMocks.deleteDA.mockReset().mockResolvedValue(undefined);
+
+  mongoMocks.createIndex.mockReset().mockResolvedValue(undefined);
+  mongoMocks.disconnectClient.mockReset().mockResolvedValue(undefined);
+
+  awsMocks.destroyS3Client.mockReset().mockResolvedValue(undefined);
+
+  loggerMock.info.mockReset();
+  loggerMock.warn.mockReset();
+  loggerMock.error.mockReset();
+  loggerMock.debug.mockReset();
+  initialLoggerMock.fatal.mockReset();
+
+  cdaMocks.handleCdaQuery.mockReset().mockResolvedValue({ rows: [] });
+
+  utilsMocks.validateAllowedFieldsBody.mockReset().mockReturnValue(undefined);
+  utilsMocks.parseBooleanQueryParam.mockReset().mockReturnValue(false);
+}
+
+async function flushAsyncWork() {
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+}
+
+async function loadIndexModule({
+  nodeEnv = 'test',
+  roles = { apiServer: true, fetcher: true },
+  createIndexError,
+  startFetcherError,
+  initAgendaError,
+  disconnectError,
+  destroyS3Error,
+  mockListen = false,
+} = {}) {
+  jest.resetModules();
+  resetModuleMocks();
+
+  process.env.NODE_ENV = nodeEnv;
+
+  if (createIndexError) {
+    mongoMocks.createIndex.mockRejectedValueOnce(createIndexError);
+  }
+
+  if (startFetcherError) {
+    fetcherMocks.startFetcher.mockRejectedValueOnce(startFetcherError);
+  }
+
+  if (initAgendaError) {
+    jobsMocks.initAgenda.mockRejectedValueOnce(initAgendaError);
+  }
+
+  if (disconnectError) {
+    mongoMocks.disconnectClient.mockRejectedValueOnce(disconnectError);
+  }
+
+  if (destroyS3Error) {
+    awsMocks.destroyS3Client.mockRejectedValueOnce(destroyS3Error);
+  }
+
+  let appListenSpy;
+  if (mockListen) {
+    const expressModule = await import('express');
+    appListenSpy = jest
+      .spyOn(expressModule.default.application, 'listen')
+      .mockImplementation(function (...args) {
+        const callback = args[1];
+        if (typeof callback === 'function') {
+          callback();
+        }
+
+        return { close: jest.fn() };
+      });
+  }
+
+  const registeredSignals = new Map();
+  const processOnSpy = jest
+    .spyOn(process, 'on')
+    .mockImplementation((signal, handler) => {
+      registeredSignals.set(signal, handler);
+      return process;
+    });
+  const processExitSpy = jest
+    .spyOn(process, 'exit')
+    .mockImplementation(() => undefined);
+
+  await jest.unstable_mockModule('../../src/fetcher.js', () => ({
+    startFetcher: fetcherMocks.startFetcher,
+  }));
+
+  await jest.unstable_mockModule('../../src/lib/jobs.js', () => ({
+    shutdownAgenda: jobsMocks.shutdownAgenda,
+    initAgenda: jobsMocks.initAgenda,
+  }));
+
+  await jest.unstable_mockModule('../../src/lib/fda.js', () => ({
+    getFDAs: fdaMocks.getFDAs,
+    fetchFDA: fdaMocks.fetchFDA,
+    executeQuery: fdaMocks.executeQuery,
+    executeQueryStream: fdaMocks.executeQueryStream,
+    createDA: fdaMocks.createDA,
+    getFDA: fdaMocks.getFDA,
+    updateFDA: fdaMocks.updateFDA,
+    deleteFDA: fdaMocks.deleteFDA,
+    getDAs: fdaMocks.getDAs,
+    getDA: fdaMocks.getDA,
+    putDA: fdaMocks.putDA,
+    deleteDA: fdaMocks.deleteDA,
+  }));
+
+  await jest.unstable_mockModule('../../src/lib/utils/mongo.js', () => ({
+    createIndex: mongoMocks.createIndex,
+    disconnectClient: mongoMocks.disconnectClient,
+  }));
+
+  await jest.unstable_mockModule('../../src/lib/utils/aws.js', () => ({
+    destroyS3Client: awsMocks.destroyS3Client,
+  }));
+
+  await jest.unstable_mockModule('../../src/lib/fdaConfig.js', () => ({
+    config: {
+      port: 0,
+      logger: { resSize: 120 },
+      roles,
+    },
+  }));
+
+  await jest.unstable_mockModule('../../src/lib/utils/logger.js', () => ({
+    initLogger: jest.fn(),
+    getBasicLogger: () => loggerMock,
+    getInitialLogger: () => initialLoggerMock,
+  }));
+
+  await jest.unstable_mockModule('../../src/lib/compat/cdaAdapter.js', () => ({
+    handleCdaQuery: cdaMocks.handleCdaQuery,
+  }));
+
+  await jest.unstable_mockModule('../../src/lib/utils/utils.js', () => ({
+    validateAllowedFieldsBody: utilsMocks.validateAllowedFieldsBody,
+    parseBooleanQueryParam: utilsMocks.parseBooleanQueryParam,
+  }));
+
+  const mod = await import('../../src/index.js');
+  await flushAsyncWork();
+
+  return {
+    app: mod.app,
+    registeredSignals,
+    processOnSpy,
+    processExitSpy,
+    appListenSpy,
+  };
+}
+
+describe('index routes - validation and middleware branches', () => {
+  let app;
+
+  beforeEach(async () => {
+    ({ app } = await loadIndexModule({
+      nodeEnv: 'test',
+      roles: { apiServer: true, fetcher: true },
+    }));
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+    process.env.NODE_ENV = originalNodeEnv;
+  });
+
+  test('returns 400 for missing mandatory params across route guards', async () => {
+    await request(app).get('/fdas').expect(400);
+    await request(app).post('/fdas').send({}).expect(400);
+    await request(app).get('/fdas/fda1').expect(400);
+    await request(app).put('/fdas/fda1').expect(400);
+    await request(app).delete('/fdas/fda1').expect(400);
+
+    await request(app).get('/fdas/fda1/das').expect(400);
+    await request(app).post('/fdas/fda1/das').send({}).expect(400);
+    await request(app).get('/fdas/fda1/das/da1').expect(400);
+    await request(app)
+      .put('/fdas/fda1/das/da1')
+      .set('Fiware-Service', 'svc')
+      .send({ description: 'without query' })
+      .expect(400);
+
+    await request(app).delete('/fdas/fda1/das/da1').expect(400);
+
+    await request(app).get('/query').expect(400);
+    await request(app).post('/plugin/cda/api/doQuery').send({}).expect(400);
+  });
+
+  test('covers health and successful CRUD-like route flows', async () => {
+    fdaMocks.getFDAs.mockResolvedValueOnce([{ id: 'fda1' }]);
+    fdaMocks.getFDA.mockResolvedValueOnce({ id: 'fda1' });
+    fdaMocks.getDAs.mockResolvedValueOnce([{ id: 'da1' }]);
+    fdaMocks.getDA.mockResolvedValueOnce({ id: 'da1' });
+
+    const healthRes = await request(app).get('/health').expect(200);
+    expect(healthRes.body.status).toBe('UP');
+
+    await request(app)
+      .get('/fdas')
+      .set('Fiware-Service', 'svc')
+      .expect(200)
+      .expect([{ id: 'fda1' }]);
+
+    await request(app)
+      .post('/fdas')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/a')
+      .send({ id: 'fda1', query: 'SELECT 1', description: 'desc' })
+      .expect(202);
+
+    await request(app)
+      .get('/fdas/fda1')
+      .set('Fiware-Service', 'svc')
+      .expect(200)
+      .expect({ id: 'fda1' });
+
+    await request(app)
+      .put('/fdas/fda1')
+      .set('Fiware-Service', 'svc')
+      .send({})
+      .expect(202);
+
+    await request(app)
+      .delete('/fdas/fda1')
+      .set('Fiware-Service', 'svc')
+      .expect(204);
+
+    await request(app)
+      .get('/fdas/fda1/das')
+      .set('Fiware-Service', 'svc')
+      .expect(200)
+      .expect([{ id: 'da1' }]);
+
+    await request(app)
+      .post('/fdas/fda1/das')
+      .set('Fiware-Service', 'svc')
+      .send({ id: 'da1', query: 'SELECT 2', description: 'da' })
+      .expect(201);
+
+    await request(app)
+      .get('/fdas/fda1/das/da1')
+      .set('Fiware-Service', 'svc')
+      .expect(200)
+      .expect({ id: 'da1' });
+
+    await request(app)
+      .put('/fdas/fda1/das/da1')
+      .set('Fiware-Service', 'svc')
+      .send({ query: 'SELECT 3', description: 'new' })
+      .expect(204);
+
+    await request(app)
+      .get('/query')
+      .set('Fiware-Service', 'svc')
+      .query({ fdaId: 'fda1', daId: 'da1', fresh: 'false', limit: 10 })
+      .expect(200);
+
+    await request(app)
+      .post('/plugin/cda/api/doQuery')
+      .set('Fiware-Service', 'svc')
+      .send({ path: '/public/svc', dataAccessId: 'da1' })
+      .expect(200)
+      .expect({ rows: [] });
+
+    expect(fdaMocks.fetchFDA).toHaveBeenCalledWith(
+      'fda1',
+      'SELECT 1',
+      'svc',
+      '/a',
+      'desc',
+      { type: 'none' },
+    );
+    expect(fdaMocks.updateFDA).toHaveBeenCalledWith('svc', 'fda1');
+    expect(fdaMocks.deleteFDA).toHaveBeenCalledWith('svc', 'fda1');
+    expect(fdaMocks.createDA).toHaveBeenCalledWith(
+      'svc',
+      'fda1',
+      'da1',
+      'da',
+      'SELECT 2',
+      undefined,
+    );
+    expect(fdaMocks.putDA).toHaveBeenCalledWith(
+      'svc',
+      'fda1',
+      'da1',
+      'new',
+      'SELECT 3',
+      undefined,
+    );
+    expect(utilsMocks.validateAllowedFieldsBody).toHaveBeenCalled();
+  });
+
+  test('returns 400 when PUT /fdas receives a body payload', async () => {
+    const res = await request(app)
+      .put('/fdas/fda1')
+      .set('Fiware-Service', 'svc')
+      .send({ invalid: true })
+      .expect(400);
+
+    expect(res.body).toEqual({
+      error: 'BadRequest',
+      description: 'PUT /fdas does not accept a request body',
+    });
+  });
+
+  test('routes /query through NDJSON streaming when Accept requests ndjson', async () => {
+    await request(app)
+      .get('/query')
+      .set('Fiware-Service', 'svc')
+      .set('Accept', 'application/x-ndjson')
+      .query({ fdaId: 'fda1', daId: 'da1', fresh: 'true', offset: 2 })
+      .expect(200)
+      .expect('streamed');
+
+    expect(fdaMocks.executeQueryStream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        service: 'svc',
+        params: expect.objectContaining({
+          fdaId: 'fda1',
+          daId: 'da1',
+          offset: '2',
+        }),
+        fresh: false,
+      }),
+    );
+    expect(fdaMocks.executeQuery).not.toHaveBeenCalled();
+  });
+
+  test('covers DELETE DA route success path', async () => {
+    await request(app)
+      .delete('/fdas/fda1/das/da1')
+      .set('Fiware-Service', 'svc')
+      .expect(204);
+
+    expect(fdaMocks.deleteDA).toHaveBeenCalledWith('svc', 'fda1', 'da1');
+  });
+
+  test('handles CDA adapter exceptions with a 500 response', async () => {
+    cdaMocks.handleCdaQuery.mockRejectedValueOnce(
+      new Error('adapter exploded'),
+    );
+
+    const res = await request(app)
+      .post('/plugin/cda/api/doQuery')
+      .set('Fiware-Service', 'svc')
+      .send({ path: '/public/svc', dataAccessId: 'da1' });
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({
+      error: 'InternalServerError',
+      description: 'adapter exploded',
+    });
+    expect(loggerMock.error).toHaveBeenCalledWith(
+      'Error executing query:',
+      expect.any(Error),
+    );
+  });
+
+  test('covers middleware capture fallback for unserializable payloads', async () => {
+    fdaMocks.executeQuery.mockResolvedValueOnce([{ total: 1n }]);
+
+    const res = await request(app)
+      .get('/query')
+      .set('Fiware-Service', 'svc')
+      .query({ fdaId: 'fda1', daId: 'da1' });
+
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe('InternalServerError');
+  });
+
+  test('uses error middleware 500 branch when route throws generic errors', async () => {
+    fdaMocks.getFDAs.mockRejectedValueOnce(new Error('unexpected failure'));
+
+    const res = await request(app)
+      .get('/fdas')
+      .set('Fiware-Service', 'svc')
+      .expect(500);
+
+    expect(res.body).toEqual({
+      error: 'InternalServerError',
+      description: 'unexpected failure',
+    });
+    expect(loggerMock.error).toHaveBeenCalledWith(expect.any(Error));
+  });
+
+  test('uses error middleware warning branch for handled 4xx errors', async () => {
+    const err = new Error('missing fda');
+    err.status = 404;
+    err.type = 'NotFound';
+    fdaMocks.getFDAs.mockRejectedValueOnce(err);
+
+    const res = await request(app)
+      .get('/fdas')
+      .set('Fiware-Service', 'svc')
+      .expect(404);
+
+    expect(res.body).toEqual({
+      error: 'NotFound',
+      description: 'missing fda',
+    });
+    expect(loggerMock.warn).toHaveBeenCalledWith(expect.any(Error));
+  });
+});
+
+describe('index bootstrap and shutdown branches', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+    process.env.NODE_ENV = originalNodeEnv;
+  });
+
+  test('logs startup failure and exits when no role is enabled', async () => {
+    const { processExitSpy } = await loadIndexModule({
+      nodeEnv: 'integration',
+      roles: { apiServer: false, fetcher: false },
+    });
+
+    expect(loggerMock.error).toHaveBeenCalledWith(
+      expect.stringContaining('Startup failed: Error: At least one FDA role'),
+    );
+    expect(processExitSpy).toHaveBeenCalledWith(1);
+  });
+
+  test('logs startup failure and exits when createIndex rejects', async () => {
+    const { processExitSpy } = await loadIndexModule({
+      nodeEnv: 'integration',
+      roles: { apiServer: true, fetcher: false },
+      createIndexError: new Error('mongo down'),
+    });
+
+    expect(loggerMock.error).toHaveBeenCalledWith(
+      expect.stringContaining('Startup failed: Error: mongo down'),
+    );
+    expect(processExitSpy).toHaveBeenCalledWith(1);
+  });
+
+  test('handles startFetcher rejection branch during startup', async () => {
+    const { processExitSpy } = await loadIndexModule({
+      nodeEnv: 'integration',
+      roles: { apiServer: false, fetcher: true },
+      startFetcherError: new Error('fetcher down'),
+    });
+
+    expect(loggerMock.error).toHaveBeenCalledWith(
+      '[Fetcher] Failed to start',
+      expect.any(Error),
+    );
+    expect(processExitSpy).toHaveBeenCalledWith(1);
+  });
+
+  test('shutdown returns early when already shutting down', async () => {
+    const { registeredSignals, processExitSpy } = await loadIndexModule({
+      nodeEnv: 'integration',
+      roles: { apiServer: false, fetcher: true },
+    });
+
+    const sigtermHandler = registeredSignals.get('SIGTERM');
+
+    await sigtermHandler();
+    await sigtermHandler();
+
+    expect(mongoMocks.disconnectClient).toHaveBeenCalledTimes(1);
+    expect(awsMocks.destroyS3Client).toHaveBeenCalledTimes(1);
+    expect(processExitSpy).toHaveBeenCalledWith(0);
+  });
+
+  test('shutdown logs error branch and exits with code 1 when cleanup fails', async () => {
+    const { registeredSignals, processExitSpy } = await loadIndexModule({
+      nodeEnv: 'integration',
+      roles: { apiServer: false, fetcher: true },
+      disconnectError: new Error('disconnect fail'),
+    });
+
+    const sigintHandler = registeredSignals.get('SIGINT');
+    await sigintHandler();
+
+    expect(loggerMock.error).toHaveBeenCalledWith(
+      '[SHUTDOWN] Failed',
+      expect.any(Error),
+    );
+    expect(processExitSpy).toHaveBeenCalledWith(1);
+  });
+
+  test('logs startup failure and exits when initAgenda rejects', async () => {
+    const { processExitSpy } = await loadIndexModule({
+      nodeEnv: 'integration',
+      roles: { apiServer: true, fetcher: false },
+      initAgendaError: new Error('agenda down'),
+    });
+
+    expect(loggerMock.error).toHaveBeenCalledWith(
+      expect.stringContaining('Startup failed: Error: agenda down'),
+    );
+    expect(processExitSpy).toHaveBeenCalledWith(1);
+  });
+
+  test('starts API listener when apiServer role is enabled', async () => {
+    const { appListenSpy } = await loadIndexModule({
+      nodeEnv: 'integration',
+      roles: { apiServer: true, fetcher: false },
+      mockListen: true,
+    });
+
+    expect(appListenSpy).toHaveBeenCalledWith(0, expect.any(Function));
+    expect(loggerMock.debug).toHaveBeenCalledWith(
+      expect.stringContaining('API Server listening at port 0'),
+    );
+  });
+});
