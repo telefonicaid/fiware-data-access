@@ -51,7 +51,7 @@ export async function startFetcher() {
         partitionFlag,
       );
     } catch (e) {
-      console.log('Fetcher error: ', e);
+      logger.error('Fetcher error: ', e);
     }
   });
 
@@ -60,7 +60,7 @@ export async function startFetcher() {
     try {
       await cleanPartition(service, fdaId, windowSize, objStgConf);
     } catch (e) {
-      console.log('Fetcher error: ', e);
+      logger.error('Fetcher error: ', e);
     }
   });
 
