@@ -25,6 +25,7 @@
 import { beforeEach, describe, expect, jest, test } from '@jest/globals';
 
 const retrieveDAMock = jest.fn();
+const retrieveFDAMock = jest.fn();
 const duckCreateMock = jest.fn();
 const loggerMock = {
   debug: jest.fn(),
@@ -72,6 +73,7 @@ async function loadDbModule({ retrieveDAResult, duckContext } = {}) {
 
   await jest.unstable_mockModule('../../src/lib/utils/mongo.js', () => ({
     retrieveDA: retrieveDAMock,
+    retrieveFDA: retrieveFDAMock,
   }));
 
   await jest.unstable_mockModule('@duckdb/node-api', () => ({
@@ -163,7 +165,7 @@ describe('db utils', () => {
         params: [{ name: 'id', type: 'Number' }],
       },
     });
-
+    retrieveFDAMock.mockReset().mockResolvedValue({});
     const stmt = {
       bind: jest.fn().mockResolvedValue(undefined),
       stream: jest.fn().mockResolvedValue('stream-ref'),

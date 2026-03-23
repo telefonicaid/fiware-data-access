@@ -764,8 +764,8 @@ async function uploadTableToObjStg(
       getPath(bucket, path, '.csv'),
       parquetPath,
       timeColumn,
-      objStgConf.partition,
-      objStgConf.compression,
+      objStgConf?.partition,
+      objStgConf?.compression,
     );
 
     if (partitionFlag) {
@@ -787,7 +787,7 @@ async function uploadTableToObjStg(
 
     await updateFDAStatus(service, path, 'uploading', 80);
     // DuckDb doesn't replace one row parquet snippet with partitioned file, so we remove it by hand
-    if (objStgConf.partition) {
+    if (objStgConf?.partition) {
       await dropFile(s3Client, bucket, `${path}.parquet`);
     }
     await dropFile(s3Client, bucket, `${path}.csv`);

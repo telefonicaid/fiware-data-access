@@ -44,6 +44,19 @@ const deleteObjectCommandCtorMock = jest.fn(
 const headBucketCommandCtorMock = jest.fn(function headBucketCommand(input) {
   this.input = input;
 });
+const CopyObjectCommandCtorMock = jest.fn(function copyObjectCommand(input) {
+  this.input = input;
+});
+const DeleteObjectsCommandCtorMock = jest.fn(
+  function deleteObjectsCommand(input) {
+    this.input = input;
+  },
+);
+const ListObjectsV2CommandCtorMock = jest.fn(
+  function listObjectsV2Command(input) {
+    this.input = input;
+  },
+);
 const uploadCtorMock = jest.fn();
 
 let currentS3Client;
@@ -72,6 +85,9 @@ async function loadAwsModule() {
     CreateBucketCommand: createBucketCommandCtorMock,
     DeleteObjectCommand: deleteObjectCommandCtorMock,
     HeadBucketCommand: headBucketCommandCtorMock,
+    CopyObjectCommand: CopyObjectCommandCtorMock,
+    DeleteObjectsCommand: DeleteObjectsCommandCtorMock,
+    ListObjectsV2Command: ListObjectsV2CommandCtorMock,
   }));
 
   await jest.unstable_mockModule('@aws-sdk/lib-storage', () => ({

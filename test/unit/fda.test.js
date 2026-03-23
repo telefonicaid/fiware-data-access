@@ -514,6 +514,9 @@ describe('updateFDA', () => {
       fdaId: 'fda42',
       query: 'SELECT id FROM users',
       service: 'svc',
+      timeColumn: undefined,
+      objStgConf: undefined,
+      partitionFlag: true,
     });
   });
 });
@@ -603,10 +606,13 @@ describe('deleteFDA', () => {
 
   test('drops parquet, removes FDA and cancels agenda job', async () => {
     mongoMocks.retrieveFDA.mockResolvedValue({ _id: 'mongo-id' });
+    awsMocks.listObjects.mockResolvedValue(['routeTo/fdaA.parquet']);
 
     await deleteFDA('svc', 'fdaA');
 
-    expect(awsMocks.dropFile).toHaveBeenCalledWith({}, 'svc', '/fdaA.parquet');
+    expect(awsMocks.dropFiles).toHaveBeenCalledWith({}, 'svc', [
+      'routeTo/fdaA.parquet',
+    ]);
     expect(mongoMocks.removeFDA).toHaveBeenCalledWith('svc', 'fdaA');
     expect(agenda.cancel).toHaveBeenCalledWith({
       name: 'refresh-fda',
