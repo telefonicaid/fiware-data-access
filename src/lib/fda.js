@@ -601,7 +601,6 @@ export async function processFDAAsync(
   try {
     await updateFDAStatus(service, fdaId, 'fetching', 10);
 
-    console.log(objStgConf, '~~~~~~~~');
     await uploadTableToObjStg(
       service,
       service,
@@ -760,7 +759,6 @@ async function uploadTableToObjStg(
       ? getPath(bucket, 'tmp/' + path, '.parquet')
       : getPath(bucket, path, '.parquet');
 
-    console.log(objStgConf.partition, '********');
     await toParquet(
       conn,
       getPath(bucket, path, '.csv'),
