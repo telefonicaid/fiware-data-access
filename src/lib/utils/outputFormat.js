@@ -63,7 +63,7 @@ export function rowsToCsv(rows) {
 /**
  * Converts an array of row objects to an Excel (.xlsx) buffer.
  */
-export async function rowsToXlsx(rows) {
+export function rowsToXlsx(rows) {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet('Results');
 
