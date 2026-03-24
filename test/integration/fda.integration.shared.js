@@ -1749,6 +1749,48 @@ export function runFDAIntegrationSuite({ mode, label }) {
         );
       }
       expect(boolQueryRes.status).toBe(400);
+
+      // Query with proper type coercion: Number from string
+      const numberCoercionRes = await httpReq({
+        method: 'GET',
+        url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+          fdaId,
+        )}&daId=${encodeURIComponent(daId2)}&minAge=30&name=carlos`,
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect(numberCoercionRes.status).toBe(200);
+      expect(numberCoercionRes.json).toEqual([
+        { id: '3', name: 'carlos', age: '40' },
+      ]);
+
+      // Query with proper type coercion: Boolean from string
+      const booleanCoercionRes = await httpReq({
+        method: 'GET',
+        url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+          fdaId,
+        )}&daId=${encodeURIComponent(daId2)}&name=ana&authorized=true`,
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect(booleanCoercionRes.status).toBe(200);
+      expect(booleanCoercionRes.json).toEqual([
+        { id: '1', name: 'ana', age: '30' },
+      ]);
+
+      // Query with proper type coercion: DateTime from string (ISO8601)
+      const dateTimeCoercionRes = await httpReq({
+        method: 'GET',
+        url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+          fdaId,
+        )}&daId=${encodeURIComponent(daId2)}&name=carlos&timeinstant=2020-08-17T18:25:28.332Z`,
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect(dateTimeCoercionRes.status).toBe(200);
+      expect(dateTimeCoercionRes.json).toEqual([
+        { id: '3', name: 'carlos', age: '40' },
+      ]);
     });
 
     test('GET /query returns NDJSON when Accept: application/x-ndjson', async () => {
