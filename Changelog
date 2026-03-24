@@ -1,3 +1,11 @@
+0.3.0 (March 24th, 2026)
+
+- Add: partitioned files, sliding window updates and scheduled deletes (#105)
+- Add: fresh query mode (`GET /query?fresh=true`) with PostgreSQL execution and new runtime flag `FDA_ROLE_SYNCQUERIES` (#66)
+- Add: fresh query concurrency guard via `FDA_MAX_CONCURRENT_FRESH_QUERIES` and `429 TooManyFreshQueries` (#66)
+- Add: DA validation with FDA snapshot and query gating until first fetch completes (#97)
+- Fix: move mongo data base name into mongo uri (#115)
+
 0.2.0 (March 4th, 2026)
 
 - Add: async background processing with Agenda and role-based runtime separation (FDA_ROLE_APISERVER / FDA_ROLE_FETCHER) (#63)
