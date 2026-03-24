@@ -58,6 +58,18 @@ const envVarsSchema = {
       type: 'number',
       default: 5432,
     },
+    FDA_PG_POOL_MAX: {
+      type: 'number',
+      default: 10,
+    },
+    FDA_PG_POOL_IDLE_TIMEOUT_MS: {
+      type: 'number',
+      default: 10000,
+    },
+    FDA_PG_POOL_CONN_TIMEOUT_MS: {
+      type: 'number',
+      default: 5000,
+    },
     FDA_OBJSTG_USER: {
       type: 'string',
       default: null,
@@ -131,6 +143,11 @@ export const config = {
     pass: envVars.FDA_PG_PASSWORD,
     host: envVars.FDA_PG_HOST,
     port: envVars.FDA_PG_PORT,
+    pool: {
+      max: envVars.FDA_PG_POOL_MAX,
+      idleTimeoutMillis: envVars.FDA_PG_POOL_IDLE_TIMEOUT_MS,
+      connectionTimeoutMillis: envVars.FDA_PG_POOL_CONN_TIMEOUT_MS,
+    },
   },
   objstg: {
     usr: envVars.FDA_OBJSTG_USER,
