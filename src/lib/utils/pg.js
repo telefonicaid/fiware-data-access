@@ -31,8 +31,63 @@ import { config } from '../fdaConfig.js';
 import { FDAError } from '../fdaError.js';
 import { getBasicLogger } from './logger.js';
 
-const { Client } = pg;
+const { Client, Pool } = pg;
 const logger = getBasicLogger();
+const pools = new Map();
+
+function getPoolKey(user, password, host, port, database) {
+  return `${user}:${password}@${host}:${port}/${database}`;
+}
+
+export function getPgPool(user, password, host, port, database) {
+  const key = getPoolKey(user, password, host, port, database);
+
+  if (pools.has(key)) {
+    return pools.get(key);
+  }
+
+  const pool = new Pool({
+    user,
+    password,
+    host,
+    port,
+    database,
+    max: config.pg.pool.max,
+    min: 0,
+    idleTimeoutMillis: config.pg.pool.idleTimeoutMillis,
+    connectionTimeoutMillis: config.pg.pool.connectionTimeoutMillis,
+  });
+
+  pool.on('error', (err) => {
+    logger.error({ err, database }, 'PostgreSQL pool error');
+  });
+
+  pools.set(key, pool);
+  return pool;
+}
+
+function releasePgClient(pgClient) {
+  if (!pgClient || typeof pgClient.release !== 'function') {
+    return;
+  }
+
+  try {
+    pgClient.release();
+  } catch {
+    // Ignore release errors to avoid masking the original operation error.
+  }
+}
+
+export async function closePgPools() {
+  const closePromises = [];
+
+  for (const pool of pools.values()) {
+    closePromises.push(pool.end().catch(() => {}));
+  }
+
+  await Promise.all(closePromises);
+  pools.clear();
+}
 
 export function getPgClient(user, password, host, port, database) {
   return new Client({
@@ -46,14 +101,14 @@ export function getPgClient(user, password, host, port, database) {
 
 export async function uploadTable(s3Client, bucket, database, query, path) {
   logger.debug({ bucket, database, query, path }, '[DEBUG]: uploadTable');
-  const pgClient = getPgClient(
+  const pgPool = getPgPool(
     config.pg.usr,
     config.pg.pass,
     config.pg.host,
     config.pg.port,
     database,
   );
-  await pgClient.connect();
+  const pgClient = await pgPool.connect();
 
   const baseQuery = `COPY (${query}) TO STDOUT WITH CSV HEADER`;
   const pgStream = pgClient.query(copyTo(baseQuery));
@@ -83,12 +138,12 @@ export async function uploadTable(s3Client, bucket, database, query, path) {
     );
   } finally {
     pgStream.destroy();
-    await pgClient.end();
+    releasePgClient(pgClient);
   }
 }
 
 export async function runPgQuery(database, text, values) {
-  const pgClient = getPgClient(
+  const pgPool = getPgPool(
     config.pg.usr,
     config.pg.pass,
     config.pg.host,
@@ -96,8 +151,9 @@ export async function runPgQuery(database, text, values) {
     database,
   );
 
+  const pgClient = await pgPool.connect();
+
   try {
-    await pgClient.connect();
     const result = await pgClient.query(text, values);
     return result.rows;
   } catch (e) {
@@ -111,12 +167,12 @@ export async function runPgQuery(database, text, values) {
       `Error running fresh query: ${e.message}`,
     );
   } finally {
-    await pgClient.end().catch(() => {});
+    releasePgClient(pgClient);
   }
 }
 
 export async function createPgCursorReader(database, text, values, batchSize) {
-  const pgClient = getPgClient(
+  const pgPool = getPgPool(
     config.pg.usr,
     config.pg.pass,
     config.pg.host,
@@ -124,6 +180,7 @@ export async function createPgCursorReader(database, text, values, batchSize) {
     database,
   );
 
+  let pgClient;
   let cursor;
   let cleaned = false;
 
@@ -140,12 +197,12 @@ export async function createPgCursorReader(database, text, values, batchSize) {
         await closeCursor().catch(() => {});
       }
     } finally {
-      await pgClient.end().catch(() => {});
+      releasePgClient(pgClient);
     }
   };
 
   try {
-    await pgClient.connect();
+    pgClient = await pgPool.connect();
     cursor = pgClient.query(new Cursor(text, values));
     const readCursor = promisify(cursor.read.bind(cursor));
 
