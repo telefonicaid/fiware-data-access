@@ -71,6 +71,7 @@ All error responses follow this structure:
 | Code | Status                | Error Code             | Cause                                                                                                                                                                                     |
 | ---- | --------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 400  | Bad Request           | `BadRequest`           | Missing or invalid values in request body, headers, or query parameters. Request errors that do not depend on the FDA status. The `Fiware-Service` header is required for all operations. |
+| 400  | Bad Request           | `BadRequest`           | An unsupported `outputType` value was provided. Allowed values: `json`, `csv`, `xls`.                                                                                                     |
 | 400  | Bad Request           | `InvalidQueryParam`    | Some of the params in the request don't comply with the [params](#params) array restrictions.                                                                                             |
 | 404  | Not Found             | `FDANotFound`          | The requested FDA was not found.                                                                                                                                                          |
 | 404  | Not Found             | `DaNotFound`           | The requested Data Access (DA) was not found.                                                                                                                                             |
@@ -989,11 +990,12 @@ Runs a stored parameterized query. The value of the parameters must be included 
 
 _**Request query parameters**_
 
-| Header  | Optional | Description                                                                                                                                              | Example |
-| ------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| `fdaId` |          | Id of the `fda`. Must be unique in combination with `Fiware-Service`                                                                                     | `fda1`  |
-| `daId`  |          | Id of the `da`. Must be unique inside each `fda`                                                                                                         | `da1`   |
-| `fresh` | ✓        | If `true`, executes the DA directly against PostgreSQL instead of the cached Parquet snapshot. Requires `FDA_ROLE_SYNCQUERIES=true` in the API instance. | `true`  |
+| Parameter    | Optional | Description                                                                                                                                              | Example |
+| ------------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| `fdaId`      |          | Id of the `fda`. Must be unique in combination with `Fiware-Service`                                                                                     | `fda1`  |
+| `daId`       |          | Id of the `da`. Must be unique inside each `fda`                                                                                                         | `da1`   |
+| `outputType` | ✓        | Format of the returned results. **Default:** `json`. Allowed values: `json`, `csv`, `xls`.                                                               | `csv`   |
+| `fresh`      | ✓        | If `true`, executes the DA directly against PostgreSQL instead of the cached Parquet snapshot. Requires `FDA_ROLE_SYNCQUERIES=true` in the API instance. | `true`  |
 
 Additionally the necessary parameters for the query must be included with the previous ones.
 
@@ -1024,21 +1026,28 @@ _**Behavior note**_
 
 _**Response headers**_
 
-Successful operations return `Content-Type` header with `application/json` value.
+| `outputType` value | `Content-Type`                                                      | `Content-Disposition`                 |
+| ------------------ | ------------------------------------------------------------------- | ------------------------------------- |
+| `json` (default)   | `application/json`                                                  | —                                     |
+| `csv`              | `text/csv`                                                          | `attachment; filename="results.csv"`  |
+| `xls`              | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` | `attachment; filename="results.xlsx"` |
 
 _**Response payload**_
 
-The payload is an array of JSON objects, each one being a record result of the stored parameterized query.
+Depends on `outputType`:
 
-_**Content negotiation (JSON / NDJSON)**_
+-   `json` (default): array of JSON objects, each one being a record result of the stored parameterized query.
+-   `csv`: comma-separated values file. The first row contains column names. Values containing commas, double-quotes or
+    newlines are quoted.
+-   `xls`: Excel workbook (`.xlsx` format, Office Open XML). The first row contains column names.
 
--   By default the endpoint returns a full JSON array (`application/json`). This keeps backward compatibility with
-    existing clients.
--   If the client sets the `Accept: application/x-ndjson` header the server responds with
-    `Content-Type: application/x-ndjson` and streams one JSON object per line (NDJSON). Use this for large result sets
-    or streaming consumers.
+_**Output type and NDJSON streaming**_
+
+-   `outputType` applies to the standard (buffered) response path.
+-   If the client sets the `Accept: application/x-ndjson` header, NDJSON streaming takes precedence over `outputType`
+    and the server responds with `Content-Type: application/x-ndjson`, streaming one JSON object per line.
 -   NDJSON output uses numeric types for integer columns (BigInt values are converted to numbers before serialization).
--   The `fresh` parameter can be combined with both output modes (`application/json` and `application/x-ndjson`).
+-   The `fresh` parameter can be combined with all output modes.
 -   With `fresh=true` and `Accept: application/x-ndjson`, results are streamed incrementally from PostgreSQL using a
     cursor to avoid loading full result sets in memory.
 
@@ -1101,7 +1110,23 @@ _**Example Response:**_
 ]
 ```
 
-_**Example Request (NDJSON):**_
+_**Example Request (CSV output):**_
+
+```bash
+curl -i -X GET "http://localhost:8080/query?fdaId=fda_alarms&daId=da_all_alarms&outputType=csv" \
+  -H "Fiware-Service: my-bucket" \
+  --output results.csv
+```
+
+_**Example Request (Excel output):**_
+
+```bash
+curl -i -X GET "http://localhost:8080/query?fdaId=fda_alarms&daId=da_all_alarms&outputType=xls" \
+  -H "Fiware-Service: my-bucket" \
+  --output results.xlsx
+```
+
+_**Example Request (NDJSON streaming):**_
 
 ```bash
 curl -i -X GET "http://localhost:8080/query?fdaId=fda_alarms&daId=da_all_alarms" \
@@ -1144,6 +1169,7 @@ The request body must be sent as `application/x-www-form-urlencoded`.
 | `path`         |          | Path used to resolve service. FDA identifier defaults to `dataAccessId` unless `cda` field is provided. | `/public/service/verticals/sql/da1` |
 | `dataAccessId` |          | Identifier of the Data Access (DA) inside the FDA                                                       | `da1`                               |
 | `cda`          | ✓        | Explicit FDA identifier. If not provided, `dataAccessId` is used as FDA identifier                      | `fda1`                              |
+| `outputType`   | ✓        | Format of the returned results. **Default:** `json`. Allowed values: `json`, `csv`, `xls`.              | `csv`                               |
 | `param*`       | ✓        | Query parameters prefixed with `param`                                                                  | `parammunicipality=NA`              |
 | `pageSize`     | ✓        | Pagination size (must be handled explicitly by the DA)                                                  | `10`                                |
 | `pageStart`    | ✓        | Pagination offset (must be handled explicitly by the DA)                                                | `0`                                 |
@@ -1158,11 +1184,17 @@ _**Response code**_
 
 _**Response headers**_
 
-Successful responses return `Content-Type` header with `application/json` value.
+| `outputType` value | `Content-Type`                                                      | `Content-Disposition`                 |
+| ------------------ | ------------------------------------------------------------------- | ------------------------------------- |
+| `json` (default)   | `application/json`                                                  | —                                     |
+| `csv`              | `text/csv`                                                          | `attachment; filename="results.csv"`  |
+| `xls`              | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` | `attachment; filename="results.xlsx"` |
 
 _**Response payload**_
 
-The response follows CDA-compatible structure:
+Depends on `outputType`:
+
+-   `json` (default): CDA-compatible structure:
 
 ```json
 {
@@ -1176,7 +1208,10 @@ The response follows CDA-compatible structure:
 }
 ```
 
-_**Example Request:**_
+-   `csv`: comma-separated values file with column names in the first row.
+-   `xls`: Excel workbook (`.xlsx` format, Office Open XML) with column names in the first row.
+
+_**Example Request (JSON, default):**_
 
 ```bash
 curl -i -X POST "http://localhost:8085/plugin/cda/api/doQuery" \
@@ -1187,7 +1222,7 @@ curl -i -X POST "http://localhost:8085/plugin/cda/api/doQuery" \
   -d "pageSize=10"
 ```
 
-_**Example Response:**_
+_**Example Response (JSON):**_
 
 ```json
 {
@@ -1199,6 +1234,30 @@ _**Example Response:**_
         "totalRows": 2
     }
 }
+```
+
+_**Example Request (CSV output):**_
+
+```bash
+curl -i -X POST "http://localhost:8085/plugin/cda/api/doQuery" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -H "Fiware-Service: my-bucket" \
+  -d "path=/public/my-bucket/verticals/sql/da1" \
+  -d "dataAccessId=da1" \
+  -d "outputType=csv" \
+  --output results.csv
+```
+
+_**Example Request (Excel output):**_
+
+```bash
+curl -i -X POST "http://localhost:8085/plugin/cda/api/doQuery" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -H "Fiware-Service: my-bucket" \
+  -d "path=/public/my-bucket/verticals/sql/da1" \
+  -d "dataAccessId=da1" \
+  -d "outputType=xls" \
+  --output results.xlsx
 ```
 
 ---
