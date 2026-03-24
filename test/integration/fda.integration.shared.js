@@ -137,6 +137,70 @@ function httpFormReq({ method, url, headers, form }) {
   });
 }
 
+function httpReqRaw({ method, url, headers, body, form }) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+
+    let payload;
+    const finalHeaders = {
+      ...(headers || {}),
+    };
+
+    if (form) {
+      payload = new URLSearchParams(form).toString();
+      finalHeaders['Content-Type'] =
+        finalHeaders['Content-Type'] || 'application/x-www-form-urlencoded';
+      finalHeaders['Content-Length'] = Buffer.byteLength(payload);
+    } else if (body) {
+      payload = JSON.stringify(body);
+      finalHeaders['Content-Type'] =
+        finalHeaders['Content-Type'] || 'application/json';
+      finalHeaders['Content-Length'] = Buffer.byteLength(payload);
+    }
+
+    const req = http.request(
+      {
+        method,
+        hostname: u.hostname,
+        port: u.port,
+        path: u.pathname + u.search,
+        headers: finalHeaders,
+        timeout: 30_000,
+      },
+      (res) => {
+        const chunks = [];
+        res.on('data', (c) => chunks.push(Buffer.from(c)));
+        res.on('end', () => {
+          const buffer = Buffer.concat(chunks);
+          const text = buffer.toString('utf8');
+          resolve({
+            status: res.statusCode,
+            headers: res.headers,
+            buffer,
+            text,
+            json: (() => {
+              try {
+                return JSON.parse(text);
+              } catch {
+                return null;
+              }
+            })(),
+          });
+        });
+      },
+    );
+
+    req.on('timeout', () => req.destroy(new Error('timeout')));
+    req.on('error', reject);
+
+    if (payload) {
+      req.write(payload);
+    }
+
+    req.end();
+  });
+}
+
 function getFreePort() {
   return new Promise((resolve) => {
     const srv = net.createServer();
@@ -1616,6 +1680,79 @@ export function runFDAIntegrationSuite({ mode, label }) {
       expect(row2).toEqual({ id: 3, name: 'carlos', age: 40 });
     });
 
+    test('GET /query supports outputType=csv', async () => {
+      const res = await httpReqRaw({
+        method: 'GET',
+        url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+          fdaId,
+        )}&daId=${encodeURIComponent(daId)}&minAge=25&outputType=csv`,
+        headers: { 'Fiware-Service': service },
+      });
+
+      if (res.status >= 400) {
+        console.error(
+          'GET /query outputType=csv failed:',
+          res.status,
+          res.text,
+        );
+      }
+
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toContain('text/csv');
+      expect(res.headers['content-disposition']).toContain('results.csv');
+
+      const lines = res.text
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+      expect(lines[0]).toBe('id,name,age');
+      expect(lines[1]).toBe('1,ana,30');
+      expect(lines[2]).toBe('3,carlos,40');
+    });
+
+    test('GET /query supports outputType=xls', async () => {
+      const res = await httpReqRaw({
+        method: 'GET',
+        url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+          fdaId,
+        )}&daId=${encodeURIComponent(daId)}&minAge=25&outputType=xls`,
+        headers: { 'Fiware-Service': service },
+      });
+
+      if (res.status >= 400) {
+        console.error(
+          'GET /query outputType=xls failed:',
+          res.status,
+          res.text,
+        );
+      }
+
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toContain(
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      );
+      expect(res.headers['content-disposition']).toContain('results.xlsx');
+
+      // XLSX is a ZIP-based format and starts with PK magic bytes.
+      expect(res.buffer[0]).toBe(0x50);
+      expect(res.buffer[1]).toBe(0x4b);
+      expect(res.buffer.length).toBeGreaterThan(100);
+    });
+
+    test('GET /query rejects unsupported outputType', async () => {
+      const res = await httpReq({
+        method: 'GET',
+        url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+          fdaId,
+        )}&daId=${encodeURIComponent(daId)}&minAge=25&outputType=html`,
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.json.error).toBe('BadRequest');
+      expect(res.json.description).toContain('Invalid outputType');
+    });
+
     test('POST /plugin/cda/api/doQuery behaves as CDA compatibility layer', async () => {
       const cdaFdaId = 'fda_da_cda';
       const cdaDaId = 'fda_da_cda';
@@ -1710,6 +1847,91 @@ export function runFDAIntegrationSuite({ mode, label }) {
       expect(ndjsonAttempt.status).toBe(200);
       expect(ndjsonAttempt.text.includes('\n')).toBe(false);
       expect(ndjsonAttempt.json).toHaveProperty('resultset');
+    });
+
+    test('POST /plugin/cda/api/doQuery supports outputType=csv', async () => {
+      const res = await httpReqRaw({
+        method: 'POST',
+        url: `${baseUrl}/plugin/cda/api/doQuery`,
+        headers: { 'Fiware-Service': service },
+        form: {
+          path: `/public/${service}/verticals/sql/${daId}`,
+          cda: fdaId,
+          dataAccessId: daId,
+          paramminAge: '25',
+          outputType: 'csv',
+        },
+      });
+
+      if (res.status >= 400) {
+        console.error(
+          'POST /plugin/cda/api/doQuery outputType=csv failed:',
+          res.status,
+          res.text,
+        );
+      }
+
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toContain('text/csv');
+      expect(res.headers['content-disposition']).toContain('results.csv');
+
+      const lines = res.text
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+      expect(lines[0]).toBe('id,name,age');
+      expect(lines[1]).toBe('1,ana,30');
+      expect(lines[2]).toBe('3,carlos,40');
+    });
+
+    test('POST /plugin/cda/api/doQuery supports outputType=xls', async () => {
+      const res = await httpReqRaw({
+        method: 'POST',
+        url: `${baseUrl}/plugin/cda/api/doQuery`,
+        headers: { 'Fiware-Service': service },
+        form: {
+          path: `/public/${service}/verticals/sql/${daId}`,
+          cda: fdaId,
+          dataAccessId: daId,
+          paramminAge: '25',
+          outputType: 'xls',
+        },
+      });
+
+      if (res.status >= 400) {
+        console.error(
+          'POST /plugin/cda/api/doQuery outputType=xls failed:',
+          res.status,
+          res.text,
+        );
+      }
+
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toContain(
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      );
+      expect(res.headers['content-disposition']).toContain('results.xlsx');
+      expect(res.buffer[0]).toBe(0x50);
+      expect(res.buffer[1]).toBe(0x4b);
+      expect(res.buffer.length).toBeGreaterThan(100);
+    });
+
+    test('POST /plugin/cda/api/doQuery rejects unsupported outputType', async () => {
+      const res = await httpFormReq({
+        method: 'POST',
+        url: `${baseUrl}/plugin/cda/api/doQuery`,
+        headers: { 'Fiware-Service': service },
+        form: {
+          path: `/public/${service}/verticals/sql/${daId}`,
+          cda: fdaId,
+          dataAccessId: daId,
+          outputType: 'xml',
+        },
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.json.error).toBe('BadRequest');
+      expect(res.json.description).toContain('Invalid outputType');
     });
 
     test('GET /fdas/:fdaId returns expected FDA', async () => {
