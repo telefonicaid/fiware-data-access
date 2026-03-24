@@ -106,6 +106,16 @@ describe('aws utils', () => {
     jest.clearAllMocks();
   });
 
+  test('destroyS3Client calls destroy method on S3 client', async () => {
+    const { getS3Client, destroyS3Client } = await loadAwsModule();
+
+    await getS3Client('test-config');
+
+    await destroyS3Client();
+
+    expect(currentS3Client.destroy).toHaveBeenCalledTimes(1);
+  });
+
   test('dropFile wraps delete errors with FDAError', async () => {
     const { dropFile } = await loadAwsModule();
 
@@ -162,6 +172,16 @@ describe('aws utils', () => {
       status: 500,
       type: 'S3ServerError',
     });
+  });
+
+  test('listObjects returns empty list as default', async () => {
+    const { listObjects } = await loadAwsModule();
+
+    currentS3Client.send.mockResolvedValueOnce({ Contents: undefined });
+
+    const result = await listObjects(currentS3Client, 'bucket-a');
+
+    expect(result).toEqual([]);
   });
 
   test('createBucket logs when bucket already exists', async () => {

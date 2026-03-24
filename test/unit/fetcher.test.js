@@ -33,6 +33,7 @@ const getAgendaMock = jest.fn(() => agendaMock);
 const processFDAAsyncMock = jest.fn().mockResolvedValue(undefined);
 const loggerMock = {
   info: jest.fn(),
+  error: jest.fn(),
 };
 const cleanPartitionMock = jest.fn();
 
@@ -125,5 +126,33 @@ describe('fetcher', () => {
     });
 
     expect(cleanPartitionMock).toHaveBeenCalledWith('svcA', 'fdaA', 'day', {});
+  });
+
+  test('registered clean partition handler catches errors', async () => {
+    const { startFetcher } = await loadFetcherModule();
+
+    cleanPartitionMock.mockRejectedValueOnce(
+      new Error('partition clean failed'),
+    );
+
+    await startFetcher();
+
+    const handler = agendaMock.define.mock.calls[1][1];
+
+    await handler({
+      attrs: {
+        data: {
+          fdaId: 'fdaA',
+          service: 'svcA',
+          windowSize: 'day',
+          objStgConf: {},
+        },
+      },
+    });
+
+    expect(loggerMock.error).toHaveBeenCalledWith(
+      'Fetcher error: ',
+      expect.any(Error),
+    );
   });
 });
