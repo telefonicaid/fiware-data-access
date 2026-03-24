@@ -72,6 +72,8 @@ All error responses follow this structure:
 | ---- | --------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 400  | Bad Request           | `BadRequest`           | Missing or invalid values in request body, headers, or query parameters. Request errors that do not depend on the FDA status. The `Fiware-Service` header is required for all operations. |
 | 400  | Bad Request           | `InvalidQueryParam`    | Some of the params in the request don't comply with the [params](#params) array restrictions.                                                                                             |
+| 400  | Bad Request           | `PartitionError`       | Some of the params related to the creation of the parquet partition don't comply with the [object storage configuration](#object-storage-configuration-objstgconf) requirements.          |
+| 400  | Bad Request           | `CleaningError`        | Trying to remove a non partitioned FDA or incorrect value in the [delete interval key](#refresh-policy-object).                                                                           |
 | 404  | Not Found             | `FDANotFound`          | The requested FDA was not found.                                                                                                                                                          |
 | 404  | Not Found             | `DaNotFound`           | The requested Data Access (DA) was not found.                                                                                                                                             |
 | 409  | Conflict              | `DuplicatedKey`        | The resource already exists in the database. Attempting to create a duplicate resource.                                                                                                   |
@@ -374,21 +376,25 @@ None required.
 
 A FDA is represented by a JSON object with the following fields:
 
-| Parameter       | Optional | Type   | Description                                                                   |
-| --------------- | -------- | ------ | ----------------------------------------------------------------------------- |
-| `id`            |          | string | FDA unique identifier                                                         |
-| `description`   | ✓        | string | A free text used by the client to describe the FDA                            |
-| `query`         |          | string | Base `postgreSQL` query to create the file in the bucket-based storage system |
-| `refreshPolicy` | ✓        | object | Optional policy for automatic refresh.                                        |
+| Parameter                                                | Optional | Type   | Description                                                                                                                       |
+| -------------------------------------------------------- | -------- | ------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                                                     |          | string | FDA unique identifier                                                                                                             |
+| `description`                                            | ✓        | string | A free text used by the client to describe the FDA                                                                                |
+| `query`                                                  |          | string | Base `postgreSQL` query to create the file in the bucket-based storage system                                                     |
+| `refreshPolicy`                                          | ✓        | object | Optional policy for automatic refresh.                                                                                            |
+| [`objStgConf`](#object-storage-configuration-objstgconf) | ✓        | object | Various options to configure the FDA uploaded in the object storage app.                                                          |
+| `timeColumn`                                             | ✓        | string | Required with `refreshPolicy` of type `window` and `partition`. Column in the table indicating when the data was received (date). |
 
 #### Refresh Policy object
 
 Defines how and when the FDA should be automatically refreshed.
 
-| Field   | Optional | Type   | Description                                                                                                   |
-| ------- | -------- | ------ | ------------------------------------------------------------------------------------------------------------- |
-| `type`  |          | string | Refresh strategy. One of: `none`, `interval`, `cron`.                                                         |
-| `value` | ✓        | string | Required if `type` is `interval` or `cron`. Represents a human interval (e.g. `1 hour`) or a cron expression. |
+| Field            | Optional | Type   | Description                                                                                                                                                                                                                                     |
+| ---------------- | -------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`           |          | string | Refresh strategy. One of: `none`, `interval`, `cron`, `window`.                                                                                                                                                                                 |
+| `value`          | ✓        | string | Required if `type` is `interval`, `cron` or `window`. With type `interval` and `cron` it represents a human interval (e.g. `1 hour`) or a cron expression. With type `window` it can take the values `hourly`, `daily`, `weekly` and `monthly`. |
+| `deleteInterval` | ✓        | string | Represents a human interval (e.g. `1 hour`) or a cron expression.                                                                                                                                                                               |
+| `windowSize`     | ✓        | string | Required with `deleteInterval`. Temporal interval of data we are gonna keep in storage (e.g. only the data of the last month). Possible values: `day`, `week`, `month` and `year`                                                               |
 
 ##### Semantics
 
@@ -396,12 +402,24 @@ Defines how and when the FDA should be automatically refreshed.
 -   `interval`: Uses Agenda [human interval](https://github.com/agenda/human-interval) format (e.g. `5 minutes`,
     `1 hour`).
 -   `cron`: Uses a cron expression (e.g. `0 * * * *`).
+-   `window`: Uses the values `hourly`, `daily`, `weekly` and `monthly`. When refreshing the `FDA` it retrieves only the
+    data of the interval indicated in the value (e.g. with the value `weekly` it retrieves each week the data of the
+    last week).
 
 If omitted, the default policy is:
 
 ```json
 { "type": "none" }
 ```
+
+##### Object storage configuration (objstgconf)
+
+This object configures certain aspects of the object storage app when uploading an FDA. The possible keys are:
+
+| Parameter     | Optional | Type    | Description                                                                                                               |
+| ------------- | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `partition`   | ✓        | string  | Tells how the FDA data should be partitioned in the object storage app. Possibe values `day`, `week`, `month` and `year`. |
+| `compression` | ✓        | boolean | Tells if the FDA parquet file should be compressed (using `ZSTD` compression) or not.                                     |
 
 #### Operational fields (read-only)
 

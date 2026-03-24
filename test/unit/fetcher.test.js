@@ -33,7 +33,9 @@ const getAgendaMock = jest.fn(() => agendaMock);
 const processFDAAsyncMock = jest.fn().mockResolvedValue(undefined);
 const loggerMock = {
   info: jest.fn(),
+  error: jest.fn(),
 };
+const cleanPartitionMock = jest.fn();
 
 async function loadFetcherModule() {
   jest.resetModules();
@@ -42,6 +44,7 @@ async function loadFetcherModule() {
   agendaMock.start.mockClear();
   getAgendaMock.mockClear();
   processFDAAsyncMock.mockClear();
+  cleanPartitionMock.mockClear();
   loggerMock.info.mockClear();
 
   await jest.unstable_mockModule('../../src/lib/jobs.js', () => ({
@@ -50,6 +53,7 @@ async function loadFetcherModule() {
 
   await jest.unstable_mockModule('../../src/lib/fda.js', () => ({
     processFDAAsync: processFDAAsyncMock,
+    cleanPartition: cleanPartitionMock,
   }));
 
   await jest.unstable_mockModule('../../src/lib/utils/logger.js', () => ({
@@ -87,6 +91,8 @@ describe('fetcher', () => {
           fdaId: 'fdaA',
           query: 'SELECT 1',
           service: 'svcA',
+          timeColumn: 'timeinstant',
+          objStgConf: {},
         },
       },
     });
@@ -95,6 +101,58 @@ describe('fetcher', () => {
       'fdaA',
       'SELECT 1',
       'svcA',
+      'timeinstant',
+      {},
+      false,
+    );
+  });
+
+  test('registered clean partition handler delegates to cleanPartition', async () => {
+    const { startFetcher } = await loadFetcherModule();
+
+    await startFetcher();
+
+    const handler = agendaMock.define.mock.calls[1][1];
+
+    await handler({
+      attrs: {
+        data: {
+          fdaId: 'fdaA',
+          service: 'svcA',
+          windowSize: 'day',
+          objStgConf: {},
+        },
+      },
+    });
+
+    expect(cleanPartitionMock).toHaveBeenCalledWith('svcA', 'fdaA', 'day', {});
+  });
+
+  test('registered clean partition handler catches errors', async () => {
+    const { startFetcher } = await loadFetcherModule();
+
+    cleanPartitionMock.mockRejectedValueOnce(
+      new Error('partition clean failed'),
+    );
+
+    await startFetcher();
+
+    const handler = agendaMock.define.mock.calls[1][1];
+
+    await handler({
+      attrs: {
+        data: {
+          fdaId: 'fdaA',
+          service: 'svcA',
+          windowSize: 'day',
+          objStgConf: {},
+        },
+      },
+    });
+
+    expect(loggerMock.error).toHaveBeenCalledWith(
+      'Fetcher error: ',
+      expect.any(Error),
     );
   });
 });

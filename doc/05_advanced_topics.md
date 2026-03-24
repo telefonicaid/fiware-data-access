@@ -79,6 +79,16 @@ This architecture:
 👉 Full documentation available at:
 [`Async Processing & Job Architecture`](/doc/AdvancedTopics/async_processing_and_jobs.md)
 
+### Sliding windows and partitioning
+
+Using **agenda** and it's job system `FDA` supports an special refresh modality. In the sliding window refresh modality
+the user can schedule periodic jobs to retrieve data inside a specific time interval (e.g. the data of the last month).
+This functionality pairs really well with the _partitioning_ of parquet files and they are intended to be used together
+for performance optimization, but the freedom in the configuration granted to the user can cause some problems.
+
+👉 Full documentation available at:
+[`Sliding windows and partitioned files`](/doc/AdvancedTopics/sliding_windows_and_partitioning.md)
+
 ---
 
 ## Pentaho CDA Compatibility Layer

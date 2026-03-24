@@ -379,6 +379,8 @@ describe('index routes - validation and middleware branches', () => {
       '/a',
       'desc',
       { type: 'none' },
+      undefined,
+      {},
     );
     expect(fdaMocks.updateFDA).toHaveBeenCalledWith('svc', 'fda1');
     expect(fdaMocks.deleteFDA).toHaveBeenCalledWith('svc', 'fda1');

@@ -27,6 +27,9 @@ import {
   CreateBucketCommand,
   DeleteObjectCommand,
   HeadBucketCommand,
+  CopyObjectCommand,
+  ListObjectsV2Command,
+  DeleteObjectsCommand,
 } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 import { FDAError } from '../fdaError.js';
@@ -90,6 +93,66 @@ export async function dropFile(s3Client, bucket, path) {
       `Error deleting file ${path} in bucket ${bucket}: ${e}`,
     );
   }
+}
+
+export async function dropFiles(s3Client, bucket, objsToRemove) {
+  logger.debug({ bucket, objsToRemove }, '[DEBUG]: dropFiles');
+  try {
+    await s3Client.send(
+      new DeleteObjectsCommand({
+        Bucket: bucket,
+        Delete: {
+          Objects: objsToRemove.map((k) => ({ Key: k })),
+        },
+      }),
+    );
+  } catch (e) {
+    throw new FDAError(
+      500,
+      'S3ServerError',
+      `Error deleting multiple objects ${objsToRemove} in bucket ${bucket}: ${e}`,
+    );
+  }
+}
+
+export async function moveObject(s3Client, bucket, sourceKey, destKey) {
+  logger.debug({ bucket, sourceKey, destKey }, '[DEBUG]: moveObject');
+  try {
+    await s3Client.send(
+      new CopyObjectCommand({
+        Bucket: bucket,
+        CopySource: sourceKey,
+        Key: destKey,
+      }),
+    );
+  } catch (e) {
+    throw new FDAError(
+      500,
+      'S3ServerError',
+      `Error moving ${sourceKey} into ${destKey}: ${e}`,
+    );
+  }
+}
+
+export async function listObjects(s3Client, bucket, prefix) {
+  logger.debug({ bucket, prefix }, '[DEBUG]: listObjects');
+  let response;
+  try {
+    response = await s3Client.send(
+      new ListObjectsV2Command({
+        Bucket: bucket,
+        Prefix: prefix,
+      }),
+    );
+  } catch (e) {
+    throw new FDAError(
+      500,
+      'S3ServerError',
+      `Error listing objects in bucket ${bucket} and path ${prefix}: ${e}`,
+    );
+  }
+
+  return response.Contents?.map((obj) => obj.Key) || [];
 }
 
 export async function createBucket(s3Client, bucket) {

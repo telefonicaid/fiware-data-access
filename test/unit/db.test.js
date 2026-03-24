@@ -25,6 +25,7 @@
 import { beforeEach, describe, expect, jest, test } from '@jest/globals';
 
 const retrieveDAMock = jest.fn();
+const retrieveFDAMock = jest.fn();
 const duckCreateMock = jest.fn();
 const loggerMock = {
   debug: jest.fn(),
@@ -72,6 +73,7 @@ async function loadDbModule({ retrieveDAResult, duckContext } = {}) {
 
   await jest.unstable_mockModule('../../src/lib/utils/mongo.js', () => ({
     retrieveDA: retrieveDAMock,
+    retrieveFDA: retrieveFDAMock,
   }));
 
   await jest.unstable_mockModule('@duckdb/node-api', () => ({
@@ -163,7 +165,7 @@ describe('db utils', () => {
         params: [{ name: 'id', type: 'Number' }],
       },
     });
-
+    retrieveFDAMock.mockReset().mockResolvedValue({});
     const stmt = {
       bind: jest.fn().mockResolvedValue(undefined),
       stream: jest.fn().mockResolvedValue('stream-ref'),
@@ -210,6 +212,33 @@ describe('db utils', () => {
     expect(stmt.close).toHaveBeenCalledTimes(1);
   });
 
+  test('runPreparedStatement returns InvalidQueryParam when isTypeOf coercion fails', async () => {
+    const { runPreparedStatement, runtimeConn } = await loadDbModule({
+      retrieveDAResult: {
+        query: 'SELECT id WHERE id = $id',
+        params: [{ name: 'id', type: 'Number', required: true }],
+      },
+    });
+
+    const stmt = {
+      bind: jest.fn().mockResolvedValue(undefined),
+      run: jest.fn().mockResolvedValue({ getRowObjectsJson: () => [] }),
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+    runtimeConn.prepare.mockResolvedValueOnce(stmt);
+
+    await expect(
+      runPreparedStatement(runtimeConn, 'svc', 'fdaA', 'daA', {
+        id: 'not-a-number',
+      }),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidQueryParam',
+    });
+
+    expect(stmt.close).toHaveBeenCalledTimes(1);
+  });
+
   test('validateDAQuery wraps prepare failures', async () => {
     const { validateDAQuery, runtimeConn } = await loadDbModule();
 
@@ -240,6 +269,48 @@ describe('db utils', () => {
     const { buildDAQuery } = await loadDbModule();
 
     expect(() => buildDAQuery('svc', 'fdaA', null)).toThrow('Invalid DA query');
+  });
+
+  test('buildDAQuery rejects queries starting with FROM clause', async () => {
+    const { buildDAQuery } = await loadDbModule();
+
+    expect(() =>
+      buildDAQuery('svc', 'fdaA', 'FROM read_parquet(...) SELECT *'),
+    ).toThrow('DA query must not include FROM clause at start');
+
+    expect(() => buildDAQuery('svc', 'fdaA', '  from   SELECT *')).toThrow(
+      'DA query must not include FROM clause at start',
+    );
+  });
+
+  test('buildDAQuery builds query without partition', async () => {
+    const { buildDAQuery } = await loadDbModule();
+
+    const result = buildDAQuery(
+      'my-service',
+      'fdaA',
+      'SELECT * WHERE id = $1',
+      false,
+    );
+
+    expect(result).toBe(
+      "FROM read_parquet('s3://my-service/fdaA.parquet') SELECT * WHERE id = $1",
+    );
+  });
+
+  test('buildDAQuery builds query with partition using wildcard path', async () => {
+    const { buildDAQuery } = await loadDbModule();
+
+    const result = buildDAQuery(
+      'my-service',
+      'fdaA',
+      'SELECT * WHERE id = $1',
+      true,
+    );
+
+    expect(result).toBe(
+      "FROM read_parquet('s3://my-service/fdaA.parquet/**/*.parquet') SELECT * WHERE id = $1",
+    );
   });
 
   test('resolveDAParams coerces boolean string values', async () => {
@@ -316,5 +387,159 @@ describe('db utils', () => {
         { name: 'custom', type: 'UnknownType', required: true },
       ]),
     ).toThrow('Invalid type value in params.');
+  });
+
+  test('checkParams does nothing when params is null or undefined', async () => {
+    const { checkParams } = await loadDbModule();
+
+    expect(() => checkParams(null)).not.toThrow();
+    expect(() => checkParams(undefined)).not.toThrow();
+  });
+
+  test('checkParams throws FDAError when param missing type', async () => {
+    const { checkParams } = await loadDbModule();
+
+    expect(() => checkParams([{ name: 'id' }])).toThrow(
+      'Type is a mandatory key in every param.',
+    );
+  });
+
+  test('checkParams throws FDAError for invalid type value', async () => {
+    const { checkParams } = await loadDbModule();
+
+    expect(() => checkParams([{ name: 'id', type: 'InvalidType' }])).toThrow(
+      'Invalid value in type key.',
+    );
+  });
+
+  test('checkParams validates range: both values must be numbers', async () => {
+    const { checkParams } = await loadDbModule();
+
+    expect(() =>
+      checkParams([{ name: 'id', type: 'Number', range: ['1', 10] }]),
+    ).toThrow('Both values of range param should be of type number');
+  });
+
+  test('checkParams validates range: first number must be smaller than second', async () => {
+    const { checkParams } = await loadDbModule();
+
+    expect(() =>
+      checkParams([{ name: 'id', type: 'Number', range: [10, 5] }]),
+    ).toThrow('Fisrt number should be smaller than second number.');
+  });
+
+  test('checkParams validates range: cannot have more than 2 values', async () => {
+    const { checkParams } = await loadDbModule();
+
+    expect(() =>
+      checkParams([{ name: 'id', type: 'Number', range: [1, 5, 10] }]),
+    ).toThrow('Range cant have more than two values.');
+  });
+
+  test('checkParams validates enum: values must be strings or numbers', async () => {
+    const { checkParams } = await loadDbModule();
+
+    expect(() =>
+      checkParams([
+        { name: 'status', type: 'Text', enum: ['active', true, 'inactive'] },
+      ]),
+    ).toThrow('Values of enum param should be strings or numbers');
+  });
+
+  test('checkParams accepts valid param with valid type', async () => {
+    const { checkParams } = await loadDbModule();
+
+    expect(() => checkParams([{ name: 'id', type: 'Number' }])).not.toThrow();
+  });
+
+  test('checkParams accepts valid param with range', async () => {
+    const { checkParams } = await loadDbModule();
+
+    expect(() =>
+      checkParams([{ name: 'limit', type: 'Number', range: [1, 100] }]),
+    ).not.toThrow();
+  });
+
+  test('checkParams accepts valid param with enum', async () => {
+    const { checkParams } = await loadDbModule();
+
+    expect(() =>
+      checkParams([
+        { name: 'status', type: 'Text', enum: ['active', 'inactive', 1, 2] },
+      ]),
+    ).not.toThrow();
+  });
+
+  test('checkParams accepts multiple valid params', async () => {
+    const { checkParams } = await loadDbModule();
+
+    expect(() =>
+      checkParams([
+        { name: 'id', type: 'Number', required: true },
+        { name: 'status', type: 'Text', enum: ['active', 'inactive'] },
+        { name: 'limit', type: 'Number', range: [1, 100] },
+      ]),
+    ).not.toThrow();
+  });
+
+  test('resolveDAParams uses type coercion and throws on invalid value (isTypeOf path)', async () => {
+    const { resolveDAParams } = await loadDbModule();
+
+    expect(
+      resolveDAParams({ id: '42' }, [{ name: 'id', type: 'Number' }]),
+    ).toEqual({ id: 42 });
+
+    expect(() =>
+      resolveDAParams({ id: 'notanumber' }, [{ name: 'id', type: 'Number' }]),
+    ).toThrow('Param "id" not of valid type (Number).');
+  });
+
+  test('toParquet builds copy SQL with no partition', async () => {
+    const { toParquet } = await loadDbModule();
+    const conn = { run: jest.fn().mockResolvedValue(undefined) };
+
+    await toParquet(
+      conn,
+      'test-bucket/source',
+      'test-bucket/target',
+      'ts',
+      'none',
+      false,
+    );
+
+    expect(conn.run).toHaveBeenCalledTimes(1);
+    const sql = conn.run.mock.calls[0][0];
+    expect(sql).toContain("FROM read_csv_auto('s3://test-bucket/source')");
+    expect(sql).toContain("TO 's3://test-bucket/target'");
+    expect(sql).toContain('FORMAT PARQUET');
+    expect(sql).not.toContain('PARTITION_BY');
+  });
+
+  test('toParquet calls getPartitionConf path for day partition and includes partition by clause', async () => {
+    const { toParquet } = await loadDbModule();
+    const conn = { run: jest.fn().mockResolvedValue(undefined) };
+
+    await toParquet(
+      conn,
+      'test-bucket/source',
+      'test-bucket/target',
+      'timestamp',
+      'day',
+      true,
+    );
+
+    const sql = conn.run.mock.calls[0][0];
+    expect(sql).toContain('year(timestamp) as year');
+    expect(sql).toContain('PARTITION_BY (year, month, day)');
+    expect(sql).toContain('COMPRESSION ZSTD');
+  });
+
+  test('toParquet throws PartitionError when partitionType requires timeColumn but missing', async () => {
+    const { toParquet } = await loadDbModule();
+    const conn = { run: jest.fn().mockResolvedValue(undefined) };
+
+    expect(() => toParquet(conn, 'a', 'b', undefined, 'day', false)).toThrow(
+      'Missing timeColumn value.',
+    );
   });
 });

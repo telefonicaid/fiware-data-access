@@ -34,6 +34,7 @@ const dbMocks = {
   checkParams: jest.fn(),
   resolveDAParams: jest.fn(),
   validateDAQuery: jest.fn(),
+  extractDate: jest.fn(),
 };
 
 const pgMocks = {
@@ -45,6 +46,9 @@ const pgMocks = {
 const awsMocks = {
   getS3Client: jest.fn(),
   dropFile: jest.fn(),
+  dropFiles: jest.fn(),
+  moveObject: jest.fn(),
+  listObjects: jest.fn(),
 };
 
 const mongoMocks = {
@@ -78,6 +82,7 @@ await jest.unstable_mockModule('../../src/lib/utils/db.js', () => ({
   checkParams: dbMocks.checkParams,
   resolveDAParams: dbMocks.resolveDAParams,
   validateDAQuery: dbMocks.validateDAQuery,
+  extractDate: dbMocks.extractDate,
 }));
 
 await jest.unstable_mockModule('../../src/lib/utils/pg.js', () => ({
@@ -89,6 +94,9 @@ await jest.unstable_mockModule('../../src/lib/utils/pg.js', () => ({
 await jest.unstable_mockModule('../../src/lib/utils/aws.js', () => ({
   getS3Client: awsMocks.getS3Client,
   dropFile: awsMocks.dropFile,
+  dropFiles: awsMocks.dropFiles,
+  moveObject: awsMocks.moveObject,
+  listObjects: awsMocks.listObjects,
 }));
 
 await jest.unstable_mockModule('../../src/lib/utils/mongo.js', () => ({
@@ -410,9 +418,17 @@ describe('fetchFDA', () => {
   });
 
   test('creates one-row parquet synchronously and schedules immediate fetch', async () => {
-    await fetchFDA('fda1', 'SELECT id FROM users;', 'svc', '/svc', 'test FDA', {
-      type: 'none',
-    });
+    await fetchFDA(
+      'fda1',
+      'SELECT id FROM users;',
+      'svc',
+      '/svc',
+      'test FDA',
+      {
+        type: 'none',
+      },
+      'timeinstant',
+    );
 
     expect(mongoMocks.createFDAMongo).toHaveBeenCalledWith(
       'fda1',
@@ -421,6 +437,8 @@ describe('fetchFDA', () => {
       '/svc',
       'test FDA',
       { type: 'none' },
+      'timeinstant',
+      undefined,
     );
     expect(pgMocks.uploadTable).toHaveBeenCalledWith(
       {},
@@ -439,6 +457,8 @@ describe('fetchFDA', () => {
       fdaId: 'fda1',
       query: 'SELECT id FROM users;',
       service: 'svc',
+      timeColumn: 'timeinstant',
+      objStgConf: undefined,
     });
     expect(agenda.every).not.toHaveBeenCalled();
   });
@@ -494,6 +514,9 @@ describe('updateFDA', () => {
       fdaId: 'fda42',
       query: 'SELECT id FROM users',
       service: 'svc',
+      timeColumn: undefined,
+      objStgConf: undefined,
+      partitionFlag: true,
     });
   });
 });
@@ -583,10 +606,13 @@ describe('deleteFDA', () => {
 
   test('drops parquet, removes FDA and cancels agenda job', async () => {
     mongoMocks.retrieveFDA.mockResolvedValue({ _id: 'mongo-id' });
+    awsMocks.listObjects.mockResolvedValue(['routeTo/fdaA.parquet']);
 
     await deleteFDA('svc', 'fdaA');
 
-    expect(awsMocks.dropFile).toHaveBeenCalledWith({}, 'svc', '/fdaA.parquet');
+    expect(awsMocks.dropFiles).toHaveBeenCalledWith({}, 'svc', [
+      'routeTo/fdaA.parquet',
+    ]);
     expect(mongoMocks.removeFDA).toHaveBeenCalledWith('svc', 'fdaA');
     expect(agenda.cancel).toHaveBeenCalledWith({
       name: 'refresh-fda',
@@ -667,5 +693,101 @@ describe('DA access and update helpers', () => {
     ).rejects.toThrow('invalid DA query');
 
     expect(dbMocks.releaseDBConnection).toHaveBeenCalledWith({});
+  });
+});
+
+describe('fetchFDA with refresh policies', () => {
+  const agenda = {
+    now: jest.fn(),
+    every: jest.fn(),
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    awsMocks.getS3Client.mockReturnValue({});
+    awsMocks.dropFile.mockResolvedValue(undefined);
+    mongoMocks.createFDAMongo.mockResolvedValue(undefined);
+    dbMocks.getDBConnection.mockResolvedValue({});
+    dbMocks.releaseDBConnection.mockResolvedValue(undefined);
+    dbMocks.toParquet.mockResolvedValue(undefined);
+    pgMocks.uploadTable.mockResolvedValue(undefined);
+    jobsMocks.getAgenda.mockReturnValue(agenda);
+    agenda.now.mockResolvedValue(undefined);
+    agenda.every.mockResolvedValue(undefined);
+  });
+
+  test('fetchFDA with cron refresh policy schedules periodic job', async () => {
+    await fetchFDA('fda1', 'SELECT 1', 'svc', '/svc', 'desc', {
+      type: 'cron',
+      value: '0 0 * * *',
+    });
+
+    expect(agenda.every).toHaveBeenCalledWith(
+      '0 0 * * *',
+      'refresh-fda',
+      expect.objectContaining({ fdaId: 'fda1', query: 'SELECT 1' }),
+      { unique: { name: 'refresh-fda', 'data.fdaId': 'fda1' } },
+    );
+  });
+
+  test('fetchFDA with window refresh policy and deleteInterval schedules cleanup', async () => {
+    await fetchFDA('fda1', 'SELECT 1', 'svc', '/svc', 'desc', {
+      type: 'window',
+      value: 'daily',
+      deleteInterval: '1 day',
+      windowSize: 'day',
+    });
+
+    expect(agenda.every).toHaveBeenCalledWith(
+      expect.any(String),
+      'refresh-fda',
+      expect.any(Object),
+      expect.any(Object),
+    );
+  });
+
+  test('fetchFDA throws when deleteInterval provided without windowSize', async () => {
+    await expect(
+      fetchFDA('fda1', 'SELECT 1', 'svc', '/svc', 'desc', {
+        type: 'interval',
+        value: '10 minutes',
+        deleteInterval: '1 day',
+      }),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidParam',
+      message: 'Window size is required with a delete interval.',
+    });
+  });
+});
+
+describe('deleteFDA', () => {
+  const agenda = {
+    cancel: jest.fn(),
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jobsMocks.getAgenda.mockReturnValue(agenda);
+    agenda.cancel.mockResolvedValue(undefined);
+    awsMocks.getS3Client.mockReturnValue({});
+    awsMocks.dropFiles.mockResolvedValue(undefined);
+    mongoMocks.removeFDA.mockResolvedValue(undefined);
+  });
+
+  test('deleteFDA cancels both refresh and clean-partition scheduled jobs', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({ _id: 'mongo-id' });
+    awsMocks.listObjects.mockResolvedValue(['fda1.parquet']);
+
+    await deleteFDA('svc', 'fda1');
+
+    expect(agenda.cancel).toHaveBeenNthCalledWith(1, {
+      name: 'refresh-fda',
+      'data.fdaId': 'fda1',
+    });
+    expect(agenda.cancel).toHaveBeenNthCalledWith(2, {
+      name: 'clean-partition',
+      'data.fdaId': 'fda1',
+    });
   });
 });
