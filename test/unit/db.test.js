@@ -319,4 +319,97 @@ describe('db utils', () => {
       ]),
     ).toThrow('Invalid type value in params.');
   });
+
+  test('checkParams does nothing when params is null or undefined', async () => {
+    const { checkParams } = await loadDbModule();
+
+    expect(() => checkParams(null)).not.toThrow();
+    expect(() => checkParams(undefined)).not.toThrow();
+  });
+
+  test('checkParams throws FDAError when param missing type', async () => {
+    const { checkParams } = await loadDbModule();
+
+    expect(() => checkParams([{ name: 'id' }])).toThrow(
+      'Type is a mandatory key in every param.',
+    );
+  });
+
+  test('checkParams throws FDAError for invalid type value', async () => {
+    const { checkParams } = await loadDbModule();
+
+    expect(() => checkParams([{ name: 'id', type: 'InvalidType' }])).toThrow(
+      'Invalid value in type key.',
+    );
+  });
+
+  test('checkParams validates range: both values must be numbers', async () => {
+    const { checkParams } = await loadDbModule();
+
+    expect(() =>
+      checkParams([{ name: 'id', type: 'Number', range: ['1', 10] }]),
+    ).toThrow('Both values of range param should be of type number');
+  });
+
+  test('checkParams validates range: first number must be smaller than second', async () => {
+    const { checkParams } = await loadDbModule();
+
+    expect(() =>
+      checkParams([{ name: 'id', type: 'Number', range: [10, 5] }]),
+    ).toThrow('Fisrt number should be smaller than second number.');
+  });
+
+  test('checkParams validates range: cannot have more than 2 values', async () => {
+    const { checkParams } = await loadDbModule();
+
+    expect(() =>
+      checkParams([{ name: 'id', type: 'Number', range: [1, 5, 10] }]),
+    ).toThrow('Range cant have more than two values.');
+  });
+
+  test('checkParams validates enum: values must be strings or numbers', async () => {
+    const { checkParams } = await loadDbModule();
+
+    expect(() =>
+      checkParams([
+        { name: 'status', type: 'Text', enum: ['active', true, 'inactive'] },
+      ]),
+    ).toThrow('Values of enum param should be strings or numbers');
+  });
+
+  test('checkParams accepts valid param with valid type', async () => {
+    const { checkParams } = await loadDbModule();
+
+    expect(() => checkParams([{ name: 'id', type: 'Number' }])).not.toThrow();
+  });
+
+  test('checkParams accepts valid param with range', async () => {
+    const { checkParams } = await loadDbModule();
+
+    expect(() =>
+      checkParams([{ name: 'limit', type: 'Number', range: [1, 100] }]),
+    ).not.toThrow();
+  });
+
+  test('checkParams accepts valid param with enum', async () => {
+    const { checkParams } = await loadDbModule();
+
+    expect(() =>
+      checkParams([
+        { name: 'status', type: 'Text', enum: ['active', 'inactive', 1, 2] },
+      ]),
+    ).not.toThrow();
+  });
+
+  test('checkParams accepts multiple valid params', async () => {
+    const { checkParams } = await loadDbModule();
+
+    expect(() =>
+      checkParams([
+        { name: 'id', type: 'Number', required: true },
+        { name: 'status', type: 'Text', enum: ['active', 'inactive'] },
+        { name: 'limit', type: 'Number', range: [1, 100] },
+      ]),
+    ).not.toThrow();
+  });
 });
