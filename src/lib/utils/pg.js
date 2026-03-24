@@ -35,12 +35,12 @@ const { Client, Pool } = pg;
 const logger = getBasicLogger();
 const pools = new Map();
 
-function getPoolKey(user, password, host, port, database) {
-  return `${user}:${password}@${host}:${port}/${database}`;
+function getPoolKey(user, host, port, database) {
+  return `${user}@${host}:${port}/${database}`;
 }
 
 export function getPgPool(user, password, host, port, database) {
-  const key = getPoolKey(user, password, host, port, database);
+  const key = getPoolKey(user, host, port, database);
 
   if (pools.has(key)) {
     return pools.get(key);
