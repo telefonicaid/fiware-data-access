@@ -42,6 +42,7 @@ import {
 } from './lib/fda.js';
 import { createIndex, disconnectClient } from './lib/utils/mongo.js';
 import { destroyS3Client } from './lib/utils/aws.js';
+import { closePgPools } from './lib/utils/pg.js';
 import { config } from './lib/fdaConfig.js';
 import {
   initLogger,
@@ -443,6 +444,7 @@ async function shutdown() {
 
     await disconnectClient();
     await destroyS3Client();
+    await closePgPools();
 
     logger.info('[SHUTDOWN] Completed');
     process.exit(0);
