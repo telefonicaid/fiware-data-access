@@ -212,6 +212,33 @@ describe('db utils', () => {
     expect(stmt.close).toHaveBeenCalledTimes(1);
   });
 
+  test('runPreparedStatement returns InvalidQueryParam when isTypeOf coercion fails', async () => {
+    const { runPreparedStatement, runtimeConn } = await loadDbModule({
+      retrieveDAResult: {
+        query: 'SELECT id WHERE id = $id',
+        params: [{ name: 'id', type: 'Number', required: true }],
+      },
+    });
+
+    const stmt = {
+      bind: jest.fn().mockResolvedValue(undefined),
+      run: jest.fn().mockResolvedValue({ getRowObjectsJson: () => [] }),
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+    runtimeConn.prepare.mockResolvedValueOnce(stmt);
+
+    await expect(
+      runPreparedStatement(runtimeConn, 'svc', 'fdaA', 'daA', {
+        id: 'not-a-number',
+      }),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidQueryParam',
+    });
+
+    expect(stmt.close).toHaveBeenCalledTimes(1);
+  });
+
   test('validateDAQuery wraps prepare failures', async () => {
     const { validateDAQuery, runtimeConn } = await loadDbModule();
 
@@ -242,6 +269,48 @@ describe('db utils', () => {
     const { buildDAQuery } = await loadDbModule();
 
     expect(() => buildDAQuery('svc', 'fdaA', null)).toThrow('Invalid DA query');
+  });
+
+  test('buildDAQuery rejects queries starting with FROM clause', async () => {
+    const { buildDAQuery } = await loadDbModule();
+
+    expect(() =>
+      buildDAQuery('svc', 'fdaA', 'FROM read_parquet(...) SELECT *'),
+    ).toThrow('DA query must not include FROM clause at start');
+
+    expect(() => buildDAQuery('svc', 'fdaA', '  from   SELECT *')).toThrow(
+      'DA query must not include FROM clause at start',
+    );
+  });
+
+  test('buildDAQuery builds query without partition', async () => {
+    const { buildDAQuery } = await loadDbModule();
+
+    const result = buildDAQuery(
+      'my-service',
+      'fdaA',
+      'SELECT * WHERE id = $1',
+      false,
+    );
+
+    expect(result).toBe(
+      "FROM read_parquet('s3://my-service/fdaA.parquet') SELECT * WHERE id = $1",
+    );
+  });
+
+  test('buildDAQuery builds query with partition using wildcard path', async () => {
+    const { buildDAQuery } = await loadDbModule();
+
+    const result = buildDAQuery(
+      'my-service',
+      'fdaA',
+      'SELECT * WHERE id = $1',
+      true,
+    );
+
+    expect(result).toBe(
+      "FROM read_parquet('s3://my-service/fdaA.parquet/**/*.parquet') SELECT * WHERE id = $1",
+    );
   });
 
   test('resolveDAParams coerces boolean string values', async () => {
@@ -411,5 +480,66 @@ describe('db utils', () => {
         { name: 'limit', type: 'Number', range: [1, 100] },
       ]),
     ).not.toThrow();
+  });
+
+  test('resolveDAParams uses type coercion and throws on invalid value (isTypeOf path)', async () => {
+    const { resolveDAParams } = await loadDbModule();
+
+    expect(
+      resolveDAParams({ id: '42' }, [{ name: 'id', type: 'Number' }]),
+    ).toEqual({ id: 42 });
+
+    expect(() =>
+      resolveDAParams({ id: 'notanumber' }, [{ name: 'id', type: 'Number' }]),
+    ).toThrow('Param "id" not of valid type (Number).');
+  });
+
+  test('toParquet builds copy SQL with no partition', async () => {
+    const { toParquet } = await loadDbModule();
+    const conn = { run: jest.fn().mockResolvedValue(undefined) };
+
+    await toParquet(
+      conn,
+      'test-bucket/source',
+      'test-bucket/target',
+      'ts',
+      'none',
+      false,
+    );
+
+    expect(conn.run).toHaveBeenCalledTimes(1);
+    const sql = conn.run.mock.calls[0][0];
+    expect(sql).toContain("FROM read_csv_auto('s3://test-bucket/source')");
+    expect(sql).toContain("TO 's3://test-bucket/target'");
+    expect(sql).toContain('FORMAT PARQUET');
+    expect(sql).not.toContain('PARTITION_BY');
+  });
+
+  test('toParquet calls getPartitionConf path for day partition and includes partition by clause', async () => {
+    const { toParquet } = await loadDbModule();
+    const conn = { run: jest.fn().mockResolvedValue(undefined) };
+
+    await toParquet(
+      conn,
+      'test-bucket/source',
+      'test-bucket/target',
+      'timestamp',
+      'day',
+      true,
+    );
+
+    const sql = conn.run.mock.calls[0][0];
+    expect(sql).toContain('year(timestamp) as year');
+    expect(sql).toContain('PARTITION_BY (year, month, day)');
+    expect(sql).toContain('COMPRESSION ZSTD');
+  });
+
+  test('toParquet throws PartitionError when partitionType requires timeColumn but missing', async () => {
+    const { toParquet } = await loadDbModule();
+    const conn = { run: jest.fn().mockResolvedValue(undefined) };
+
+    expect(() => toParquet(conn, 'a', 'b', undefined, 'day', false)).toThrow(
+      'Missing timeColumn value.',
+    );
   });
 });
