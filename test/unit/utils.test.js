@@ -49,6 +49,76 @@ describe('utils', () => {
     jest.clearAllMocks();
   });
 
+  describe('parseBooleanQueryParam', () => {
+    test('returns false when value is undefined', async () => {
+      const { parseBooleanQueryParam } = await loadUtilsModule();
+
+      expect(parseBooleanQueryParam(undefined, 'fresh')).toBe(false);
+    });
+
+    test('returns boolean value unchanged for true/false input', async () => {
+      const { parseBooleanQueryParam } = await loadUtilsModule();
+
+      expect(parseBooleanQueryParam(true, 'fresh')).toBe(true);
+      expect(parseBooleanQueryParam(false, 'fresh')).toBe(false);
+    });
+
+    test('parses "true"/"1" as true and "false"/"0" as false', async () => {
+      const { parseBooleanQueryParam } = await loadUtilsModule();
+
+      expect(parseBooleanQueryParam('true', 'fresh')).toBe(true);
+      expect(parseBooleanQueryParam('1', 'fresh')).toBe(true);
+      expect(parseBooleanQueryParam('false', 'fresh')).toBe(false);
+      expect(parseBooleanQueryParam('0', 'fresh')).toBe(false);
+    });
+
+    test('throws FDAError for invalid string values', async () => {
+      const { parseBooleanQueryParam } = await loadUtilsModule();
+
+      expect(() => parseBooleanQueryParam('notabool', 'fresh')).toThrow(
+        'Query param "fresh" must be a boolean.',
+      );
+    });
+
+    test('throws FDAError for non-string non-boolean values', async () => {
+      const { parseBooleanQueryParam } = await loadUtilsModule();
+
+      expect(() => parseBooleanQueryParam(123, 'fresh')).toThrow(
+        'Query param "fresh" must be a boolean.',
+      );
+    });
+  });
+
+  describe('fresh query slot system', () => {
+    test('assertFreshQueriesEnabled throws when passed false', async () => {
+      const { assertFreshQueriesEnabled } = await loadUtilsModule();
+
+      expect(() => assertFreshQueriesEnabled(false)).toThrow(
+        'Fresh query mode is disabled in this instance',
+      );
+    });
+
+    test('assertFreshQueriesEnabled does not throw when true', async () => {
+      const { assertFreshQueriesEnabled } = await loadUtilsModule();
+
+      expect(() => assertFreshQueriesEnabled(true)).not.toThrow();
+    });
+
+    test('acquireFreshQuerySlot throws TooManyFreshQueries when max reached', async () => {
+      const { acquireFreshQuerySlot } = await loadUtilsModule();
+
+      // consume the only allowed slot by default when maxConcurrent=1
+      const release1 = acquireFreshQuerySlot(1);
+
+      expect(() => acquireFreshQuerySlot(1)).toThrow(
+        'Too many concurrent fresh queries (limit 1)',
+      );
+
+      release1();
+      expect(() => acquireFreshQuerySlot(1)).not.toThrow();
+    });
+  });
+
   describe('getWindowDate', () => {
     test('returns date 1 day ago for "day" windowSize', async () => {
       const { getWindowDate } = await loadUtilsModule();
