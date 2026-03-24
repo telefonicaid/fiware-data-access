@@ -22,7 +22,7 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
-import { retrieveDA } from './mongo.js';
+import { retrieveDA, retrieveFDA } from './mongo.js';
 import { FDAError } from '../fdaError.js';
 import { getBasicLogger } from './logger.js';
 import { config } from '../fdaConfig.js';
@@ -120,7 +120,9 @@ export async function runPreparedStatement(
       `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`,
     );
   }
-  const query = buildDAQuery(service, fdaId, da.query);
+
+  const { objStgConf } = await retrieveFDA(service, fdaId);
+  const query = buildDAQuery(service, fdaId, da.query, objStgConf?.partition);
 
   const stmt = await conn.prepare(query);
 
@@ -376,15 +378,87 @@ function isInEnum(value, enumValues) {
   return enumValues.includes(value);
 }
 
-export function toParquet(conn, originPath, resultPath) {
+export function toParquet(
+  conn,
+  originPath,
+  resultPath,
+  timeColumn,
+  partitionType,
+  compression,
+) {
   logger.debug({ originPath, resultPath }, '[DEBUG]: toParquet');
+
+  const { cols, partitionBy } = getPartitionConf(partitionType, timeColumn);
+  const compressionString = compression ? `, COMPRESSION ZSTD` : '';
+
   return conn.run(
-    `COPY ( SELECT * FROM read_csv_auto('s3://${originPath}')) 
-    TO 's3://${resultPath}' (FORMAT PARQUET);`,
+    `COPY ( SELECT ${cols}
+                FROM read_csv_auto('s3://${originPath}')) 
+      TO 's3://${resultPath}' (FORMAT PARQUET ${partitionBy} ${compressionString});`,
   );
 }
 
-export function buildDAQuery(service, fdaId, userQuery) {
+function getPartitionConf(partitionType = 'none', timeColumn) {
+  if (!timeColumn && partitionType !== 'none') {
+    throw new FDAError(400, 'PartitionError', `Missing timeColumn value.`);
+  }
+  const PARTITIONS = {
+    day: {
+      columns: `
+      year(${timeColumn}) as year,
+      month(${timeColumn}) as month,
+      day(${timeColumn}) as day
+    `,
+      partitionBy: 'year, month, day',
+    },
+    week: {
+      columns: `
+      year(${timeColumn}) as year,
+      strftime(${timeColumn}, '%Y-%W') as week
+      `,
+      partitionBy: 'year, week',
+    },
+    month: {
+      columns: `
+      year(${timeColumn}) as year,
+      month(${timeColumn}) as month
+    `,
+      partitionBy: 'year, month',
+    },
+    year: {
+      columns: `
+      year(${timeColumn}) as year
+    `,
+      partitionBy: 'year',
+    },
+    none: {
+      columns: '',
+      partitionBy: '',
+    },
+  };
+
+  const partitionConf = PARTITIONS[partitionType];
+  if (!partitionConf) {
+    throw new FDAError(
+      400,
+      'PartitionError',
+      `Incorrect partition type: ${partitionType}.`,
+    );
+  }
+
+  const cols = partitionConf.columns ? `*, ${partitionConf.columns}` : '*';
+  const partitionBy = partitionConf.partitionBy
+    ? `, PARTITION_BY (${partitionConf.partitionBy})`
+    : '';
+
+  return { cols, partitionBy };
+}
+
+export function buildDAQuery(service, fdaId, userQuery, partition) {
+  logger.debug(
+    { service, fdaId, userQuery, partition },
+    '[DEBUG]: buildDAQuery',
+  );
   if (!userQuery || typeof userQuery !== 'string') {
     throw new FDAError(400, 'BadRequest', 'Invalid DA query');
   }
@@ -401,7 +475,37 @@ export function buildDAQuery(service, fdaId, userQuery) {
 
   const parquetPath = `s3://${service}/${fdaId}.parquet`;
 
-  return `FROM read_parquet('${parquetPath}') ${trimmed}`;
+  if (partition) {
+    return `FROM read_parquet('${parquetPath}/**/*.parquet') ${trimmed}`;
+  } else {
+    return `FROM read_parquet('${parquetPath}') ${trimmed}`;
+  }
+}
+
+export function extractDate(path) {
+  const year = path.match(/year=(\d{4})/)?.[1];
+  const month = path.match(/month=(\d{1,2})/)?.[1];
+  const day = path.match(/day=(\d{1,2})/)?.[1];
+  const weekMatch = path.match(/week=(\d{4})-(\d{1,2})/);
+
+  const week = weekMatch?.[2]; // second group = week number
+
+  if (year && month && day) {
+    return new Date(Date.UTC(year, month - 1, day));
+  }
+
+  if (year && month) {
+    return new Date(Date.UTC(year, month - 1, 1));
+  }
+
+  if (year && week) {
+    const d = new Date(Date.UTC(year, 0, 1 + (week - 1) * 7));
+    const dayNum = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+    return d;
+  }
+
+  return null;
 }
 
 export async function validateDAQuery(conn, service, fdaId, userQuery) {

@@ -32,9 +32,16 @@ import {
   checkParams,
   resolveDAParams,
   validateDAQuery,
+  extractDate,
 } from './utils/db.js';
 import { uploadTable, runPgQuery, createPgCursorReader } from './utils/pg.js';
-import { getS3Client, dropFile } from './utils/aws.js';
+import {
+  getS3Client,
+  dropFile,
+  moveObject,
+  listObjects,
+  dropFiles,
+} from './utils/aws.js';
 import {
   createFDAMongo,
   regenerateFDA,
@@ -50,6 +57,7 @@ import {
 } from './utils/mongo.js';
 import {
   convertBigInt,
+  getWindowDate,
   assertFreshQueriesEnabled,
   acquireFreshQuerySlot,
 } from './utils/utils.js';
@@ -404,6 +412,8 @@ export async function fetchFDA(
   servicePath,
   description,
   refreshPolicy,
+  timeColumn,
+  objStgConf,
 ) {
   await createFDAMongo(
     fdaId,
@@ -412,6 +422,8 @@ export async function fetchFDA(
     servicePath,
     description,
     refreshPolicy,
+    timeColumn,
+    objStgConf,
   );
 
   try {
@@ -428,6 +440,8 @@ export async function fetchFDA(
     fdaId,
     query,
     service,
+    timeColumn,
+    objStgConf,
   });
 
   // Schedule refreshes according to policy
@@ -436,7 +450,7 @@ export async function fetchFDA(
     await agenda.every(
       refreshPolicy.value,
       'refresh-fda',
-      { fdaId, query, service },
+      { fdaId, query, service, timeColumn, objStgConf },
       {
         unique: {
           name: 'refresh-fda',
@@ -444,7 +458,120 @@ export async function fetchFDA(
         },
       },
     );
+
+    const { deleteInterval, windowSize } = refreshPolicy;
+    if (deleteInterval && windowSize) {
+      await agenda.every(
+        deleteInterval,
+        'clean-partition',
+        {
+          fdaId,
+          service,
+          windowSize,
+          objStgConf,
+        },
+        {
+          unique: {
+            name: 'refresh-fda',
+            'data.fdaId': fdaId,
+          },
+        },
+      );
+    }
+    if (deleteInterval && !windowSize) {
+      throw new FDAError(
+        400,
+        'InvalidParam',
+        `Window size is required with a delete interval.`,
+      );
+    }
   }
+
+  if (refreshPolicy?.type === 'window') {
+    const { interval, windowQuery } = getUpdateWindow(
+      refreshPolicy.value,
+      query,
+      timeColumn,
+    );
+
+    // partitionFlag lets us know we are refreshing already existing partitioned files for performance purposes
+    await agenda.every(
+      interval,
+      'refresh-fda',
+      {
+        fdaId,
+        query: windowQuery,
+        service,
+        timeColumn,
+        objStgConf,
+        partitionFlag: true,
+      },
+      {
+        unique: {
+          name: 'refresh-fda',
+          'data.fdaId': fdaId,
+        },
+      },
+    );
+
+    const { deleteInterval, windowSize } = refreshPolicy;
+    if (deleteInterval && windowSize) {
+      await agenda.every(
+        deleteInterval,
+        'clean-partition',
+        {
+          fdaId,
+          service,
+          windowSize,
+          objStgConf,
+        },
+        {
+          unique: {
+            name: 'refresh-fda',
+            'data.fdaId': fdaId,
+          },
+        },
+      );
+    }
+    if (deleteInterval && !windowSize) {
+      throw new FDAError(
+        400,
+        'InvalidParam',
+        `Window size is required with a delete interval.`,
+      );
+    }
+  }
+}
+
+function getUpdateWindow(windowType, query, timeColumn) {
+  const slidingWindow = {
+    hourly: {
+      interval: '0 * * * *',
+      windowQuery: `SELECT * FROM (${query}) q WHERE ${timeColumn} >= NOW() - INTERVAL '1 hour'`,
+    },
+    daily: {
+      interval: '0 0 * * *',
+      windowQuery: `SELECT * FROM (${query}) q WHERE ${timeColumn} >= NOW() - INTERVAL '1 day'`,
+    },
+    weekly: {
+      interval: '0 0 * * 0',
+      windowQuery: `SELECT * FROM (${query}) q WHERE ${timeColumn} >= NOW() - INTERVAL '1 week'`,
+    },
+    monthly: {
+      interval: '0 0 1 * *',
+      windowQuery: `SELECT * FROM (${query}) q WHERE ${timeColumn} >= NOW() - INTERVAL '1 month'`,
+    },
+  };
+
+  const window = slidingWindow[windowType];
+  if (!window) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Invalid window type: ${windowType}.`,
+    );
+  }
+  return window;
 }
 
 export async function updateFDA(service, fdaId) {
@@ -457,14 +584,33 @@ export async function updateFDA(service, fdaId) {
     fdaId,
     query: previous.query,
     service,
+    timeColumn: previous.timeColumn,
+    objStgConf: previous.objStgConf,
+    partitionFlag: true,
   });
 }
 
-export async function processFDAAsync(fdaId, query, service) {
+export async function processFDAAsync(
+  fdaId,
+  query,
+  service,
+  timeColumn,
+  objStgConf,
+  partitionFlag,
+) {
   try {
     await updateFDAStatus(service, fdaId, 'fetching', 10);
 
-    await uploadTableToObjStg(service, service, query, service, fdaId);
+    await uploadTableToObjStg(
+      service,
+      service,
+      query,
+      service,
+      fdaId,
+      timeColumn,
+      objStgConf,
+      partitionFlag,
+    );
 
     await updateFDAStatus(service, fdaId, 'completed', 100);
   } catch (err) {
@@ -488,12 +634,19 @@ export async function deleteFDA(service, fdaId) {
     config.objstg.usr,
     config.objstg.pass,
   );
-  await dropFile(s3Client, service, getPath('', fdaId, '.parquet'));
+  // This way we remove FDAs independently of if theyre partitioned or not
+  const objPaths = await listObjects(s3Client, service, fdaId);
+  await dropFiles(s3Client, service, objPaths);
+
   await removeFDA(service, fdaId);
 
   const agenda = getAgenda();
   await agenda.cancel({
     name: 'refresh-fda',
+    'data.fdaId': fdaId,
+  });
+  await agenda.cancel({
+    name: 'clean-partition',
     'data.fdaId': fdaId,
   });
 }
@@ -540,7 +693,54 @@ export async function deleteDA(service, fdaId, daId) {
   await removeDA(service, fdaId, daId);
 }
 
-async function uploadTableToObjStg(service, database, query, bucket, path) {
+export async function cleanPartition(service, fdaId, windowSize, objStgConf) {
+  if (!objStgConf?.partition) {
+    // DEBATE: With no partitioned folders doesn't make much sense to clean cause we'd had a FDA with no file
+    throw new FDAError(
+      400,
+      'CleaningError',
+      `Removing a non partitioned FDA ${fdaId}.`,
+    );
+  }
+
+  const cutoff = getWindowDate(windowSize);
+  if (!cutoff) {
+    throw new FDAError(
+      400,
+      'CleaningError',
+      `Incorrect window size in refresh policy.`,
+    );
+  }
+
+  const s3Client = getS3Client(
+    `${config.objstg.protocol}://${config.objstg.endpoint}`,
+    config.objstg.usr,
+    config.objstg.pass,
+  );
+
+  const objPaths = await listObjects(s3Client, service, fdaId);
+
+  const partitionsToRemove = [];
+  for (const path of objPaths) {
+    const partitionDate = extractDate(path);
+
+    if (partitionDate < cutoff) {
+      partitionsToRemove.push(path);
+    }
+  }
+  await dropFiles(s3Client, service, partitionsToRemove);
+}
+
+async function uploadTableToObjStg(
+  service,
+  database,
+  query,
+  bucket,
+  path,
+  timeColumn,
+  objStgConf,
+  partitionFlag,
+) {
   const s3Client = getS3Client(
     `${config.objstg.protocol}://${config.objstg.endpoint}`,
     config.objstg.usr,
@@ -552,10 +752,47 @@ async function uploadTableToObjStg(service, database, query, bucket, path) {
   const conn = await getDBConnection();
   try {
     await updateFDAStatus(service, path, 'transforming', 60);
-    const parquetPath = getPath(bucket, path, '.parquet');
-    await toParquet(conn, getPath(bucket, path, '.csv'), parquetPath);
+
+    // DuckDB cant overwrite files in Minio, so for partitioned files we upload them in a tmp file and the move them
+    // We only do this for files that already exist (partitionFlag=true) so upload performance on partitions doesnt get affected
+    const parquetPath = partitionFlag
+      ? getPath(bucket, 'tmp/' + path, '.parquet')
+      : getPath(bucket, path, '.parquet');
+
+    await toParquet(
+      conn,
+      getPath(bucket, path, '.csv'),
+      parquetPath,
+      timeColumn,
+      objStgConf?.partition,
+      objStgConf?.compression,
+    );
+
+    if (partitionFlag) {
+      const objectsList = await listObjects(
+        s3Client,
+        bucket,
+        `tmp/${path}.parquet`,
+      );
+      for (const tempPartition of objectsList) {
+        await moveObject(
+          s3Client,
+          bucket,
+          `${bucket}/${tempPartition}`,
+          tempPartition.replace('tmp/', ''),
+        );
+        await dropFile(s3Client, bucket, tempPartition);
+      }
+    }
+
     await updateFDAStatus(service, path, 'uploading', 80);
+    // DuckDb doesn't replace one row parquet snippet with partitioned file, so we remove it by hand
+    if (objStgConf?.partition) {
+      await dropFile(s3Client, bucket, `${path}.parquet`);
+    }
     await dropFile(s3Client, bucket, `${path}.csv`);
+  } catch (e) {
+    throw new FDAError(500, 'UploadError', e.message);
   } finally {
     await releaseDBConnection(conn);
   }

@@ -44,6 +44,19 @@ const deleteObjectCommandCtorMock = jest.fn(
 const headBucketCommandCtorMock = jest.fn(function headBucketCommand(input) {
   this.input = input;
 });
+const CopyObjectCommandCtorMock = jest.fn(function copyObjectCommand(input) {
+  this.input = input;
+});
+const DeleteObjectsCommandCtorMock = jest.fn(
+  function deleteObjectsCommand(input) {
+    this.input = input;
+  },
+);
+const ListObjectsV2CommandCtorMock = jest.fn(
+  function listObjectsV2Command(input) {
+    this.input = input;
+  },
+);
 const uploadCtorMock = jest.fn();
 
 let currentS3Client;
@@ -72,6 +85,9 @@ async function loadAwsModule() {
     CreateBucketCommand: createBucketCommandCtorMock,
     DeleteObjectCommand: deleteObjectCommandCtorMock,
     HeadBucketCommand: headBucketCommandCtorMock,
+    CopyObjectCommand: CopyObjectCommandCtorMock,
+    DeleteObjectsCommand: DeleteObjectsCommandCtorMock,
+    ListObjectsV2Command: ListObjectsV2CommandCtorMock,
   }));
 
   await jest.unstable_mockModule('@aws-sdk/lib-storage', () => ({
@@ -90,6 +106,16 @@ describe('aws utils', () => {
     jest.clearAllMocks();
   });
 
+  test('destroyS3Client calls destroy method on S3 client', async () => {
+    const { getS3Client, destroyS3Client } = await loadAwsModule();
+
+    await getS3Client('test-config');
+
+    await destroyS3Client();
+
+    expect(currentS3Client.destroy).toHaveBeenCalledTimes(1);
+  });
+
   test('dropFile wraps delete errors with FDAError', async () => {
     const { dropFile } = await loadAwsModule();
 
@@ -101,6 +127,61 @@ describe('aws utils', () => {
       status: 500,
       type: 'S3ServerError',
     });
+  });
+
+  test('dropFiles wraps delete errors with FDAError', async () => {
+    const { dropFiles } = await loadAwsModule();
+
+    currentS3Client.send.mockRejectedValueOnce(
+      new Error('delete files exploded'),
+    );
+
+    await expect(
+      dropFiles(currentS3Client, 'bucket-a', ['file-a']),
+    ).rejects.toMatchObject({
+      status: 500,
+      type: 'S3ServerError',
+    });
+  });
+
+  test('moveObject wraps aws moving object errors with FDAError', async () => {
+    const { moveObject } = await loadAwsModule();
+
+    currentS3Client.send.mockRejectedValueOnce(
+      new Error('move object exploded'),
+    );
+
+    await expect(
+      moveObject(currentS3Client, 'bucket-a', 'file-a', 'bucket-b', 'file-b'),
+    ).rejects.toMatchObject({
+      status: 500,
+      type: 'S3ServerError',
+    });
+  });
+
+  test('listObjects wraps aws listing objects errors with FDAError', async () => {
+    const { listObjects } = await loadAwsModule();
+
+    currentS3Client.send.mockRejectedValueOnce(
+      new Error('list objects exploded'),
+    );
+
+    await expect(
+      listObjects(currentS3Client, 'bucket-a'),
+    ).rejects.toMatchObject({
+      status: 500,
+      type: 'S3ServerError',
+    });
+  });
+
+  test('listObjects returns empty list as default', async () => {
+    const { listObjects } = await loadAwsModule();
+
+    currentS3Client.send.mockResolvedValueOnce({ Contents: undefined });
+
+    const result = await listObjects(currentS3Client, 'bucket-a');
+
+    expect(result).toEqual([]);
   });
 
   test('createBucket logs when bucket already exists', async () => {

@@ -125,3 +125,17 @@ export function acquireFreshQuerySlot(maxConcurrent) {
     activeFreshQueries = Math.max(0, activeFreshQueries - 1);
   };
 }
+
+export function getWindowDate(windowSize) {
+  const now = new Date();
+
+  const map = {
+    day: () => now.setDate(now.getDate() - 1),
+    week: () => now.setDate(now.getDate() - 7),
+    month: () => now.setMonth(now.getMonth() - 1),
+    year: () => now.setFullYear(now.getFullYear() - 1),
+  };
+
+  map[windowSize]?.();
+  return map[windowSize] ? now : undefined;
+}
