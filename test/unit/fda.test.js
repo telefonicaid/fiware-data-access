@@ -695,3 +695,99 @@ describe('DA access and update helpers', () => {
     expect(dbMocks.releaseDBConnection).toHaveBeenCalledWith({});
   });
 });
+
+describe('fetchFDA with refresh policies', () => {
+  const agenda = {
+    now: jest.fn(),
+    every: jest.fn(),
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    awsMocks.getS3Client.mockReturnValue({});
+    awsMocks.dropFile.mockResolvedValue(undefined);
+    mongoMocks.createFDAMongo.mockResolvedValue(undefined);
+    dbMocks.getDBConnection.mockResolvedValue({});
+    dbMocks.releaseDBConnection.mockResolvedValue(undefined);
+    dbMocks.toParquet.mockResolvedValue(undefined);
+    pgMocks.uploadTable.mockResolvedValue(undefined);
+    jobsMocks.getAgenda.mockReturnValue(agenda);
+    agenda.now.mockResolvedValue(undefined);
+    agenda.every.mockResolvedValue(undefined);
+  });
+
+  test('fetchFDA with cron refresh policy schedules periodic job', async () => {
+    await fetchFDA('fda1', 'SELECT 1', 'svc', '/svc', 'desc', {
+      type: 'cron',
+      value: '0 0 * * *',
+    });
+
+    expect(agenda.every).toHaveBeenCalledWith(
+      '0 0 * * *',
+      'refresh-fda',
+      expect.objectContaining({ fdaId: 'fda1', query: 'SELECT 1' }),
+      { unique: { name: 'refresh-fda', 'data.fdaId': 'fda1' } },
+    );
+  });
+
+  test('fetchFDA with window refresh policy and deleteInterval schedules cleanup', async () => {
+    await fetchFDA('fda1', 'SELECT 1', 'svc', '/svc', 'desc', {
+      type: 'window',
+      value: 'daily',
+      deleteInterval: '1 day',
+      windowSize: 'day',
+    });
+
+    expect(agenda.every).toHaveBeenCalledWith(
+      expect.any(String),
+      'refresh-fda',
+      expect.any(Object),
+      expect.any(Object),
+    );
+  });
+
+  test('fetchFDA throws when deleteInterval provided without windowSize', async () => {
+    await expect(
+      fetchFDA('fda1', 'SELECT 1', 'svc', '/svc', 'desc', {
+        type: 'interval',
+        value: '10 minutes',
+        deleteInterval: '1 day',
+      }),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidParam',
+      message: 'Window size is required with a delete interval.',
+    });
+  });
+});
+
+describe('deleteFDA', () => {
+  const agenda = {
+    cancel: jest.fn(),
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jobsMocks.getAgenda.mockReturnValue(agenda);
+    agenda.cancel.mockResolvedValue(undefined);
+    awsMocks.getS3Client.mockReturnValue({});
+    awsMocks.dropFiles.mockResolvedValue(undefined);
+    mongoMocks.removeFDA.mockResolvedValue(undefined);
+  });
+
+  test('deleteFDA cancels both refresh and clean-partition scheduled jobs', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({ _id: 'mongo-id' });
+    awsMocks.listObjects.mockResolvedValue(['fda1.parquet']);
+
+    await deleteFDA('svc', 'fda1');
+
+    expect(agenda.cancel).toHaveBeenNthCalledWith(1, {
+      name: 'refresh-fda',
+      'data.fdaId': 'fda1',
+    });
+    expect(agenda.cancel).toHaveBeenNthCalledWith(2, {
+      name: 'clean-partition',
+      'data.fdaId': 'fda1',
+    });
+  });
+});
