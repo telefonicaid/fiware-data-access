@@ -26,9 +26,14 @@ import { beforeEach, describe, expect, jest, test } from '@jest/globals';
 import { FDAError } from '../../src/lib/fdaError.js';
 
 let currentClient;
+let currentPool;
 
 const clientCtorMock = jest.fn(function clientFactory() {
   return currentClient;
+});
+
+const poolCtorMock = jest.fn(function poolFactory() {
+  return currentPool;
 });
 
 const copyToMock = jest.fn((query) => ({ copyQuery: query }));
@@ -48,6 +53,7 @@ const loggerMock = {
 await jest.unstable_mockModule('pg', () => ({
   default: {
     Client: clientCtorMock,
+    Pool: poolCtorMock,
   },
 }));
 
@@ -74,21 +80,34 @@ await jest.unstable_mockModule('../../src/lib/fdaConfig.js', () => ({
       pass: 'pg-pass',
       host: 'pg-host',
       port: 5432,
+      pool: {
+        max: 10,
+        idleTimeoutMillis: 10000,
+        connectionTimeoutMillis: 5000,
+      },
     },
   },
 }));
 
 const { getPgClient, uploadTable, runPgQuery, createPgCursorReader } =
   await import('../../src/lib/utils/pg.js');
+const { closePgPools } = await import('../../src/lib/utils/pg.js');
 
 describe('pg utils', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.clearAllMocks();
 
+    await closePgPools();
+
     currentClient = {
-      connect: jest.fn().mockResolvedValue(undefined),
       query: jest.fn(),
+      release: jest.fn(),
+    };
+
+    currentPool = {
+      connect: jest.fn().mockResolvedValue(currentClient),
       end: jest.fn().mockResolvedValue(undefined),
+      on: jest.fn(),
     };
   });
 
@@ -110,14 +129,14 @@ describe('pg utils', () => {
 
     const rows = await runPgQuery('svc_db', 'SELECT 1', []);
 
-    expect(currentClient.connect).toHaveBeenCalledTimes(1);
+    expect(currentPool.connect).toHaveBeenCalledTimes(1);
     expect(currentClient.query).toHaveBeenCalledWith('SELECT 1', []);
     expect(rows).toEqual([{ id: 1 }]);
+    expect(currentClient.release).toHaveBeenCalledTimes(1);
   });
 
-  test('runPgQuery wraps non-FDA errors and swallows end failures', async () => {
+  test('runPgQuery wraps non-FDA errors', async () => {
     currentClient.query.mockRejectedValue(new Error('query exploded'));
-    currentClient.end.mockRejectedValue(new Error('close exploded'));
 
     await expect(
       runPgQuery('svc_db', 'SELECT bad()', []),
@@ -127,7 +146,7 @@ describe('pg utils', () => {
       message: 'Error running fresh query: query exploded',
     });
 
-    expect(currentClient.end).toHaveBeenCalledTimes(1);
+    expect(currentClient.release).toHaveBeenCalledTimes(1);
   });
 
   test('runPgQuery rethrows FDAError instances', async () => {
@@ -135,6 +154,8 @@ describe('pg utils', () => {
     currentClient.query.mockRejectedValue(fdaError);
 
     await expect(runPgQuery('svc_db', 'SELECT 1', [])).rejects.toBe(fdaError);
+
+    expect(currentClient.release).toHaveBeenCalledTimes(1);
   });
 
   test('createPgCursorReader reads chunk and closes idempotently', async () => {
@@ -153,12 +174,11 @@ describe('pg utils', () => {
 
     expect(cursorCtorMock).toHaveBeenCalledWith('SELECT id', [9]);
     expect(cursorObject.close).toHaveBeenCalledTimes(1);
-    expect(currentClient.end).toHaveBeenCalledTimes(1);
+    expect(currentClient.release).toHaveBeenCalledTimes(1);
   });
 
   test('createPgCursorReader wraps non-FDA errors', async () => {
-    currentClient.connect.mockRejectedValue(new Error('connect exploded'));
-    currentClient.end.mockRejectedValue(new Error('close exploded'));
+    currentPool.connect.mockRejectedValue(new Error('connect exploded'));
 
     await expect(
       createPgCursorReader('svc_db', 'SELECT 1', [], 10),
@@ -167,8 +187,6 @@ describe('pg utils', () => {
       type: 'PostgresServerError',
       message: 'Error streaming fresh query: connect exploded',
     });
-
-    expect(currentClient.end).toHaveBeenCalledTimes(1);
   });
 
   test('uploadTable converts upload failures into FDAError and closes resources', async () => {
@@ -196,7 +214,7 @@ describe('pg utils', () => {
     );
     expect(stream.destroy).toHaveBeenCalledWith(expect.any(Error));
     expect(stream.destroy).toHaveBeenCalledTimes(2);
-    expect(currentClient.end).toHaveBeenCalledTimes(1);
+    expect(currentClient.release).toHaveBeenCalledTimes(1);
   });
 
   test('uploadTable uploads successfully', async () => {
@@ -217,6 +235,17 @@ describe('pg utils', () => {
       'Upload completed successfully',
     );
     expect(stream.destroy).toHaveBeenCalledTimes(1);
-    expect(currentClient.end).toHaveBeenCalledTimes(1);
+    expect(currentClient.release).toHaveBeenCalledTimes(1);
+  });
+
+  test('closePgPools closes all created pools', async () => {
+    currentClient.query.mockResolvedValue({ rows: [] });
+
+    await runPgQuery('svc_db_1', 'SELECT 1', []);
+    await runPgQuery('svc_db_2', 'SELECT 1', []);
+    await closePgPools();
+
+    expect(poolCtorMock).toHaveBeenCalledTimes(2);
+    expect(currentPool.end).toHaveBeenCalled();
   });
 });
