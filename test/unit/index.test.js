@@ -437,6 +437,33 @@ describe('index routes - validation and middleware branches', () => {
     expect(fdaMocks.executeQuery).not.toHaveBeenCalled();
   });
 
+  test('uses NDJSON streaming when Accept is ndjson even if outputType is not json', async () => {
+    await request(app)
+      .get('/query')
+      .set('Fiware-Service', 'svc')
+      .set('Accept', 'application/x-ndjson')
+      .query({
+        fdaId: 'fda1',
+        daId: 'da1',
+        outputType: 'csv',
+        minAge: 25,
+      })
+      .expect(200)
+      .expect('streamed');
+
+    expect(fdaMocks.executeQueryStream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        service: 'svc',
+        params: expect.objectContaining({
+          fdaId: 'fda1',
+          daId: 'da1',
+          minAge: '25',
+        }),
+      }),
+    );
+    expect(fdaMocks.executeQuery).not.toHaveBeenCalled();
+  });
+
   test('covers DELETE DA route success path', async () => {
     await request(app)
       .delete('/fdas/fda1/das/da1')
@@ -510,6 +537,107 @@ describe('index routes - validation and middleware branches', () => {
       description: 'missing fda',
     });
     expect(loggerMock.warn).toHaveBeenCalledWith(expect.any(Error));
+  });
+
+  test('returns 400 for invalid outputType on GET /query', async () => {
+    const res = await request(app)
+      .get('/query')
+      .set('Fiware-Service', 'svc')
+      .query({ fdaId: 'fda1', daId: 'da1', outputType: 'xml' })
+      .expect(400);
+
+    expect(res.body).toEqual({
+      error: 'BadRequest',
+      description: expect.stringContaining("Invalid outputType 'xml'"),
+    });
+    expect(fdaMocks.executeQuery).not.toHaveBeenCalled();
+  });
+
+  test('returns CSV when outputType=csv is requested on GET /query', async () => {
+    fdaMocks.executeQuery.mockResolvedValueOnce([
+      { col1: 'a', col2: 'b' },
+      { col1: 'c,d', col2: 'e"f' },
+    ]);
+
+    const res = await request(app)
+      .get('/query')
+      .set('Fiware-Service', 'svc')
+      .query({ fdaId: 'fda1', daId: 'da1', outputType: 'csv' })
+      .expect(200);
+
+    expect(res.headers['content-type']).toMatch(/text\/csv/);
+    expect(res.headers['content-disposition']).toMatch(/attachment/);
+    const lines = res.text.split('\n');
+    expect(lines[0]).toBe('col1,col2');
+    expect(lines[1]).toBe('a,b');
+    expect(lines[2]).toBe('"c,d","e""f"');
+    expect(fdaMocks.executeQuery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        service: 'svc',
+        params: expect.not.objectContaining({ outputType: 'csv' }),
+      }),
+    );
+  });
+
+  test('returns Excel buffer when outputType=xls is requested on GET /query', async () => {
+    fdaMocks.executeQuery.mockResolvedValueOnce([{ col1: 'v1', col2: 42 }]);
+
+    const res = await request(app)
+      .get('/query')
+      .set('Fiware-Service', 'svc')
+      .query({ fdaId: 'fda1', daId: 'da1', outputType: 'xls' })
+      .expect(200);
+
+    expect(res.headers['content-type']).toMatch(
+      /application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet/,
+    );
+    expect(res.headers['content-disposition']).toMatch(/results\.xlsx/);
+    expect(res.body).toBeTruthy();
+  });
+
+  test('returns 400 for invalid outputType on POST /doQuery', async () => {
+    const res = await request(app)
+      .post('/plugin/cda/api/doQuery')
+      .set('Fiware-Service', 'svc')
+      .send({ path: '/public/svc', dataAccessId: 'da1', outputType: 'html' })
+      .expect(400);
+
+    expect(res.body).toEqual({
+      error: 'BadRequest',
+      description: expect.stringContaining("Invalid outputType 'html'"),
+    });
+    expect(cdaMocks.handleCdaQuery).not.toHaveBeenCalled();
+  });
+
+  test('returns CSV when outputType=csv is requested on POST /doQuery', async () => {
+    cdaMocks.handleCdaQuery.mockResolvedValueOnce([{ col1: 'x', col2: 'y' }]);
+
+    const res = await request(app)
+      .post('/plugin/cda/api/doQuery')
+      .set('Fiware-Service', 'svc')
+      .send({ path: '/public/svc', dataAccessId: 'da1', outputType: 'csv' })
+      .expect(200);
+
+    expect(res.headers['content-type']).toMatch(/text\/csv/);
+    expect(res.text).toContain('col1,col2');
+    expect(cdaMocks.handleCdaQuery).toHaveBeenCalledWith(
+      expect.objectContaining({ outputType: 'csv' }),
+    );
+  });
+
+  test('returns Excel buffer when outputType=xls is requested on POST /doQuery', async () => {
+    cdaMocks.handleCdaQuery.mockResolvedValueOnce([{ col1: 'v1' }]);
+
+    const res = await request(app)
+      .post('/plugin/cda/api/doQuery')
+      .set('Fiware-Service', 'svc')
+      .send({ path: '/public/svc', dataAccessId: 'da1', outputType: 'xls' })
+      .expect(200);
+
+    expect(res.headers['content-type']).toMatch(
+      /application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet/,
+    );
+    expect(res.headers['content-disposition']).toMatch(/results\.xlsx/);
   });
 });
 
