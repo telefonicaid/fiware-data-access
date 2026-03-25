@@ -24,7 +24,7 @@
 
 import { executeQuery } from '../fda.js';
 
-export async function handleCdaQuery({ body }) {
+export async function handleCdaQuery({ body, outputType = 'json' }) {
   const { service, fdaId, daId, queryParams } = adaptCdaParams(body);
 
   const rows = await executeQuery({
@@ -35,6 +35,11 @@ export async function handleCdaQuery({ body }) {
       ...queryParams,
     },
   });
+
+  // For non-JSON output types return raw rows; the caller handles serialization.
+  if (outputType !== 'json') {
+    return rows;
+  }
 
   return adaptToCdaFormat(rows, queryParams);
 }
