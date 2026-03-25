@@ -2463,7 +2463,6 @@ export function runFDAIntegrationSuite({ mode, label }) {
         baseUrl,
         service,
         fdaId: fdaId2,
-        timeout: 45000,
       });
 
       expect(completedFDA).toMatchObject({
