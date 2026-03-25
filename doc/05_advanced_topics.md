@@ -89,6 +89,13 @@ for performance optimization, but the freedom in the configuration granted to th
 👉 Full documentation available at:
 [`Sliding windows and partitioned files`](/doc/AdvancedTopics/sliding_windows_and_partitioning.md)
 
+### Multi-instance coverage
+
+This topic summarizes the current multi-instance architecture and operational considerations: distributed job
+coordination, role-based scaling, query lifecycle behavior, fresh-query limits, and connection pooling.
+
+👉 Full documentation available at: [`Multi-instance coverage`](/doc/AdvancedTopics/multi_instance_coverage.md)
+
 ---
 
 ## Pentaho CDA Compatibility Layer

@@ -65,6 +65,10 @@ const awsMocks = {
   destroyS3Client: jest.fn(),
 };
 
+const pgUtilsMocks = {
+  closePgPools: jest.fn(),
+};
+
 const loggerMock = {
   info: jest.fn(),
   warn: jest.fn(),
@@ -112,6 +116,7 @@ function resetModuleMocks() {
   mongoMocks.disconnectClient.mockReset().mockResolvedValue(undefined);
 
   awsMocks.destroyS3Client.mockReset().mockResolvedValue(undefined);
+  pgUtilsMocks.closePgPools.mockReset().mockResolvedValue(undefined);
 
   loggerMock.info.mockReset();
   loggerMock.warn.mockReset();
@@ -222,6 +227,10 @@ async function loadIndexModule({
 
   await jest.unstable_mockModule('../../src/lib/utils/aws.js', () => ({
     destroyS3Client: awsMocks.destroyS3Client,
+  }));
+
+  await jest.unstable_mockModule('../../src/lib/utils/pg.js', () => ({
+    closePgPools: pgUtilsMocks.closePgPools,
   }));
 
   await jest.unstable_mockModule('../../src/lib/fdaConfig.js', () => ({
@@ -701,6 +710,7 @@ describe('index bootstrap and shutdown branches', () => {
 
     expect(mongoMocks.disconnectClient).toHaveBeenCalledTimes(1);
     expect(awsMocks.destroyS3Client).toHaveBeenCalledTimes(1);
+    expect(pgUtilsMocks.closePgPools).toHaveBeenCalledTimes(1);
     expect(processExitSpy).toHaveBeenCalledWith(0);
   });
 
