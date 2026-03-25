@@ -453,9 +453,18 @@ export async function fetchFDA(
 
   // Schedule refreshes according to policy
   if (refreshPolicy?.type === 'interval' || refreshPolicy?.type === 'cron') {
+    const { value, deleteInterval, windowSize } = refreshPolicy.params || {};
+
+    if (!value) {
+      throw new FDAError(
+        400,
+        'InvalidParam',
+        `Refresh policy of type ${refreshPolicy.type} requires a value parameter.`,
+      );
+    }
     // unique is not really needed since we check existence before, but it adds an extra layer of safety in case of duplicate calls
     await agenda.every(
-      refreshPolicy.value,
+      value,
       'refresh-fda',
       { fdaId, query, service, timeColumn, objStgConf },
       {
@@ -467,7 +476,6 @@ export async function fetchFDA(
       },
     );
 
-    const { deleteInterval, windowSize } = refreshPolicy;
     if (deleteInterval && windowSize) {
       await agenda.every(
         deleteInterval,
@@ -497,11 +505,17 @@ export async function fetchFDA(
   }
 
   if (refreshPolicy?.type === 'window') {
-    const { interval, windowQuery } = getUpdateWindow(
-      refreshPolicy.value,
-      query,
-      timeColumn,
-    );
+    const { value, deleteInterval, windowSize } = refreshPolicy.params || {};
+
+    if (!value) {
+      throw new FDAError(
+        400,
+        'InvalidParam',
+        `Refresh policy of type ${refreshPolicy.type} requires a value parameter.`,
+      );
+    }
+
+    const { interval, windowQuery } = getUpdateWindow(value, query, timeColumn);
 
     // partitionFlag lets us know we are refreshing already existing partitioned files for performance purposes
     await agenda.every(
@@ -524,7 +538,6 @@ export async function fetchFDA(
       },
     );
 
-    const { deleteInterval, windowSize } = refreshPolicy;
     if (deleteInterval && windowSize) {
       await agenda.every(
         deleteInterval,

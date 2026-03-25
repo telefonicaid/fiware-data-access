@@ -466,7 +466,7 @@ describe('fetchFDA', () => {
   test('schedules periodic refresh for interval policy', async () => {
     await fetchFDA('fda1', 'SELECT 1', 'svc', '/svc', 'desc', {
       type: 'interval',
-      value: '10 minutes',
+      params: { value: '10 minutes' },
     });
 
     expect(agenda.every).toHaveBeenCalledWith(
@@ -742,7 +742,7 @@ describe('fetchFDA with refresh policies', () => {
   test('fetchFDA with cron refresh policy schedules periodic job', async () => {
     await fetchFDA('fda1', 'SELECT 1', 'svc', '/svc', 'desc', {
       type: 'cron',
-      value: '0 0 * * *',
+      params: { value: '0 0 * * *' },
     });
 
     expect(agenda.every).toHaveBeenCalledWith(
@@ -759,9 +759,11 @@ describe('fetchFDA with refresh policies', () => {
   test('fetchFDA with window refresh policy and deleteInterval schedules cleanup', async () => {
     await fetchFDA('fda1', 'SELECT 1', 'svc', '/svc', 'desc', {
       type: 'window',
-      value: 'daily',
-      deleteInterval: '1 day',
-      windowSize: 'day',
+      params: {
+        value: 'daily',
+        deleteInterval: '1 day',
+        windowSize: 'day',
+      },
     });
 
     expect(agenda.every).toHaveBeenCalledWith(
@@ -776,8 +778,10 @@ describe('fetchFDA with refresh policies', () => {
     await expect(
       fetchFDA('fda1', 'SELECT 1', 'svc', '/svc', 'desc', {
         type: 'interval',
-        value: '10 minutes',
-        deleteInterval: '1 day',
+        params: {
+          value: '10 minutes',
+          deleteInterval: '1 day',
+        },
       }),
     ).rejects.toMatchObject({
       status: 400,

@@ -592,9 +592,11 @@ export function runFDAIntegrationSuite({ mode, label }) {
           description: 'users dataset',
           refreshPolicy: {
             type: 'window',
-            value: 'weekly',
-            deleteInterval: '0 0 * * *',
-            windowSize: 'day',
+            params: {
+              value: 'weekly',
+              deleteInterval: '0 0 * * *',
+              windowSize: 'day',
+            },
           },
           timeColumn: 'timeinstant',
           objStgConf: {
@@ -623,9 +625,11 @@ export function runFDAIntegrationSuite({ mode, label }) {
           description: 'users dataset',
           refreshPolicy: {
             type: 'window',
-            value: 'weekly',
-            deleteInterval: '0 0 * * *',
-            windowSize: 'week',
+            params: {
+              value: 'weekly',
+              deleteInterval: '0 0 * * *',
+              windowSize: 'week',
+            },
           },
           timeColumn: 'timeinstant',
           objStgConf: {
@@ -658,9 +662,11 @@ export function runFDAIntegrationSuite({ mode, label }) {
           description: 'users dataset',
           refreshPolicy: {
             type: 'window',
-            value: 'monthly',
-            deleteInterval: '0 0 * * *',
-            windowSize: 'month',
+            params: {
+              value: 'monthly',
+              deleteInterval: '0 0 * * *',
+              windowSize: 'month',
+            },
           },
           objStgConf: {
             partition: 'month',
@@ -698,9 +704,11 @@ export function runFDAIntegrationSuite({ mode, label }) {
           description: 'users dataset',
           refreshPolicy: {
             type: 'window',
-            value: 'yearly',
-            deleteInterval: '0 0 * * *',
-            windowSize: 'year',
+            params: {
+              value: 'yearly',
+              deleteInterval: '0 0 * * *',
+              windowSize: 'year',
+            },
           },
           timeColumn: 'timeinstant',
           objStgConf: {
@@ -2445,7 +2453,9 @@ export function runFDAIntegrationSuite({ mode, label }) {
           description: 'users dataset',
           refreshPolicy: {
             type: 'interval',
-            value: '1 hour',
+            params: {
+              value: '1 hour',
+            },
           },
         },
       });
@@ -2475,7 +2485,9 @@ export function runFDAIntegrationSuite({ mode, label }) {
         progress: 100,
         refreshPolicy: {
           type: 'interval',
-          value: '1 hour',
+          params: {
+            value: '1 hour',
+          },
         },
       });
       expect(completedFDA.lastFetch).toBeDefined();

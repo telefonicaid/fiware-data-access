@@ -390,12 +390,10 @@ A FDA is represented by a JSON object with the following fields:
 
 Defines how and when the FDA should be automatically refreshed.
 
-| Field            | Optional | Type   | Description                                                                                                                                                                                                                                     |
-| ---------------- | -------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `type`           |          | string | Refresh strategy. One of: `none`, `interval`, `cron`, `window`.                                                                                                                                                                                 |
-| `value`          | ✓        | string | Required if `type` is `interval`, `cron` or `window`. With type `interval` and `cron` it represents a human interval (e.g. `1 hour`) or a cron expression. With type `window` it can take the values `hourly`, `daily`, `weekly` and `monthly`. |
-| `deleteInterval` | ✓        | string | Represents a human interval (e.g. `1 hour`) or a cron expression.                                                                                                                                                                               |
-| `windowSize`     | ✓        | string | Required with `deleteInterval`. Temporal interval of data we are gonna keep in storage (e.g. only the data of the last month). Possible values: `day`, `week`, `month` and `year`                                                               |
+| Field               | Optional | Type   | Description                                                     |
+| ------------------- | -------- | ------ | --------------------------------------------------------------- |
+| `type`              |          | string | Refresh strategy. One of: `none`, `interval`, `cron`, `window`. |
+| [`params`](#params) |          | object | Object with the parameters for the refresh policy type.         |
 
 ##### Semantics
 
@@ -412,6 +410,14 @@ If omitted, the default policy is:
 ```json
 { "type": "none" }
 ```
+
+##### Params
+
+| Field            | Optional | Type   | Description                                                                                                                                                                               |
+| ---------------- | -------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `value`          |          | string | With type `interval` and `cron` it represents a human interval (e.g. `1 hour`) or a cron expression. With type `window` it can take the values `hourly`, `daily`, `weekly` and `monthly`. |
+| `deleteInterval` | ✓        | string | Represents a human interval (e.g. `1 hour`) or a cron expression.                                                                                                                         |
+| `windowSize`     | ✓        | string | Required with `deleteInterval`. Temporal interval of data we are gonna keep in storage (e.g. only the data of the last month). Possible values: `day`, `week`, `month` and `year`         |
 
 ##### Object storage configuration (objstgconf)
 
