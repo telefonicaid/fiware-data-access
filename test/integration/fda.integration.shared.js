@@ -1229,6 +1229,86 @@ export function runFDAIntegrationSuite({ mode, label }) {
       }
     });
 
+    test('GET /query with fresh=true supports default Boolean and DateTime params', async () => {
+      const fdaFreshDefaultsId = 'fda_fresh_defaults';
+      const daFreshDefaultsId = 'da_fresh_defaults';
+
+      const createFda = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: fdaFreshDefaultsId,
+          description: 'fresh defaults test fda',
+          query:
+            'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+        },
+      });
+
+      expect(createFda.status).toBe(202);
+      await waitUntilFDACompleted({
+        baseUrl,
+        service,
+        fdaId: fdaFreshDefaultsId,
+      });
+
+      const createDa = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/fdas/${fdaFreshDefaultsId}/das`,
+        headers: { 'Fiware-Service': service },
+        body: {
+          id: daFreshDefaultsId,
+          description: 'fresh query defaults test',
+          query: `
+          SELECT id, name
+          WHERE authorized = $authorized
+          AND timeinstant >= $timeinstant
+          ORDER BY id
+        `,
+          params: [
+            {
+              name: 'authorized',
+              type: 'Boolean',
+              default: true,
+            },
+            {
+              name: 'timeinstant',
+              type: 'DateTime',
+              default: '2020-01-01T00:00:00.000Z',
+            },
+          ],
+        },
+      });
+
+      expect(createDa.status).toBe(201);
+
+      const freshRes = await httpReq({
+        method: 'GET',
+        url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+          fdaFreshDefaultsId,
+        )}&daId=${encodeURIComponent(daFreshDefaultsId)}&fresh=true`,
+        headers: { 'Fiware-Service': service },
+      });
+
+      if (freshRes.status >= 400) {
+        console.error(
+          'GET /query fresh defaults failed:',
+          freshRes.status,
+          freshRes.json ?? freshRes.text,
+        );
+      }
+
+      expect(freshRes.status).toBe(200);
+      expect(freshRes.json).toEqual([
+        { id: 1, name: 'ana' },
+        { id: 2, name: 'bob' },
+        { id: 3, name: 'carlos' },
+      ]);
+    });
+
     test('GET /query with fresh=true returns 429 when max concurrent fresh queries is reached', async () => {
       const fdaFreshLimitId = 'fda_fresh_limit';
       const daFreshLimitId = 'da_fresh_limit';

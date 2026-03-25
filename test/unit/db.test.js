@@ -65,6 +65,7 @@ async function loadDbModule({ retrieveDAResult, duckContext } = {}) {
       params: [{ name: 'id', type: 'Number', required: false }],
     },
   );
+  retrieveFDAMock.mockReset().mockResolvedValue({});
   duckCreateMock.mockReset();
   loggerMock.debug.mockReset();
 
@@ -321,7 +322,7 @@ describe('db utils', () => {
       { name: 'disabled', type: 'Boolean' },
     ]);
 
-    expect(resolved).toEqual({ enabled: 1, disabled: 0 });
+    expect(resolved).toEqual({ enabled: true, disabled: false });
   });
 
   test('resolveDAParams coerces boolean aliases 1 and false', async () => {
@@ -332,7 +333,7 @@ describe('db utils', () => {
       { name: 'off', type: 'Boolean' },
     ]);
 
-    expect(resolved).toEqual({ on: 1, off: 0 });
+    expect(resolved).toEqual({ on: true, off: false });
   });
 
   test('resolveDAParams rejects DateTime values that are not strings', async () => {
@@ -355,14 +356,63 @@ describe('db utils', () => {
     ).toThrow('Param "when" not of valid type (DateTime).');
   });
 
-  test('resolveDAParams keeps valid DateTime values as ISO strings', async () => {
+  test('resolveDAParams keeps valid DateTime values as Date objects', async () => {
     const { resolveDAParams } = await loadDbModule();
 
     const resolved = resolveDAParams({ when: '2025-01-01T00:00:00Z' }, [
       { name: 'when', type: 'DateTime' },
     ]);
 
-    expect(resolved.when).toBe('2025-01-01T00:00:00.000Z');
+    expect(resolved.when).toBeInstanceOf(Date);
+    expect(resolved.when.toISOString()).toBe('2025-01-01T00:00:00.000Z');
+  });
+
+  test('resolveDAParams applies default Boolean and DateTime preserving typed values', async () => {
+    const { resolveDAParams } = await loadDbModule();
+
+    const resolved = resolveDAParams({}, [
+      { name: 'authorized', type: 'Boolean', default: true },
+      {
+        name: 'timeinstant',
+        type: 'DateTime',
+        default: '2020-08-17T18:25:28.332Z',
+      },
+    ]);
+
+    expect(resolved.authorized).toBe(true);
+    expect(resolved.timeinstant).toBeInstanceOf(Date);
+    expect(resolved.timeinstant.toISOString()).toBe('2020-08-17T18:25:28.332Z');
+  });
+
+  test('runPreparedStatement normalizes DateTime and Boolean defaults for DuckDB binding', async () => {
+    const { runPreparedStatement, runtimeConn } = await loadDbModule({
+      retrieveDAResult: {
+        query:
+          'SELECT id WHERE authorized = $authorized AND timeinstant = $timeinstant',
+        params: [
+          { name: 'authorized', type: 'Boolean', default: true },
+          {
+            name: 'timeinstant',
+            type: 'DateTime',
+            default: '2020-08-17T18:25:28.332Z',
+          },
+        ],
+      },
+    });
+
+    const stmt = {
+      bind: jest.fn().mockResolvedValue(undefined),
+      run: jest.fn().mockResolvedValue({ getRowObjectsJson: () => [] }),
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+    runtimeConn.prepare.mockResolvedValueOnce(stmt);
+
+    await runPreparedStatement(runtimeConn, 'svc', 'fdaA', 'daA', {});
+
+    expect(stmt.bind).toHaveBeenCalledWith({
+      authorized: 1,
+      timeinstant: '2020-08-17T18:25:28.332Z',
+    });
   });
 
   test('validateDAQuery includes non-Error values in message text', async () => {
