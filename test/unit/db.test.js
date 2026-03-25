@@ -442,8 +442,8 @@ describe('db utils', () => {
   test('checkParams does nothing when params is null or undefined', async () => {
     const { checkParams } = await loadDbModule();
 
-    expect(() => checkParams(null)).not.toThrow();
-    expect(() => checkParams(undefined)).not.toThrow();
+    expect(checkParams(null)).toBeNull();
+    expect(checkParams(undefined)).toBeUndefined();
   });
 
   test('checkParams throws FDAError when param missing type', async () => {
@@ -499,37 +499,121 @@ describe('db utils', () => {
   test('checkParams accepts valid param with valid type', async () => {
     const { checkParams } = await loadDbModule();
 
-    expect(() => checkParams([{ name: 'id', type: 'Number' }])).not.toThrow();
+    expect(checkParams([{ name: 'id', type: 'Number' }])).toEqual([
+      { name: 'id', type: 'Number' },
+    ]);
   });
 
   test('checkParams accepts valid param with range', async () => {
     const { checkParams } = await loadDbModule();
 
-    expect(() =>
+    expect(
       checkParams([{ name: 'limit', type: 'Number', range: [1, 100] }]),
-    ).not.toThrow();
+    ).toEqual([{ name: 'limit', type: 'Number', range: [1, 100] }]);
   });
 
   test('checkParams accepts valid param with enum', async () => {
     const { checkParams } = await loadDbModule();
 
-    expect(() =>
+    expect(
       checkParams([
         { name: 'status', type: 'Text', enum: ['active', 'inactive', 1, 2] },
       ]),
-    ).not.toThrow();
+    ).toEqual([
+      { name: 'status', type: 'Text', enum: ['active', 'inactive', 1, 2] },
+    ]);
   });
 
   test('checkParams accepts multiple valid params', async () => {
     const { checkParams } = await loadDbModule();
 
-    expect(() =>
+    expect(
       checkParams([
         { name: 'id', type: 'Number', required: true },
         { name: 'status', type: 'Text', enum: ['active', 'inactive'] },
         { name: 'limit', type: 'Number', range: [1, 100] },
       ]),
-    ).not.toThrow();
+    ).toEqual([
+      { name: 'id', type: 'Number', required: true },
+      { name: 'status', type: 'Text', enum: ['active', 'inactive'] },
+      { name: 'limit', type: 'Number', range: [1, 100] },
+    ]);
+  });
+
+  test('checkParams coerces and canonicalizes defaults for storage', async () => {
+    const { checkParams } = await loadDbModule();
+
+    const result = checkParams([
+      { name: 'enabled', type: 'Boolean', default: '1' },
+      {
+        name: 'when',
+        type: 'DateTime',
+        default: '2020-08-17T18:25:28.332Z',
+      },
+    ]);
+
+    expect(result).toEqual([
+      { name: 'enabled', type: 'Boolean', default: true },
+      {
+        name: 'when',
+        type: 'DateTime',
+        default: '2020-08-17T18:25:28.332Z',
+      },
+    ]);
+  });
+
+  test('checkParams accepts Date object default for DateTime and stores ISO string', async () => {
+    const { checkParams } = await loadDbModule();
+
+    const result = checkParams([
+      {
+        name: 'when',
+        type: 'DateTime',
+        default: new Date('2020-08-17T18:25:28.332Z'),
+      },
+    ]);
+
+    expect(result[0].default).toBe('2020-08-17T18:25:28.332Z');
+  });
+
+  test('checkParams rejects incompatible default type', async () => {
+    const { checkParams } = await loadDbModule();
+
+    expect(() =>
+      checkParams([{ name: 'enabled', type: 'Boolean', default: 'notBool' }]),
+    ).toThrow('Default value for param "enabled" not of valid type (Boolean).');
+  });
+
+  test('checkParams rejects default outside declared range', async () => {
+    const { checkParams } = await loadDbModule();
+
+    expect(() =>
+      checkParams([
+        {
+          name: 'minAge',
+          type: 'Number',
+          default: 10,
+          range: [20, 50],
+        },
+      ]),
+    ).toThrow(
+      'Default value for param "minAge" not in valid param range [20,50].',
+    );
+  });
+
+  test('checkParams rejects default not present in enum', async () => {
+    const { checkParams } = await loadDbModule();
+
+    expect(() =>
+      checkParams([
+        {
+          name: 'name',
+          type: 'Text',
+          default: 'bob',
+          enum: ['ana', 'carlos'],
+        },
+      ]),
+    ).toThrow('Default value for param "name" not in param enum [ana,carlos].');
   });
 
   test('resolveDAParams uses type coercion and throws on invalid value (isTypeOf path)', async () => {
