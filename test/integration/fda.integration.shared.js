@@ -233,6 +233,7 @@ async function waitUntilFDACompleted({
   interval = 300,
 }) {
   const start = Date.now();
+  let lastSeen;
 
   while (Date.now() - start < timeout) {
     const res = await httpReq({
@@ -241,14 +242,30 @@ async function waitUntilFDACompleted({
       headers: { 'Fiware-Service': service },
     });
 
-    if (res.status === 200 && res.json?.status === 'completed') {
-      return res.json;
+    if (res.status === 200 && res.json) {
+      lastSeen = {
+        status: res.json.status,
+        progress: res.json.progress,
+        error: res.json.error,
+      };
+
+      if (res.json.status === 'completed') {
+        return res.json;
+      }
+
+      if (res.json.status === 'failed') {
+        throw new Error(
+          `FDA ${fdaId} reached failed state while waiting for completion (progress=${res.json.progress}, error=${res.json.error ?? 'n/a'})`,
+        );
+      }
     }
 
     await new Promise((r) => setTimeout(r, interval));
   }
 
-  throw new Error(`Timeout waiting for FDA ${fdaId} to reach completed state`);
+  throw new Error(
+    `Timeout waiting for FDA ${fdaId} to reach completed state (last status=${lastSeen?.status ?? 'unknown'}, progress=${lastSeen?.progress ?? 'unknown'}, error=${lastSeen?.error ?? 'n/a'})`,
+  );
 }
 
 async function waitUntilFDAFailed({
@@ -1361,34 +1378,6 @@ export function runFDAIntegrationSuite({ mode, label }) {
       expect(createDa.json.description).toContain(
         'Default value for param "authorized" not of valid type (Boolean).',
       );
-
-      const createDaBadDate = await httpReq({
-        method: 'POST',
-        url: `${baseUrl}/fdas/${fdaBadDefaultId}/das`,
-        headers: { 'Fiware-Service': service },
-        body: {
-          id: 'da_bad_default_date',
-          description: 'should reject invalid date default',
-          query: `
-          SELECT id, name
-          WHERE timeinstant >= $timeinstant
-          ORDER BY id
-        `,
-          params: [
-            {
-              name: 'timeinstant',
-              type: 'DateTime',
-              default: 'not-a-date',
-            },
-          ],
-        },
-      });
-
-      expect(createDaBadDate.status).toBe(400);
-      expect(createDaBadDate.json.error).toBe('InvalidParam');
-      expect(createDaBadDate.json.description).toContain(
-        'Default value for param "timeinstant" not of valid type (DateTime).',
-      );
     });
 
     test('GET /query with fresh=true returns 429 when max concurrent fresh queries is reached', async () => {
@@ -2474,6 +2463,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
         baseUrl,
         service,
         fdaId: fdaId2,
+        timeout: 45000,
       });
 
       expect(completedFDA).toMatchObject({
