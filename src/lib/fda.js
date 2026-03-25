@@ -459,6 +459,7 @@ export async function fetchFDA(
       'refresh-fda',
       { fdaId, query, service, timeColumn, objStgConf },
       {
+        skipImmediate: true,
         unique: {
           name: 'refresh-fda',
           'data.fdaId': fdaId,
@@ -478,6 +479,7 @@ export async function fetchFDA(
           objStgConf,
         },
         {
+          skipImmediate: true,
           unique: {
             name: 'refresh-fda',
             'data.fdaId': fdaId,
@@ -514,6 +516,7 @@ export async function fetchFDA(
         partitionFlag: true,
       },
       {
+        skipImmediate: true,
         unique: {
           name: 'refresh-fda',
           'data.fdaId': fdaId,
@@ -533,6 +536,7 @@ export async function fetchFDA(
           objStgConf,
         },
         {
+          skipImmediate: true,
           unique: {
             name: 'refresh-fda',
             'data.fdaId': fdaId,
