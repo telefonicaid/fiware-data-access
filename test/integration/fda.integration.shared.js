@@ -1309,6 +1309,88 @@ export function runFDAIntegrationSuite({ mode, label }) {
       ]);
     });
 
+    test('POST /fdas/:fdaId/das rejects incompatible default values', async () => {
+      const fdaBadDefaultId = 'fda_bad_default';
+
+      const createFda = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: fdaBadDefaultId,
+          description: 'invalid default test fda',
+          query:
+            'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+        },
+      });
+
+      expect(createFda.status).toBe(202);
+      await waitUntilFDACompleted({
+        baseUrl,
+        service,
+        fdaId: fdaBadDefaultId,
+      });
+
+      const createDa = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/fdas/${fdaBadDefaultId}/das`,
+        headers: { 'Fiware-Service': service },
+        body: {
+          id: 'da_bad_default',
+          description: 'should reject invalid default',
+          query: `
+          SELECT id, name
+          WHERE authorized = $authorized
+          ORDER BY id
+        `,
+          params: [
+            {
+              name: 'authorized',
+              type: 'Boolean',
+              default: 'notBool',
+            },
+          ],
+        },
+      });
+
+      expect(createDa.status).toBe(400);
+      expect(createDa.json.error).toBe('InvalidParam');
+      expect(createDa.json.description).toContain(
+        'Default value for param "authorized" not of valid type (Boolean).',
+      );
+
+      const createDaBadDate = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/fdas/${fdaBadDefaultId}/das`,
+        headers: { 'Fiware-Service': service },
+        body: {
+          id: 'da_bad_default_date',
+          description: 'should reject invalid date default',
+          query: `
+          SELECT id, name
+          WHERE timeinstant >= $timeinstant
+          ORDER BY id
+        `,
+          params: [
+            {
+              name: 'timeinstant',
+              type: 'DateTime',
+              default: 'not-a-date',
+            },
+          ],
+        },
+      });
+
+      expect(createDaBadDate.status).toBe(400);
+      expect(createDaBadDate.json.error).toBe('InvalidParam');
+      expect(createDaBadDate.json.description).toContain(
+        'Default value for param "timeinstant" not of valid type (DateTime).',
+      );
+    });
+
     test('GET /query with fresh=true returns 429 when max concurrent fresh queries is reached', async () => {
       const fdaFreshLimitId = 'fda_fresh_limit';
       const daFreshLimitId = 'da_fresh_limit';
@@ -1648,6 +1730,34 @@ export function runFDAIntegrationSuite({ mode, label }) {
         );
       }
       expect(badTypeDa.status).toBe(400);
+
+      // Create DA with incompatible default value for declared type
+      const badDefaultDa = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/fdas/${fdaId}/das`,
+        headers: { 'Fiware-Service': service },
+        body: {
+          id: `${daId2}_badDefault`,
+          description: 'get user',
+          query: daQuery,
+          params: [
+            {
+              name: 'authorized',
+              type: 'Boolean',
+              default: 'notBool',
+            },
+          ],
+        },
+      });
+
+      if (badDefaultDa.status >= 400) {
+        console.error(
+          'POST /das failed as expected:',
+          badDefaultDa.status,
+          badDefaultDa.json ?? badDefaultDa.text,
+        );
+      }
+      expect(badDefaultDa.status).toBe(400);
 
       // Create DA with bad params Enum (non string or number values)
       const badEnumDa = await httpReq({
