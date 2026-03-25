@@ -183,59 +183,103 @@ export async function runPreparedStatementStream(
 }
 
 export function checkParams(params) {
-  if (params) {
-    params.forEach((param) => {
-      if (!param.type) {
+  if (!params) {
+    return params;
+  }
+
+  return params.map((param) => {
+    if (!param.type) {
+      throw new FDAError(
+        400,
+        'InvalidParam',
+        `Type is a mandatory key in every param.`,
+      );
+    }
+
+    if (!Object.keys(TYPE_COERCERS).includes(param.type)) {
+      throw new FDAError(400, 'InvalidParam', `Invalid value in type key.`);
+    }
+
+    if (param.range) {
+      const range = param.range;
+
+      if (typeof range[0] !== 'number' || typeof range[1] !== 'number') {
         throw new FDAError(
           400,
           'InvalidParam',
-          `Type is a mandatory key in every param.`,
+          `Both values of range param should be of type number".`,
+        );
+      }
+      if (range[0] > range[1]) {
+        throw new FDAError(
+          400,
+          'InvalidParam',
+          `Fisrt number should be smaller than second number.`,
+        );
+      }
+      if (range.length > 2) {
+        throw new FDAError(
+          400,
+          'InvalidParam',
+          `Range cant have more than two values.`,
+        );
+      }
+    }
+
+    if (param.enum) {
+      param.enum.forEach((v) => {
+        if (typeof v !== 'string' && typeof v !== 'number') {
+          throw new FDAError(
+            400,
+            'InvalidParam',
+            `Values of enum param should be strings or numbers".`,
+          );
+        }
+      });
+    }
+
+    const normalizedParam = { ...param };
+
+    if (Object.prototype.hasOwnProperty.call(param, 'default')) {
+      const coercedDefault = isTypeOf(param.default, param.type);
+
+      if (coercedDefault === undefined) {
+        throw new FDAError(
+          400,
+          'InvalidParam',
+          `Default value for param "${param.name}" not of valid type (${param.type}).`,
         );
       }
 
-      if (!Object.keys(TYPE_COERCERS).includes(param.type)) {
-        throw new FDAError(400, 'InvalidParam', `Invalid value in type key.`);
+      if (param.range && !isInRange(coercedDefault, param.range)) {
+        throw new FDAError(
+          400,
+          'InvalidParam',
+          `Default value for param "${param.name}" not in valid param range [${param.range}].`,
+        );
       }
 
-      if (param.range) {
-        const range = param.range;
-
-        if (typeof range[0] !== 'number' || typeof range[1] !== 'number') {
-          throw new FDAError(
-            400,
-            'InvalidParam',
-            `Both values of range param should be of type number".`,
-          );
-        }
-        if (range[0] > range[1]) {
-          throw new FDAError(
-            400,
-            'InvalidParam',
-            `Fisrt number should be smaller than second number.`,
-          );
-        }
-        if (range.length > 2) {
-          throw new FDAError(
-            400,
-            'InvalidParam',
-            `Range cant have more than two values.`,
-          );
-        }
+      if (param.enum && !isInEnum(coercedDefault, param.enum)) {
+        throw new FDAError(
+          400,
+          'InvalidParam',
+          `Default value for param "${param.name}" not in param enum [${param.enum}].`,
+        );
       }
 
-      if (param.enum) {
-        param.enum.forEach((v) => {
-          if (typeof v !== 'string' && typeof v !== 'number') {
-            throw new FDAError(
-              400,
-              'InvalidParam',
-              `Values of enum param should be strings or numbers".`,
-            );
-          }
-        });
-      }
-    });
+      normalizedParam.default = normalizeParamDefaultForStorage(coercedDefault);
+    }
+
+    return normalizedParam;
+  });
+}
+
+function normalizeParamDefaultForStorage(value) {
+  if (value instanceof Date) {
+    return value.toISOString();
   }
+
+  return value;
 }
 
 function applyParams(reqParams, params) {
@@ -348,6 +392,10 @@ const TYPE_COERCERS = {
   },
   Text: (v) => (v == null ? undefined : String(v)),
   DateTime: (v) => {
+    if (v instanceof Date) {
+      return Number.isNaN(v.getTime()) ? undefined : v;
+    }
+
     if (typeof v !== 'string') {
       return undefined;
     }
