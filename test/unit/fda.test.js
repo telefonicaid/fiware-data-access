@@ -473,7 +473,10 @@ describe('fetchFDA', () => {
       '10 minutes',
       'refresh-fda',
       { fdaId: 'fda1', query: 'SELECT 1', service: 'svc' },
-      { unique: { name: 'refresh-fda', 'data.fdaId': 'fda1' } },
+      {
+        skipImmediate: true,
+        unique: { name: 'refresh-fda', 'data.fdaId': 'fda1' },
+      },
     );
   });
 
@@ -746,7 +749,10 @@ describe('fetchFDA with refresh policies', () => {
       '0 0 * * *',
       'refresh-fda',
       expect.objectContaining({ fdaId: 'fda1', query: 'SELECT 1' }),
-      { unique: { name: 'refresh-fda', 'data.fdaId': 'fda1' } },
+      {
+        skipImmediate: true,
+        unique: { name: 'refresh-fda', 'data.fdaId': 'fda1' },
+      },
     );
   });
 
