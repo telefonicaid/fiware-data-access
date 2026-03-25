@@ -233,6 +233,7 @@ async function waitUntilFDACompleted({
   interval = 300,
 }) {
   const start = Date.now();
+  let lastSeen;
 
   while (Date.now() - start < timeout) {
     const res = await httpReq({
@@ -241,14 +242,30 @@ async function waitUntilFDACompleted({
       headers: { 'Fiware-Service': service },
     });
 
-    if (res.status === 200 && res.json?.status === 'completed') {
-      return res.json;
+    if (res.status === 200 && res.json) {
+      lastSeen = {
+        status: res.json.status,
+        progress: res.json.progress,
+        error: res.json.error,
+      };
+
+      if (res.json.status === 'completed') {
+        return res.json;
+      }
+
+      if (res.json.status === 'failed') {
+        throw new Error(
+          `FDA ${fdaId} reached failed state while waiting for completion (progress=${res.json.progress}, error=${res.json.error ?? 'n/a'})`,
+        );
+      }
     }
 
     await new Promise((r) => setTimeout(r, interval));
   }
 
-  throw new Error(`Timeout waiting for FDA ${fdaId} to reach completed state`);
+  throw new Error(
+    `Timeout waiting for FDA ${fdaId} to reach completed state (last status=${lastSeen?.status ?? 'unknown'}, progress=${lastSeen?.progress ?? 'unknown'}, error=${lastSeen?.error ?? 'n/a'})`,
+  );
 }
 
 async function waitUntilFDAFailed({
@@ -1229,6 +1246,140 @@ export function runFDAIntegrationSuite({ mode, label }) {
       }
     });
 
+    test('GET /query with fresh=true supports default Boolean and DateTime params', async () => {
+      const fdaFreshDefaultsId = 'fda_fresh_defaults';
+      const daFreshDefaultsId = 'da_fresh_defaults';
+
+      const createFda = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: fdaFreshDefaultsId,
+          description: 'fresh defaults test fda',
+          query:
+            'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+        },
+      });
+
+      expect(createFda.status).toBe(202);
+      await waitUntilFDACompleted({
+        baseUrl,
+        service,
+        fdaId: fdaFreshDefaultsId,
+      });
+
+      const createDa = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/fdas/${fdaFreshDefaultsId}/das`,
+        headers: { 'Fiware-Service': service },
+        body: {
+          id: daFreshDefaultsId,
+          description: 'fresh query defaults test',
+          query: `
+          SELECT id, name
+          WHERE authorized = $authorized
+          AND timeinstant >= $timeinstant
+          ORDER BY id
+        `,
+          params: [
+            {
+              name: 'authorized',
+              type: 'Boolean',
+              default: true,
+            },
+            {
+              name: 'timeinstant',
+              type: 'DateTime',
+              default: '2020-01-01T00:00:00.000Z',
+            },
+          ],
+        },
+      });
+
+      expect(createDa.status).toBe(201);
+
+      const freshRes = await httpReq({
+        method: 'GET',
+        url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+          fdaFreshDefaultsId,
+        )}&daId=${encodeURIComponent(daFreshDefaultsId)}&fresh=true`,
+        headers: { 'Fiware-Service': service },
+      });
+
+      if (freshRes.status >= 400) {
+        console.error(
+          'GET /query fresh defaults failed:',
+          freshRes.status,
+          freshRes.json ?? freshRes.text,
+        );
+      }
+
+      expect(freshRes.status).toBe(200);
+      expect(freshRes.json).toEqual([
+        { id: 1, name: 'ana' },
+        { id: 2, name: 'bob' },
+        { id: 3, name: 'carlos' },
+      ]);
+    });
+
+    test('POST /fdas/:fdaId/das rejects incompatible default values', async () => {
+      const fdaBadDefaultId = 'fda_bad_default';
+
+      const createFda = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: fdaBadDefaultId,
+          description: 'invalid default test fda',
+          query:
+            'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+        },
+      });
+
+      expect(createFda.status).toBe(202);
+      await waitUntilFDACompleted({
+        baseUrl,
+        service,
+        fdaId: fdaBadDefaultId,
+      });
+
+      const createDa = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/fdas/${fdaBadDefaultId}/das`,
+        headers: { 'Fiware-Service': service },
+        body: {
+          id: 'da_bad_default',
+          description: 'should reject invalid default',
+          query: `
+          SELECT id, name
+          WHERE authorized = $authorized
+          ORDER BY id
+        `,
+          params: [
+            {
+              name: 'authorized',
+              type: 'Boolean',
+              default: 'notBool',
+            },
+          ],
+        },
+      });
+
+      expect(createDa.status).toBe(400);
+      expect(createDa.json.error).toBe('InvalidParam');
+      expect(createDa.json.description).toContain(
+        'Default value for param "authorized" not of valid type (Boolean).',
+      );
+    });
+
     test('GET /query with fresh=true returns 429 when max concurrent fresh queries is reached', async () => {
       const fdaFreshLimitId = 'fda_fresh_limit';
       const daFreshLimitId = 'da_fresh_limit';
@@ -1568,6 +1719,34 @@ export function runFDAIntegrationSuite({ mode, label }) {
         );
       }
       expect(badTypeDa.status).toBe(400);
+
+      // Create DA with incompatible default value for declared type
+      const badDefaultDa = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/fdas/${fdaId}/das`,
+        headers: { 'Fiware-Service': service },
+        body: {
+          id: `${daId2}_badDefault`,
+          description: 'get user',
+          query: daQuery,
+          params: [
+            {
+              name: 'authorized',
+              type: 'Boolean',
+              default: 'notBool',
+            },
+          ],
+        },
+      });
+
+      if (badDefaultDa.status >= 400) {
+        console.error(
+          'POST /das failed as expected:',
+          badDefaultDa.status,
+          badDefaultDa.json ?? badDefaultDa.text,
+        );
+      }
+      expect(badDefaultDa.status).toBe(400);
 
       // Create DA with bad params Enum (non string or number values)
       const badEnumDa = await httpReq({

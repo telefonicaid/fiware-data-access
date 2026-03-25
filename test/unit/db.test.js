@@ -65,6 +65,7 @@ async function loadDbModule({ retrieveDAResult, duckContext } = {}) {
       params: [{ name: 'id', type: 'Number', required: false }],
     },
   );
+  retrieveFDAMock.mockReset().mockResolvedValue({});
   duckCreateMock.mockReset();
   loggerMock.debug.mockReset();
 
@@ -321,7 +322,7 @@ describe('db utils', () => {
       { name: 'disabled', type: 'Boolean' },
     ]);
 
-    expect(resolved).toEqual({ enabled: 1, disabled: 0 });
+    expect(resolved).toEqual({ enabled: true, disabled: false });
   });
 
   test('resolveDAParams coerces boolean aliases 1 and false', async () => {
@@ -332,7 +333,7 @@ describe('db utils', () => {
       { name: 'off', type: 'Boolean' },
     ]);
 
-    expect(resolved).toEqual({ on: 1, off: 0 });
+    expect(resolved).toEqual({ on: true, off: false });
   });
 
   test('resolveDAParams rejects DateTime values that are not strings', async () => {
@@ -355,14 +356,63 @@ describe('db utils', () => {
     ).toThrow('Param "when" not of valid type (DateTime).');
   });
 
-  test('resolveDAParams keeps valid DateTime values as ISO strings', async () => {
+  test('resolveDAParams keeps valid DateTime values as Date objects', async () => {
     const { resolveDAParams } = await loadDbModule();
 
     const resolved = resolveDAParams({ when: '2025-01-01T00:00:00Z' }, [
       { name: 'when', type: 'DateTime' },
     ]);
 
-    expect(resolved.when).toBe('2025-01-01T00:00:00.000Z');
+    expect(resolved.when).toBeInstanceOf(Date);
+    expect(resolved.when.toISOString()).toBe('2025-01-01T00:00:00.000Z');
+  });
+
+  test('resolveDAParams applies default Boolean and DateTime preserving typed values', async () => {
+    const { resolveDAParams } = await loadDbModule();
+
+    const resolved = resolveDAParams({}, [
+      { name: 'authorized', type: 'Boolean', default: true },
+      {
+        name: 'timeinstant',
+        type: 'DateTime',
+        default: '2020-08-17T18:25:28.332Z',
+      },
+    ]);
+
+    expect(resolved.authorized).toBe(true);
+    expect(resolved.timeinstant).toBeInstanceOf(Date);
+    expect(resolved.timeinstant.toISOString()).toBe('2020-08-17T18:25:28.332Z');
+  });
+
+  test('runPreparedStatement normalizes DateTime and Boolean defaults for DuckDB binding', async () => {
+    const { runPreparedStatement, runtimeConn } = await loadDbModule({
+      retrieveDAResult: {
+        query:
+          'SELECT id WHERE authorized = $authorized AND timeinstant = $timeinstant',
+        params: [
+          { name: 'authorized', type: 'Boolean', default: true },
+          {
+            name: 'timeinstant',
+            type: 'DateTime',
+            default: '2020-08-17T18:25:28.332Z',
+          },
+        ],
+      },
+    });
+
+    const stmt = {
+      bind: jest.fn().mockResolvedValue(undefined),
+      run: jest.fn().mockResolvedValue({ getRowObjectsJson: () => [] }),
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+    runtimeConn.prepare.mockResolvedValueOnce(stmt);
+
+    await runPreparedStatement(runtimeConn, 'svc', 'fdaA', 'daA', {});
+
+    expect(stmt.bind).toHaveBeenCalledWith({
+      authorized: 1,
+      timeinstant: '2020-08-17T18:25:28.332Z',
+    });
   });
 
   test('validateDAQuery includes non-Error values in message text', async () => {
@@ -392,8 +442,8 @@ describe('db utils', () => {
   test('checkParams does nothing when params is null or undefined', async () => {
     const { checkParams } = await loadDbModule();
 
-    expect(() => checkParams(null)).not.toThrow();
-    expect(() => checkParams(undefined)).not.toThrow();
+    expect(checkParams(null)).toBeNull();
+    expect(checkParams(undefined)).toBeUndefined();
   });
 
   test('checkParams throws FDAError when param missing type', async () => {
@@ -449,37 +499,121 @@ describe('db utils', () => {
   test('checkParams accepts valid param with valid type', async () => {
     const { checkParams } = await loadDbModule();
 
-    expect(() => checkParams([{ name: 'id', type: 'Number' }])).not.toThrow();
+    expect(checkParams([{ name: 'id', type: 'Number' }])).toEqual([
+      { name: 'id', type: 'Number' },
+    ]);
   });
 
   test('checkParams accepts valid param with range', async () => {
     const { checkParams } = await loadDbModule();
 
-    expect(() =>
+    expect(
       checkParams([{ name: 'limit', type: 'Number', range: [1, 100] }]),
-    ).not.toThrow();
+    ).toEqual([{ name: 'limit', type: 'Number', range: [1, 100] }]);
   });
 
   test('checkParams accepts valid param with enum', async () => {
     const { checkParams } = await loadDbModule();
 
-    expect(() =>
+    expect(
       checkParams([
         { name: 'status', type: 'Text', enum: ['active', 'inactive', 1, 2] },
       ]),
-    ).not.toThrow();
+    ).toEqual([
+      { name: 'status', type: 'Text', enum: ['active', 'inactive', 1, 2] },
+    ]);
   });
 
   test('checkParams accepts multiple valid params', async () => {
     const { checkParams } = await loadDbModule();
 
-    expect(() =>
+    expect(
       checkParams([
         { name: 'id', type: 'Number', required: true },
         { name: 'status', type: 'Text', enum: ['active', 'inactive'] },
         { name: 'limit', type: 'Number', range: [1, 100] },
       ]),
-    ).not.toThrow();
+    ).toEqual([
+      { name: 'id', type: 'Number', required: true },
+      { name: 'status', type: 'Text', enum: ['active', 'inactive'] },
+      { name: 'limit', type: 'Number', range: [1, 100] },
+    ]);
+  });
+
+  test('checkParams coerces and canonicalizes defaults for storage', async () => {
+    const { checkParams } = await loadDbModule();
+
+    const result = checkParams([
+      { name: 'enabled', type: 'Boolean', default: '1' },
+      {
+        name: 'when',
+        type: 'DateTime',
+        default: '2020-08-17T18:25:28.332Z',
+      },
+    ]);
+
+    expect(result).toEqual([
+      { name: 'enabled', type: 'Boolean', default: true },
+      {
+        name: 'when',
+        type: 'DateTime',
+        default: '2020-08-17T18:25:28.332Z',
+      },
+    ]);
+  });
+
+  test('checkParams accepts Date object default for DateTime and stores ISO string', async () => {
+    const { checkParams } = await loadDbModule();
+
+    const result = checkParams([
+      {
+        name: 'when',
+        type: 'DateTime',
+        default: new Date('2020-08-17T18:25:28.332Z'),
+      },
+    ]);
+
+    expect(result[0].default).toBe('2020-08-17T18:25:28.332Z');
+  });
+
+  test('checkParams rejects incompatible default type', async () => {
+    const { checkParams } = await loadDbModule();
+
+    expect(() =>
+      checkParams([{ name: 'enabled', type: 'Boolean', default: 'notBool' }]),
+    ).toThrow('Default value for param "enabled" not of valid type (Boolean).');
+  });
+
+  test('checkParams rejects default outside declared range', async () => {
+    const { checkParams } = await loadDbModule();
+
+    expect(() =>
+      checkParams([
+        {
+          name: 'minAge',
+          type: 'Number',
+          default: 10,
+          range: [20, 50],
+        },
+      ]),
+    ).toThrow(
+      'Default value for param "minAge" not in valid param range [20,50].',
+    );
+  });
+
+  test('checkParams rejects default not present in enum', async () => {
+    const { checkParams } = await loadDbModule();
+
+    expect(() =>
+      checkParams([
+        {
+          name: 'name',
+          type: 'Text',
+          default: 'bob',
+          enum: ['ana', 'carlos'],
+        },
+      ]),
+    ).toThrow('Default value for param "name" not in param enum [ana,carlos].');
   });
 
   test('resolveDAParams uses type coercion and throws on invalid value (isTypeOf path)', async () => {

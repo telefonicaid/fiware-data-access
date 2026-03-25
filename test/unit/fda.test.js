@@ -473,7 +473,10 @@ describe('fetchFDA', () => {
       '10 minutes',
       'refresh-fda',
       { fdaId: 'fda1', query: 'SELECT 1', service: 'svc' },
-      { unique: { name: 'refresh-fda', 'data.fdaId': 'fda1' } },
+      {
+        skipImmediate: true,
+        unique: { name: 'refresh-fda', 'data.fdaId': 'fda1' },
+      },
     );
   });
 
@@ -638,7 +641,7 @@ describe('DA access and update helpers', () => {
     dbMocks.getDBConnection.mockResolvedValue({});
     dbMocks.releaseDBConnection.mockResolvedValue(undefined);
     dbMocks.validateDAQuery.mockResolvedValue(undefined);
-    dbMocks.checkParams.mockReturnValue(undefined);
+    dbMocks.checkParams.mockImplementation((params) => params);
     mongoMocks.updateDA.mockResolvedValue(undefined);
   });
 
@@ -685,6 +688,26 @@ describe('DA access and update helpers', () => {
     expect(dbMocks.releaseDBConnection).toHaveBeenCalledWith({});
   });
 
+  test('putDA persists normalized params returned by checkParams', async () => {
+    const normalizedParams = [
+      { name: 'enabled', type: 'Boolean', default: true },
+    ];
+    dbMocks.checkParams.mockReturnValueOnce(normalizedParams);
+
+    await putDA('svc', 'fdaA', 'daA', 'desc', 'SELECT id', [
+      { name: 'enabled', type: 'Boolean', default: '1' },
+    ]);
+
+    expect(mongoMocks.updateDA).toHaveBeenCalledWith(
+      'svc',
+      'fdaA',
+      'daA',
+      'desc',
+      'SELECT id',
+      normalizedParams,
+    );
+  });
+
   test('putDA always releases DB connection when validation fails', async () => {
     dbMocks.validateDAQuery.mockRejectedValue(new Error('invalid DA query'));
 
@@ -726,7 +749,10 @@ describe('fetchFDA with refresh policies', () => {
       '0 0 * * *',
       'refresh-fda',
       expect.objectContaining({ fdaId: 'fda1', query: 'SELECT 1' }),
-      { unique: { name: 'refresh-fda', 'data.fdaId': 'fda1' } },
+      {
+        skipImmediate: true,
+        unique: { name: 'refresh-fda', 'data.fdaId': 'fda1' },
+      },
     );
   });
 

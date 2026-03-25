@@ -397,9 +397,16 @@ export async function createDA(
       );
     }
 
-    checkParams(params);
+    const normalizedParams = checkParams(params);
     await validateDAQuery(conn, service, fdaId, userQuery);
-    await storeDA(service, fdaId, daId, description, userQuery, params);
+    await storeDA(
+      service,
+      fdaId,
+      daId,
+      description,
+      userQuery,
+      normalizedParams,
+    );
   } finally {
     await releaseDBConnection(conn);
   }
@@ -452,6 +459,7 @@ export async function fetchFDA(
       'refresh-fda',
       { fdaId, query, service, timeColumn, objStgConf },
       {
+        skipImmediate: true,
         unique: {
           name: 'refresh-fda',
           'data.fdaId': fdaId,
@@ -471,6 +479,7 @@ export async function fetchFDA(
           objStgConf,
         },
         {
+          skipImmediate: true,
           unique: {
             name: 'refresh-fda',
             'data.fdaId': fdaId,
@@ -507,6 +516,7 @@ export async function fetchFDA(
         partitionFlag: true,
       },
       {
+        skipImmediate: true,
         unique: {
           name: 'refresh-fda',
           'data.fdaId': fdaId,
@@ -526,6 +536,7 @@ export async function fetchFDA(
           objStgConf,
         },
         {
+          skipImmediate: true,
           unique: {
             name: 'refresh-fda',
             'data.fdaId': fdaId,
@@ -681,9 +692,16 @@ export async function putDA(
   const conn = await getDBConnection();
 
   try {
-    checkParams(params);
+    const normalizedParams = checkParams(params);
     await validateDAQuery(conn, service, fdaId, userQuery);
-    await updateDA(service, fdaId, daId, description, userQuery, params);
+    await updateDA(
+      service,
+      fdaId,
+      daId,
+      description,
+      userQuery,
+      normalizedParams,
+    );
   } finally {
     await releaseDBConnection(conn);
   }
