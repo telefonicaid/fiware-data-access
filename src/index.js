@@ -53,6 +53,12 @@ import {
   validateAllowedFieldsBody,
   parseBooleanQueryParam,
 } from './lib/utils/utils.js';
+import {
+  VALID_OUTPUT_TYPES,
+  DEFAULT_OUTPUT_TYPE,
+  rowsToCsv,
+  rowsToXlsx,
+} from './lib/utils/outputFormat.js';
 
 export const app = express();
 const PORT = config.port;
@@ -320,9 +326,18 @@ app.get('/query', async (req, res) => {
   const service = req.get('Fiware-Service');
   const accept = req.get('Accept') || 'application/json';
   const fresh = parseBooleanQueryParam(req.query.fresh, 'fresh');
+  const rawOutputType = req.query.outputType || DEFAULT_OUTPUT_TYPE;
+
+  if (!VALID_OUTPUT_TYPES.includes(rawOutputType)) {
+    return res.status(400).json({
+      error: 'BadRequest',
+      description: `Invalid outputType '${rawOutputType}'. Allowed values: ${VALID_OUTPUT_TYPES.join(', ')}`,
+    });
+  }
 
   const queryParams = { ...req.query };
   delete queryParams.fresh;
+  delete queryParams.outputType;
 
   if (Object.keys(req.query).length === 0 || !fdaId || !daId || !service) {
     return res.status(400).json({
@@ -331,7 +346,7 @@ app.get('/query', async (req, res) => {
     });
   }
 
-  // Content negotiation: check if client wants NDJSON
+  // Content negotiation: NDJSON streaming takes precedence over outputType
   if (accept.includes('application/x-ndjson')) {
     return executeQueryStream({
       service,
@@ -342,13 +357,30 @@ app.get('/query', async (req, res) => {
     });
   }
 
-  const result = await executeQuery({
+  const rows = await executeQuery({
     service,
     params: queryParams,
     fresh,
   });
 
-  return res.json(result);
+  if (rawOutputType === 'csv') {
+    const csv = rowsToCsv(rows);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="results.csv"');
+    return res.send(csv);
+  }
+
+  if (rawOutputType === 'xls') {
+    const buffer = await rowsToXlsx(rows);
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader('Content-Disposition', 'attachment; filename="results.xlsx"');
+    return res.send(Buffer.from(buffer));
+  }
+
+  return res.json(rows);
 });
 
 app.post('/plugin/cda/api/doQuery', async (req, res) => {
@@ -362,8 +394,44 @@ app.post('/plugin/cda/api/doQuery', async (req, res) => {
     });
   }
 
+  const rawOutputType = req.body.outputType || DEFAULT_OUTPUT_TYPE;
+
+  if (!VALID_OUTPUT_TYPES.includes(rawOutputType)) {
+    return res.status(400).json({
+      error: 'BadRequest',
+      description: `Invalid outputType '${rawOutputType}'. Allowed values: ${VALID_OUTPUT_TYPES.join(', ')}`,
+    });
+  }
+
   try {
-    const result = await handleCdaQuery({ body: req.body });
+    const result = await handleCdaQuery({
+      body: req.body,
+      outputType: rawOutputType,
+    });
+
+    if (rawOutputType === 'csv') {
+      const csv = rowsToCsv(result);
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader(
+        'Content-Disposition',
+        'attachment; filename="results.csv"',
+      );
+      return res.send(csv);
+    }
+
+    if (rawOutputType === 'xls') {
+      const buffer = await rowsToXlsx(result);
+      res.setHeader(
+        'Content-Type',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      );
+      res.setHeader(
+        'Content-Disposition',
+        'attachment; filename="results.xlsx"',
+      );
+      return res.send(Buffer.from(buffer));
+    }
+
     return res.json(result);
   } catch (err) {
     logger.error('Error executing query:', err);

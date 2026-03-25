@@ -1,0 +1,1 @@
+- Add: response format selection in query and doQuery using outputType, with csv and xls support (#20)

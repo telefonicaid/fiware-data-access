@@ -80,4 +80,21 @@ describe('cda adapter', () => {
       },
     });
   });
+
+  test('returns raw rows when outputType is not json', async () => {
+    const { handleCdaQuery } = await loadCdaAdapterModule();
+
+    const rows = [{ col1: 'a', col2: 'b' }];
+    executeQueryMock.mockResolvedValueOnce(rows);
+
+    const result = await handleCdaQuery({
+      body: {
+        path: '/public/svc',
+        dataAccessId: 'daA',
+      },
+      outputType: 'csv',
+    });
+
+    expect(result).toBe(rows);
+  });
 });
