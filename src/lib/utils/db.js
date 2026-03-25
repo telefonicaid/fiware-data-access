@@ -127,7 +127,8 @@ export async function runPreparedStatement(
   const stmt = await conn.prepare(query);
 
   try {
-    const boundParams = applyParams(paramValues || {}, da.params);
+    const resolvedParams = applyParams(paramValues || {}, da.params);
+    const boundParams = normalizeParamsForDuckDB(resolvedParams);
     await stmt.bind(boundParams);
 
     if (streaming) {
@@ -300,18 +301,31 @@ function applyParams(reqParams, params) {
         );
       }
 
-      if (value instanceof Date) {
-        value = value.toISOString();
-      }
-      if (typeof value === 'boolean') {
-        value = value ? 1 : 0;
-      }
-
       validated[param.name] = value;
     }
   }
 
   return validated;
+}
+
+function normalizeParamsForDuckDB(params) {
+  const normalized = {};
+
+  for (const [key, value] of Object.entries(params)) {
+    let normalizedValue = value;
+
+    if (normalizedValue instanceof Date) {
+      normalizedValue = normalizedValue.toISOString();
+    }
+
+    if (typeof normalizedValue === 'boolean') {
+      normalizedValue = normalizedValue ? 1 : 0;
+    }
+
+    normalized[key] = normalizedValue;
+  }
+
+  return normalized;
 }
 
 export function resolveDAParams(reqParams, params) {
