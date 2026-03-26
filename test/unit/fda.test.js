@@ -758,13 +758,12 @@ describe('fetchFDA with refresh policies', () => {
     );
   });
 
-  test('fetchFDA with window refresh policy and deleteInterval schedules cleanup', async () => {
+  test('fetchFDA with window refresh policy schedules cleanup', async () => {
     await fetchFDA('fda1', 'SELECT 1', 'svc', '/svc', 'desc', {
       type: 'window',
       params: {
         refreshInterval: '0 0 * * *',
         fetchRange: 'daily',
-        deleteInterval: '1 day',
         windowSize: 'day',
       },
     });
@@ -775,22 +774,6 @@ describe('fetchFDA with refresh policies', () => {
       expect.any(Object),
       expect.any(Object),
     );
-  });
-
-  test('fetchFDA throws when deleteInterval provided without windowSize', async () => {
-    await expect(
-      fetchFDA('fda1', 'SELECT 1', 'svc', '/svc', 'desc', {
-        type: 'interval',
-        params: {
-          refreshInterval: '10 minutes',
-          deleteInterval: '1 day',
-        },
-      }),
-    ).rejects.toMatchObject({
-      status: 400,
-      type: 'InvalidParam',
-      message: 'Window size is required with a delete interval.',
-    });
   });
 });
 

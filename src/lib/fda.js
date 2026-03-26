@@ -465,8 +465,7 @@ export async function fetchFDA(
 
   // Schedule refreshes according to policy
   if (refreshPolicy?.type === 'interval' || refreshPolicy?.type === 'cron') {
-    const { refreshInterval, deleteInterval, windowSize } =
-      refreshPolicy.params || {};
+    const { refreshInterval, windowSize } = refreshPolicy.params || {};
 
     if (!refreshInterval) {
       throw new FDAError(
@@ -489,9 +488,9 @@ export async function fetchFDA(
       },
     );
 
-    if (deleteInterval && windowSize) {
+    if (windowSize) {
       await agenda.every(
-        deleteInterval,
+        refreshInterval,
         'clean-partition',
         {
           fdaId,
@@ -508,17 +507,10 @@ export async function fetchFDA(
         },
       );
     }
-    if (deleteInterval && !windowSize) {
-      throw new FDAError(
-        400,
-        'InvalidParam',
-        `Window size is required with a delete interval.`,
-      );
-    }
   }
 
   if (refreshPolicy?.type === 'window') {
-    const { refreshInterval, fetchRange, deleteInterval, windowSize } =
+    const { refreshInterval, fetchRange, windowSize } =
       refreshPolicy.params || {};
 
     if (!refreshInterval || !fetchRange) {
@@ -552,9 +544,9 @@ export async function fetchFDA(
       },
     );
 
-    if (deleteInterval && windowSize) {
+    if (windowSize) {
       await agenda.every(
-        deleteInterval,
+        refreshInterval,
         'clean-partition',
         {
           fdaId,
@@ -569,13 +561,6 @@ export async function fetchFDA(
             'data.fdaId': fdaId,
           },
         },
-      );
-    }
-    if (deleteInterval && !windowSize) {
-      throw new FDAError(
-        400,
-        'InvalidParam',
-        `Window size is required with a delete interval.`,
       );
     }
   }

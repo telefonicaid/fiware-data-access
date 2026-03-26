@@ -595,7 +595,6 @@ export function runFDAIntegrationSuite({ mode, label }) {
             params: {
               refreshInterval: '0 0 * * 0',
               fetchRange: 'weekly',
-              deleteInterval: '0 0 * * *',
               windowSize: 'day',
             },
           },
@@ -629,7 +628,6 @@ export function runFDAIntegrationSuite({ mode, label }) {
             params: {
               refreshInterval: '0 0 * * 0',
               fetchRange: 'weekly',
-              deleteInterval: '0 0 * * *',
               windowSize: 'week',
             },
           },
@@ -667,7 +665,6 @@ export function runFDAIntegrationSuite({ mode, label }) {
             params: {
               refreshInterval: '0 0 1 * *',
               fetchRange: 'monthly',
-              deleteInterval: '0 0 * * *',
               windowSize: 'month',
             },
           },
@@ -710,7 +707,6 @@ export function runFDAIntegrationSuite({ mode, label }) {
             params: {
               refreshInterval: '0 0 1 * *',
               fetchRange: 'monthly',
-              deleteInterval: '0 0 * * *',
               windowSize: 'year',
             },
           },
