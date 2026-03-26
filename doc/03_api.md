@@ -413,11 +413,12 @@ If omitted, the default policy is:
 
 ##### Params
 
-| Field            | Optional | Type   | Description                                                                                                                                                                               |
-| ---------------- | -------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `value`          |          | string | With type `interval` and `cron` it represents a human interval (e.g. `1 hour`) or a cron expression. With type `window` it can take the values `hourly`, `daily`, `weekly` and `monthly`. |
-| `deleteInterval` | ✓        | string | Represents a human interval (e.g. `1 hour`) or a cron expression.                                                                                                                         |
-| `windowSize`     | ✓        | string | Required with `deleteInterval`. Temporal interval of data we are gonna keep in storage (e.g. only the data of the last month). Possible values: `day`, `week`, `month` and `year`         |
+| Field             | Optional | Type   | Description                                                                                                                                                                       |
+| ----------------- | -------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `refreshInterval` |          | string | It represents a human interval (e.g. `1 hour`) or a cron expression. The frequency for the scheduled refresh job.                                                                 |
+| `fetchRange`      |          | string | **Only for type `window`**, it can take the values `hourly`, `daily`, `weekly` and `monthly`. Represents the time range of data to fetch (e.g. last hour/month data).             |
+| `deleteInterval`  | ✓        | string | Represents a human interval (e.g. `1 hour`) or a cron expression.                                                                                                                 |
+| `windowSize`      | ✓        | string | Required with `deleteInterval`. Temporal interval of data we are gonna keep in storage (e.g. only the data of the last month). Possible values: `day`, `week`, `month` and `year` |
 
 ##### Object storage configuration (objstgconf)
 

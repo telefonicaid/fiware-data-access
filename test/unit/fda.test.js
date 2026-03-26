@@ -35,6 +35,7 @@ const dbMocks = {
   resolveDAParams: jest.fn(),
   validateDAQuery: jest.fn(),
   extractDate: jest.fn(),
+  PARTITION_TYPES: ['day', 'week', 'month', 'year', 'none'],
 };
 
 const pgMocks = {
@@ -83,6 +84,7 @@ await jest.unstable_mockModule('../../src/lib/utils/db.js', () => ({
   resolveDAParams: dbMocks.resolveDAParams,
   validateDAQuery: dbMocks.validateDAQuery,
   extractDate: dbMocks.extractDate,
+  PARTITION_TYPES: dbMocks.PARTITION_TYPES,
 }));
 
 await jest.unstable_mockModule('../../src/lib/utils/pg.js', () => ({
@@ -466,7 +468,7 @@ describe('fetchFDA', () => {
   test('schedules periodic refresh for interval policy', async () => {
     await fetchFDA('fda1', 'SELECT 1', 'svc', '/svc', 'desc', {
       type: 'interval',
-      params: { value: '10 minutes' },
+      params: { refreshInterval: '10 minutes' },
     });
 
     expect(agenda.every).toHaveBeenCalledWith(
@@ -742,7 +744,7 @@ describe('fetchFDA with refresh policies', () => {
   test('fetchFDA with cron refresh policy schedules periodic job', async () => {
     await fetchFDA('fda1', 'SELECT 1', 'svc', '/svc', 'desc', {
       type: 'cron',
-      params: { value: '0 0 * * *' },
+      params: { refreshInterval: '0 0 * * *' },
     });
 
     expect(agenda.every).toHaveBeenCalledWith(
@@ -760,7 +762,8 @@ describe('fetchFDA with refresh policies', () => {
     await fetchFDA('fda1', 'SELECT 1', 'svc', '/svc', 'desc', {
       type: 'window',
       params: {
-        value: 'daily',
+        refreshInterval: '0 0 * * *',
+        fetchRange: 'daily',
         deleteInterval: '1 day',
         windowSize: 'day',
       },
@@ -779,7 +782,7 @@ describe('fetchFDA with refresh policies', () => {
       fetchFDA('fda1', 'SELECT 1', 'svc', '/svc', 'desc', {
         type: 'interval',
         params: {
-          value: '10 minutes',
+          refreshInterval: '10 minutes',
           deleteInterval: '1 day',
         },
       }),

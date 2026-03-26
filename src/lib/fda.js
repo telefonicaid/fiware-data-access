@@ -33,6 +33,7 @@ import {
   resolveDAParams,
   validateDAQuery,
   extractDate,
+  PARTITION_TYPES,
 } from './utils/db.js';
 import { uploadTable, runPgQuery, createPgCursorReader } from './utils/pg.js';
 import {
@@ -422,6 +423,17 @@ export async function fetchFDA(
   timeColumn,
   objStgConf,
 ) {
+  if (
+    objStgConf?.partition &&
+    !PARTITION_TYPES.includes(objStgConf.partition)
+  ) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Invalid partition type "${objStgConf.partition}".`,
+    );
+  }
+
   await createFDAMongo(
     fdaId,
     query,
@@ -453,18 +465,19 @@ export async function fetchFDA(
 
   // Schedule refreshes according to policy
   if (refreshPolicy?.type === 'interval' || refreshPolicy?.type === 'cron') {
-    const { value, deleteInterval, windowSize } = refreshPolicy.params || {};
+    const { refreshInterval, deleteInterval, windowSize } =
+      refreshPolicy.params || {};
 
-    if (!value) {
+    if (!refreshInterval) {
       throw new FDAError(
         400,
         'InvalidParam',
-        `Refresh policy of type ${refreshPolicy.type} requires a value parameter.`,
+        `Refresh policy of type ${refreshPolicy.type} requires a refreshInterval parameter.`,
       );
     }
     // unique is not really needed since we check existence before, but it adds an extra layer of safety in case of duplicate calls
     await agenda.every(
-      value,
+      refreshInterval,
       'refresh-fda',
       { fdaId, query, service, timeColumn, objStgConf },
       {
@@ -505,25 +518,26 @@ export async function fetchFDA(
   }
 
   if (refreshPolicy?.type === 'window') {
-    const { value, deleteInterval, windowSize } = refreshPolicy.params || {};
+    const { refreshInterval, fetchRange, deleteInterval, windowSize } =
+      refreshPolicy.params || {};
 
-    if (!value) {
+    if (!refreshInterval || !fetchRange) {
       throw new FDAError(
         400,
         'InvalidParam',
-        `Refresh policy of type ${refreshPolicy.type} requires a value parameter.`,
+        `Refresh policy of type ${refreshPolicy.type} requires a refreshInterval and fetchRange parameters.`,
       );
     }
 
-    const { interval, windowQuery } = getUpdateWindow(value, query, timeColumn);
+    const refreshQuery = getUpdateWindowQuery(fetchRange, query, timeColumn);
 
     // partitionFlag lets us know we are refreshing already existing partitioned files for performance purposes
     await agenda.every(
-      interval,
+      refreshInterval,
       'refresh-fda',
       {
         fdaId,
-        query: windowQuery,
+        query: refreshQuery,
         service,
         timeColumn,
         objStgConf,
@@ -567,32 +581,28 @@ export async function fetchFDA(
   }
 }
 
-function getUpdateWindow(windowType, query, timeColumn) {
+function getUpdateWindowQuery(fetchRange, query, timeColumn) {
   const slidingWindow = {
     hourly: {
-      interval: '0 * * * *',
       windowQuery: `SELECT * FROM (${query}) q WHERE ${timeColumn} >= NOW() - INTERVAL '1 hour'`,
     },
     daily: {
-      interval: '0 0 * * *',
       windowQuery: `SELECT * FROM (${query}) q WHERE ${timeColumn} >= NOW() - INTERVAL '1 day'`,
     },
     weekly: {
-      interval: '0 0 * * 0',
       windowQuery: `SELECT * FROM (${query}) q WHERE ${timeColumn} >= NOW() - INTERVAL '1 week'`,
     },
     monthly: {
-      interval: '0 0 1 * *',
       windowQuery: `SELECT * FROM (${query}) q WHERE ${timeColumn} >= NOW() - INTERVAL '1 month'`,
     },
   };
 
-  const window = slidingWindow[windowType];
+  const window = slidingWindow[fetchRange];
   if (!window) {
     throw new FDAError(
       400,
       'InvalidParam',
-      `Invalid window type: ${windowType}.`,
+      `Invalid window type: ${fetchRange}.`,
     );
   }
   return window;

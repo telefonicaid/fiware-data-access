@@ -593,7 +593,8 @@ export function runFDAIntegrationSuite({ mode, label }) {
           refreshPolicy: {
             type: 'window',
             params: {
-              value: 'weekly',
+              refreshInterval: '0 0 * * 0',
+              fetchRange: 'weekly',
               deleteInterval: '0 0 * * *',
               windowSize: 'day',
             },
@@ -626,7 +627,8 @@ export function runFDAIntegrationSuite({ mode, label }) {
           refreshPolicy: {
             type: 'window',
             params: {
-              value: 'weekly',
+              refreshInterval: '0 0 * * 0',
+              fetchRange: 'weekly',
               deleteInterval: '0 0 * * *',
               windowSize: 'week',
             },
@@ -663,7 +665,8 @@ export function runFDAIntegrationSuite({ mode, label }) {
           refreshPolicy: {
             type: 'window',
             params: {
-              value: 'monthly',
+              refreshInterval: '0 0 1 * *',
+              fetchRange: 'monthly',
               deleteInterval: '0 0 * * *',
               windowSize: 'month',
             },
@@ -705,7 +708,8 @@ export function runFDAIntegrationSuite({ mode, label }) {
           refreshPolicy: {
             type: 'window',
             params: {
-              value: 'yearly',
+              refreshInterval: '0 0 1 * *',
+              fetchRange: 'monthly',
               deleteInterval: '0 0 * * *',
               windowSize: 'year',
             },
@@ -2454,7 +2458,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
           refreshPolicy: {
             type: 'interval',
             params: {
-              value: '1 hour',
+              refreshInterval: '1 hour',
             },
           },
         },
@@ -2486,7 +2490,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
         refreshPolicy: {
           type: 'interval',
           params: {
-            value: '1 hour',
+            refreshInterval: '1 hour',
           },
         },
       });

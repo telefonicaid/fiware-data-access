@@ -460,6 +460,7 @@ export function toParquet(
   );
 }
 
+export const PARTITION_TYPES = ['day', 'week', 'month', 'year', 'none'];
 function getPartitionConf(partitionType = 'none', timeColumn) {
   if (!timeColumn && partitionType !== 'none') {
     throw new FDAError(400, 'PartitionError', `Missing timeColumn value.`);
