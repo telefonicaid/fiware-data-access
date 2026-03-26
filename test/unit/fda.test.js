@@ -763,7 +763,7 @@ describe('fetchFDA with refresh policies', () => {
       type: 'window',
       params: {
         refreshInterval: '0 0 * * *',
-        fetchRange: 'daily',
+        fetchSize: 'daily',
         windowSize: 'day',
       },
     });
