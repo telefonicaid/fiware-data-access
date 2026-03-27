@@ -50,6 +50,7 @@ import {
   getInitialLogger,
 } from './lib/utils/logger.js';
 import { handleCdaQuery } from './lib/compat/cdaAdapter.js';
+import { VALID_SCOPES, DEFAULT_SERVICE_PATH } from './lib/fda.js';
 import {
   validateAllowedFieldsBody,
   parseBooleanQueryParam,
@@ -64,8 +65,6 @@ import {
 export const app = express();
 const PORT = config.port;
 const logger = getBasicLogger();
-const VALID_SCOPES = ['public', 'private'];
-const DEFAULT_SERVICE_PATH = '/private';
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

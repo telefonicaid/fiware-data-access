@@ -65,8 +65,9 @@ import { config } from './fdaConfig.js';
 import { FDAError } from './fdaError.js';
 
 const FRESH_CURSOR_BATCH_SIZE = 250;
-const VALID_SCOPES = new Set(['public', 'private']);
-const DEFAULT_SERVICE_PATH = '/private';
+export const VALID_SCOPES = ['public', 'private'];
+const VALID_SCOPES_SET = new Set(VALID_SCOPES);
+export const DEFAULT_SERVICE_PATH = '/private';
 
 export function getFDAs(service) {
   return retrieveFDAs(service);
@@ -856,7 +857,7 @@ async function getScopedFDA(service, fdaId, scope) {
 }
 
 function normalizeScope(scope) {
-  if (!VALID_SCOPES.has(scope)) {
+  if (!VALID_SCOPES_SET.has(scope)) {
     throw new FDAError(400, 'InvalidScope', 'Scope must be public or private');
   }
 
@@ -867,7 +868,7 @@ function normalizeServicePath(servicePath) {
   const normalizedServicePath = servicePath || DEFAULT_SERVICE_PATH;
   const normalizedScope = normalizedServicePath.replace(/^\//, '');
 
-  if (!VALID_SCOPES.has(normalizedScope)) {
+  if (!VALID_SCOPES_SET.has(normalizedScope)) {
     throw new FDAError(
       400,
       'InvalidServicePath',
