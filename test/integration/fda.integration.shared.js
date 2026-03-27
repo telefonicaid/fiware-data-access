@@ -201,6 +201,21 @@ function httpReqRaw({ method, url, headers, body, form }) {
   });
 }
 
+function buildDaDataUrl(baseUrl, servicePath, fdaId, daId, query = {}) {
+  const scope = (servicePath || '/private').replace(/^\//, '');
+  const url = new URL(
+    `${baseUrl}/${scope}/fdas/${encodeURIComponent(fdaId)}/das/${encodeURIComponent(daId)}/data`,
+  );
+
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined) {
+      url.searchParams.set(key, String(value));
+    }
+  }
+
+  return url.toString();
+}
+
 function getFreePort() {
   return new Promise((resolve) => {
     const srv = net.createServer();
@@ -561,7 +576,10 @@ export function runFDAIntegrationSuite({ mode, label }) {
       const res = await httpReq({
         method: 'POST',
         url: `${baseUrl}/fdas`,
-        headers: { 'Fiware-Service': service },
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
         body: {
           id: fdaId,
           // query base to extract from PG to CSV
@@ -583,7 +601,10 @@ export function runFDAIntegrationSuite({ mode, label }) {
       const res = await httpReq({
         method: 'POST',
         url: `${baseUrl}/fdas`,
-        headers: { 'Fiware-Service': service },
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
         body: {
           id: 'fda_refresh',
           // query base to extract from PG to CSV
@@ -614,7 +635,10 @@ export function runFDAIntegrationSuite({ mode, label }) {
       const res2 = await httpReq({
         method: 'POST',
         url: `${baseUrl}/fdas`,
-        headers: { 'Fiware-Service': service },
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
         body: {
           id: 'fda_refresh2',
           // query base to extract from PG to CSV
@@ -649,7 +673,10 @@ export function runFDAIntegrationSuite({ mode, label }) {
       const res3 = await httpReq({
         method: 'POST',
         url: `${baseUrl}/fdas`,
-        headers: { 'Fiware-Service': service },
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
         body: {
           id: 'fda_refresh3',
           // query base to extract from PG to CSV
@@ -689,7 +716,10 @@ export function runFDAIntegrationSuite({ mode, label }) {
       const res4 = await httpReq({
         method: 'POST',
         url: `${baseUrl}/fdas`,
-        headers: { 'Fiware-Service': service },
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
         body: {
           id: 'fda_refresh4',
           // query base to extract from PG to CSV
@@ -724,7 +754,10 @@ export function runFDAIntegrationSuite({ mode, label }) {
       const res = await httpReq({
         method: 'POST',
         url: `${baseUrl}/fdas`,
-        headers: { 'Fiware-Service': service },
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
         body: {
           id: null,
           // query base to extract from PG to CSV
@@ -757,7 +790,10 @@ export function runFDAIntegrationSuite({ mode, label }) {
       const res = await httpReq({
         method: 'POST',
         url: `${baseUrl}/fdas`,
-        headers: { 'Fiware-Service': service },
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
         body: {
           id: fdaId3, // same id
           query: 'SELECT id FROM public.users',
@@ -778,7 +814,10 @@ export function runFDAIntegrationSuite({ mode, label }) {
       const createFda = await httpReq({
         method: 'POST',
         url: `${baseUrl}/fdas`,
-        headers: { 'Fiware-Service': service },
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
         body: {
           id: pendingFdaId,
           // Force a long first fetch to keep the FDA non-queryable for this test.
@@ -816,9 +855,9 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       const queryRes = await httpReq({
         method: 'GET',
-        url: `${baseUrl}/query?fdaId=${encodeURIComponent(
-          pendingFdaId,
-        )}&daId=${encodeURIComponent(pendingDaId)}&minAge=20`,
+        url: buildDaDataUrl(baseUrl, servicePath, pendingFdaId, pendingDaId, {
+          minAge: 20,
+        }),
         headers: { 'Fiware-Service': service },
       });
 
@@ -842,9 +881,9 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       const queryAfterCompletion = await httpReq({
         method: 'GET',
-        url: `${baseUrl}/query?fdaId=${encodeURIComponent(
-          pendingFdaId,
-        )}&daId=${encodeURIComponent(pendingDaId)}&minAge=20`,
+        url: buildDaDataUrl(baseUrl, servicePath, pendingFdaId, pendingDaId, {
+          minAge: 20,
+        }),
         headers: { 'Fiware-Service': service },
       });
 
@@ -907,9 +946,9 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       const queryRes = await httpReq({
         method: 'GET',
-        url: `${baseUrl}/query?fdaId=${encodeURIComponent(
-          fdaId,
-        )}&daId=${encodeURIComponent(daId)}&minAge=25`,
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId, {
+          minAge: 25,
+        }),
         headers: { 'Fiware-Service': service },
       });
 
@@ -1020,9 +1059,9 @@ export function runFDAIntegrationSuite({ mode, label }) {
       // Execute with minAge=25 (should return 2 rows)
       const firstQuery = await httpReq({
         method: 'GET',
-        url: `${baseUrl}/query?fdaId=${encodeURIComponent(
-          fdaId,
-        )}&daId=${encodeURIComponent(daIdToUpdate)}&minAge=25`,
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, daIdToUpdate, {
+          minAge: 25,
+        }),
         headers: { 'Fiware-Service': service },
       });
 
@@ -1068,9 +1107,9 @@ export function runFDAIntegrationSuite({ mode, label }) {
       // Execute again → now should return only 1 row (ana, 30)
       const secondQuery = await httpReq({
         method: 'GET',
-        url: `${baseUrl}/query?fdaId=${encodeURIComponent(
-          fdaId,
-        )}&daId=${encodeURIComponent(daIdToUpdate)}&minAge=25`,
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, daIdToUpdate, {
+          minAge: 25,
+        }),
         headers: { 'Fiware-Service': service },
       });
 
@@ -1147,9 +1186,9 @@ export function runFDAIntegrationSuite({ mode, label }) {
     test('GET /query returns JSON array when Accept: application/json', async () => {
       const res = await httpReq({
         method: 'GET',
-        url: `${baseUrl}/query?fdaId=${encodeURIComponent(
-          fdaId,
-        )}&daId=${encodeURIComponent(daId)}&minAge=25`,
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId, {
+          minAge: 25,
+        }),
         headers: { 'Fiware-Service': service, Accept: 'application/json' },
       });
 
@@ -1215,9 +1254,9 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
         const cachedRes = await httpReq({
           method: 'GET',
-          url: `${baseUrl}/query?fdaId=${encodeURIComponent(
-            fdaId,
-          )}&daId=${encodeURIComponent(daFreshId)}&minAge=25`,
+          url: buildDaDataUrl(baseUrl, servicePath, fdaId, daFreshId, {
+            minAge: 25,
+          }),
           headers: { 'Fiware-Service': service },
         });
 
@@ -1226,9 +1265,10 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
         const freshRes = await httpReq({
           method: 'GET',
-          url: `${baseUrl}/query?fdaId=${encodeURIComponent(
-            fdaId,
-          )}&daId=${encodeURIComponent(daFreshId)}&minAge=25&fresh=true`,
+          url: buildDaDataUrl(baseUrl, servicePath, fdaId, daFreshId, {
+            minAge: 25,
+            fresh: true,
+          }),
           headers: { 'Fiware-Service': service },
         });
 
@@ -1304,9 +1344,15 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       const freshRes = await httpReq({
         method: 'GET',
-        url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+        url: buildDaDataUrl(
+          baseUrl,
+          servicePath,
           fdaFreshDefaultsId,
-        )}&daId=${encodeURIComponent(daFreshDefaultsId)}&fresh=true`,
+          daFreshDefaultsId,
+          {
+            fresh: true,
+          },
+        ),
         headers: { 'Fiware-Service': service },
       });
 
@@ -1435,9 +1481,16 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       const firstFreshRequest = httpReq({
         method: 'GET',
-        url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+        url: buildDaDataUrl(
+          baseUrl,
+          servicePath,
           fdaFreshLimitId,
-        )}&daId=${encodeURIComponent(daFreshLimitId)}&minAge=0&fresh=true`,
+          daFreshLimitId,
+          {
+            minAge: 0,
+            fresh: true,
+          },
+        ),
         headers: { 'Fiware-Service': service },
       });
 
@@ -1445,9 +1498,16 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       const secondFreshRes = await httpReq({
         method: 'GET',
-        url: `${baseUrl}/query?fdaId=${encodeURIComponent(
+        url: buildDaDataUrl(
+          baseUrl,
+          servicePath,
           fdaFreshLimitId,
-        )}&daId=${encodeURIComponent(daFreshLimitId)}&minAge=0&fresh=true`,
+          daFreshLimitId,
+          {
+            minAge: 0,
+            fresh: true,
+          },
+        ),
         headers: { 'Fiware-Service': service },
       });
 
@@ -1531,9 +1591,13 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
         // Real streaming request
         const url = new URL(
-          `${baseUrl}/query?fdaId=${encodeURIComponent(
+          buildDaDataUrl(
+            baseUrl,
+            servicePath,
             fdaFreshStreamId,
-          )}&daId=${encodeURIComponent(daFreshStreamId)}&fresh=true`,
+            daFreshStreamId,
+            { fresh: true },
+          ),
         );
 
         const chunks = [];
@@ -1601,9 +1665,10 @@ export function runFDAIntegrationSuite({ mode, label }) {
     test('GET /query rejects invalid fresh query param', async () => {
       const res = await httpReq({
         method: 'GET',
-        url: `${baseUrl}/query?fdaId=${encodeURIComponent(
-          fdaId,
-        )}&daId=${encodeURIComponent(daId)}&minAge=25&fresh=maybe`,
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId, {
+          minAge: 25,
+          fresh: 'maybe',
+        }),
         headers: { 'Fiware-Service': service },
       });
 
@@ -1867,9 +1932,10 @@ export function runFDAIntegrationSuite({ mode, label }) {
       // Query with name outside of the enum
       const enumQueryRes = await httpReq({
         method: 'GET',
-        url: `${baseUrl}/query?fdaId=${encodeURIComponent(
-          fdaId,
-        )}&daId=${encodeURIComponent(daId2)}&minAge=25&name=fakeNAme`,
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId2, {
+          minAge: 25,
+          name: 'fakeNAme',
+        }),
         headers: { 'Fiware-Service': service },
       });
 
@@ -1885,9 +1951,10 @@ export function runFDAIntegrationSuite({ mode, label }) {
       // Query with age outside of the range
       const rangeQueryRes = await httpReq({
         method: 'GET',
-        url: `${baseUrl}/query?fdaId=${encodeURIComponent(
-          fdaId,
-        )}&daId=${encodeURIComponent(daId2)}&minAge=60&name=ana`,
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId2, {
+          minAge: 60,
+          name: 'ana',
+        }),
         headers: { 'Fiware-Service': service },
       });
 
@@ -1903,9 +1970,9 @@ export function runFDAIntegrationSuite({ mode, label }) {
       // Good query using default values
       const defaultsQueryRes = await httpReq({
         method: 'GET',
-        url: `${baseUrl}/query?fdaId=${encodeURIComponent(
-          fdaId,
-        )}&daId=${encodeURIComponent(daId2)}&name=carlos`,
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId2, {
+          name: 'carlos',
+        }),
         headers: { 'Fiware-Service': service },
       });
 
@@ -1924,9 +1991,9 @@ export function runFDAIntegrationSuite({ mode, label }) {
       // Query without required value
       const requiredQueryRes = await httpReq({
         method: 'GET',
-        url: `${baseUrl}/query?fdaId=${encodeURIComponent(
-          fdaId,
-        )}&daId=${encodeURIComponent(daId2)}&minAge=25`,
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId2, {
+          minAge: 25,
+        }),
         headers: { 'Fiware-Service': service },
       });
 
@@ -1942,9 +2009,10 @@ export function runFDAIntegrationSuite({ mode, label }) {
       // Query without proper type param
       const typeQueryRes = await httpReq({
         method: 'GET',
-        url: `${baseUrl}/query?fdaId=${encodeURIComponent(
-          fdaId,
-        )}&daId=${encodeURIComponent(daId2)}&minAge=text&name=carlos`,
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId2, {
+          minAge: 'text',
+          name: 'carlos',
+        }),
         headers: { 'Fiware-Service': service },
       });
 
@@ -1960,9 +2028,10 @@ export function runFDAIntegrationSuite({ mode, label }) {
       // Query without proper date (ISO8601)
       const dateQueryRes = await httpReq({
         method: 'GET',
-        url: `${baseUrl}/query?fdaId=${encodeURIComponent(
-          fdaId,
-        )}&daId=${encodeURIComponent(daId2)}&name=carlos&timeinstant=2020-08-17%2018:25:28.332%2B01:00`,
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId2, {
+          name: 'carlos',
+          timeinstant: '2020-08-17 18:25:28.332+01:00',
+        }),
         headers: { 'Fiware-Service': service },
       });
 
@@ -1978,9 +2047,10 @@ export function runFDAIntegrationSuite({ mode, label }) {
       // Query without proper date (ISO8601)
       const boolQueryRes = await httpReq({
         method: 'GET',
-        url: `${baseUrl}/query?fdaId=${encodeURIComponent(
-          fdaId,
-        )}&daId=${encodeURIComponent(daId2)}&name=carlos&authorized=notBool`,
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId2, {
+          name: 'carlos',
+          authorized: 'notBool',
+        }),
         headers: { 'Fiware-Service': service },
       });
 
@@ -1996,9 +2066,10 @@ export function runFDAIntegrationSuite({ mode, label }) {
       // Query with proper type coercion: Number from string
       const numberCoercionRes = await httpReq({
         method: 'GET',
-        url: `${baseUrl}/query?fdaId=${encodeURIComponent(
-          fdaId,
-        )}&daId=${encodeURIComponent(daId2)}&minAge=30&name=carlos`,
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId2, {
+          minAge: 30,
+          name: 'carlos',
+        }),
         headers: { 'Fiware-Service': service },
       });
 
@@ -2010,9 +2081,10 @@ export function runFDAIntegrationSuite({ mode, label }) {
       // Query with proper type coercion: Boolean from string
       const booleanCoercionRes = await httpReq({
         method: 'GET',
-        url: `${baseUrl}/query?fdaId=${encodeURIComponent(
-          fdaId,
-        )}&daId=${encodeURIComponent(daId2)}&name=ana&authorized=true`,
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId2, {
+          name: 'ana',
+          authorized: true,
+        }),
         headers: { 'Fiware-Service': service },
       });
 
@@ -2024,9 +2096,10 @@ export function runFDAIntegrationSuite({ mode, label }) {
       // Query with proper type coercion: DateTime from string (ISO8601)
       const dateTimeCoercionRes = await httpReq({
         method: 'GET',
-        url: `${baseUrl}/query?fdaId=${encodeURIComponent(
-          fdaId,
-        )}&daId=${encodeURIComponent(daId2)}&name=carlos&timeinstant=2020-08-17T18:25:28.332Z`,
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId2, {
+          name: 'carlos',
+          timeinstant: '2020-08-17T18:25:28.332Z',
+        }),
         headers: { 'Fiware-Service': service },
       });
 
@@ -2039,9 +2112,9 @@ export function runFDAIntegrationSuite({ mode, label }) {
     test('GET /query returns NDJSON when Accept: application/x-ndjson', async () => {
       const queryRes = await httpReq({
         method: 'GET',
-        url: `${baseUrl}/query?fdaId=${encodeURIComponent(
-          fdaId,
-        )}&daId=${encodeURIComponent(daId)}&minAge=25`,
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId, {
+          minAge: 25,
+        }),
         headers: {
           'Fiware-Service': service,
           Accept: 'application/x-ndjson',
@@ -2072,9 +2145,10 @@ export function runFDAIntegrationSuite({ mode, label }) {
     test('GET /query supports outputType=csv', async () => {
       const res = await httpReqRaw({
         method: 'GET',
-        url: `${baseUrl}/query?fdaId=${encodeURIComponent(
-          fdaId,
-        )}&daId=${encodeURIComponent(daId)}&minAge=25&outputType=csv`,
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId, {
+          minAge: 25,
+          outputType: 'csv',
+        }),
         headers: { 'Fiware-Service': service },
       });
 
@@ -2102,9 +2176,10 @@ export function runFDAIntegrationSuite({ mode, label }) {
     test('GET /query supports outputType=xls', async () => {
       const res = await httpReqRaw({
         method: 'GET',
-        url: `${baseUrl}/query?fdaId=${encodeURIComponent(
-          fdaId,
-        )}&daId=${encodeURIComponent(daId)}&minAge=25&outputType=xls`,
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId, {
+          minAge: 25,
+          outputType: 'xls',
+        }),
         headers: { 'Fiware-Service': service },
       });
 
@@ -2131,9 +2206,10 @@ export function runFDAIntegrationSuite({ mode, label }) {
     test('GET /query rejects unsupported outputType', async () => {
       const res = await httpReq({
         method: 'GET',
-        url: `${baseUrl}/query?fdaId=${encodeURIComponent(
-          fdaId,
-        )}&daId=${encodeURIComponent(daId)}&minAge=25&outputType=html`,
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId, {
+          minAge: 25,
+          outputType: 'html',
+        }),
         headers: { 'Fiware-Service': service },
       });
 
@@ -2149,7 +2225,10 @@ export function runFDAIntegrationSuite({ mode, label }) {
       const createFda = await httpReq({
         method: 'POST',
         url: `${baseUrl}/fdas`,
-        headers: { 'Fiware-Service': service },
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
         body: {
           id: cdaFdaId,
           query: 'SELECT id, name, age FROM public.users ORDER BY id',
