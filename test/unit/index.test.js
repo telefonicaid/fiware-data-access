@@ -301,7 +301,7 @@ describe('index routes - validation and middleware branches', () => {
 
     await request(app).delete('/fdas/fda1/das/da1').expect(400);
 
-    await request(app).get('/query').expect(400);
+    await request(app).get('/public/fdas/fda1/das/da1/data').expect(400);
     await request(app).post('/plugin/cda/api/doQuery').send({}).expect(400);
   });
 
@@ -323,7 +323,7 @@ describe('index routes - validation and middleware branches', () => {
     await request(app)
       .post('/fdas')
       .set('Fiware-Service', 'svc')
-      .set('Fiware-ServicePath', '/a')
+      .set('Fiware-ServicePath', '/public')
       .send({ id: 'fda1', query: 'SELECT 1', description: 'desc' })
       .expect(202);
 
@@ -369,9 +369,9 @@ describe('index routes - validation and middleware branches', () => {
       .expect(204);
 
     await request(app)
-      .get('/query')
+      .get('/public/fdas/fda1/das/da1/data')
       .set('Fiware-Service', 'svc')
-      .query({ fdaId: 'fda1', daId: 'da1', fresh: 'false', limit: 10 })
+      .query({ fresh: 'false', limit: 10 })
       .expect(200);
 
     await request(app)
@@ -385,7 +385,7 @@ describe('index routes - validation and middleware branches', () => {
       'fda1',
       'SELECT 1',
       'svc',
-      '/a',
+      '/public',
       'desc',
       { type: 'none' },
       undefined,
@@ -425,18 +425,19 @@ describe('index routes - validation and middleware branches', () => {
     });
   });
 
-  test('routes /query through NDJSON streaming when Accept requests ndjson', async () => {
+  test('routes scoped data endpoint through NDJSON streaming when Accept requests ndjson', async () => {
     await request(app)
-      .get('/query')
+      .get('/public/fdas/fda1/das/da1/data')
       .set('Fiware-Service', 'svc')
       .set('Accept', 'application/x-ndjson')
-      .query({ fdaId: 'fda1', daId: 'da1', fresh: 'true', offset: 2 })
+      .query({ fresh: 'true', offset: 2 })
       .expect(200)
       .expect('streamed');
 
     expect(fdaMocks.executeQueryStream).toHaveBeenCalledWith(
       expect.objectContaining({
         service: 'svc',
+        scope: 'public',
         params: expect.objectContaining({
           fdaId: 'fda1',
           daId: 'da1',
@@ -450,12 +451,10 @@ describe('index routes - validation and middleware branches', () => {
 
   test('uses NDJSON streaming when Accept is ndjson even if outputType is not json', async () => {
     await request(app)
-      .get('/query')
+      .get('/public/fdas/fda1/das/da1/data')
       .set('Fiware-Service', 'svc')
       .set('Accept', 'application/x-ndjson')
       .query({
-        fdaId: 'fda1',
-        daId: 'da1',
         outputType: 'csv',
         minAge: 25,
       })
@@ -465,6 +464,7 @@ describe('index routes - validation and middleware branches', () => {
     expect(fdaMocks.executeQueryStream).toHaveBeenCalledWith(
       expect.objectContaining({
         service: 'svc',
+        scope: 'public',
         params: expect.objectContaining({
           fdaId: 'fda1',
           daId: 'da1',
@@ -509,9 +509,9 @@ describe('index routes - validation and middleware branches', () => {
     fdaMocks.executeQuery.mockResolvedValueOnce([{ total: 1n }]);
 
     const res = await request(app)
-      .get('/query')
+      .get('/public/fdas/fda1/das/da1/data')
       .set('Fiware-Service', 'svc')
-      .query({ fdaId: 'fda1', daId: 'da1' });
+      .query({});
 
     expect(res.status).toBe(500);
     expect(res.body.error).toBe('InternalServerError');
@@ -550,11 +550,11 @@ describe('index routes - validation and middleware branches', () => {
     expect(loggerMock.warn).toHaveBeenCalledWith(expect.any(Error));
   });
 
-  test('returns 400 for invalid outputType on GET /query', async () => {
+  test('returns 400 for invalid outputType on scoped data endpoint', async () => {
     const res = await request(app)
-      .get('/query')
+      .get('/public/fdas/fda1/das/da1/data')
       .set('Fiware-Service', 'svc')
-      .query({ fdaId: 'fda1', daId: 'da1', outputType: 'xml' })
+      .query({ outputType: 'xml' })
       .expect(400);
 
     expect(res.body).toEqual({
@@ -564,16 +564,16 @@ describe('index routes - validation and middleware branches', () => {
     expect(fdaMocks.executeQuery).not.toHaveBeenCalled();
   });
 
-  test('returns CSV when outputType=csv is requested on GET /query', async () => {
+  test('returns CSV when outputType=csv is requested on scoped data endpoint', async () => {
     fdaMocks.executeQuery.mockResolvedValueOnce([
       { col1: 'a', col2: 'b' },
       { col1: 'c,d', col2: 'e"f' },
     ]);
 
     const res = await request(app)
-      .get('/query')
+      .get('/public/fdas/fda1/das/da1/data')
       .set('Fiware-Service', 'svc')
-      .query({ fdaId: 'fda1', daId: 'da1', outputType: 'csv' })
+      .query({ outputType: 'csv' })
       .expect(200);
 
     expect(res.headers['content-type']).toMatch(/text\/csv/);
@@ -585,18 +585,19 @@ describe('index routes - validation and middleware branches', () => {
     expect(fdaMocks.executeQuery).toHaveBeenCalledWith(
       expect.objectContaining({
         service: 'svc',
+        scope: 'public',
         params: expect.not.objectContaining({ outputType: 'csv' }),
       }),
     );
   });
 
-  test('returns Excel buffer when outputType=xls is requested on GET /query', async () => {
+  test('returns Excel buffer when outputType=xls is requested on scoped data endpoint', async () => {
     fdaMocks.executeQuery.mockResolvedValueOnce([{ col1: 'v1', col2: 42 }]);
 
     const res = await request(app)
-      .get('/query')
+      .get('/public/fdas/fda1/das/da1/data')
       .set('Fiware-Service', 'svc')
-      .query({ fdaId: 'fda1', daId: 'da1', outputType: 'xls' })
+      .query({ outputType: 'xls' })
       .expect(200);
 
     expect(res.headers['content-type']).toMatch(
@@ -604,6 +605,32 @@ describe('index routes - validation and middleware branches', () => {
     );
     expect(res.headers['content-disposition']).toMatch(/results\.xlsx/);
     expect(res.body).toBeTruthy();
+  });
+
+  test('returns 400 for invalid scope on scoped data endpoint', async () => {
+    const res = await request(app)
+      .get('/shared/fdas/fda1/das/da1/data')
+      .set('Fiware-Service', 'svc')
+      .expect(400);
+
+    expect(res.body).toEqual({
+      error: 'BadRequest',
+      description: 'Scope must be public or private',
+    });
+  });
+
+  test('returns 400 for invalid Fiware-ServicePath when creating FDAs', async () => {
+    const res = await request(app)
+      .post('/fdas')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/shared')
+      .send({ id: 'fda1', query: 'SELECT 1' })
+      .expect(400);
+
+    expect(res.body).toEqual({
+      error: 'BadRequest',
+      description: 'Fiware-ServicePath must be /public or /private',
+    });
   });
 
   test('returns 400 for invalid outputType on POST /doQuery', async () => {
