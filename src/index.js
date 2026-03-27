@@ -64,9 +64,29 @@ import {
 export const app = express();
 const PORT = config.port;
 const logger = getBasicLogger();
+const VALID_SCOPES = ['public', 'private'];
+const DEFAULT_SERVICE_PATH = '/private';
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+function parseScope(scope) {
+  if (!VALID_SCOPES.includes(scope)) {
+    return null;
+  }
+
+  return scope;
+}
+
+function parseServicePath(servicePath) {
+  const normalizedServicePath = servicePath || DEFAULT_SERVICE_PATH;
+
+  if (!VALID_SCOPES.includes(normalizedServicePath.replace(/^\//, ''))) {
+    return null;
+  }
+
+  return normalizedServicePath;
+}
 
 app.use((req, res, next) => {
   const oldSend = res.send;
@@ -155,12 +175,19 @@ app.post('/fdas', async (req, res) => {
   const { id, query, description, refreshPolicy, timeColumn, objStgConf } =
     req.body;
   const service = req.get('Fiware-Service');
-  const servicePath = req.get('Fiware-ServicePath');
+  const servicePath = parseServicePath(req.get('Fiware-ServicePath'));
 
   if (!id || !query || !service) {
     return res.status(400).json({
       error: 'BadRequest',
       description: 'Missing params in the request',
+    });
+  }
+
+  if (!servicePath) {
+    return res.status(400).json({
+      error: 'BadRequest',
+      description: 'Fiware-ServicePath must be /public or /private',
     });
   }
 
@@ -322,12 +349,20 @@ app.delete('/fdas/:fdaId/das/:daId', async (req, res) => {
   return res.sendStatus(204);
 });
 
-app.get('/query', async (req, res) => {
-  const { fdaId, daId } = req.query;
+app.get('/:scope/fdas/:fdaId/das/:daId/data', async (req, res) => {
+  const { scope, fdaId, daId } = req.params;
   const service = req.get('Fiware-Service');
   const accept = req.get('Accept') || 'application/json';
   const fresh = parseBooleanQueryParam(req.query.fresh, 'fresh');
   const rawOutputType = req.query.outputType || DEFAULT_OUTPUT_TYPE;
+  const parsedScope = parseScope(scope);
+
+  if (!parsedScope) {
+    return res.status(400).json({
+      error: 'BadRequest',
+      description: 'Scope must be public or private',
+    });
+  }
 
   if (!VALID_OUTPUT_TYPES.includes(rawOutputType)) {
     return res.status(400).json({
@@ -340,18 +375,25 @@ app.get('/query', async (req, res) => {
   delete queryParams.fresh;
   delete queryParams.outputType;
 
-  if (Object.keys(req.query).length === 0 || !fdaId || !daId || !service) {
+  if (!fdaId || !daId || !service) {
     return res.status(400).json({
       error: 'BadRequest',
       description: 'Missing params in the request',
     });
   }
 
+  const params = {
+    fdaId,
+    daId,
+    ...queryParams,
+  };
+
   // Content negotiation: NDJSON streaming takes precedence over outputType
   if (accept.includes('application/x-ndjson')) {
     return executeQueryStream({
       service,
-      params: queryParams,
+      scope: parsedScope,
+      params,
       req,
       res,
       fresh,
@@ -360,7 +402,8 @@ app.get('/query', async (req, res) => {
 
   const rows = await executeQuery({
     service,
-    params: queryParams,
+    scope: parsedScope,
+    params,
     fresh,
   });
 
