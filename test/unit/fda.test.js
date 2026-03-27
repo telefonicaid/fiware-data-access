@@ -193,6 +193,7 @@ describe('fda fresh query execution', () => {
 
     const rows = await executeQuery({
       service: 'svc',
+      scope: 'private',
       params: { fdaId: 'fdaA', daId: 'daA', id: 7 },
       fresh: true,
     });
@@ -211,6 +212,7 @@ describe('fda fresh query execution', () => {
     await expect(
       executeQuery({
         service: 'svc',
+        scope: 'private',
         params: { fdaId: 'fdaA', daId: 'missing' },
         fresh: true,
       }),
@@ -223,6 +225,7 @@ describe('fda fresh query execution', () => {
     await expect(
       executeQuery({
         service: 'svc',
+        scope: 'private',
         params: { fdaId: 'missing', daId: 'daA' },
         fresh: true,
       }),
@@ -238,6 +241,7 @@ describe('fda fresh query execution', () => {
     await expect(
       executeQuery({
         service: 'svc',
+        scope: 'private',
         params: { fdaId: 'fdaA', daId: 'daA' },
         fresh: true,
       }),
@@ -253,6 +257,7 @@ describe('fda fresh query execution', () => {
     await expect(
       executeQuery({
         service: 'svc',
+        scope: 'private',
         params: { fdaId: 'fdaA', daId: 'daA' },
         fresh: true,
       }),
@@ -270,6 +275,7 @@ describe('fda fresh query execution', () => {
     await expect(
       executeQuery({
         service: 'svc',
+        scope: 'private',
         params: { fdaId: 'fdaA', daId: 'daA' },
         fresh: true,
       }),
@@ -285,6 +291,7 @@ describe('fda fresh query execution', () => {
     await expect(
       executeQuery({
         service: 'svc',
+        scope: 'private',
         params: { fdaId: 'fdaA', daId: 'daA' },
         fresh: true,
       }),
@@ -303,6 +310,7 @@ describe('fda fresh query execution', () => {
     await expect(
       executeQuery({
         service: 'svc',
+        scope: 'private',
         params: { fdaId: 'fdaA', daId: 'daA', id: 1 },
         fresh: true,
       }),
@@ -316,10 +324,27 @@ describe('fda fresh query execution', () => {
     await expect(
       executeQuery({
         service: 'svc',
+        scope: 'private',
         params: { fdaId: 'fdaA', daId: 'daA', id: 1 },
         fresh: true,
       }),
     ).rejects.toBe(pgError);
+  });
+
+  test('rejects query execution when requested scope does not match FDA servicePath', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      query: 'SELECT 7::bigint AS id;',
+      servicePath: '/public',
+    });
+
+    await expect(
+      executeQuery({
+        service: 'svc',
+        scope: 'private',
+        params: { fdaId: 'fdaA', daId: 'daA' },
+        fresh: true,
+      }),
+    ).rejects.toMatchObject({ status: 403, type: 'ScopeMismatch' });
   });
 
   test('streams NDJSON rows and handles backpressure', async () => {
@@ -337,6 +362,7 @@ describe('fda fresh query execution', () => {
 
     await executeQueryStream({
       service: 'svc',
+      scope: 'private',
       params: { fdaId: 'fdaA', daId: 'daA', id: 1 },
       req,
       res,
@@ -363,6 +389,7 @@ describe('fda fresh query execution', () => {
 
     await executeQueryStream({
       service: 'svc',
+      scope: 'private',
       params: { fdaId: 'fdaA', daId: 'daA', id: 1 },
       req,
       res,
@@ -387,6 +414,7 @@ describe('fda fresh query execution', () => {
     await expect(
       executeQueryStream({
         service: 'svc',
+        scope: 'private',
         params: { fdaId: 'fdaA', daId: 'daA', id: 1 },
         req,
         res,
@@ -422,7 +450,7 @@ describe('fetchFDA', () => {
       'fda1',
       'SELECT id FROM users;',
       'svc',
-      '/svc',
+      '/public',
       'test FDA',
       {
         type: 'none',
@@ -434,7 +462,7 @@ describe('fetchFDA', () => {
       'fda1',
       'SELECT id FROM users;',
       'svc',
-      '/svc',
+      '/public',
       'test FDA',
       { type: 'none' },
       'timeinstant',
@@ -464,7 +492,7 @@ describe('fetchFDA', () => {
   });
 
   test('schedules periodic refresh for interval policy', async () => {
-    await fetchFDA('fda1', 'SELECT 1', 'svc', '/svc', 'desc', {
+    await fetchFDA('fda1', 'SELECT 1', 'svc', '/public', 'desc', {
       type: 'interval',
       value: '10 minutes',
     });
@@ -485,7 +513,9 @@ describe('fetchFDA', () => {
     pgMocks.uploadTable.mockRejectedValue(uploadError);
 
     await expect(
-      fetchFDA('fda1', 'SELECT 1', 'svc', '/svc', 'desc', { type: 'none' }),
+      fetchFDA('fda1', 'SELECT 1', 'svc', '/public', 'desc', {
+        type: 'none',
+      }),
     ).rejects.toBe(uploadError);
 
     expect(mongoMocks.removeFDA).toHaveBeenCalledWith('svc', 'fda1');
@@ -740,7 +770,7 @@ describe('fetchFDA with refresh policies', () => {
   });
 
   test('fetchFDA with cron refresh policy schedules periodic job', async () => {
-    await fetchFDA('fda1', 'SELECT 1', 'svc', '/svc', 'desc', {
+    await fetchFDA('fda1', 'SELECT 1', 'svc', '/public', 'desc', {
       type: 'cron',
       value: '0 0 * * *',
     });
@@ -757,7 +787,7 @@ describe('fetchFDA with refresh policies', () => {
   });
 
   test('fetchFDA with window refresh policy and deleteInterval schedules cleanup', async () => {
-    await fetchFDA('fda1', 'SELECT 1', 'svc', '/svc', 'desc', {
+    await fetchFDA('fda1', 'SELECT 1', 'svc', '/public', 'desc', {
       type: 'window',
       value: 'daily',
       deleteInterval: '1 day',
@@ -774,7 +804,7 @@ describe('fetchFDA with refresh policies', () => {
 
   test('fetchFDA throws when deleteInterval provided without windowSize', async () => {
     await expect(
-      fetchFDA('fda1', 'SELECT 1', 'svc', '/svc', 'desc', {
+      fetchFDA('fda1', 'SELECT 1', 'svc', '/public', 'desc', {
         type: 'interval',
         value: '10 minutes',
         deleteInterval: '1 day',
@@ -784,6 +814,23 @@ describe('fetchFDA with refresh policies', () => {
       type: 'InvalidParam',
       message: 'Window size is required with a delete interval.',
     });
+  });
+
+  test('fetchFDA defaults missing servicePath to /private', async () => {
+    await fetchFDA('fda1', 'SELECT 1', 'svc', undefined, 'desc', {
+      type: 'none',
+    });
+
+    expect(mongoMocks.createFDAMongo).toHaveBeenCalledWith(
+      'fda1',
+      'SELECT 1',
+      'svc',
+      '/private',
+      'desc',
+      { type: 'none' },
+      undefined,
+      undefined,
+    );
   });
 });
 
