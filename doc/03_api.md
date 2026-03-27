@@ -115,7 +115,7 @@ When required query parameters are missing from the request:
 **Request:**
 
 ```bash
-curl -i http://localhost:8080/query \
+curl -i http://localhost:8080/public/fdas/fda1/das/da1/data \
   -H "Fiware-Service: my-bucket"
 ```
 
@@ -1000,22 +1000,29 @@ _**Response payload**_
 
 None
 
-### Non RESTful operations
+### Data operations
 
-#### Query `GET /query`
+#### Data query `GET /{scope}/fdas/{fdaId}/das/{daId}/data`
 
-Runs a stored parameterized query. The value of the parameters must be included as url parameters.
+Runs a stored parameterized query for the selected DA. The request path declares the access segment and the query string
+carries DA parameters.
+
+_**Request path parameters**_
+
+| Parameter | Optional | Description                                                          | Example  |
+| --------- | -------- | -------------------------------------------------------------------- | -------- |
+| `scope`   |          | Data segment. Allowed values: `public`, `private`                    | `public` |
+| `fdaId`   |          | Id of the `fda`. Must be unique in combination with `Fiware-Service` | `fda1`   |
+| `daId`    |          | Id of the `da`. Must be unique inside each `fda`                     | `da1`    |
 
 _**Request query parameters**_
 
 | Parameter    | Optional | Description                                                                                                                                              | Example |
 | ------------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| `fdaId`      |          | Id of the `fda`. Must be unique in combination with `Fiware-Service`                                                                                     | `fda1`  |
-| `daId`       |          | Id of the `da`. Must be unique inside each `fda`                                                                                                         | `da1`   |
 | `outputType` | ✓        | Format of the returned results. **Default:** `json`. Allowed values: `json`, `csv`, `xls`.                                                               | `csv`   |
 | `fresh`      | ✓        | If `true`, executes the DA directly against PostgreSQL instead of the cached Parquet snapshot. Requires `FDA_ROLE_SYNCQUERIES=true` in the API instance. | `true`  |
 
-Additionally the necessary parameters for the query must be included with the previous ones.
+Additionally, the DA-specific parameters must be included in the query string together with the previous ones.
 
 _**Request headers**_
 
@@ -1069,10 +1076,10 @@ _**Output type and NDJSON streaming**_
 -   With `fresh=true` and `Accept: application/x-ndjson`, results are streamed incrementally from PostgreSQL using a
     cursor to avoid loading full result sets in memory.
 
-_**Example Request (without parameters):**_
+_**Example Request (without DA parameters):**_
 
 ```bash
-curl -i -X GET "http://localhost:8080/query?fdaId=fda_alarms&daId=da_all_alarms" \
+curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_all_alarms/data" \
   -H "Fiware-Service: my-bucket"
 ```
 
@@ -1112,7 +1119,7 @@ _**Example Response:**_
 _**Example Request (with parameters):**_
 
 ```bash
-curl -i -X GET "http://localhost:8080/query?fdaId=fda_alarms&daId=da_filter_by_name&pattern=%nosignal%" \
+curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_filter_by_name/data?pattern=%25nosignal%25" \
   -H "Fiware-Service: my-bucket"
 ```
 
@@ -1131,7 +1138,7 @@ _**Example Response:**_
 _**Example Request (CSV output):**_
 
 ```bash
-curl -i -X GET "http://localhost:8080/query?fdaId=fda_alarms&daId=da_all_alarms&outputType=csv" \
+curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_all_alarms/data?outputType=csv" \
   -H "Fiware-Service: my-bucket" \
   --output results.csv
 ```
@@ -1139,7 +1146,7 @@ curl -i -X GET "http://localhost:8080/query?fdaId=fda_alarms&daId=da_all_alarms&
 _**Example Request (Excel output):**_
 
 ```bash
-curl -i -X GET "http://localhost:8080/query?fdaId=fda_alarms&daId=da_all_alarms&outputType=xls" \
+curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_all_alarms/data?outputType=xls" \
   -H "Fiware-Service: my-bucket" \
   --output results.xlsx
 ```
@@ -1147,7 +1154,7 @@ curl -i -X GET "http://localhost:8080/query?fdaId=fda_alarms&daId=da_all_alarms&
 _**Example Request (NDJSON streaming):**_
 
 ```bash
-curl -i -X GET "http://localhost:8080/query?fdaId=fda_alarms&daId=da_all_alarms" \
+curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_all_alarms/data" \
   -H "Fiware-Service: my-bucket" \
   -H "Accept: application/x-ndjson"
 ```
@@ -1155,7 +1162,7 @@ curl -i -X GET "http://localhost:8080/query?fdaId=fda_alarms&daId=da_all_alarms"
 _**Example Request (fresh query on PostgreSQL):**_
 
 ```bash
-curl -i -X GET "http://localhost:8080/query?fdaId=fda_alarms&daId=da_filter_by_name&pattern=%nosignal%&fresh=true" \
+curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_filter_by_name/data?pattern=%25nosignal%25&fresh=true" \
   -H "Fiware-Service: my-bucket"
 ```
 
