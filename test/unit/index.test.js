@@ -206,6 +206,8 @@ async function loadIndexModule({
   }));
 
   await jest.unstable_mockModule('../../src/lib/fda.js', () => ({
+    VALID_SCOPES: ['public', 'private'],
+    DEFAULT_SERVICE_PATH: '/private',
     getFDAs: fdaMocks.getFDAs,
     fetchFDA: fdaMocks.fetchFDA,
     executeQuery: fdaMocks.executeQuery,
