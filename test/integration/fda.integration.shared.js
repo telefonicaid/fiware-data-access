@@ -2218,6 +2218,30 @@ export function runFDAIntegrationSuite({ mode, label }) {
       expect(res.json.description).toContain('Invalid outputType');
     });
 
+    test('GET /:scope/... returns 400 for an invalid scope value', async () => {
+      const res = await httpReq({
+        method: 'GET',
+        url: `${baseUrl}/shared/fdas/${fdaId}/das/${daId}/data?minAge=25`,
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.json.error).toBe('BadRequest');
+    });
+
+    test('GET /:scope/... returns 403 when scope does not match the FDA servicePath', async () => {
+      // fdaId was created with Fiware-ServicePath: /public, so querying it
+      // through /private/... must be rejected with 403 ScopeMismatch.
+      const res = await httpReq({
+        method: 'GET',
+        url: `${baseUrl}/private/fdas/${fdaId}/das/${daId}/data?minAge=25`,
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect(res.status).toBe(403);
+      expect(res.json.error).toBe('ScopeMismatch');
+    });
+
     test('POST /plugin/cda/api/doQuery behaves as CDA compatibility layer', async () => {
       const cdaFdaId = 'fda_da_cda';
       const cdaDaId = 'fda_da_cda';
