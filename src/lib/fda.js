@@ -65,32 +65,25 @@ import { config } from './fdaConfig.js';
 import { FDAError } from './fdaError.js';
 
 const FRESH_CURSOR_BATCH_SIZE = 250;
+const VALID_SCOPES = new Set(['public', 'private']);
+const DEFAULT_SERVICE_PATH = '/private';
 
 export function getFDAs(service) {
   return retrieveFDAs(service);
 }
 
 export async function getFDA(service, fdaId) {
-  const fda = await retrieveFDA(service, fdaId);
-  if (!fda) {
-    throw new FDAError(
-      404,
-      'FDANotFound',
-      `FDA ${fdaId} not found in service ${service}`,
-    );
-  }
-
-  return fda;
+  return await getStoredFDA(service, fdaId);
 }
 
-export async function executeQuery({ service, params, fresh = false }) {
+export async function executeQuery({ service, scope, params, fresh = false }) {
   if (fresh) {
-    return executeFreshQuery({ service, params });
+    return executeFreshQuery({ service, scope, params });
   }
 
   const { fdaId, daId, ...rest } = params;
 
-  await ensureFDAReadyForQuery(service, fdaId);
+  await ensureFDAReadyForQuery(service, fdaId, scope);
 
   const conn = await getDBConnection();
 
@@ -103,18 +96,19 @@ export async function executeQuery({ service, params, fresh = false }) {
 
 export async function executeQueryStream({
   service,
+  scope,
   params,
   req,
   res,
   fresh = false,
 }) {
   if (fresh) {
-    return executeFreshQueryStream({ service, params, req, res });
+    return executeFreshQueryStream({ service, scope, params, req, res });
   }
 
   const { fdaId, daId, ...rest } = params;
 
-  await ensureFDAReadyForQuery(service, fdaId);
+  await ensureFDAReadyForQuery(service, fdaId, scope);
 
   const conn = await getDBConnection();
 
@@ -196,14 +190,18 @@ export async function executeQueryStream({
   return res.end();
 }
 
-async function executeFreshQuery({ service, params }) {
+async function executeFreshQuery({ service, scope, params }) {
   assertFreshQueriesEnabled(config.roles.syncQueries);
 
   const releaseFreshSlot = acquireFreshQuerySlot(
     config.freshQueries.maxConcurrent,
   );
   try {
-    const { text, values } = await buildFreshQueryStatement(service, params);
+    const { text, values } = await buildFreshQueryStatement(
+      service,
+      scope,
+      params,
+    );
 
     const rows = await runPgQuery(service, text, values);
     return convertBigInt(rows);
@@ -218,7 +216,7 @@ async function executeFreshQuery({ service, params }) {
   }
 }
 
-async function executeFreshQueryStream({ service, params, req, res }) {
+async function executeFreshQueryStream({ service, scope, params, req, res }) {
   assertFreshQueriesEnabled(config.roles.syncQueries);
 
   const releaseFreshSlot = acquireFreshQuerySlot(
@@ -227,7 +225,11 @@ async function executeFreshQueryStream({ service, params, req, res }) {
   let cursorReader;
 
   try {
-    const { text, values } = await buildFreshQueryStatement(service, params);
+    const { text, values } = await buildFreshQueryStatement(
+      service,
+      scope,
+      params,
+    );
 
     cursorReader = await createPgCursorReader(
       service,
@@ -271,7 +273,7 @@ async function executeFreshQueryStream({ service, params, req, res }) {
   return res.end();
 }
 
-async function buildFreshQueryStatement(service, params) {
+async function buildFreshQueryStatement(service, scope, params) {
   const { fdaId, daId, ...rest } = params;
 
   const da = await retrieveDA(service, fdaId, daId);
@@ -283,14 +285,7 @@ async function buildFreshQueryStatement(service, params) {
     );
   }
 
-  const fda = await retrieveFDA(service, fdaId);
-  if (!fda?.query) {
-    throw new FDAError(
-      404,
-      'FDANotFound',
-      `FDA ${fdaId} not found in service ${service}`,
-    );
-  }
+  const fda = await getScopedFDA(service, fdaId, scope);
 
   const validatedParams = resolveDAParams(rest || {}, da.params);
   const freshBaseQuery = buildFreshDAQuery(fda.query, da.query);
@@ -422,11 +417,13 @@ export async function fetchFDA(
   timeColumn,
   objStgConf,
 ) {
+  const normalizedServicePath = normalizeServicePath(servicePath);
+
   await createFDAMongo(
     fdaId,
     query,
     service,
-    servicePath,
+    normalizedServicePath,
     description,
     refreshPolicy,
     timeColumn,
@@ -816,7 +813,20 @@ async function uploadTableToObjStg(
   }
 }
 
-async function ensureFDAReadyForQuery(service, fdaId) {
+async function ensureFDAReadyForQuery(service, fdaId, scope) {
+  const fda = await getScopedFDA(service, fdaId, scope);
+
+  // Queries are blocked only before the first successful fetch.
+  if (!fda.lastFetch) {
+    throw new FDAError(
+      409,
+      'FDAUnavailable',
+      `FDA ${fdaId} is not queryable yet because the first fetch has not completed`,
+    );
+  }
+}
+
+async function getStoredFDA(service, fdaId) {
   const fda = await retrieveFDA(service, fdaId);
 
   if (!fda) {
@@ -827,14 +837,45 @@ async function ensureFDAReadyForQuery(service, fdaId) {
     );
   }
 
-  // Queries are blocked only before the first successful fetch.
-  if (!fda.lastFetch) {
+  return fda;
+}
+
+async function getScopedFDA(service, fdaId, scope) {
+  const normalizedScope = normalizeScope(scope);
+  const fda = await getStoredFDA(service, fdaId);
+
+  if (normalizeServicePath(fda.servicePath) !== `/${normalizedScope}`) {
     throw new FDAError(
-      409,
-      'FDAUnavailable',
-      `FDA ${fdaId} is not queryable yet because the first fetch has not completed`,
+      403,
+      'ScopeMismatch',
+      `FDA ${fdaId} does not belong to /${normalizedScope}`,
     );
   }
+
+  return fda;
+}
+
+function normalizeScope(scope) {
+  if (!VALID_SCOPES.has(scope)) {
+    throw new FDAError(400, 'InvalidScope', 'Scope must be public or private');
+  }
+
+  return scope;
+}
+
+function normalizeServicePath(servicePath) {
+  const normalizedServicePath = servicePath || DEFAULT_SERVICE_PATH;
+  const normalizedScope = normalizedServicePath.replace(/^\//, '');
+
+  if (!VALID_SCOPES.has(normalizedScope)) {
+    throw new FDAError(
+      400,
+      'InvalidServicePath',
+      'Fiware-ServicePath must be /public or /private',
+    );
+  }
+
+  return normalizedServicePath;
 }
 
 async function createOneRowParquetSync(service, fdaId, query) {
