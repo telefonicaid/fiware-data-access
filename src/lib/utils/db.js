@@ -26,6 +26,7 @@ import { retrieveDA, retrieveFDA } from './mongo.js';
 import { FDAError } from '../fdaError.js';
 import { getBasicLogger } from './logger.js';
 import { config } from '../fdaConfig.js';
+import { convertRefreshIntervalToMs } from './utils.js';
 
 let instance = null;
 
@@ -461,6 +462,37 @@ export function toParquet(
 }
 
 export const PARTITION_TYPES = ['day', 'week', 'month', 'year', 'none'];
+export function refreshIntervalPartitionCheck(refreshInterval, partition) {
+  logger.debug(
+    { refreshInterval, partition },
+    '[DEBUG]: refreshIntervalPartitionCheck',
+  );
+
+  if (!partition || partition === 'none') {
+    return true;
+  }
+
+  const partitionSizes = {
+    year: 365 * 24 * 60 * 60 * 1000,
+    month: 30 * 24 * 60 * 60 * 1000,
+    week: 7 * 24 * 60 * 60 * 1000,
+    day: 24 * 60 * 60 * 1000,
+  };
+
+  const partitionMs = partitionSizes[partition];
+  if (!partitionMs) {
+    return false; // Invalid partition type
+  }
+
+  // Convert refreshInterval to milliseconds
+  const refreshIntervalMs = convertRefreshIntervalToMs(refreshInterval);
+  if (refreshIntervalMs === null) {
+    return false; // Invalid format
+  }
+
+  return refreshIntervalMs <= partitionMs;
+}
+
 function getPartitionConf(partitionType = 'none', timeColumn) {
   if (!timeColumn && partitionType !== 'none') {
     throw new FDAError(400, 'PartitionError', `Missing timeColumn value.`);
@@ -505,7 +537,7 @@ function getPartitionConf(partitionType = 'none', timeColumn) {
     throw new FDAError(
       400,
       'PartitionError',
-      `Incorrect partition type: ${partitionType}.`,
+      `Invalid partition type: ${partitionType}.`,
     );
   }
 

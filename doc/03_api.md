@@ -395,16 +395,6 @@ Defines how and when the FDA should be automatically refreshed.
 | `type`              |          | string | Refresh strategy. One of: `none`, `interval`, `cron`, `window`. |
 | [`params`](#params) |          | object | Object with the parameters for the refresh policy type.         |
 
-##### Semantics
-
--   `none` (default): No automatic refresh is scheduled.
--   `interval`: Uses Agenda [human interval](https://github.com/agenda/human-interval) format (e.g. `5 minutes`,
-    `1 hour`).
--   `cron`: Uses a cron expression (e.g. `0 * * * *`).
--   `window`: Uses the values `hourly`, `daily`, `weekly` and `monthly`. When refreshing the `FDA` it retrieves only the
-    data of the interval indicated in the value (e.g. with the value `weekly` it retrieves each week the data of the
-    last week).
-
 If omitted, the default policy is:
 
 ```json

@@ -36,6 +36,7 @@ const dbMocks = {
   validateDAQuery: jest.fn(),
   extractDate: jest.fn(),
   PARTITION_TYPES: ['day', 'week', 'month', 'year', 'none'],
+  refreshIntervalPartitionCheck: jest.fn(),
 };
 
 const pgMocks = {
@@ -85,6 +86,7 @@ await jest.unstable_mockModule('../../src/lib/utils/db.js', () => ({
   validateDAQuery: dbMocks.validateDAQuery,
   extractDate: dbMocks.extractDate,
   PARTITION_TYPES: dbMocks.PARTITION_TYPES,
+  refreshIntervalPartitionCheck: dbMocks.refreshIntervalPartitionCheck,
 }));
 
 await jest.unstable_mockModule('../../src/lib/utils/pg.js', () => ({
@@ -417,6 +419,7 @@ describe('fetchFDA', () => {
     jobsMocks.getAgenda.mockReturnValue(agenda);
     agenda.now.mockResolvedValue(undefined);
     agenda.every.mockResolvedValue(undefined);
+    dbMocks.refreshIntervalPartitionCheck.mockReturnValue(true);
   });
 
   test('creates one-row parquet synchronously and schedules immediate fetch', async () => {
@@ -482,6 +485,32 @@ describe('fetchFDA', () => {
     );
   });
 
+  test('fails when refresh interval is larger than partition size', async () => {
+    dbMocks.refreshIntervalPartitionCheck.mockReturnValue(false);
+
+    await expect(
+      fetchFDA(
+        'fda1',
+        'SELECT 1',
+        'svc',
+        '/svc',
+        'desc',
+        {
+          type: 'interval',
+          params: { refreshInterval: '2 days' },
+        },
+        'timeinstant',
+        { partition: 'day' },
+      ),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidParam',
+      message:
+        'Refresh interval "2 days" must be smaller or equal than partition size "day".',
+    });
+
+    expect(agenda.every).not.toHaveBeenCalled();
+  });
   test('rolls back FDA provisioning and rethrows when parquet creation fails', async () => {
     const uploadError = new Error('S3 unreachable');
     pgMocks.uploadTable.mockRejectedValue(uploadError);
@@ -759,14 +788,25 @@ describe('fetchFDA with refresh policies', () => {
   });
 
   test('fetchFDA with window refresh policy schedules cleanup', async () => {
-    await fetchFDA('fda1', 'SELECT 1', 'svc', '/svc', 'desc', {
-      type: 'window',
-      params: {
-        refreshInterval: '0 0 * * *',
-        fetchSize: 'daily',
-        windowSize: 'day',
+    await fetchFDA(
+      'fda1',
+      'SELECT 1',
+      'svc',
+      '/svc',
+      'desc',
+      {
+        type: 'window',
+        params: {
+          refreshInterval: '0 0 * * *',
+          fetchSize: 'day',
+          windowSize: 'day',
+        },
       },
-    });
+      'timeinstant',
+      {
+        partition: 'day',
+      },
+    );
 
     expect(agenda.every).toHaveBeenCalledWith(
       expect.any(String),
@@ -774,6 +814,38 @@ describe('fetchFDA with refresh policies', () => {
       expect.any(Object),
       expect.any(Object),
     );
+  });
+
+  test('fetchFDA with different fetch size and partition', async () => {
+    dbMocks.refreshIntervalPartitionCheck.mockReturnValue(true);
+
+    await expect(
+      fetchFDA(
+        'fda1',
+        'SELECT 1',
+        'svc',
+        '/svc',
+        'desc',
+        {
+          type: 'window',
+          params: {
+            refreshInterval: '0 0 * * *', // Once a day
+            fetchSize: 'week',
+            windowSize: 'week',
+          },
+        },
+        'timeinstant',
+        {
+          partition: 'day',
+        },
+      ),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidParam',
+      message: 'Fetch size "week" must be equal to partition size "day".',
+    });
+
+    expect(agenda.every).not.toHaveBeenCalled();
   });
 });
 

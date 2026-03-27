@@ -34,6 +34,7 @@ import {
   validateDAQuery,
   extractDate,
   PARTITION_TYPES,
+  refreshIntervalPartitionCheck,
 } from './utils/db.js';
 import { uploadTable, runPgQuery, createPgCursorReader } from './utils/pg.js';
 import {
@@ -423,16 +424,7 @@ export async function fetchFDA(
   timeColumn,
   objStgConf,
 ) {
-  if (
-    objStgConf?.partition &&
-    !PARTITION_TYPES.includes(objStgConf.partition)
-  ) {
-    throw new FDAError(
-      400,
-      'InvalidParam',
-      `Invalid partition type "${objStgConf.partition}".`,
-    );
-  }
+  validateScheduledOptions(refreshPolicy, objStgConf);
 
   await createFDAMongo(
     fdaId,
@@ -467,13 +459,6 @@ export async function fetchFDA(
   if (refreshPolicy?.type === 'interval' || refreshPolicy?.type === 'cron') {
     const { refreshInterval, windowSize } = refreshPolicy.params || {};
 
-    if (!refreshInterval) {
-      throw new FDAError(
-        400,
-        'InvalidParam',
-        `Refresh policy of type ${refreshPolicy.type} requires a refreshInterval parameter.`,
-      );
-    }
     // unique is not really needed since we check existence before, but it adds an extra layer of safety in case of duplicate calls
     await agenda.every(
       refreshInterval,
@@ -510,18 +495,10 @@ export async function fetchFDA(
   }
 
   if (refreshPolicy?.type === 'window') {
-    const { refreshInterval, fetchRange, windowSize } =
+    const { refreshInterval, fetchSize, windowSize } =
       refreshPolicy.params || {};
 
-    if (!refreshInterval || !fetchRange) {
-      throw new FDAError(
-        400,
-        'InvalidParam',
-        `Refresh policy of type ${refreshPolicy.type} requires a refreshInterval and fetchRange parameters.`,
-      );
-    }
-
-    const refreshQuery = getUpdateWindowQuery(fetchRange, query, timeColumn);
+    const refreshQuery = getUpdateWindowQuery(fetchSize, query, timeColumn);
 
     // partitionFlag lets us know we are refreshing already existing partitioned files for performance purposes
     await agenda.every(
@@ -566,28 +543,71 @@ export async function fetchFDA(
   }
 }
 
-function getUpdateWindowQuery(fetchRange, query, timeColumn) {
+function validateScheduledOptions(refreshPolicy, objStgConf) {
+  if (!refreshPolicy || refreshPolicy.type === 'none') {
+    return;
+  }
+  const { refreshInterval, fetchSize } = refreshPolicy.params || {};
+  if (!refreshInterval) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Missing required refresh policy parameter: refreshInterval.`,
+    );
+  }
+
+  if (
+    objStgConf?.partition &&
+    !PARTITION_TYPES.includes(objStgConf.partition)
+  ) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Invalid partition type "${objStgConf.partition}".`,
+    );
+  }
+
+  // RefreshInterval must be smaller or equal than partition size
+  if (!refreshIntervalPartitionCheck(refreshInterval, objStgConf?.partition)) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Refresh interval "${refreshInterval}" must be smaller or equal than partition size "${objStgConf?.partition}".`,
+    );
+  }
+
+  // fetched data size must be equal than partition size.
+  if (fetchSize !== objStgConf?.partition) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Fetch size "${fetchSize}" must be equal to partition size "${objStgConf?.partition}".`,
+    );
+  }
+}
+
+function getUpdateWindowQuery(fetchSize, query, timeColumn) {
   const slidingWindow = {
-    hourly: {
+    hour: {
       windowQuery: `SELECT * FROM (${query}) q WHERE ${timeColumn} >= NOW() - INTERVAL '1 hour'`,
     },
-    daily: {
+    day: {
       windowQuery: `SELECT * FROM (${query}) q WHERE ${timeColumn} >= NOW() - INTERVAL '1 day'`,
     },
-    weekly: {
+    week: {
       windowQuery: `SELECT * FROM (${query}) q WHERE ${timeColumn} >= NOW() - INTERVAL '1 week'`,
     },
-    monthly: {
+    month: {
       windowQuery: `SELECT * FROM (${query}) q WHERE ${timeColumn} >= NOW() - INTERVAL '1 month'`,
     },
   };
 
-  const window = slidingWindow[fetchRange];
+  const window = slidingWindow[fetchSize];
   if (!window) {
     throw new FDAError(
       400,
       'InvalidParam',
-      `Invalid window type: ${fetchRange}.`,
+      `Invalid window type: ${fetchSize}.`,
     );
   }
   return window;
