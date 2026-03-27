@@ -456,7 +456,7 @@ Created
 Run a query against the FDA/DA (JSON response):
 
 ```bash
-curl -i -X GET "http://localhost:8080/query?fdaId=fda_alarms&daId=da_all_alarms" \
+curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_all_alarms/data" \
   -H "Fiware-Service: my-bucket"
 ```
 
@@ -469,7 +469,7 @@ Example JSON response (array):
 Or request streaming NDJSON by setting the `Accept` header:
 
 ```bash
-curl -i -X GET "http://localhost:8080/query?fdaId=fda_alarms&daId=da_all_alarms" \
+curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_all_alarms/data" \
   -H "Fiware-Service: my-bucket" \
   -H 'Accept: application/x-ndjson'
 ```

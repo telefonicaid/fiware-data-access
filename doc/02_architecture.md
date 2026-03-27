@@ -116,7 +116,7 @@ Data flow:
 
 Optional fresh mode:
 
--   For use cases that require real-time data, `GET /query` supports `fresh=true`.
+-   For use cases that require real-time data, `GET /{scope}/fdas/{fdaId}/das/{daId}/data` supports `fresh=true`.
 -   In this mode the DA is executed directly on PostgreSQL using the FDA base query as source (without waiting for the
     next FDA refresh cycle).
 -   Fresh mode is controlled per instance with `FDA_ROLE_SYNCQUERIES`.
