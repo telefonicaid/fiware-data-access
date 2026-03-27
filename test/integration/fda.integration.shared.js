@@ -2317,6 +2317,58 @@ export function runFDAIntegrationSuite({ mode, label }) {
       expect(ndjsonAttempt.json).toHaveProperty('resultset');
     });
 
+    test('POST /plugin/cda/api/doQuery rejects scope mismatch', async () => {
+      const privateFdaId = 'fda_cda_scope_private';
+      const privateDaId = 'da_cda_scope_private';
+
+      const createFda = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/fdas`,
+        headers: { 'Fiware-Service': service },
+        body: {
+          id: privateFdaId,
+          query: 'SELECT id, name, age FROM public.users ORDER BY id',
+          description: 'users dataset for CDA private scope',
+        },
+      });
+
+      expect(createFda.status).toBe(202);
+      await waitUntilFDACompleted({ baseUrl, service, fdaId: privateFdaId });
+
+      const createDa = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/fdas/${privateFdaId}/das`,
+        headers: { 'Fiware-Service': service },
+        body: {
+          id: privateDaId,
+          description: 'CDA scope mismatch test DA',
+          query: `
+          SELECT id, name, age
+          WHERE age >= $minAge
+          ORDER BY id
+        `,
+          params: [{ name: 'minAge', type: 'Number', default: 0 }],
+        },
+      });
+
+      expect(createDa.status).toBe(201);
+
+      const mismatchRes = await httpFormReq({
+        method: 'POST',
+        url: `${baseUrl}/plugin/cda/api/doQuery`,
+        headers: { 'Fiware-Service': service },
+        form: {
+          path: `/public/${service}/verticals/sql/${privateDaId}`,
+          cda: privateFdaId,
+          dataAccessId: privateDaId,
+          paramminAge: '0',
+        },
+      });
+
+      expect(mismatchRes.status).toBe(403);
+      expect(mismatchRes.json.error).toBe('ScopeMismatch');
+    });
+
     test('POST /plugin/cda/api/doQuery supports outputType=csv', async () => {
       const res = await httpReqRaw({
         method: 'POST',
