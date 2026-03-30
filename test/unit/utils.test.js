@@ -146,11 +146,13 @@ describe('utils', () => {
       const { getWindowDate } = await loadUtilsModule();
 
       const now = new Date();
+      const expected = new Date(now);
+      expected.setMonth(expected.getMonth() - 1);
       const result = getWindowDate('month');
 
       expect(result).toBeInstanceOf(Date);
       expect(result.getTime()).toBeLessThan(now.getTime());
-      expect(result.getMonth()).toBe(now.getMonth() - 1);
+      expect(result.getTime()).toBe(expected.getTime());
     });
 
     test('returns date 1 year ago for "year" windowSize', async () => {
