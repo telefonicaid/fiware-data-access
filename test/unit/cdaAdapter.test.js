@@ -83,6 +83,7 @@ describe('cda adapter', () => {
       expect.objectContaining({
         service: 'svc',
         visibility: 'public',
+        servicePath: '/public',
         params: expect.objectContaining({
           fdaId: 'daA',
           daId: 'daA',
@@ -112,6 +113,7 @@ describe('cda adapter', () => {
       expect.objectContaining({
         service: 'svc',
         visibility: 'public',
+        servicePath: '/public',
       }),
     );
   });
