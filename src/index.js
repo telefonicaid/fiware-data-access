@@ -31,6 +31,7 @@ import {
   fetchFDA,
   executeQuery,
   executeQueryStream,
+  assertFDAAccess,
   createDA,
   getFDA,
   updateFDA,
@@ -50,7 +51,7 @@ import {
   getInitialLogger,
 } from './lib/utils/logger.js';
 import { handleCdaQuery } from './lib/compat/cdaAdapter.js';
-import { VALID_SCOPES, DEFAULT_SERVICE_PATH } from './lib/fda.js';
+import { VALID_VISIBILITIES } from './lib/fda.js';
 import {
   validateAllowedFieldsBody,
   parseBooleanQueryParam,
@@ -69,22 +70,44 @@ const logger = getBasicLogger();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-function parseScope(scope) {
-  if (!VALID_SCOPES.includes(scope)) {
+function parseVisibility(visibility) {
+  if (!VALID_VISIBILITIES.includes(visibility)) {
     return null;
   }
 
-  return scope;
+  return visibility;
 }
 
 function parseServicePath(servicePath) {
-  const normalizedServicePath = servicePath || DEFAULT_SERVICE_PATH;
+  if (!servicePath || typeof servicePath !== 'string') {
+    return null;
+  }
 
-  if (!VALID_SCOPES.includes(normalizedServicePath.replace(/^\//, ''))) {
+  const normalizedServicePath = servicePath.trim();
+
+  if (!/^\/(?:[^/\s]+(?:\/[^/\s]+)*)?$/.test(normalizedServicePath)) {
     return null;
   }
 
   return normalizedServicePath;
+}
+
+function parseVisibilityAndServicePath(req) {
+  const visibility = parseVisibility(req.params.visibility);
+  const servicePath = parseServicePath(req.get('Fiware-ServicePath'));
+
+  if (!visibility) {
+    return { error: 'Visibility must be public or private' };
+  }
+
+  if (!servicePath) {
+    return {
+      error:
+        'Fiware-ServicePath header is required and must be a valid absolute path (e.g. / or /servicepath)',
+    };
+  }
+
+  return { visibility, servicePath };
 }
 
 app.use((req, res, next) => {
@@ -148,21 +171,28 @@ app.get('/health', (req, res) => {
   });
 });
 
-app.get('/fdas', async (req, res) => {
+app.get('/:visibility/fdas', async (req, res) => {
   const service = req.get('Fiware-Service');
+  const parsed = parseVisibilityAndServicePath(req);
 
-  if (!service) {
+  if (!service || parsed.error) {
     return res.status(400).json({
       error: 'BadRequest',
-      description: 'Missing params in the request',
+      description: parsed.error || 'Missing params in the request',
     });
   }
 
   const fdas = await getFDAs(service);
-  return res.status(200).json(fdas);
+  const filteredFDAs = fdas.filter(
+    (fda) =>
+      fda.visibility === parsed.visibility &&
+      fda.servicePath === parsed.servicePath,
+  );
+
+  return res.status(200).json(filteredFDAs);
 });
 
-app.post('/fdas', async (req, res) => {
+app.post('/:visibility/fdas', async (req, res) => {
   validateAllowedFieldsBody(req.body, [
     'id',
     'query',
@@ -174,19 +204,12 @@ app.post('/fdas', async (req, res) => {
   const { id, query, description, refreshPolicy, timeColumn, objStgConf } =
     req.body;
   const service = req.get('Fiware-Service');
-  const servicePath = parseServicePath(req.get('Fiware-ServicePath'));
+  const parsed = parseVisibilityAndServicePath(req);
 
-  if (!id || !query || !service) {
+  if (!id || !query || !service || parsed.error) {
     return res.status(400).json({
       error: 'BadRequest',
-      description: 'Missing params in the request',
-    });
-  }
-
-  if (!servicePath) {
-    return res.status(400).json({
-      error: 'BadRequest',
-      description: 'Fiware-ServicePath must be /public or /private',
+      description: parsed.error || 'Missing params in the request',
     });
   }
 
@@ -197,7 +220,8 @@ app.post('/fdas', async (req, res) => {
     id,
     query,
     service,
-    servicePath,
+    parsed.visibility,
+    parsed.servicePath,
     description,
     finalRefreshPolicy,
     timeColumn,
@@ -210,29 +234,38 @@ app.post('/fdas', async (req, res) => {
   });
 });
 
-app.get('/fdas/:fdaId', async (req, res) => {
+app.get('/:visibility/fdas/:fdaId', async (req, res) => {
   const service = req.get('Fiware-Service');
   const { fdaId } = req.params;
+  const parsed = parseVisibilityAndServicePath(req);
 
-  if (!fdaId || !service) {
+  if (!fdaId || !service || parsed.error) {
     return res.status(400).json({
       error: 'BadRequest',
-      description: 'Missing params in the request',
+      description: parsed.error || 'Missing params in the request',
     });
   }
+
+  await assertFDAAccess({
+    service,
+    fdaId,
+    visibility: parsed.visibility,
+    servicePath: parsed.servicePath,
+  });
 
   const fda = await getFDA(service, fdaId);
   return res.status(200).json(fda);
 });
 
-app.put('/fdas/:fdaId', async (req, res) => {
+app.put('/:visibility/fdas/:fdaId', async (req, res) => {
   const service = req.get('Fiware-Service');
   const { fdaId } = req.params;
+  const parsed = parseVisibilityAndServicePath(req);
 
-  if (!service || !fdaId) {
+  if (!service || !fdaId || parsed.error) {
     return res.status(400).json({
       error: 'BadRequest',
-      description: 'Missing params in the request',
+      description: parsed.error || 'Missing params in the request',
     });
   }
 
@@ -243,6 +276,13 @@ app.put('/fdas/:fdaId', async (req, res) => {
     });
   }
 
+  await assertFDAAccess({
+    service,
+    fdaId,
+    visibility: parsed.visibility,
+    servicePath: parsed.servicePath,
+  });
+
   await updateFDA(service, fdaId);
 
   return res.status(202).json({
@@ -251,115 +291,172 @@ app.put('/fdas/:fdaId', async (req, res) => {
   });
 });
 
-app.delete('/fdas/:fdaId', async (req, res) => {
+app.delete('/:visibility/fdas/:fdaId', async (req, res) => {
   const service = req.get('Fiware-Service');
   const { fdaId } = req.params;
+  const parsed = parseVisibilityAndServicePath(req);
 
-  if (!service || !fdaId) {
+  if (!service || !fdaId || parsed.error) {
     return res.status(400).json({
       error: 'BadRequest',
-      description: 'Missing params in the request',
+      description: parsed.error || 'Missing params in the request',
     });
   }
+
+  await assertFDAAccess({
+    service,
+    fdaId,
+    visibility: parsed.visibility,
+    servicePath: parsed.servicePath,
+  });
 
   await deleteFDA(service, fdaId);
   return res.sendStatus(204);
 });
 
-app.get('/fdas/:fdaId/das', async (req, res) => {
+app.get('/:visibility/fdas/:fdaId/das', async (req, res) => {
   const service = req.get('Fiware-Service');
   const { fdaId } = req.params;
+  const parsed = parseVisibilityAndServicePath(req);
 
-  if (!fdaId || !service) {
+  if (!fdaId || !service || parsed.error) {
     return res.status(400).json({
       error: 'BadRequest',
-      description: 'Missing params in the request',
+      description: parsed.error || 'Missing params in the request',
     });
   }
+
+  await assertFDAAccess({
+    service,
+    fdaId,
+    visibility: parsed.visibility,
+    servicePath: parsed.servicePath,
+  });
 
   const das = await getDAs(service, fdaId);
   return res.status(200).json(das);
 });
 
-app.post('/fdas/:fdaId/das', async (req, res) => {
+app.post('/:visibility/fdas/:fdaId/das', async (req, res) => {
   const { fdaId } = req.params;
 
   validateAllowedFieldsBody(req.body, ['id', 'query', 'description', 'params']);
   const { id, description, query, params } = req.body;
   const service = req.get('Fiware-Service');
+  const parsed = parseVisibilityAndServicePath(req);
 
-  if (!fdaId || !id || !query || !service) {
+  if (!fdaId || !id || !query || !service || parsed.error) {
     return res.status(400).json({
       error: 'BadRequest',
-      description: 'Missing params in the request',
+      description: parsed.error || 'Missing params in the request',
     });
   }
+
+  await assertFDAAccess({
+    service,
+    fdaId,
+    visibility: parsed.visibility,
+    servicePath: parsed.servicePath,
+  });
 
   await createDA(service, fdaId, id, description, query, params);
   return res.sendStatus(201);
 });
 
-app.get('/fdas/:fdaId/das/:daId', async (req, res) => {
+app.get('/:visibility/fdas/:fdaId/das/:daId', async (req, res) => {
   const { fdaId, daId } = req.params;
   const service = req.get('Fiware-Service');
+  const parsed = parseVisibilityAndServicePath(req);
 
-  if (!service || !fdaId || !daId) {
+  if (!service || !fdaId || !daId || parsed.error) {
     return res.status(400).json({
       error: 'BadRequest',
-      description: 'Missing params in the request',
+      description: parsed.error || 'Missing params in the request',
     });
   }
+
+  await assertFDAAccess({
+    service,
+    fdaId,
+    visibility: parsed.visibility,
+    servicePath: parsed.servicePath,
+  });
 
   const da = await getDA(service, fdaId, daId);
   return res.status(200).json(da);
 });
 
-app.put('/fdas/:fdaId/das/:daId', async (req, res) => {
+app.put('/:visibility/fdas/:fdaId/das/:daId', async (req, res) => {
   const { fdaId, daId } = req.params;
   const service = req.get('Fiware-Service');
+  const parsed = parseVisibilityAndServicePath(req);
 
   validateAllowedFieldsBody(req.body, ['query', 'description', 'params']);
   const { description, query, params } = req.body;
 
-  if (!service || !fdaId || !daId || !query) {
+  if (!service || !fdaId || !daId || !query || parsed.error) {
     return res.status(400).json({
       error: 'BadRequest',
-      description: 'Missing params in the request',
+      description: parsed.error || 'Missing params in the request',
     });
   }
+
+  await assertFDAAccess({
+    service,
+    fdaId,
+    visibility: parsed.visibility,
+    servicePath: parsed.servicePath,
+  });
 
   await putDA(service, fdaId, daId, description, query, params);
 
   return res.sendStatus(204);
 });
 
-app.delete('/fdas/:fdaId/das/:daId', async (req, res) => {
+app.delete('/:visibility/fdas/:fdaId/das/:daId', async (req, res) => {
   const { fdaId, daId } = req.params;
   const service = req.get('Fiware-Service');
+  const parsed = parseVisibilityAndServicePath(req);
 
-  if (!service || !fdaId || !daId) {
+  if (!service || !fdaId || !daId || parsed.error) {
     return res.status(400).json({
       error: 'BadRequest',
-      description: 'Missing params in the request',
+      description: parsed.error || 'Missing params in the request',
     });
   }
+
+  await assertFDAAccess({
+    service,
+    fdaId,
+    visibility: parsed.visibility,
+    servicePath: parsed.servicePath,
+  });
 
   await deleteDA(service, fdaId, daId);
   return res.sendStatus(204);
 });
 
-app.get('/:scope/fdas/:fdaId/das/:daId/data', async (req, res) => {
-  const { scope, fdaId, daId } = req.params;
+app.get('/:visibility/fdas/:fdaId/das/:daId/data', async (req, res) => {
+  const { visibility, fdaId, daId } = req.params;
   const service = req.get('Fiware-Service');
+  const servicePath = parseServicePath(req.get('Fiware-ServicePath'));
   const accept = req.get('Accept') || 'application/json';
   const fresh = parseBooleanQueryParam(req.query.fresh, 'fresh');
   const rawOutputType = req.query.outputType || DEFAULT_OUTPUT_TYPE;
-  const parsedScope = parseScope(scope);
+  const parsedVisibility = parseVisibility(visibility);
 
-  if (!parsedScope) {
+  if (!parsedVisibility) {
     return res.status(400).json({
       error: 'BadRequest',
-      description: 'Scope must be public or private',
+      description: 'Visibility must be public or private',
+    });
+  }
+
+  if (!servicePath) {
+    return res.status(400).json({
+      error: 'BadRequest',
+      description:
+        'Fiware-ServicePath header is required and must be a valid absolute path (e.g. / or /org/site)',
     });
   }
 
@@ -391,7 +488,8 @@ app.get('/:scope/fdas/:fdaId/das/:daId/data', async (req, res) => {
   if (accept.includes('application/x-ndjson')) {
     return executeQueryStream({
       service,
-      scope: parsedScope,
+      visibility: parsedVisibility,
+      servicePath,
       params,
       req,
       res,
@@ -401,7 +499,8 @@ app.get('/:scope/fdas/:fdaId/das/:daId/data', async (req, res) => {
 
   const rows = await executeQuery({
     service,
-    scope: parsedScope,
+    visibility: parsedVisibility,
+    servicePath,
     params,
     fresh,
   });
