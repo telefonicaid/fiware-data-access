@@ -45,12 +45,25 @@ import net from 'node:net';
 import path from 'node:path';
 
 const { Client } = pg;
+const DEFAULT_TEST_SERVICE_PATH = '/public';
 
 jest.setTimeout(240_000);
+
+function withDefaultServicePath(headers = {}) {
+  if (headers['Fiware-Service'] && !headers['Fiware-ServicePath']) {
+    return {
+      ...headers,
+      'Fiware-ServicePath': DEFAULT_TEST_SERVICE_PATH,
+    };
+  }
+
+  return headers;
+}
 
 function httpReq({ method, url, headers, body }) {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
+    const finalHeaders = withDefaultServicePath(headers || {});
     const req = http.request(
       {
         method,
@@ -58,7 +71,7 @@ function httpReq({ method, url, headers, body }) {
         port: u.port,
         path: u.pathname + u.search,
         headers: {
-          ...(headers || {}),
+          ...finalHeaders,
           ...(body ? { 'Content-Type': 'application/json' } : {}),
         },
         timeout: 30_000,
@@ -94,6 +107,7 @@ function httpReq({ method, url, headers, body }) {
 function httpFormReq({ method, url, headers, form }) {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
+    const finalHeaders = withDefaultServicePath(headers || {});
 
     const body = new URLSearchParams(form).toString();
 
@@ -106,7 +120,7 @@ function httpFormReq({ method, url, headers, form }) {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
           'Content-Length': Buffer.byteLength(body),
-          ...(headers || {}),
+          ...finalHeaders,
         },
         timeout: 30_000,
       },
@@ -142,9 +156,7 @@ function httpReqRaw({ method, url, headers, body, form }) {
     const u = new URL(url);
 
     let payload;
-    const finalHeaders = {
-      ...(headers || {}),
-    };
+    const finalHeaders = withDefaultServicePath(headers || {});
 
     if (form) {
       payload = new URLSearchParams(form).toString();
@@ -244,6 +256,7 @@ async function waitUntilFDACompleted({
   baseUrl,
   service,
   fdaId,
+  visibility = 'public',
   timeout = 10000,
   interval = 300,
 }) {
@@ -253,7 +266,7 @@ async function waitUntilFDACompleted({
   while (Date.now() - start < timeout) {
     const res = await httpReq({
       method: 'GET',
-      url: `${baseUrl}/fdas/${encodeURIComponent(fdaId)}`,
+      url: `${baseUrl}/${visibility}/fdas/${encodeURIComponent(fdaId)}`,
       headers: { 'Fiware-Service': service },
     });
 
@@ -287,6 +300,7 @@ async function waitUntilFDAFailed({
   baseUrl,
   service,
   fdaId,
+  visibility = 'public',
   timeout = 10000,
   interval = 300,
 }) {
@@ -295,7 +309,7 @@ async function waitUntilFDAFailed({
   while (Date.now() - start < timeout) {
     const res = await httpReq({
       method: 'GET',
-      url: `${baseUrl}/fdas/${encodeURIComponent(fdaId)}`,
+      url: `${baseUrl}/${visibility}/fdas/${encodeURIComponent(fdaId)}`,
       headers: { 'Fiware-Service': service },
     });
 
@@ -333,6 +347,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
     const service = 'myservice';
     const servicePath = '/public';
+    const visibility = 'public';
     const fdaId = 'fda1';
     const fdaId2 = 'fda2';
     const fdaId3 = 'fda3';
@@ -575,7 +590,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
     test('POST /fdas creates an FDA (uploads CSV then converts to Parquet)', async () => {
       const res = await httpReq({
         method: 'POST',
-        url: `${baseUrl}/fdas`,
+        url: `${baseUrl}/${visibility}/fdas`,
         headers: {
           'Fiware-Service': service,
           'Fiware-ServicePath': servicePath,
@@ -600,7 +615,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       // Test with a window refresh policy (weekly) and partitioned by day, without compression, with a window size of 1 day
       const res = await httpReq({
         method: 'POST',
-        url: `${baseUrl}/fdas`,
+        url: `${baseUrl}/${visibility}/fdas`,
         headers: {
           'Fiware-Service': service,
           'Fiware-ServicePath': servicePath,
@@ -634,7 +649,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       // Test with a window refresh policy (weekly) and partitioned by day, without compression, with a window size of 1 day
       const res2 = await httpReq({
         method: 'POST',
-        url: `${baseUrl}/fdas`,
+        url: `${baseUrl}/${visibility}/fdas`,
         headers: {
           'Fiware-Service': service,
           'Fiware-ServicePath': servicePath,
@@ -672,7 +687,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       // Test with partition type but no time column, should return error as time column is required for partitioning
       const res3 = await httpReq({
         method: 'POST',
-        url: `${baseUrl}/fdas`,
+        url: `${baseUrl}/${visibility}/fdas`,
         headers: {
           'Fiware-Service': service,
           'Fiware-ServicePath': servicePath,
@@ -715,7 +730,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       // Test with invalid partition type
       const res4 = await httpReq({
         method: 'POST',
-        url: `${baseUrl}/fdas`,
+        url: `${baseUrl}/${visibility}/fdas`,
         headers: {
           'Fiware-Service': service,
           'Fiware-ServicePath': servicePath,
@@ -753,7 +768,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
     test('POST /fdas tries to creates an FDA without id and is detected', async () => {
       const res = await httpReq({
         method: 'POST',
-        url: `${baseUrl}/fdas`,
+        url: `${baseUrl}/${visibility}/fdas`,
         headers: {
           'Fiware-Service': service,
           'Fiware-ServicePath': servicePath,
@@ -778,7 +793,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
     test('POST /fdas with duplicate id returns error', async () => {
       await httpReq({
         method: 'POST',
-        url: `${baseUrl}/fdas`,
+        url: `${baseUrl}/${visibility}/fdas`,
         headers: { 'Fiware-Service': service },
         body: {
           id: fdaId3,
@@ -789,7 +804,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       const res = await httpReq({
         method: 'POST',
-        url: `${baseUrl}/fdas`,
+        url: `${baseUrl}/${visibility}/fdas`,
         headers: {
           'Fiware-Service': service,
           'Fiware-ServicePath': servicePath,
@@ -813,7 +828,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       const createFda = await httpReq({
         method: 'POST',
-        url: `${baseUrl}/fdas`,
+        url: `${baseUrl}/${visibility}/fdas`,
         headers: {
           'Fiware-Service': service,
           'Fiware-ServicePath': servicePath,
@@ -831,7 +846,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       const createDa = await httpReq({
         method: 'POST',
-        url: `${baseUrl}/fdas/${pendingFdaId}/das`,
+        url: `${baseUrl}/${visibility}/fdas/${pendingFdaId}/das`,
         headers: { 'Fiware-Service': service },
         body: {
           id: pendingDaId,
@@ -897,7 +912,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
     test('GET /fdas returns list', async () => {
       const res = await httpReq({
         method: 'GET',
-        url: `${baseUrl}/fdas`,
+        url: `${baseUrl}/${visibility}/fdas`,
         headers: { 'Fiware-Service': service },
       });
 
@@ -919,7 +934,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       const createDa = await httpReq({
         method: 'POST',
-        url: `${baseUrl}/fdas/${fdaId}/das`,
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}/das`,
         headers: { 'Fiware-Service': service },
         body: {
           id: daId,
@@ -969,7 +984,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
     test('GET /fdas/:fdaId/das and GET /fdas/:fdaId/das/:daId return stored DA and DaNotFound for unknown DA', async () => {
       const listRes = await httpReq({
         method: 'GET',
-        url: `${baseUrl}/fdas/${fdaId}/das`,
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}/das`,
         headers: { 'Fiware-Service': service },
       });
 
@@ -987,7 +1002,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       const getRes = await httpReq({
         method: 'GET',
-        url: `${baseUrl}/fdas/${fdaId}/das/${daId}`,
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}/das/${daId}`,
         headers: { 'Fiware-Service': service },
       });
 
@@ -999,7 +1014,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       const missingRes = await httpReq({
         method: 'GET',
-        url: `${baseUrl}/fdas/${fdaId}/das/da_does_not_exist`,
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}/das/da_does_not_exist`,
         headers: { 'Fiware-Service': service },
       });
 
@@ -1015,7 +1030,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       const res = await httpReq({
         method: 'POST',
-        url: `${baseUrl}/fdas/${fdaId}/das`,
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}/das`,
         headers: { 'Fiware-Service': service },
         body: {
           id: 'da_bad',
@@ -1034,7 +1049,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       // Create DA
       const createRes = await httpReq({
         method: 'POST',
-        url: `${baseUrl}/fdas/${fdaId}/das`,
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}/das`,
         headers: { 'Fiware-Service': service },
         body: {
           id: daIdToUpdate,
@@ -1071,7 +1086,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       // Update DA (change filter logic)
       const updateRes = await httpReq({
         method: 'PUT',
-        url: `${baseUrl}/fdas/${fdaId}/das/${daIdToUpdate}`,
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}/das/${daIdToUpdate}`,
         headers: {
           'Content-Type': 'application/json',
           'Fiware-Service': service,
@@ -1123,7 +1138,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       // Update DA (bad range param)
       const rangeUpdateRes = await httpReq({
         method: 'PUT',
-        url: `${baseUrl}/fdas/${fdaId}/das/${daIdToUpdate}`,
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}/das/${daIdToUpdate}`,
         headers: {
           'Content-Type': 'application/json',
           'Fiware-Service': service,
@@ -1154,7 +1169,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       // Update DA (bad range enum)
       const enumUpdateRes = await httpReq({
         method: 'PUT',
-        url: `${baseUrl}/fdas/${fdaId}/das/${daIdToUpdate}`,
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}/das/${daIdToUpdate}`,
         headers: {
           'Content-Type': 'application/json',
           'Fiware-Service': service,
@@ -1211,7 +1226,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       const createDa = await httpReq({
         method: 'POST',
-        url: `${baseUrl}/fdas/${fdaId}/das`,
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}/das`,
         headers: { 'Fiware-Service': service },
         body: {
           id: daFreshId,
@@ -1292,7 +1307,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       const createFda = await httpReq({
         method: 'POST',
-        url: `${baseUrl}/fdas`,
+        url: `${baseUrl}/${visibility}/fdas`,
         headers: {
           'Fiware-Service': service,
           'Fiware-ServicePath': servicePath,
@@ -1314,7 +1329,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       const createDa = await httpReq({
         method: 'POST',
-        url: `${baseUrl}/fdas/${fdaFreshDefaultsId}/das`,
+        url: `${baseUrl}/${visibility}/fdas/${fdaFreshDefaultsId}/das`,
         headers: { 'Fiware-Service': service },
         body: {
           id: daFreshDefaultsId,
@@ -1377,7 +1392,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       const createFda = await httpReq({
         method: 'POST',
-        url: `${baseUrl}/fdas`,
+        url: `${baseUrl}/${visibility}/fdas`,
         headers: {
           'Fiware-Service': service,
           'Fiware-ServicePath': servicePath,
@@ -1399,7 +1414,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       const createDa = await httpReq({
         method: 'POST',
-        url: `${baseUrl}/fdas/${fdaBadDefaultId}/das`,
+        url: `${baseUrl}/${visibility}/fdas/${fdaBadDefaultId}/das`,
         headers: { 'Fiware-Service': service },
         body: {
           id: 'da_bad_default',
@@ -1432,7 +1447,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       const createFda = await httpReq({
         method: 'POST',
-        url: `${baseUrl}/fdas`,
+        url: `${baseUrl}/${visibility}/fdas`,
         headers: {
           'Fiware-Service': service,
           'Fiware-ServicePath': servicePath,
@@ -1457,7 +1472,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       const createDa = await httpReq({
         method: 'POST',
-        url: `${baseUrl}/fdas/${fdaFreshLimitId}/das`,
+        url: `${baseUrl}/${visibility}/fdas/${fdaFreshLimitId}/das`,
         headers: { 'Fiware-Service': service },
         body: {
           id: daFreshLimitId,
@@ -1526,7 +1541,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       const createFda = await httpReq({
         method: 'POST',
-        url: `${baseUrl}/fdas`,
+        url: `${baseUrl}/${visibility}/fdas`,
         headers: {
           'Fiware-Service': service,
           'Fiware-ServicePath': servicePath,
@@ -1551,7 +1566,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       // Create DA for fresh NDJSON streaming
       const createDa = await httpReq({
         method: 'POST',
-        url: `${baseUrl}/fdas/${fdaFreshStreamId}/das`,
+        url: `${baseUrl}/${visibility}/fdas/${fdaFreshStreamId}/das`,
         headers: { 'Fiware-Service': service },
         body: {
           id: daFreshStreamId,
@@ -1613,6 +1628,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
               path: url.pathname + url.search,
               headers: {
                 'Fiware-Service': service,
+                'Fiware-ServicePath': servicePath,
                 Accept: 'application/x-ndjson',
               },
             },
@@ -1686,7 +1702,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       const createDa = await httpReq({
         method: 'POST',
-        url: `${baseUrl}/fdas/${fdaId}/das`,
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}/das`,
         headers: { 'Fiware-Service': service },
         body: {
           id: daId2,
@@ -1731,7 +1747,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       // Create DA with params but no Type
       const noTypeDa = await httpReq({
         method: 'POST',
-        url: `${baseUrl}/fdas/${fdaId}/das`,
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}/das`,
         headers: { 'Fiware-Service': service },
         body: {
           id: `${daId2}_noType`,
@@ -1759,7 +1775,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       // Create DA with bad params Type (invalid value)
       const badTypeDa = await httpReq({
         method: 'POST',
-        url: `${baseUrl}/fdas/${fdaId}/das`,
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}/das`,
         headers: { 'Fiware-Service': service },
         body: {
           id: `${daId2}_badType`,
@@ -1788,7 +1804,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       // Create DA with incompatible default value for declared type
       const badDefaultDa = await httpReq({
         method: 'POST',
-        url: `${baseUrl}/fdas/${fdaId}/das`,
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}/das`,
         headers: { 'Fiware-Service': service },
         body: {
           id: `${daId2}_badDefault`,
@@ -1816,7 +1832,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       // Create DA with bad params Enum (non string or number values)
       const badEnumDa = await httpReq({
         method: 'POST',
-        url: `${baseUrl}/fdas/${fdaId}/das`,
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}/das`,
         headers: { 'Fiware-Service': service },
         body: {
           id: `${daId2}_badType`,
@@ -1845,7 +1861,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       // Create DA with bad params range
       const createBadDa = await httpReq({
         method: 'POST',
-        url: `${baseUrl}/fdas/${fdaId}/das`,
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}/das`,
         headers: { 'Fiware-Service': service },
         body: {
           id: `${daId2}_badRange`,
@@ -1874,7 +1890,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       // Create DA with bad params range (bad order)
       const createBadRangeDa = await httpReq({
         method: 'POST',
-        url: `${baseUrl}/fdas/${fdaId}/das`,
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}/das`,
         headers: { 'Fiware-Service': service },
         body: {
           id: `${daId2}_badRangeOrder`,
@@ -1903,7 +1919,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       // Create DA with bad params range (bad length)
       const badRangeLengthDa = await httpReq({
         method: 'POST',
-        url: `${baseUrl}/fdas/${fdaId}/das`,
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}/das`,
         headers: { 'Fiware-Service': service },
         body: {
           id: `${daId2}_badRangeLength`,
@@ -2218,7 +2234,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       expect(res.json.description).toContain('Invalid outputType');
     });
 
-    test('GET /:scope/... returns 400 for an invalid scope value', async () => {
+    test('GET /:visibility/... returns 400 for an invalid visibility value', async () => {
       const res = await httpReq({
         method: 'GET',
         url: `${baseUrl}/shared/fdas/${fdaId}/das/${daId}/data?minAge=25`,
@@ -2226,12 +2242,12 @@ export function runFDAIntegrationSuite({ mode, label }) {
       });
 
       expect(res.status).toBe(400);
-      expect(res.json.error).toBe('BadRequest');
+      expect(res.json.error).toBe('InvalidVisibility');
     });
 
-    test('GET /:scope/... returns 403 when scope does not match the FDA servicePath', async () => {
+    test('GET /:visibility/... returns 403 when visibility does not match the FDA visibility', async () => {
       // fdaId was created with Fiware-ServicePath: /public, so querying it
-      // through /private/... must be rejected with 403 ScopeMismatch.
+      // through /private/... must be rejected with 403 VisibilityMismatch.
       const res = await httpReq({
         method: 'GET',
         url: `${baseUrl}/private/fdas/${fdaId}/das/${daId}/data?minAge=25`,
@@ -2239,7 +2255,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       });
 
       expect(res.status).toBe(403);
-      expect(res.json.error).toBe('ScopeMismatch');
+      expect(res.json.error).toBe('VisibilityMismatch');
     });
 
     test('POST /plugin/cda/api/doQuery behaves as CDA compatibility layer', async () => {
@@ -2248,7 +2264,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       const createFda = await httpReq({
         method: 'POST',
-        url: `${baseUrl}/fdas`,
+        url: `${baseUrl}/${visibility}/fdas`,
         headers: {
           'Fiware-Service': service,
           'Fiware-ServicePath': servicePath,
@@ -2265,7 +2281,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       const createDa = await httpReq({
         method: 'POST',
-        url: `${baseUrl}/fdas/${cdaFdaId}/das`,
+        url: `${baseUrl}/${visibility}/fdas/${cdaFdaId}/das`,
         headers: { 'Fiware-Service': service },
         body: {
           id: cdaDaId,
@@ -2347,7 +2363,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       const createFda = await httpReq({
         method: 'POST',
-        url: `${baseUrl}/fdas`,
+        url: `${baseUrl}/private/fdas`,
         headers: { 'Fiware-Service': service },
         body: {
           id: privateFdaId,
@@ -2357,11 +2373,16 @@ export function runFDAIntegrationSuite({ mode, label }) {
       });
 
       expect(createFda.status).toBe(202);
-      await waitUntilFDACompleted({ baseUrl, service, fdaId: privateFdaId });
+      await waitUntilFDACompleted({
+        baseUrl,
+        service,
+        fdaId: privateFdaId,
+        visibility: 'private',
+      });
 
       const createDa = await httpReq({
         method: 'POST',
-        url: `${baseUrl}/fdas/${privateFdaId}/das`,
+        url: `${baseUrl}/private/fdas/${privateFdaId}/das`,
         headers: { 'Fiware-Service': service },
         body: {
           id: privateDaId,
@@ -2390,7 +2411,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       });
 
       expect(mismatchRes.status).toBe(403);
-      expect(mismatchRes.json.error).toBe('ScopeMismatch');
+      expect(mismatchRes.json.error).toBe('VisibilityMismatch');
     });
 
     test('POST /plugin/cda/api/doQuery supports outputType=csv', async () => {
@@ -2481,7 +2502,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
     test('GET /fdas/:fdaId returns expected FDA', async () => {
       const res = await httpReq({
         method: 'GET',
-        url: `${baseUrl}/fdas/${fdaId}`,
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
         headers: { 'Fiware-Service': service },
       });
 
@@ -2500,7 +2521,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
     test('PUT /fdas/:fdaID reuploads FDA', async () => {
       const res = await httpReq({
         method: 'PUT',
-        url: `${baseUrl}/fdas/${fdaId}`,
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
         headers: { 'Fiware-Service': service },
       });
 
@@ -2518,13 +2539,13 @@ export function runFDAIntegrationSuite({ mode, label }) {
     test('PUT /fdas/:fdaId triggers AlreadyFetching if concurrent', async () => {
       httpReq({
         method: 'PUT',
-        url: `${baseUrl}/fdas/${fdaId3}`,
+        url: `${baseUrl}/${visibility}/fdas/${fdaId3}`,
         headers: { 'Fiware-Service': service },
       });
 
       const put2 = await httpReq({
         method: 'PUT',
-        url: `${baseUrl}/fdas/${fdaId3}`,
+        url: `${baseUrl}/${visibility}/fdas/${fdaId3}`,
         headers: { 'Fiware-Service': service },
       });
 
@@ -2546,7 +2567,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       const res = await httpReq({
         method: 'PUT',
-        url: `${baseUrl}/fdas/${fdaId3}`,
+        url: `${baseUrl}/${visibility}/fdas/${fdaId3}`,
         headers: { 'Fiware-Service': service },
       });
 
@@ -2563,7 +2584,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
     test('DELETE /fdas/:fdaId removes given FDA', async () => {
       const deleteFDA = await httpReq({
         method: 'DELETE',
-        url: `${baseUrl}/fdas/${fdaId}`,
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
         headers: { 'Fiware-Service': service },
       });
 
@@ -2578,7 +2599,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       const getFDA = await httpReq({
         method: 'GET',
-        url: `${baseUrl}/fdas/${fdaId}`,
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
         headers: { 'Fiware-Service': service },
       });
 
@@ -2588,7 +2609,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
     test('MongoDB integration: POST /fdas + get /fdas/:fdaId', async () => {
       const postFDA = await httpReq({
         method: 'POST',
-        url: `${baseUrl}/fdas`,
+        url: `${baseUrl}/${visibility}/fdas`,
         headers: {
           'Fiware-Service': service,
           'Fiware-ServicePath': servicePath,
