@@ -688,7 +688,7 @@ This endpoint does not accept a request body.
 If a body is provided, the API will return:
 
 -   **400 BadRequest**
--   `PUT /fdas does not accept a request body`
+-   `PUT /:visibility/fdas/{fdaId} does not accept a request body`
 
 _**Response code**_
 
