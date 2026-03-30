@@ -52,7 +52,7 @@ its asynchronous processing state.
 
 ### Last Execution
 
-`lastFetch` records the timestamp of the last attempt in ISO format.
+`lastFetch` records the timestamp of the last completed attempt in ISO format.
 
 ### Flow
 
