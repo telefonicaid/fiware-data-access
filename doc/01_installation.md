@@ -343,7 +343,7 @@ EOF
 
 ### 4. List existing FDAs
 
-List all FDAs for the service `my-bucket`:
+List all FDAs for the service `my-bucket` and servicePath `public`:
 
 ```bash
 curl -i -X GET http://localhost:8080/public/fdas \
@@ -475,6 +475,7 @@ Or request streaming NDJSON by setting the `Accept` header:
 ```bash
 curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_all_alarms/data" \
   -H "Fiware-Service: my-bucket" \
+  -H "Fiware-ServicePath: /public" \
   -H 'Accept: application/x-ndjson'
 ```
 
