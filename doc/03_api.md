@@ -68,35 +68,38 @@ All error responses follow this structure:
 
 ### HTTP status codes
 
-| Code | Status                | Error Code             | Cause                                                                                                                                                                                     |
-| ---- | --------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 400  | Bad Request           | `BadRequest`           | Missing or invalid values in request body, headers, or query parameters. Request errors that do not depend on the FDA status. The `Fiware-Service` header is required for all operations. |
-| 400  | Bad Request           | `BadRequest`           | An unsupported `outputType` value was provided. Allowed values: `json`, `csv`, `xls`.                                                                                                     |
-| 400  | Bad Request           | `InvalidQueryParam`    | Some of the params in the request don't comply with the [params](#params) array restrictions.                                                                                             |
-| 400  | Bad Request           | `PartitionError`       | Some of the params related to the creation of the parquet partition don't comply with the [object storage configuration](#object-storage-configuration-objstgconf) requirements.          |
-| 400  | Bad Request           | `CleaningError`        | Trying to remove a non partitioned FDA or incorrect value in the [delete interval key](#refresh-policy-object).                                                                           |
-| 404  | Not Found             | `FDANotFound`          | The requested FDA was not found.                                                                                                                                                          |
-| 404  | Not Found             | `DaNotFound`           | The requested Data Access (DA) was not found.                                                                                                                                             |
-| 409  | Conflict              | `DuplicatedKey`        | The resource already exists in the database. Attempting to create a duplicate resource.                                                                                                   |
-| 429  | Too Many Requests     | `TooManyFreshQueries`  | The number of concurrent `fresh=true` queries exceeded `FDA_MAX_CONCURRENT_FRESH_QUERIES`.                                                                                                |
-| 409  | Conflict              | `FDAUnavailable`       | FDA `exampleId` is not queryable yet because the first fetch has not completed.                                                                                                           |
-| 500  | Internal Server Error | `S3ServerError`        | An error occurred in the S3 object storage component.                                                                                                                                     |
-| 500  | Internal Server Error | `DuckDBServerError`    | An error occurred in the DuckDB component.                                                                                                                                                |
-| 500  | Internal Server Error | `MongoDBServerError`   | An error occurred in the MongoDB component.                                                                                                                                               |
-| 503  | Service Unavailable   | `UploadError`          | Connection error with the PostgreSQL database component.                                                                                                                                  |
-| 503  | Service Unavailable   | `SyncQueriesDisabled`  | A request was sent with `fresh=true` but the API instance is running with `FDA_ROLE_SYNCQUERIES=false`.                                                                                   |
-| 503  | Service Unavailable   | `MongoConnectionError` | Connection error with the MongoDB component.                                                                                                                                              |
+| Code | Status                | Error Code             | Cause                                                                                                                                                                             |
+| ---- | --------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 400  | Bad Request           | `BadRequest`           | Missing or invalid values in request body, headers, or query parameters. `Fiware-Service`, `Fiware-ServicePath`, and `visibility` (path segment) are required for all operations. |
+| 400  | Bad Request           | `BadRequest`           | An unsupported `outputType` value was provided. Allowed values: `json`, `csv`, `xls`.                                                                                             |
+| 400  | Bad Request           | `InvalidVisibility`    | The `visibility` path segment is not one of the allowed values (`public`, `private`).                                                                                             |
+| 400  | Bad Request           | `InvalidServicePath`   | The `Fiware-ServicePath` header value is not a valid absolute path (e.g. `/` or `/servicePath/site`).                                                                             |
+| 400  | Bad Request           | `InvalidQueryParam`    | Some of the params in the request don't comply with the [params](#params) array restrictions.                                                                                     |
+| 403  | Forbidden             | `VisibilityMismatch`   | The FDA exists but was created under a different `visibility`. Cannot access a private FDA through a public route and vice-versa.                                                 |
+| 400  | Bad Request           | `PartitionError`       | Some of the params related to the creation of the parquet partition don't comply with the [object storage configuration](#object-storage-configuration-objstgconf) requirements.  |
+| 400  | Bad Request           | `CleaningError`        | Trying to remove a non partitioned FDA or incorrect value in the [delete interval key](#refresh-policy-object).                                                                   |
+| 404  | Not Found             | `FDANotFound`          | The requested FDA was not found.                                                                                                                                                  |
+| 404  | Not Found             | `DaNotFound`           | The requested Data Access (DA) was not found.                                                                                                                                     |
+| 409  | Conflict              | `DuplicatedKey`        | The resource already exists in the database. Attempting to create a duplicate resource.                                                                                           |
+| 429  | Too Many Requests     | `TooManyFreshQueries`  | The number of concurrent `fresh=true` queries exceeded `FDA_MAX_CONCURRENT_FRESH_QUERIES`.                                                                                        |
+| 409  | Conflict              | `FDAUnavailable`       | FDA `exampleId` is not queryable yet because the first fetch has not completed.                                                                                                   |
+| 500  | Internal Server Error | `S3ServerError`        | An error occurred in the S3 object storage component.                                                                                                                             |
+| 500  | Internal Server Error | `DuckDBServerError`    | An error occurred in the DuckDB component.                                                                                                                                        |
+| 500  | Internal Server Error | `MongoDBServerError`   | An error occurred in the MongoDB component.                                                                                                                                       |
+| 503  | Service Unavailable   | `UploadError`          | Connection error with the PostgreSQL database component.                                                                                                                          |
+| 503  | Service Unavailable   | `SyncQueriesDisabled`  | A request was sent with `fresh=true` but the API instance is running with `FDA_ROLE_SYNCQUERIES=false`.                                                                           |
+| 503  | Service Unavailable   | `MongoConnectionError` | Connection error with the MongoDB component.                                                                                                                                      |
 
 ### Common error scenarios
 
-#### Missing required header
+#### Missing required headers
 
-When the `Fiware-Service` header is not provided:
+When required headers (`Fiware-Service` or `Fiware-ServicePath`) are not provided:
 
 **Request:**
 
 ```bash
-curl -i http://localhost:8080/fdas
+curl -i http://localhost:8080/public/fdas
 ```
 
 **Response (400):**
@@ -116,7 +119,8 @@ When required query parameters are missing from the request:
 
 ```bash
 curl -i http://localhost:8080/public/fdas/fda1/das/da1/data \
-  -H "Fiware-Service: my-bucket"
+  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-ServicePath: /servicePath"
 ```
 
 **Response (400):**
@@ -135,9 +139,10 @@ When required fields are missing from the request payload:
 **Request:**
 
 ```bash
-curl -i -X POST http://localhost:8080/fdas \
+curl -i -X POST http://localhost:8080/public/fdas \
   -H "Content-Type: application/json" \
   -H "Fiware-Service: my-bucket" \
+  -H "Fiware-ServicePath: /servicePath" \
   -d '{
     "id": "fda01"
   }'
@@ -163,9 +168,10 @@ request body, the request will be rejected with:
 **Request:**
 
 ```bash
-curl -i -X PUT http://localhost:8080/fdas/fda_alarms/das/da_all_alarms \
+curl -i -X PUT http://localhost:8080/public/fdas/fda_alarms/das/da_all_alarms \
   -H "Content-Type: application/json" \
   -H "Fiware-Service: my-bucket" \
+  -H "Fiware-ServicePath: /servicePath" \
   -d '{
     "query": "SELECT * LIMIT 5",
     "description": "Invalid DA",
@@ -189,8 +195,9 @@ When requesting an FDA that doesn't exist:
 **Request:**
 
 ```bash
-curl -i http://localhost:8080/fdas/nonexistent \
-  -H "Fiware-Service: my-bucket"
+curl -i http://localhost:8080/public/fdas/nonexistent \
+  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-ServicePath: /servicePath"
 ```
 
 **Response (404):**
@@ -209,8 +216,9 @@ When requesting a Data Access that doesn't exist:
 **Request:**
 
 ```bash
-curl -i http://localhost:8080/fdas/fda_alarms/das/nonexistent-da \
-  -H "Fiware-Service: my-bucket"
+curl -i http://localhost:8080/public/fdas/fda_alarms/das/nonexistent-da \
+  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-ServicePath: /servicePath"
 ```
 
 **Response (404):**
@@ -229,9 +237,10 @@ When attempting to create a resource that already exists:
 **Request:**
 
 ```bash
-curl -i -X POST http://localhost:8080/fdas \
+curl -i -X POST http://localhost:8080/public/fdas \
   -H "Content-Type: application/json" \
   -H "Fiware-Service: my-bucket" \
+  -H "Fiware-ServicePath: /servicePath" \
   -d '{
     "id": "fda_alarms",
     "query": "SELECT * FROM public.alarms",
@@ -255,9 +264,10 @@ When a connection error occurs with a backend service:
 **Request:**
 
 ```bash
-curl -i -X POST http://localhost:8080/fdas \
+curl -i -X POST http://localhost:8080/public/fdas \
   -H "Content-Type: application/json" \
   -H "Fiware-Service: my-bucket" \
+  -H "Fiware-ServicePath: /servicePath" \
   -d '{
     "id": "fda_test",
     "query": "SELECT * FROM public.nonexistent_table",
@@ -303,9 +313,10 @@ When an unexpected error occurs during request processing:
 **Request:**
 
 ```bash
-curl -i -X POST http://localhost:8080/fdas \
+curl -i -X POST http://localhost:8080/public/fdas \
   -H "Content-Type: application/json" \
   -H "Fiware-Service: my-bucket" \
+  -H "Fiware-ServicePath: /servicePath" \
   -d '{
     "id": "fda_alarms",
     "query": "SELECT * FROM public.alarms"
@@ -382,6 +393,8 @@ A FDA is represented by a JSON object with the following fields:
 | `id`                                                     |          | string | FDA unique identifier                                                                                                             |
 | `description`                                            | ✓        | string | A free text used by the client to describe the FDA                                                                                |
 | `query`                                                  |          | string | Base `postgreSQL` query to create the file in the bucket-based storage system                                                     |
+| `visibility`                                             |          | string | Access visibility of the FDA. Allowed values: `public`, `private`. Derived from the route path segment.                           |
+| `servicePath`                                            |          | string | NGSI hierarchical service path. Exact-matched on every access. Must be a valid absolute path (e.g. `/servicePath`).               |
 | `refreshPolicy`                                          | ✓        | object | Optional policy for automatic refresh.                                                                                            |
 | [`objStgConf`](#object-storage-configuration-objstgconf) | ✓        | object | Various options to configure the FDA uploaded in the object storage app.                                                          |
 | `timeColumn`                                             | ✓        | string | Required with `refreshPolicy` of type `window` and `partition`. Column in the table indicating when the data was received (date). |
@@ -437,9 +450,15 @@ These fields are **provided in responses** but **cannot be included or modified*
 
 ### FDAs operations
 
-#### List FDAs `GET /fdas`
+#### List FDAs `GET /:visibility/fdas`
 
 Returns a list of all the FDAs present in the system.
+
+_**Request path parameters**_
+
+| Parameter    | Optional | Description                                                | Example  |
+| ------------ | -------- | ---------------------------------------------------------- | -------- |
+| `visibility` |          | FDA access visibility. Allowed values: `public`, `private` | `public` |
 
 _**Request query parameters**_
 
@@ -447,9 +466,10 @@ None so far
 
 _**Request headers**_
 
-| Header           | Optional | Description                                                          | Example     |
-| ---------------- | -------- | -------------------------------------------------------------------- | ----------- |
-| `Fiware-Service` |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket` |
+| Header               | Optional | Description                                                          | Example        |
+| -------------------- | -------- | -------------------------------------------------------------------- | -------------- |
+| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket`    |
+| `Fiware-ServicePath` |          | NGSI hierarchical service path. Filters results to exact match.      | `/servicePath` |
 
 _**Request payload**_
 
@@ -473,8 +493,9 @@ The payload is an array containing one object per FDA. Each FDA follows the JSON
 _**Example Request:**_
 
 ```bash
-curl -i -X GET http://localhost:8080/fdas \
-  -H "Fiware-Service: my-bucket"
+curl -i -X GET http://localhost:8080/public/fdas \
+  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-ServicePath: /servicePath"
 ```
 
 _**Example Response:**_
@@ -487,19 +508,26 @@ _**Example Response:**_
         "query": "SELECT * FROM public.alarms",
         "das": {},
         "service": "my-bucket",
+        "visibility": "public",
+        "servicePath": "/servicePath",
         "status": "completed",
         "progress": 100,
         "lastFetch": "2026-02-19T07:38:21.263Z",
         "refreshPolicy": { "type": "interval", "value": "1 hour" },
-        "servicePath": "/public",
         "description": "FDA de alarmas del sistema"
     }
 ]
 ```
 
-#### Create FDA `POST /fdas`
+#### Create FDA `POST /:visibility/fdas`
 
 Creates a new FDA
+
+_**Request path parameters**_
+
+| Parameter    | Optional | Description                                                | Example  |
+| ------------ | -------- | ---------------------------------------------------------- | -------- |
+| `visibility` |          | FDA access visibility. Allowed values: `public`, `private` | `public` |
 
 _**Request query parameters**_
 
@@ -507,11 +535,11 @@ None so far
 
 _**Request headers**_
 
-| Header               | Optional | Description                                                                                                                                                    | Example            |
-| -------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
-| `Content-Type`       |          | MIME type. Required to be `application/json`.                                                                                                                  | `application/json` |
-| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform                                                                                           | `my-bucket`        |
-| `Fiware-ServicePath` | ✓        | Hierarchical service path to allow a `FDA` to be queried with authentication or anonimaly. Possible values `/public` and `/private`. Default value `/private`. | `/public`          |
+| Header               | Optional | Description                                                          | Example            |
+| -------------------- | -------- | -------------------------------------------------------------------- | ------------------ |
+| `Content-Type`       |          | MIME type. Required to be `application/json`.                        | `application/json` |
+| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket`        |
+| `Fiware-ServicePath` |          | NGSI hierarchical service path. Stored and exact-matched on access.  | `/servicePath`     |
 
 _**Request payload**_
 
@@ -521,10 +549,10 @@ The payload is a JSON object containing a FDA that follows the JSON FDA represen
 _**Example Request:**_
 
 ```bash
-curl -i -X POST http://localhost:8080/fdas \
+curl -i -X POST http://localhost:8080/public/fdas \
   -H "Content-Type: application/json" \
   -H "Fiware-Service: my-bucket" \
-  -H "Fiware-ServicePath: /public" \
+  -H "Fiware-ServicePath: /servicePath" \
   -d '{
     "id": "fda_alarms",
     "query": "SELECT * FROM public.alarms",
@@ -563,9 +591,16 @@ Content-Length: 7
 Created
 ```
 
-#### Get FDA `GET /fdas/{fdaId}`
+#### Get FDA `GET /:visibility/fdas/{fdaId}`
 
 Returns the FDA requested.
+
+_**Request path parameters**_
+
+| Parameter    | Optional | Description                                                | Example  |
+| ------------ | -------- | ---------------------------------------------------------- | -------- |
+| `visibility` |          | FDA access visibility. Allowed values: `public`, `private` | `public` |
+| `fdaId`      |          | Id of the FDA                                              | `fda1`   |
 
 _**Request query parameters**_
 
@@ -573,9 +608,10 @@ None so far
 
 _**Request headers**_
 
-| Header           | Optional | Description                                                          | Example     |
-| ---------------- | -------- | -------------------------------------------------------------------- | ----------- |
-| `Fiware-Service` |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket` |
+| Header               | Optional | Description                                                          | Example        |
+| -------------------- | -------- | -------------------------------------------------------------------- | -------------- |
+| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket`    |
+| `Fiware-ServicePath` |          | NGSI hierarchical service path. Must match the FDA's stored path.    | `/servicePath` |
 
 _**Request payload**_
 
@@ -598,8 +634,9 @@ None
 _**Example Request:**_
 
 ```bash
-curl -i -X GET http://localhost:8080/fdas/fda_alarms \
-  -H "Fiware-Service: my-bucket"
+curl -i -X GET http://localhost:8080/public/fdas/fda_alarms \
+  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-ServicePath: /servicePath"
 ```
 
 _**Example Response:**_
@@ -611,19 +648,27 @@ _**Example Response:**_
     "query": "SELECT * FROM public.alarms",
     "das": {},
     "service": "my-bucket",
+    "visibility": "public",
+    "servicePath": "/servicePath",
     "status":"completed",
-    "progress":100,
-    "lastFetch":"2026-02-19T07:38:21.263Z",
-    "refreshPolicy": { "type": "interval", "value": "1 hour" },
-    "servicePath": "/public",
+    "progress": 100,
+    "lastFetch": "2026-02-19T07:38:21.263Z,
+    "refreshPolicy": { "type": "interval", "value": "1 hour"},
     "description": "FDA de alarmas del sistema"
 }
 ```
 
-#### Regenerate FDA `PUT /fdas/{fdaId}`
+#### Regenerate FDA `PUT /:visibility/fdas/{fdaId}`
 
 Regenerate the FDA, fetching again the source table from DB. If the FDA is currently being processed, the operation
 returns `409 Conflict`.
+
+_**Request path parameters**_
+
+| Parameter    | Optional | Description                                                | Example  |
+| ------------ | -------- | ---------------------------------------------------------- | -------- |
+| `visibility` |          | FDA access visibility. Allowed values: `public`, `private` | `public` |
+| `fdaId`      |          | Id of the FDA                                              | `fda1`   |
 
 _**Request query parameters**_
 
@@ -631,9 +676,10 @@ None so far
 
 _**Request headers**_
 
-| Header           | Optional | Description                                                          | Example     |
-| ---------------- | -------- | -------------------------------------------------------------------- | ----------- |
-| `Fiware-Service` |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket` |
+| Header               | Optional | Description                                                          | Example        |
+| -------------------- | -------- | -------------------------------------------------------------------- | -------------- |
+| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket`    |
+| `Fiware-ServicePath` |          | NGSI hierarchical service path. Must match the FDA's stored path.    | `/servicePath` |
 
 _**Request payload**_
 
@@ -663,9 +709,16 @@ _**Response payload**_
 }
 ```
 
-#### Delete FDA `DELETE /fdas/{fdaId}`
+#### Delete FDA `DELETE /:visibility/fdas/{fdaId}`
 
 Delete FDA. Note that deleting a FDA deletes in cascade all the DAs belonging to it.
+
+_**Request path parameters**_
+
+| Parameter    | Optional | Description                                                | Example  |
+| ------------ | -------- | ---------------------------------------------------------- | -------- |
+| `visibility` |          | FDA access visibility. Allowed values: `public`, `private` | `public` |
+| `fdaId`      |          | Id of the FDA                                              | `fda1`   |
 
 _**Request query parameters**_
 
@@ -673,9 +726,10 @@ None so far
 
 _**Request headers**_
 
-| Header           | Optional | Description                                                          | Example     |
-| ---------------- | -------- | -------------------------------------------------------------------- | ----------- |
-| `Fiware-Service` |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket` |
+| Header               | Optional | Description                                                          | Example        |
+| -------------------- | -------- | -------------------------------------------------------------------- | -------------- |
+| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket`    |
+| `Fiware-ServicePath` |          | NGSI hierarchical service path. Must match the FDA's stored path.    | `/servicePath` |
 
 _**Request payload**_
 
@@ -751,9 +805,16 @@ Example array:
 
 ### DAs operations
 
-#### List DAs `GET /fdas/{fdaId}/das`
+#### List DAs `GET /:visibility/fdas/{fdaId}/das`
 
 Returns a list of all the DAs associated to a given FDA.
+
+_**Request path parameters**_
+
+| Parameter    | Optional | Description                                                | Example  |
+| ------------ | -------- | ---------------------------------------------------------- | -------- |
+| `visibility` |          | FDA access visibility. Allowed values: `public`, `private` | `public` |
+| `fdaId`      |          | Id of the FDA                                              | `fda1`   |
 
 _**Request query parameters**_
 
@@ -761,9 +822,10 @@ None so far
 
 _**Request headers**_
 
-| Header           | Optional | Description                                                          | Example     |
-| ---------------- | -------- | -------------------------------------------------------------------- | ----------- |
-| `Fiware-Service` |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket` |
+| Header               | Optional | Description                                                          | Example        |
+| -------------------- | -------- | -------------------------------------------------------------------- | -------------- |
+| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket`    |
+| `Fiware-ServicePath` |          | NGSI hierarchical service path. Must match the FDA's stored path.    | `/servicePath` |
 
 _**Request payload**_
 
@@ -787,8 +849,9 @@ The payload is an array containing one object per DA. Each DA follows the JSON D
 _**Example Request:**_
 
 ```bash
-curl -i -X GET http://localhost:8080/fdas/fda_alarms/das \
-  -H "Fiware-Service: my-bucket"
+curl -i -X GET http://localhost:8080/public/fdas/fda_alarms/das \
+  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-ServicePath: /servicePath"
 ```
 
 _**Example Response:**_
@@ -808,9 +871,16 @@ _**Example Response:**_
 ]
 ```
 
-#### Create DA `POST /fdas/{fdaId}/das`
+#### Create DA `POST /:visibility/fdas/{fdaId}/das`
 
-Create a new DA on a given FDA
+Create a new DA on a given FDA.
+
+_**Request path parameters**_
+
+| Parameter    | Optional | Description                                                | Example  |
+| ------------ | -------- | ---------------------------------------------------------- | -------- |
+| `visibility` |          | FDA access visibility. Allowed values: `public`, `private` | `public` |
+| `fdaId`      |          | Id of the FDA                                              | `fda1`   |
 
 _**Request query parameters**_
 
@@ -818,10 +888,11 @@ None so far
 
 _**Request headers**_
 
-| Header           | Optional | Description                                                          | Example            |
-| ---------------- | -------- | -------------------------------------------------------------------- | ------------------ |
-| `Content-Type`   |          | MIME type. Required to be `application/json`.                        | `application/json` |
-| `Fiware-Service` |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket`        |
+| Header               | Optional | Description                                                          | Example            |
+| -------------------- | -------- | -------------------------------------------------------------------- | ------------------ |
+| `Content-Type`       |          | MIME type. Required to be `application/json`.                        | `application/json` |
+| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket`        |
+| `Fiware-ServicePath` |          | NGSI hierarchical service path. Must match the FDA's stored path.    | `/servicePath`     |
 
 _**Request payload**_
 
@@ -831,9 +902,10 @@ The payload is a JSON object containing a DA that follows the JSON DA representa
 _**Example Request:**_
 
 ```bash
-curl -i -X POST http://localhost:8080/fdas/fda_alarms/das \
+curl -i -X POST http://localhost:8080/public/fdas/fda_alarms/das \
   -H "Content-Type: application/json" \
   -H "Fiware-Service: my-bucket" \
+  -H "Fiware-ServicePath: /servicePath" \
   -d '{
     "id": "da_all_alarms",
     "description": "Todas las alarmas",
@@ -860,16 +932,24 @@ _**Response code**_
 
 _**Response headers**_
 
--   Return the header `Location` with the value of the path used to create the DA (I.E : `/fdas/fda01/das/da01`) when
+-   Return the header `Location` with the value of the path used to create the DA (I.E : `/public/fda01/das/da01`) when
     the creation succeeds (Response code 201).
 
 _**Response payload**_
 
 None
 
-#### Get DA `GET /fdas/{fdaId}/das/{daId}`
+#### Get DA `GET /:visibility/fdas/{fdaId}/das/{daId}`
 
-Return the DA requested
+Return the DA requested.
+
+_**Request path parameters**_
+
+| Parameter    | Optional | Description                                                | Example  |
+| ------------ | -------- | ---------------------------------------------------------- | -------- |
+| `visibility` |          | FDA access visibility. Allowed values: `public`, `private` | `public` |
+| `fdaId`      |          | Id of the FDA                                              | `fda1`   |
+| `daId`       |          | Id of the DA                                               | `da1`    |
 
 _**Request query parameters**_
 
@@ -877,9 +957,10 @@ None so far
 
 _**Request headers**_
 
-| Header           | Optional | Description                                                          | Example     |
-| ---------------- | -------- | -------------------------------------------------------------------- | ----------- |
-| `Fiware-Service` |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket` |
+| Header               | Optional | Description                                                          | Example        |
+| -------------------- | -------- | -------------------------------------------------------------------- | -------------- |
+| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket`    |
+| `Fiware-ServicePath` |          | NGSI hierarchical service path. Must match the FDA's stored path.    | `/servicePath` |
 
 _**Request payload**_
 
@@ -903,8 +984,9 @@ The payload is a JSON object containing a DA that follows the JSON DA representa
 _**Example Request:**_
 
 ```bash
-curl -i -X GET http://localhost:8080/fdas/fda_alarms/das/da_all_alarms \
-  -H "Fiware-Service: my-bucket"
+curl -i -X GET http://localhost:8080/public/fdas/fda_alarms/das/da_all_alarms \
+  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-ServicePath: /servicePath"
 ```
 
 _**Example Response:**_
@@ -922,9 +1004,17 @@ _**Example Response:**_
 }
 ```
 
-#### Update DA `PUT /fdas/{fdaId}/das/{daId}`
+#### Update DA `PUT /:visibility/fdas/{fdaId}/das/{daId}`
 
 Update an existing DA.
+
+_**Request path parameters**_
+
+| Parameter    | Optional | Description                                                | Example  |
+| ------------ | -------- | ---------------------------------------------------------- | -------- |
+| `visibility` |          | FDA access visibility. Allowed values: `public`, `private` | `public` |
+| `fdaId`      |          | Id of the FDA                                              | `fda1`   |
+| `daId`       |          | Id of the DA                                               | `da1`    |
 
 _**Request query parameters**_
 
@@ -932,10 +1022,11 @@ None so far
 
 _**Request headers**_
 
-| Header           | Optional | Description                                                          | Example            |
-| ---------------- | -------- | -------------------------------------------------------------------- | ------------------ |
-| `Content-Type`   |          | MIME type. Required to be `application/json`.                        | `application/json` |
-| `Fiware-Service` |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket`        |
+| Header               | Optional | Description                                                          | Example            |
+| -------------------- | -------- | -------------------------------------------------------------------- | ------------------ |
+| `Content-Type`       |          | MIME type. Required to be `application/json`.                        | `application/json` |
+| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket`        |
+| `Fiware-ServicePath` |          | NGSI hierarchical service path. Must match the FDA's stored path.    | `/servicePath`     |
 
 _**Request payload**_
 
@@ -945,9 +1036,10 @@ The payload is a JSON object containing a DA that follows the JSON DA representa
 _**Example Request:**_
 
 ```bash
-curl -i -X PUT http://localhost:8080/fdas/fda_alarms/das/da_all_alarms \
+curl -i -X PUT http://localhost:8080/public/fdas/fda_alarms/das/da_all_alarms \
   -H "Content-Type: application/json" \
   -H "Fiware-Service: my-bucket" \
+  -H "Fiware-ServicePath: /servicePath" \
   -d '{
     "description": "Todas las alarmas (actualizado)",
     "query": "SELECT * LIMIT 20"
@@ -968,9 +1060,17 @@ _**Response payload**_
 
 None
 
-#### Delete DA `DELETE /fdas/{fdaId}/das/{daId}`
+#### Delete DA `DELETE /:visibility/fdas/{fdaId}/das/{daId}`
 
-Delete DA
+Delete DA.
+
+_**Request path parameters**_
+
+| Parameter    | Optional | Description                                                | Example  |
+| ------------ | -------- | ---------------------------------------------------------- | -------- |
+| `visibility` |          | FDA access visibility. Allowed values: `public`, `private` | `public` |
+| `fdaId`      |          | Id of the FDA                                              | `fda1`   |
+| `daId`       |          | Id of the DA                                               | `da1`    |
 
 _**Request query parameters**_
 
@@ -978,9 +1078,10 @@ None so far
 
 _**Request headers**_
 
-| Header           | Optional | Description                                                          | Example     |
-| ---------------- | -------- | -------------------------------------------------------------------- | ----------- |
-| `Fiware-Service` |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket` |
+| Header               | Optional | Description                                                          | Example        |
+| -------------------- | -------- | -------------------------------------------------------------------- | -------------- |
+| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket`    |
+| `Fiware-ServicePath` |          | NGSI hierarchical service path. Must match the FDA's stored path.    | `/servicePath` |
 
 _**Request payload**_
 
@@ -1002,18 +1103,18 @@ None
 
 ### Data operations
 
-#### Data query `GET /{scope}/fdas/{fdaId}/das/{daId}/data`
+#### Data query `GET /:visibility/fdas/{fdaId}/das/{daId}/data`
 
-Runs a stored parameterized query for the selected DA. The request path declares the access segment and the query string
-carries DA parameters.
+Runs a stored parameterized query for the selected DA. The request path declares the access visibility and the query
+string carries DA parameters.
 
 _**Request path parameters**_
 
-| Parameter | Optional | Description                                                          | Example  |
-| --------- | -------- | -------------------------------------------------------------------- | -------- |
-| `scope`   |          | Data segment. Allowed values: `public`, `private`                    | `public` |
-| `fdaId`   |          | Id of the `fda`. Must be unique in combination with `Fiware-Service` | `fda1`   |
-| `daId`    |          | Id of the `da`. Must be unique inside each `fda`                     | `da1`    |
+| Parameter    | Optional | Description                                                          | Example  |
+| ------------ | -------- | -------------------------------------------------------------------- | -------- |
+| `visibility` |          | FDA access visibility. Allowed values: `public`, `private`           | `public` |
+| `fdaId`      |          | Id of the `fda`. Must be unique in combination with `Fiware-Service` | `fda1`   |
+| `daId`       |          | Id of the `da`. Must be unique inside each `fda`                     | `da1`    |
 
 _**Request query parameters**_
 
@@ -1026,9 +1127,10 @@ Additionally, the DA-specific parameters must be included in the query string to
 
 _**Request headers**_
 
-| Header           | Optional | Description                                                          | Example     |
-| ---------------- | -------- | -------------------------------------------------------------------- | ----------- |
-| `Fiware-Service` |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket` |
+| Header               | Optional | Description                                                          | Example        |
+| -------------------- | -------- | -------------------------------------------------------------------- | -------------- |
+| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket`    |
+| `Fiware-ServicePath` |          | NGSI hierarchical service path. Must match the FDA's stored path.    | `/servicePath` |
 
 _**Request payload**_
 
@@ -1080,7 +1182,8 @@ _**Example Request (without DA parameters):**_
 
 ```bash
 curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_all_alarms/data" \
-  -H "Fiware-Service: my-bucket"
+  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-ServicePath: /servicePath"
 ```
 
 _**Example Response:**_
@@ -1120,7 +1223,8 @@ _**Example Request (with parameters):**_
 
 ```bash
 curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_filter_by_name/data?pattern=%25nosignal%25" \
-  -H "Fiware-Service: my-bucket"
+  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-ServicePath: /servicePath"
 ```
 
 _**Example Response:**_
@@ -1140,6 +1244,7 @@ _**Example Request (CSV output):**_
 ```bash
 curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_all_alarms/data?outputType=csv" \
   -H "Fiware-Service: my-bucket" \
+  -H "Fiware-ServicePath: /servicePath" \
   --output results.csv
 ```
 
@@ -1148,6 +1253,7 @@ _**Example Request (Excel output):**_
 ```bash
 curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_all_alarms/data?outputType=xls" \
   -H "Fiware-Service: my-bucket" \
+  -H "Fiware-ServicePath: /servicePath" \
   --output results.xlsx
 ```
 
@@ -1156,6 +1262,7 @@ _**Example Request (NDJSON streaming):**_
 ```bash
 curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_all_alarms/data" \
   -H "Fiware-Service: my-bucket" \
+  -H "Fiware-ServicePath: /servicePath" \
   -H "Accept: application/x-ndjson"
 ```
 
@@ -1163,7 +1270,8 @@ _**Example Request (fresh query on PostgreSQL):**_
 
 ```bash
 curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_filter_by_name/data?pattern=%25nosignal%25&fresh=true" \
-  -H "Fiware-Service: my-bucket"
+  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-ServicePath: /servicePath"
 ```
 
 #### Query `POST /plugin/cda/api/doQuery` (Pentaho CDA legacy support)
