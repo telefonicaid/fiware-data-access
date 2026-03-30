@@ -65,9 +65,8 @@ import { config } from './fdaConfig.js';
 import { FDAError } from './fdaError.js';
 
 const FRESH_CURSOR_BATCH_SIZE = 250;
-export const VALID_SCOPES = ['public', 'private'];
-const VALID_SCOPES_SET = new Set(VALID_SCOPES);
-export const DEFAULT_SERVICE_PATH = '/private';
+export const VALID_VISIBILITIES = ['public', 'private'];
+const VALID_VISIBILITIES_SET = new Set(VALID_VISIBILITIES);
 
 export function getFDAs(service) {
   return retrieveFDAs(service);
@@ -77,14 +76,20 @@ export async function getFDA(service, fdaId) {
   return await getStoredFDA(service, fdaId);
 }
 
-export async function executeQuery({ service, scope, params, fresh = false }) {
+export async function executeQuery({
+  service,
+  visibility,
+  servicePath,
+  params,
+  fresh = false,
+}) {
   if (fresh) {
-    return executeFreshQuery({ service, scope, params });
+    return executeFreshQuery({ service, visibility, servicePath, params });
   }
 
   const { fdaId, daId, ...rest } = params;
 
-  await ensureFDAReadyForQuery(service, fdaId, scope);
+  await ensureFDAReadyForQuery(service, fdaId, visibility, servicePath);
 
   const conn = await getDBConnection();
 
@@ -97,19 +102,27 @@ export async function executeQuery({ service, scope, params, fresh = false }) {
 
 export async function executeQueryStream({
   service,
-  scope,
+  visibility,
+  servicePath,
   params,
   req,
   res,
   fresh = false,
 }) {
   if (fresh) {
-    return executeFreshQueryStream({ service, scope, params, req, res });
+    return executeFreshQueryStream({
+      service,
+      visibility,
+      servicePath,
+      params,
+      req,
+      res,
+    });
   }
 
   const { fdaId, daId, ...rest } = params;
 
-  await ensureFDAReadyForQuery(service, fdaId, scope);
+  await ensureFDAReadyForQuery(service, fdaId, visibility, servicePath);
 
   const conn = await getDBConnection();
 
@@ -191,7 +204,7 @@ export async function executeQueryStream({
   return res.end();
 }
 
-async function executeFreshQuery({ service, scope, params }) {
+async function executeFreshQuery({ service, visibility, servicePath, params }) {
   assertFreshQueriesEnabled(config.roles.syncQueries);
 
   const releaseFreshSlot = acquireFreshQuerySlot(
@@ -200,7 +213,8 @@ async function executeFreshQuery({ service, scope, params }) {
   try {
     const { text, values } = await buildFreshQueryStatement(
       service,
-      scope,
+      visibility,
+      servicePath,
       params,
     );
 
@@ -217,7 +231,14 @@ async function executeFreshQuery({ service, scope, params }) {
   }
 }
 
-async function executeFreshQueryStream({ service, scope, params, req, res }) {
+async function executeFreshQueryStream({
+  service,
+  visibility,
+  servicePath,
+  params,
+  req,
+  res,
+}) {
   assertFreshQueriesEnabled(config.roles.syncQueries);
 
   const releaseFreshSlot = acquireFreshQuerySlot(
@@ -228,7 +249,8 @@ async function executeFreshQueryStream({ service, scope, params, req, res }) {
   try {
     const { text, values } = await buildFreshQueryStatement(
       service,
-      scope,
+      visibility,
+      servicePath,
       params,
     );
 
@@ -274,7 +296,12 @@ async function executeFreshQueryStream({ service, scope, params, req, res }) {
   return res.end();
 }
 
-async function buildFreshQueryStatement(service, scope, params) {
+async function buildFreshQueryStatement(
+  service,
+  visibility,
+  servicePath,
+  params,
+) {
   const { fdaId, daId, ...rest } = params;
 
   const da = await retrieveDA(service, fdaId, daId);
@@ -286,7 +313,7 @@ async function buildFreshQueryStatement(service, scope, params) {
     );
   }
 
-  const fda = await getScopedFDA(service, fdaId, scope);
+  const fda = await getScopedFDA(service, fdaId, visibility, servicePath);
 
   const validatedParams = resolveDAParams(rest || {}, da.params);
   const freshBaseQuery = buildFreshDAQuery(fda.query, da.query);
@@ -412,18 +439,21 @@ export async function fetchFDA(
   fdaId,
   query,
   service,
+  visibility,
   servicePath,
   description,
   refreshPolicy,
   timeColumn,
   objStgConf,
 ) {
+  const normalizedVisibility = normalizeVisibility(visibility);
   const normalizedServicePath = normalizeServicePath(servicePath);
 
   await createFDAMongo(
     fdaId,
     query,
     service,
+    normalizedVisibility,
     normalizedServicePath,
     description,
     refreshPolicy,
@@ -814,8 +844,8 @@ async function uploadTableToObjStg(
   }
 }
 
-async function ensureFDAReadyForQuery(service, fdaId, scope) {
-  const fda = await getScopedFDA(service, fdaId, scope);
+async function ensureFDAReadyForQuery(service, fdaId, visibility, servicePath) {
+  const fda = await getScopedFDA(service, fdaId, visibility, servicePath);
 
   // Queries are blocked only before the first successful fetch.
   if (!fda.lastFetch) {
@@ -841,38 +871,67 @@ async function getStoredFDA(service, fdaId) {
   return fda;
 }
 
-async function getScopedFDA(service, fdaId, scope) {
-  const normalizedScope = normalizeScope(scope);
+export async function assertFDAAccess({
+  service,
+  fdaId,
+  visibility,
+  servicePath,
+}) {
+  await getScopedFDA(service, fdaId, visibility, servicePath);
+}
+
+async function getScopedFDA(service, fdaId, visibility, servicePath) {
+  const normalizedVisibility = normalizeVisibility(visibility);
+  const normalizedServicePath = normalizeServicePath(servicePath);
   const fda = await getStoredFDA(service, fdaId);
 
-  if (normalizeServicePath(fda.servicePath) !== `/${normalizedScope}`) {
+  if (normalizeVisibility(fda.visibility) !== normalizedVisibility) {
     throw new FDAError(
       403,
       'ScopeMismatch',
-      `FDA ${fdaId} does not belong to /${normalizedScope}`,
+      `FDA ${fdaId} does not belong to ${normalizedVisibility}`,
+    );
+  }
+
+  if (normalizeServicePath(fda.servicePath) !== normalizedServicePath) {
+    throw new FDAError(
+      403,
+      'ServicePathMismatch',
+      `FDA ${fdaId} does not belong to servicePath ${normalizedServicePath}`,
     );
   }
 
   return fda;
 }
 
-function normalizeScope(scope) {
-  if (!VALID_SCOPES_SET.has(scope)) {
-    throw new FDAError(400, 'InvalidScope', 'Scope must be public or private');
+function normalizeVisibility(visibility) {
+  if (!VALID_VISIBILITIES_SET.has(visibility)) {
+    throw new FDAError(
+      400,
+      'InvalidScope',
+      'Visibility must be public or private',
+    );
   }
 
-  return scope;
+  return visibility;
 }
 
 function normalizeServicePath(servicePath) {
-  const normalizedServicePath = servicePath || DEFAULT_SERVICE_PATH;
-  const normalizedScope = normalizedServicePath.replace(/^\//, '');
-
-  if (!VALID_SCOPES_SET.has(normalizedScope)) {
+  if (!servicePath || typeof servicePath !== 'string') {
     throw new FDAError(
       400,
       'InvalidServicePath',
-      'Fiware-ServicePath must be /public or /private',
+      'Fiware-ServicePath header is required',
+    );
+  }
+
+  const normalizedServicePath = servicePath.trim();
+
+  if (!/^\/(?:[^/\s]+(?:\/[^/\s]+)*)?$/.test(normalizedServicePath)) {
+    throw new FDAError(
+      400,
+      'InvalidServicePath',
+      'Fiware-ServicePath must be a valid absolute path (e.g. / or /servicepath)',
     );
   }
 
