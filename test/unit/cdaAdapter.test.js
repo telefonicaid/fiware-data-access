@@ -82,7 +82,7 @@ describe('cda adapter', () => {
     expect(executeQueryMock).toHaveBeenCalledWith(
       expect.objectContaining({
         service: 'svc',
-        scope: 'public',
+        visibility: 'public',
         params: expect.objectContaining({
           fdaId: 'daA',
           daId: 'daA',
@@ -111,7 +111,7 @@ describe('cda adapter', () => {
     expect(executeQueryMock).toHaveBeenCalledWith(
       expect.objectContaining({
         service: 'svc',
-        scope: 'public',
+        visibility: 'public',
       }),
     );
   });
