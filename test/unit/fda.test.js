@@ -139,6 +139,8 @@ const {
   deleteFDA,
   getDA,
   putDA,
+  getFDAs,
+  cleanPartition,
 } = await import('../../src/lib/fda.js');
 
 function createReqRes() {
@@ -945,6 +947,29 @@ describe('fetchFDA with refresh policies', () => {
     });
   });
 
+  test('fetchFDA with window policy throws when deleteInterval provided without windowSize', async () => {
+    await expect(
+      fetchFDA(
+        'fda1',
+        'SELECT 1',
+        'svc',
+        'public',
+        '/servicepath',
+        'desc',
+        {
+          type: 'window',
+          value: 'daily',
+          deleteInterval: '1 day',
+        },
+        'timeinstant',
+      ),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidParam',
+      message: 'Window size is required with a delete interval.',
+    });
+  });
+
   test('fetchFDA throws when servicePath is missing', async () => {
     await expect(
       fetchFDA('fda1', 'SELECT 1', 'svc', 'public', undefined, 'desc', {
@@ -984,6 +1009,86 @@ describe('deleteFDA', () => {
     expect(agenda.cancel).toHaveBeenNthCalledWith(2, {
       name: 'clean-partition',
       'data.fdaId': 'fda1',
+    });
+  });
+});
+
+describe('getFDAs', () => {
+  const allFdas = [
+    { fdaId: 'fda1', visibility: 'public', servicePath: '/public' },
+    { fdaId: 'fda2', visibility: 'private', servicePath: '/private' },
+  ];
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mongoMocks.retrieveFDAs.mockResolvedValue(allFdas);
+  });
+
+  test('returns all FDAs unfiltered when visibility and servicePath are both undefined', async () => {
+    const result = await getFDAs('svc');
+
+    expect(mongoMocks.retrieveFDAs).toHaveBeenCalledWith('svc');
+    expect(result).toBe(allFdas);
+  });
+
+  test('filters FDAs by visibility and servicePath when provided', async () => {
+    const result = await getFDAs('svc', 'public', '/public');
+
+    expect(result).toEqual([
+      { fdaId: 'fda1', visibility: 'public', servicePath: '/public' },
+    ]);
+  });
+});
+
+describe('cleanPartition', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    awsMocks.getS3Client.mockReturnValue({});
+    awsMocks.listObjects.mockResolvedValue([
+      'svc/fdaA/2020-01-01.parquet',
+      'svc/fdaA/2099-01-01.parquet',
+    ]);
+    awsMocks.dropFiles.mockResolvedValue(undefined);
+  });
+
+  test('drops only partitions older than the cutoff date', async () => {
+    const oldDate = new Date('2020-01-01');
+    const futureDate = new Date('2099-01-01');
+    dbMocks.extractDate
+      .mockReturnValueOnce(oldDate)
+      .mockReturnValueOnce(futureDate);
+
+    await cleanPartition('svc', 'fdaA', 'month', { partition: true });
+
+    expect(awsMocks.dropFiles).toHaveBeenCalledWith({}, 'svc', [
+      'svc/fdaA/2020-01-01.parquet',
+    ]);
+  });
+
+  test('calls dropFiles with empty array when no partitions are older than cutoff', async () => {
+    const futureDate = new Date('2099-01-01');
+    dbMocks.extractDate.mockReturnValue(futureDate);
+
+    await cleanPartition('svc', 'fdaA', 'month', { partition: true });
+
+    expect(awsMocks.dropFiles).toHaveBeenCalledWith({}, 'svc', []);
+  });
+
+  test('throws CleaningError when FDA is not partitioned', async () => {
+    await expect(
+      cleanPartition('svc', 'fdaA', 'month', {}),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'CleaningError',
+    });
+  });
+
+  test('throws CleaningError when windowSize is invalid', async () => {
+    await expect(
+      cleanPartition('svc', 'fdaA', 'invalid_size', { partition: true }),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'CleaningError',
     });
   });
 });
