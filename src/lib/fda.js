@@ -68,12 +68,29 @@ const FRESH_CURSOR_BATCH_SIZE = 250;
 export const VALID_VISIBILITIES = ['public', 'private'];
 const VALID_VISIBILITIES_SET = new Set(VALID_VISIBILITIES);
 
-export function getFDAs(service) {
-  return retrieveFDAs(service);
+export async function getFDAs(service, visibility, servicePath) {
+  const fdas = await retrieveFDAs(service);
+
+  if (visibility === undefined && servicePath === undefined) {
+    return fdas;
+  }
+
+  const normalizedVisibility = normalizeVisibility(visibility);
+  const normalizedServicePath = normalizeServicePath(servicePath);
+
+  return fdas.filter(
+    (fda) =>
+      normalizeVisibility(fda.visibility) === normalizedVisibility &&
+      normalizeServicePath(fda.servicePath) === normalizedServicePath,
+  );
 }
 
-export async function getFDA(service, fdaId) {
-  return await getStoredFDA(service, fdaId);
+export async function getFDA(service, fdaId, visibility, servicePath) {
+  if (visibility === undefined && servicePath === undefined) {
+    return await getStoredFDA(service, fdaId);
+  }
+
+  return await getAccessibleFDA(service, fdaId, visibility, servicePath);
 }
 
 export async function executeQuery({
@@ -313,7 +330,7 @@ async function buildFreshQueryStatement(
     );
   }
 
-  const fda = await getScopedFDA(service, fdaId, visibility, servicePath);
+  const fda = await getAccessibleFDA(service, fdaId, visibility, servicePath);
 
   const validatedParams = resolveDAParams(rest || {}, da.params);
   const freshBaseQuery = buildFreshDAQuery(fda.query, da.query);
@@ -406,10 +423,16 @@ export async function createDA(
   description,
   userQuery,
   params,
+  visibility,
+  servicePath,
 ) {
   const conn = await getDBConnection();
 
   try {
+    if (visibility !== undefined || servicePath !== undefined) {
+      await getAccessibleFDA(service, fdaId, visibility, servicePath);
+    }
+
     const existing = await retrieveDA(service, fdaId, daId);
 
     if (existing) {
@@ -613,7 +636,11 @@ function getUpdateWindow(windowType, query, timeColumn) {
   return window;
 }
 
-export async function updateFDA(service, fdaId) {
+export async function updateFDA(service, fdaId, visibility, servicePath) {
+  if (arguments.length >= 4) {
+    await getAccessibleFDA(service, fdaId, visibility, servicePath);
+  }
+
   const previous = await regenerateFDA(service, fdaId);
 
   const agenda = getAgenda();
@@ -658,7 +685,11 @@ export async function processFDAAsync(
   }
 }
 
-export async function deleteFDA(service, fdaId) {
+export async function deleteFDA(service, fdaId, visibility, servicePath) {
+  if (visibility !== undefined || servicePath !== undefined) {
+    await getAccessibleFDA(service, fdaId, visibility, servicePath);
+  }
+
   const { _id } = (await retrieveFDA(service, fdaId)) ?? {};
 
   if (!service || !_id) {
@@ -690,11 +721,19 @@ export async function deleteFDA(service, fdaId) {
   });
 }
 
-export function getDAs(service, fdaId) {
+export async function getDAs(service, fdaId, visibility, servicePath) {
+  if (visibility !== undefined || servicePath !== undefined) {
+    await getAccessibleFDA(service, fdaId, visibility, servicePath);
+  }
+
   return retrieveDAs(service, fdaId);
 }
 
-export async function getDA(service, fdaId, daId) {
+export async function getDA(service, fdaId, daId, visibility, servicePath) {
+  if (visibility !== undefined || servicePath !== undefined) {
+    await getAccessibleFDA(service, fdaId, visibility, servicePath);
+  }
+
   const da = await retrieveDA(service, fdaId, daId);
   if (da) {
     da.id = daId;
@@ -716,10 +755,16 @@ export async function putDA(
   description,
   userQuery,
   params,
+  visibility,
+  servicePath,
 ) {
   const conn = await getDBConnection();
 
   try {
+    if (visibility !== undefined || servicePath !== undefined) {
+      await getAccessibleFDA(service, fdaId, visibility, servicePath);
+    }
+
     const normalizedParams = checkParams(params);
     await validateDAQuery(conn, service, fdaId, userQuery);
     await updateDA(
@@ -735,7 +780,11 @@ export async function putDA(
   }
 }
 
-export async function deleteDA(service, fdaId, daId) {
+export async function deleteDA(service, fdaId, daId, visibility, servicePath) {
+  if (visibility !== undefined || servicePath !== undefined) {
+    await getAccessibleFDA(service, fdaId, visibility, servicePath);
+  }
+
   await removeDA(service, fdaId, daId);
 }
 
@@ -845,7 +894,7 @@ async function uploadTableToObjStg(
 }
 
 async function ensureFDAReadyForQuery(service, fdaId, visibility, servicePath) {
-  const fda = await getScopedFDA(service, fdaId, visibility, servicePath);
+  const fda = await getAccessibleFDA(service, fdaId, visibility, servicePath);
 
   // Queries are blocked only before the first successful fetch.
   if (!fda.lastFetch) {
@@ -871,16 +920,7 @@ async function getStoredFDA(service, fdaId) {
   return fda;
 }
 
-export async function assertFDAAccess({
-  service,
-  fdaId,
-  visibility,
-  servicePath,
-}) {
-  await getScopedFDA(service, fdaId, visibility, servicePath);
-}
-
-async function getScopedFDA(service, fdaId, visibility, servicePath) {
+async function getAccessibleFDA(service, fdaId, visibility, servicePath) {
   const normalizedVisibility = normalizeVisibility(visibility);
   const normalizedServicePath = normalizeServicePath(servicePath);
   const fda = await getStoredFDA(service, fdaId);
@@ -888,7 +928,7 @@ async function getScopedFDA(service, fdaId, visibility, servicePath) {
   if (normalizeVisibility(fda.visibility) !== normalizedVisibility) {
     throw new FDAError(
       403,
-      'ScopeMismatch',
+      'VisibilityMismatch',
       `FDA ${fdaId} does not belong to ${normalizedVisibility}`,
     );
   }
@@ -908,7 +948,7 @@ function normalizeVisibility(visibility) {
   if (!VALID_VISIBILITIES_SET.has(visibility)) {
     throw new FDAError(
       400,
-      'InvalidScope',
+      'InvalidVisibility',
       'Visibility must be public or private',
     );
   }
