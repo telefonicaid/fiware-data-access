@@ -22,7 +22,14 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
-import { beforeEach, describe, expect, jest, test } from '@jest/globals';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  jest,
+  test,
+} from '@jest/globals';
 import { FDAError } from '../../src/lib/fdaError.js';
 
 let currentClient;
@@ -84,6 +91,7 @@ await jest.unstable_mockModule('../../src/lib/fdaConfig.js', () => ({
         max: 10,
         idleTimeoutMillis: 10000,
         connectionTimeoutMillis: 5000,
+        databaseIdleTimeoutMillis: 50,
       },
     },
   },
@@ -96,6 +104,7 @@ const { closePgPools } = await import('../../src/lib/utils/pg.js');
 describe('pg utils', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
+    jest.useRealTimers();
 
     await closePgPools();
 
@@ -109,6 +118,10 @@ describe('pg utils', () => {
       end: jest.fn().mockResolvedValue(undefined),
       on: jest.fn(),
     };
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
   });
 
   test('getPgClient builds a pg client with expected config', () => {
@@ -247,5 +260,19 @@ describe('pg utils', () => {
 
     expect(poolCtorMock).toHaveBeenCalledTimes(2);
     expect(currentPool.end).toHaveBeenCalled();
+  });
+
+  test('closes inactive per-database pool after timeout', async () => {
+    jest.useFakeTimers();
+    currentClient.query.mockResolvedValue({ rows: [{ id: 1 }] });
+    currentPool.totalCount = 1;
+    currentPool.idleCount = 1;
+    currentPool.waitingCount = 0;
+
+    await runPgQuery('svc_db_idle', 'SELECT 1', []);
+
+    await jest.advanceTimersByTimeAsync(60);
+
+    expect(currentPool.end).toHaveBeenCalledTimes(1);
   });
 });
