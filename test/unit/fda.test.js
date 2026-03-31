@@ -1015,8 +1015,24 @@ describe('deleteFDA', () => {
 
 describe('getFDAs', () => {
   const allFdas = [
-    { fdaId: 'fda1', visibility: 'public', servicePath: '/public' },
-    { fdaId: 'fda2', visibility: 'private', servicePath: '/private' },
+    {
+      _id: 'mongo1',
+      fdaId: 'fda1',
+      service: 'svc',
+      visibility: 'public',
+      servicePath: '/public',
+      query: 'SELECT 1',
+      status: 'completed',
+    },
+    {
+      _id: 'mongo2',
+      fdaId: 'fda2',
+      service: 'svc',
+      visibility: 'private',
+      servicePath: '/private',
+      query: 'SELECT 2',
+      status: 'completed',
+    },
   ];
 
   beforeEach(() => {
@@ -1028,14 +1044,17 @@ describe('getFDAs', () => {
     const result = await getFDAs('svc');
 
     expect(mongoMocks.retrieveFDAs).toHaveBeenCalledWith('svc');
-    expect(result).toBe(allFdas);
+    expect(result).toEqual([
+      { id: 'fda1', query: 'SELECT 1', status: 'completed' },
+      { id: 'fda2', query: 'SELECT 2', status: 'completed' },
+    ]);
   });
 
   test('filters FDAs by visibility and servicePath when provided', async () => {
     const result = await getFDAs('svc', 'public', '/public');
 
     expect(result).toEqual([
-      { fdaId: 'fda1', visibility: 'public', servicePath: '/public' },
+      { id: 'fda1', query: 'SELECT 1', status: 'completed' },
     ]);
   });
 });

@@ -921,7 +921,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       }
       expect(res.status).toBe(200);
       expect(Array.isArray(res.json)).toBe(true);
-      expect(res.json.some((x) => x.fdaId === fdaId)).toBe(true);
+      expect(res.json.some((x) => x.id === fdaId)).toBe(true);
     });
 
     test('POST /fdas/:fdaId/das + GET /query executes DuckDB against Parquet', async () => {
@@ -2515,7 +2515,11 @@ export function runFDAIntegrationSuite({ mode, label }) {
       }
       expect(res.status).toBe(200);
       expect(Object.keys(res.json).length).toBeGreaterThan(0);
-      expect(res.json.fdaId === fdaId).toBe(true);
+      expect(res.json.id).toBeUndefined();
+      expect(res.json.fdaId).toBeUndefined();
+      expect(res.json.service).toBeUndefined();
+      expect(res.json.visibility).toBeUndefined();
+      expect(res.json.servicePath).toBeUndefined();
     });
 
     test('PUT /fdas/:fdaID reuploads FDA', async () => {
