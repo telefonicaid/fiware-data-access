@@ -58,15 +58,16 @@ Variables that define which components of the application are executed by this i
 
 Variables related to `PostgreSQL` client:
 
-| Variable                      | Optional | Type   | Description                                                                                           |
-| ----------------------------- | -------- | ------ | ----------------------------------------------------------------------------------------------------- |
-| `FDA_PG_USER`                 |          | string | User to connect to `PostgreSQL` to fetch the data to create the `FDAs`.                               |
-| `FDA_PG_PASSWORD`             |          | string | Password to connect to `PostgreSQL` to fetch the data to create the `FDAs`.                           |
-| `FDA_PG_HOST`                 |          | string | Host to connect to `PostgreSQL` to fetch the data to create the `FDAs`.                               |
-| `FDA_PG_PORT`                 | ✓        | number | Port to connect to `PostgreSQL` to fetch the data to create the `FDAs`. Value by _default_ **5432**.  |
-| `FDA_PG_POOL_MAX`             | ✓        | number | Maximum number of PostgreSQL connections per process and per target database. Default `10`.           |
-| `FDA_PG_POOL_IDLE_TIMEOUT_MS` | ✓        | number | Milliseconds before an idle PostgreSQL pooled connection is closed. Default `10000`.                  |
-| `FDA_PG_POOL_CONN_TIMEOUT_MS` | ✓        | number | Milliseconds to wait when acquiring a PostgreSQL pooled connection before timing out. Default `5000`. |
+| Variable                         | Optional | Type   | Description                                                                                            |
+| -------------------------------- | -------- | ------ | ------------------------------------------------------------------------------------------------------ |
+| `FDA_PG_USER`                    |          | string | User to connect to `PostgreSQL` to fetch the data to create the `FDAs`.                                |
+| `FDA_PG_PASSWORD`                |          | string | Password to connect to `PostgreSQL` to fetch the data to create the `FDAs`.                            |
+| `FDA_PG_HOST`                    |          | string | Host to connect to `PostgreSQL` to fetch the data to create the `FDAs`.                                |
+| `FDA_PG_PORT`                    | ✓        | number | Port to connect to `PostgreSQL` to fetch the data to create the `FDAs`. Value by _default_ **5432**.   |
+| `FDA_PG_POOL_MAX`                | ✓        | number | Maximum number of PostgreSQL connections per process and per target database. Default `10`.            |
+| `FDA_PG_POOL_IDLE_TIMEOUT_MS`    | ✓        | number | Milliseconds before an idle PostgreSQL pooled connection is closed. Default `10000`.                   |
+| `FDA_PG_POOL_CONN_TIMEOUT_MS`    | ✓        | number | Milliseconds to wait when acquiring a PostgreSQL pooled connection before timing out. Default `5000`.  |
+| `FDA_PG_POOL_DB_IDLE_TIMEOUT_MS` | ✓        | number | Milliseconds of pool inactivity before closing the whole pool for a target database. Default `300000`. |
 
 ### Object bucket-based storage system
 
@@ -119,6 +120,7 @@ FDA_PG_PORT=5432
 FDA_PG_POOL_MAX=10
 FDA_PG_POOL_IDLE_TIMEOUT_MS=10000
 FDA_PG_POOL_CONN_TIMEOUT_MS=5000
+FDA_PG_POOL_DB_IDLE_TIMEOUT_MS=300000
 
 # Object Bucket-Based Storage System
 FDA_OBJSTG_USER=exampleUser
