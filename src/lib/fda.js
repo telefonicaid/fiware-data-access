@@ -72,25 +72,29 @@ export async function getFDAs(service, visibility, servicePath) {
   const fdas = await retrieveFDAs(service);
 
   if (visibility === undefined && servicePath === undefined) {
-    return fdas;
+    return fdas.map((fda) => toFDAApiResponse(fda, { includeId: true }));
   }
 
   const normalizedVisibility = normalizeVisibility(visibility);
   const normalizedServicePath = normalizeServicePath(servicePath);
 
-  return fdas.filter(
-    (fda) =>
-      normalizeVisibility(fda.visibility) === normalizedVisibility &&
-      normalizeServicePath(fda.servicePath) === normalizedServicePath,
-  );
+  return fdas
+    .filter(
+      (fda) =>
+        normalizeVisibility(fda.visibility) === normalizedVisibility &&
+        normalizeServicePath(fda.servicePath) === normalizedServicePath,
+    )
+    .map((fda) => toFDAApiResponse(fda, { includeId: true }));
 }
 
 export async function getFDA(service, fdaId, visibility, servicePath) {
   if (visibility === undefined && servicePath === undefined) {
-    return await getStoredFDA(service, fdaId);
+    const fda = await getStoredFDA(service, fdaId);
+    return toFDAApiResponse(fda, { includeId: false });
   }
 
-  return await getAccessibleFDA(service, fdaId, visibility, servicePath);
+  const fda = await getAccessibleFDA(service, fdaId, visibility, servicePath);
+  return toFDAApiResponse(fda, { includeId: false });
 }
 
 export async function executeQuery({
@@ -976,6 +980,23 @@ function normalizeServicePath(servicePath) {
   }
 
   return normalizedServicePath;
+}
+
+function toFDAApiResponse(fda, { includeId }) {
+  if (!fda) {
+    return fda;
+  }
+
+  const { _id, fdaId, service, visibility, servicePath, ...rest } = fda;
+
+  if (!includeId) {
+    return rest;
+  }
+
+  return {
+    id: fdaId,
+    ...rest,
+  };
 }
 
 async function createOneRowParquetSync(service, fdaId, query) {
