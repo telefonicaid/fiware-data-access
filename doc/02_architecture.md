@@ -138,6 +138,7 @@ Each document corresponds to one FDA:
 -   **fdaId**: FDA identifier
 -   **service**: FIWARE service (`fiware-service`) name
 -   **servicePath**: FIWARE service path (`fiware-servicePath`) for access control
+-   **visibility**: FDA access visibility level (`public` or `private`)
 -   **description**: FDA description
 -   **query**: SQL query used to generate the Parquet file
 -   **das**: keymap of DAs associated with the FDA
