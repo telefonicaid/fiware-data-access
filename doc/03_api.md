@@ -450,7 +450,7 @@ These fields are **provided in responses** but **cannot be included or modified*
 
 ### FDAs operations
 
-#### List FDAs `GET /:visibility/fdas`
+#### List FDAs `GET /{visibility}/fdas`
 
 Returns a list of all the FDAs present in the system.
 
@@ -519,7 +519,7 @@ _**Example Response:**_
 ]
 ```
 
-#### Create FDA `POST /:visibility/fdas`
+#### Create FDA `POST /{visibility}/fdas`
 
 Creates a new FDA
 
@@ -591,7 +591,7 @@ Content-Length: 7
 Created
 ```
 
-#### Get FDA `GET /:visibility/fdas/{fdaId}`
+#### Get FDA `GET /{visibility}/fdas/{fdaId}`
 
 Returns the FDA requested.
 
@@ -658,7 +658,7 @@ _**Example Response:**_
 }
 ```
 
-#### Regenerate FDA `PUT /:visibility/fdas/{fdaId}`
+#### Regenerate FDA `PUT /{visibility}/fdas/{fdaId}`
 
 Regenerate the FDA, fetching again the source table from DB. If the FDA is currently being processed, the operation
 returns `409 Conflict`.
@@ -688,7 +688,7 @@ This endpoint does not accept a request body.
 If a body is provided, the API will return:
 
 -   **400 BadRequest**
--   `PUT /:visibility/fdas/{fdaId} does not accept a request body`
+-   `PUT /{visibility}/fdas/{fdaId} does not accept a request body`
 
 _**Response code**_
 
@@ -709,7 +709,7 @@ _**Response payload**_
 }
 ```
 
-#### Delete FDA `DELETE /:visibility/fdas/{fdaId}`
+#### Delete FDA `DELETE /{visibility}/fdas/{fdaId}`
 
 Delete FDA. Note that deleting a FDA deletes in cascade all the DAs belonging to it.
 
@@ -805,7 +805,7 @@ Example array:
 
 ### DAs operations
 
-#### List DAs `GET /:visibility/fdas/{fdaId}/das`
+#### List DAs `GET /{visibility}/fdas/{fdaId}/das`
 
 Returns a list of all the DAs associated to a given FDA.
 
@@ -871,7 +871,7 @@ _**Example Response:**_
 ]
 ```
 
-#### Create DA `POST /:visibility/fdas/{fdaId}/das`
+#### Create DA `POST /{visibility}/fdas/{fdaId}/das`
 
 Create a new DA on a given FDA.
 
@@ -939,7 +939,7 @@ _**Response payload**_
 
 None
 
-#### Get DA `GET /:visibility/fdas/{fdaId}/das/{daId}`
+#### Get DA `GET /{visibility}/fdas/{fdaId}/das/{daId}`
 
 Return the DA requested.
 
@@ -1004,7 +1004,7 @@ _**Example Response:**_
 }
 ```
 
-#### Update DA `PUT /:visibility/fdas/{fdaId}/das/{daId}`
+#### Update DA `PUT /{visibility}/fdas/{fdaId}/das/{daId}`
 
 Update an existing DA.
 
@@ -1060,7 +1060,7 @@ _**Response payload**_
 
 None
 
-#### Delete DA `DELETE /:visibility/fdas/{fdaId}/das/{daId}`
+#### Delete DA `DELETE /{visibility}/fdas/{fdaId}/das/{daId}`
 
 Delete DA.
 
@@ -1103,7 +1103,7 @@ None
 
 ### Data operations
 
-#### Data query `GET /:visibility/fdas/{fdaId}/das/{daId}/data`
+#### Data query `GET /{visibility}/fdas/{fdaId}/das/{daId}/data`
 
 Runs a stored parameterized query for the selected DA. The request path declares the access visibility and the query
 string carries DA parameters.
