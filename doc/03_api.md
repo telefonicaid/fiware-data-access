@@ -488,7 +488,7 @@ _**Response payload**_
 The payload is an array containing one object per FDA. Each FDA follows the JSON FDA representation format (described in
 [FDA payload datamodel](#fda-payload-datamodel) section).
 
-Each element includes `id` and excludes context/internal fields (`_id`, `fdaId`, `service`, `visibility`, `servicePath`)
+Each element includes `id` and excludes context/internal fields (`_id`, `fdaId`, `service`, `visibility`, `servicePath`, etc.)
 because those are already provided by request scope.
 
 _**Example Request:**_
