@@ -627,7 +627,7 @@ Successful operations return `Content-Type` header with `application/json` value
 _**Response payload**_
 
 A JSON object containing the FDA data, excluding redundant context/internal fields (`_id`, `fdaId`, `service`,
-`visibility`, `servicePath`).
+`visibility`, `servicePath`, etc.).
 
 _**Example Request:**_
 
