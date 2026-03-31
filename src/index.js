@@ -129,21 +129,23 @@ app.get('/health', (req, res) => {
   });
 });
 
-app.get('/fdas', async (req, res) => {
+app.get('/:visibility/fdas', async (req, res) => {
   const service = req.get('Fiware-Service');
+  const servicePath = req.get('Fiware-ServicePath');
+  const { visibility } = req.params;
 
-  if (!service) {
+  if (!service || !servicePath || !visibility) {
     return res.status(400).json({
       error: 'BadRequest',
       description: 'Missing params in the request',
     });
   }
 
-  const fdas = await getFDAs(service);
+  const fdas = await getFDAs(service, visibility, servicePath);
   return res.status(200).json(fdas);
 });
 
-app.post('/fdas', async (req, res) => {
+app.post('/:visibility/fdas', async (req, res) => {
   validateAllowedFieldsBody(req.body, [
     'id',
     'query',
@@ -156,8 +158,9 @@ app.post('/fdas', async (req, res) => {
     req.body;
   const service = req.get('Fiware-Service');
   const servicePath = req.get('Fiware-ServicePath');
+  const { visibility } = req.params;
 
-  if (!id || !query || !service) {
+  if (!id || !query || !service || !servicePath || !visibility) {
     return res.status(400).json({
       error: 'BadRequest',
       description: 'Missing params in the request',
@@ -171,6 +174,7 @@ app.post('/fdas', async (req, res) => {
     id,
     query,
     service,
+    visibility,
     servicePath,
     description,
     finalRefreshPolicy,
@@ -184,26 +188,28 @@ app.post('/fdas', async (req, res) => {
   });
 });
 
-app.get('/fdas/:fdaId', async (req, res) => {
+app.get('/:visibility/fdas/:fdaId', async (req, res) => {
   const service = req.get('Fiware-Service');
-  const { fdaId } = req.params;
+  const servicePath = req.get('Fiware-ServicePath');
+  const { visibility, fdaId } = req.params;
 
-  if (!fdaId || !service) {
+  if (!fdaId || !service || !servicePath || !visibility) {
     return res.status(400).json({
       error: 'BadRequest',
       description: 'Missing params in the request',
     });
   }
 
-  const fda = await getFDA(service, fdaId);
+  const fda = await getFDA(service, fdaId, visibility, servicePath);
   return res.status(200).json(fda);
 });
 
-app.put('/fdas/:fdaId', async (req, res) => {
+app.put('/:visibility/fdas/:fdaId', async (req, res) => {
   const service = req.get('Fiware-Service');
-  const { fdaId } = req.params;
+  const servicePath = req.get('Fiware-ServicePath');
+  const { visibility, fdaId } = req.params;
 
-  if (!service || !fdaId) {
+  if (!service || !fdaId || !servicePath || !visibility) {
     return res.status(400).json({
       error: 'BadRequest',
       description: 'Missing params in the request',
@@ -217,7 +223,7 @@ app.put('/fdas/:fdaId', async (req, res) => {
     });
   }
 
-  await updateFDA(service, fdaId);
+  await updateFDA(service, fdaId, visibility, servicePath);
 
   return res.status(202).json({
     id: fdaId,
@@ -225,106 +231,131 @@ app.put('/fdas/:fdaId', async (req, res) => {
   });
 });
 
-app.delete('/fdas/:fdaId', async (req, res) => {
+app.delete('/:visibility/fdas/:fdaId', async (req, res) => {
   const service = req.get('Fiware-Service');
-  const { fdaId } = req.params;
+  const servicePath = req.get('Fiware-ServicePath');
+  const { visibility, fdaId } = req.params;
 
-  if (!service || !fdaId) {
+  if (!service || !fdaId || !servicePath || !visibility) {
     return res.status(400).json({
       error: 'BadRequest',
       description: 'Missing params in the request',
     });
   }
 
-  await deleteFDA(service, fdaId);
+  await deleteFDA(service, fdaId, visibility, servicePath);
   return res.sendStatus(204);
 });
 
-app.get('/fdas/:fdaId/das', async (req, res) => {
+app.get('/:visibility/fdas/:fdaId/das', async (req, res) => {
   const service = req.get('Fiware-Service');
-  const { fdaId } = req.params;
+  const servicePath = req.get('Fiware-ServicePath');
+  const { visibility, fdaId } = req.params;
 
-  if (!fdaId || !service) {
+  if (!fdaId || !service || !servicePath || !visibility) {
     return res.status(400).json({
       error: 'BadRequest',
       description: 'Missing params in the request',
     });
   }
 
-  const das = await getDAs(service, fdaId);
+  const das = await getDAs(service, fdaId, visibility, servicePath);
   return res.status(200).json(das);
 });
 
-app.post('/fdas/:fdaId/das', async (req, res) => {
-  const { fdaId } = req.params;
+app.post('/:visibility/fdas/:fdaId/das', async (req, res) => {
+  const service = req.get('Fiware-Service');
+  const servicePath = req.get('Fiware-ServicePath');
+  const { visibility, fdaId } = req.params;
 
   validateAllowedFieldsBody(req.body, ['id', 'query', 'description', 'params']);
   const { id, description, query, params } = req.body;
-  const service = req.get('Fiware-Service');
 
-  if (!fdaId || !id || !query || !service) {
+  if (!fdaId || !id || !query || !service || !servicePath || !visibility) {
     return res.status(400).json({
       error: 'BadRequest',
       description: 'Missing params in the request',
     });
   }
 
-  await createDA(service, fdaId, id, description, query, params);
+  await createDA(
+    service,
+    fdaId,
+    id,
+    description,
+    query,
+    params,
+    visibility,
+    servicePath,
+  );
   return res.sendStatus(201);
 });
 
-app.get('/fdas/:fdaId/das/:daId', async (req, res) => {
-  const { fdaId, daId } = req.params;
+app.get('/:visibility/fdas/:fdaId/das/:daId', async (req, res) => {
   const service = req.get('Fiware-Service');
+  const servicePath = req.get('Fiware-ServicePath');
+  const { visibility, fdaId, daId } = req.params;
 
-  if (!service || !fdaId || !daId) {
+  if (!service || !fdaId || !daId || !servicePath || !visibility) {
     return res.status(400).json({
       error: 'BadRequest',
       description: 'Missing params in the request',
     });
   }
 
-  const da = await getDA(service, fdaId, daId);
+  const da = await getDA(service, fdaId, daId, visibility, servicePath);
   return res.status(200).json(da);
 });
 
-app.put('/fdas/:fdaId/das/:daId', async (req, res) => {
-  const { fdaId, daId } = req.params;
+app.put('/:visibility/fdas/:fdaId/das/:daId', async (req, res) => {
   const service = req.get('Fiware-Service');
+  const servicePath = req.get('Fiware-ServicePath');
+  const { visibility, fdaId, daId } = req.params;
 
   validateAllowedFieldsBody(req.body, ['query', 'description', 'params']);
   const { description, query, params } = req.body;
 
-  if (!service || !fdaId || !daId || !query) {
+  if (!service || !fdaId || !daId || !query || !servicePath || !visibility) {
     return res.status(400).json({
       error: 'BadRequest',
       description: 'Missing params in the request',
     });
   }
 
-  await putDA(service, fdaId, daId, description, query, params);
+  await putDA(
+    service,
+    fdaId,
+    daId,
+    description,
+    query,
+    params,
+    visibility,
+    servicePath,
+  );
 
   return res.sendStatus(204);
 });
 
-app.delete('/fdas/:fdaId/das/:daId', async (req, res) => {
-  const { fdaId, daId } = req.params;
+app.delete('/:visibility/fdas/:fdaId/das/:daId', async (req, res) => {
   const service = req.get('Fiware-Service');
+  const servicePath = req.get('Fiware-ServicePath');
+  const { visibility, fdaId, daId } = req.params;
 
-  if (!service || !fdaId || !daId) {
+  if (!service || !fdaId || !daId || !servicePath || !visibility) {
     return res.status(400).json({
       error: 'BadRequest',
       description: 'Missing params in the request',
     });
   }
 
-  await deleteDA(service, fdaId, daId);
+  await deleteDA(service, fdaId, daId, visibility, servicePath);
   return res.sendStatus(204);
 });
 
-app.get('/query', async (req, res) => {
-  const { fdaId, daId } = req.query;
+app.get('/:visibility/fdas/:fdaId/das/:daId/data', async (req, res) => {
+  const { visibility, fdaId, daId } = req.params;
   const service = req.get('Fiware-Service');
+  const servicePath = req.get('Fiware-ServicePath');
   const accept = req.get('Accept') || 'application/json';
   const fresh = parseBooleanQueryParam(req.query.fresh, 'fresh');
   const rawOutputType = req.query.outputType || DEFAULT_OUTPUT_TYPE;
@@ -340,18 +371,26 @@ app.get('/query', async (req, res) => {
   delete queryParams.fresh;
   delete queryParams.outputType;
 
-  if (Object.keys(req.query).length === 0 || !fdaId || !daId || !service) {
+  if (!fdaId || !daId || !service || !servicePath || !visibility) {
     return res.status(400).json({
       error: 'BadRequest',
       description: 'Missing params in the request',
     });
   }
 
+  const params = {
+    fdaId,
+    daId,
+    ...queryParams,
+  };
+
   // Content negotiation: NDJSON streaming takes precedence over outputType
   if (accept.includes('application/x-ndjson')) {
     return executeQueryStream({
       service,
-      params: queryParams,
+      visibility,
+      servicePath,
+      params,
       req,
       res,
       fresh,
@@ -360,7 +399,9 @@ app.get('/query', async (req, res) => {
 
   const rows = await executeQuery({
     service,
-    params: queryParams,
+    visibility,
+    servicePath,
+    params,
     fresh,
   });
 
@@ -436,8 +477,10 @@ app.post('/plugin/cda/api/doQuery', async (req, res) => {
     return res.json(result);
   } catch (err) {
     logger.error('Error executing query:', err);
-    return res.status(500).json({
-      error: 'InternalServerError',
+    const status = err.status || 500;
+
+    return res.status(status).json({
+      error: err.type || 'InternalServerError',
       description: err.message || 'Unexpected error executing query',
     });
   }

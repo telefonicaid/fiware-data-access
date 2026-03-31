@@ -343,11 +343,12 @@ EOF
 
 ### 4. List existing FDAs
 
-List all FDAs for the service `my-bucket`:
+List all FDAs for the service `my-bucket` and servicePath `public`:
 
 ```bash
-curl -i -X GET http://localhost:8080/fdas \
-  -H "Fiware-Service: my-bucket"
+curl -i -X GET http://localhost:8080/public/fdas \
+  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-ServicePath: /public"
 ```
 
 Expected response (should be empty initially):
@@ -364,7 +365,7 @@ Content-Type: application/json; charset=utf-8
 Create an FDA that extracts all alarms from the PostgreSQL table:
 
 ```bash
-curl -i -X POST http://localhost:8080/fdas \
+curl -i -X POST http://localhost:8080/public/fdas \
   -H "Content-Type: application/json" \
   -H "Fiware-Service: my-bucket" \
   -H "Fiware-ServicePath: /public" \
@@ -391,8 +392,9 @@ If the response is `202`, the FDA was accepted and it will be created.
 List FDAs again to confirm:
 
 ```bash
-curl -i -X GET http://localhost:8080/fdas \
-  -H "Fiware-Service: my-bucket"
+curl -i -X GET http://localhost:8080/public/fdas \
+  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-ServicePath: /public"
 ```
 
 Expected response (should now contain the FDA and his status):
@@ -403,18 +405,15 @@ Content-Type: application/json; charset=utf-8
 
 [
   {
-    "_id": "...",
-    "fdaId": "fda_alarms",
+    "id": "fda_alarms",
     "query": "SELECT * FROM public.alarms",
     "das": {},
-    "service": "my-bucket",
     "status": "fetching",
     "progress": 10,
     "lastFetch": null,
     "refreshPolicy": {
       "type": "none"
     },
-    "servicePath": "/public",
     "description": "FDA de alarmas del sistema"
   }
 ]
@@ -430,9 +429,10 @@ against it.
 Create the DA for `fda_alarms`:
 
 ```bash
-curl -i -X POST http://localhost:8080/fdas/fda_alarms/das \
+curl -i -X POST http://localhost:8080/public/fdas/fda_alarms/das \
   -H "Content-Type: application/json" \
   -H "Fiware-Service: my-bucket" \
+  -H "Fiware-ServicePath: /public" \
   -d '{
     "id": "da_all_alarms",
     "description": "Todas las alarmas (actualizado)",
@@ -456,8 +456,9 @@ Created
 Run a query against the FDA/DA (JSON response):
 
 ```bash
-curl -i -X GET "http://localhost:8080/query?fdaId=fda_alarms&daId=da_all_alarms" \
-  -H "Fiware-Service: my-bucket"
+curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_all_alarms/data" \
+  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-ServicePath: /public"
 ```
 
 Example JSON response (array):
@@ -469,8 +470,9 @@ Example JSON response (array):
 Or request streaming NDJSON by setting the `Accept` header:
 
 ```bash
-curl -i -X GET "http://localhost:8080/query?fdaId=fda_alarms&daId=da_all_alarms" \
+curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_all_alarms/data" \
   -H "Fiware-Service: my-bucket" \
+  -H "Fiware-ServicePath: /public" \
   -H 'Accept: application/x-ndjson'
 ```
 

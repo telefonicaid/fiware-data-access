@@ -79,6 +79,19 @@ describe('cda adapter', () => {
         totalRows: 0,
       },
     });
+    expect(executeQueryMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        service: 'svc',
+        visibility: 'public',
+        servicePath: '/public',
+        params: expect.objectContaining({
+          fdaId: 'daA',
+          daId: 'daA',
+          pageStart: 5,
+          pageSize: 2,
+        }),
+      }),
+    );
   });
 
   test('returns raw rows when outputType is not json', async () => {
@@ -96,5 +109,12 @@ describe('cda adapter', () => {
     });
 
     expect(result).toBe(rows);
+    expect(executeQueryMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        service: 'svc',
+        visibility: 'public',
+        servicePath: '/public',
+      }),
+    );
   });
 });

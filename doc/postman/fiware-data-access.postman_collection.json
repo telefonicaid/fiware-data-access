@@ -7,383 +7,675 @@
 	},
 	"item": [
 		{
-			"name": "Create DA",
-			"request": {
-				"method": "POST",
-				"header": [
-					{
-						"key": "Fiware-Service",
-						"value": "alcobendas",
-						"type": "text"
-					}
-				],
-				"body": {
-					"mode": "raw",
-					"raw": "{\n    \"id\": \"{{daId}}\",\n    \"description\": \"Filter the animals by name, breed and time.\",\n    \"query\": \"SELECT * WHERE animalname = $animalname AND timeinstant = $timeinstant AND activity = $activity;\",\n    \"params\": [\n        {\n            \"name\": \"timeinstant\", \n            \"type\": \"DateTime\",\n            \"default\": \"2020-08-17T18:25:28.332+01:00\"\n        },\n        {\n            \"name\": \"animalname\", \n            \"type\": \"Text\",\n            \"enum\": [\"TUNA\", \"Bandolera\"]\n        },\n        {\n            \"name\": \"activity\",\n            \"required\": true,\n            \"type\": \"Number\",\n            \"default\": 16,\n            \"range\": [10, 14] \n        }\n    ]\n}",
-					"options": {
-						"raw": {
-							"language": "json"
+			"name": "FDA",
+			"item": [
+				{
+					"name": "Create FDA",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Fiware-Service",
+								"value": "{{Fiware-Service}}",
+								"type": "text"
+							},
+							{
+								"key": "Fiware-ServicePath",
+								"value": "{{Fiware-ServicePath}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"id\": \"{{fdaId}}\",\n    \"query\": \"SELECT * FROM alcobendas.widgetsvalidation_lifestockmonitoring_animal\",\n    \"description\": \"FDA 1 para la bd alcobendas\",\n    \"refreshPolicy\": { \"type\": \"interval\", \"value\": \"1 hour\" }\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{url}}/{{visibility}}/fdas",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"{{visibility}}",
+								"fdas"
+							]
 						}
-					}
-				},
-				"url": {
-					"raw": "{{url}}/fdas/{{fdaId}}/das",
-					"host": [
-						"{{url}}"
-					],
-					"path": [
-						"fdas",
-						"{{fdaId}}",
-						"das"
-					]
-				}
-			},
-			"response": []
-		},
-		{
-			"name": "query",
-			"request": {
-				"method": "GET",
-				"header": [
-					{
-						"key": "Fiware-Service",
-						"value": "{{Fiware-Service}}",
-						"type": "text"
 					},
-					{
-						"key": "Accept",
-						"value": "application/x-ndjson",
-						"type": "text"
-					}
-				],
-				"url": {
-					"raw": "{{url}}/query?fdaId={{fdaId}}&daId={{daId}}&animalname=TUNA&timeinstant=2020-08-17T18:25:28.332%2B01:00&activity=12",
-					"host": [
-						"{{url}}"
-					],
-					"path": [
-						"query"
-					],
-					"query": [
-						{
-							"key": "fdaId",
-							"value": "{{fdaId}}"
-						},
-						{
-							"key": "daId",
-							"value": "{{daId}}"
-						},
-						{
-							"key": "animalname",
-							"value": "TUNA"
-						},
-						{
-							"key": "timeinstant",
-							"value": "2020-08-17T18:25:28.332%2B01:00"
-						},
-						{
-							"key": "activity",
-							"value": "12"
+					"response": []
+				},
+				{
+					"name": "Get FDAs",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Fiware-Service",
+								"value": "{{Fiware-Service}}",
+								"type": "text"
+							},
+							{
+								"key": "Fiware-ServicePath",
+								"value": "{{Fiware-ServicePath}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{url}}/{{visibility}}/fdas",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"{{visibility}}",
+								"fdas"
+							]
 						}
-					]
-				}
-			},
-			"response": []
-		},
-		{
-			"name": "Create FDA",
-			"request": {
-				"method": "POST",
-				"header": [
-					{
-						"key": "Fiware-Service",
-						"value": "{{Fiware-Service}}",
-						"type": "text"
 					},
-					{
-						"key": "Fiware-ServicePath",
-						"value": "{{Fiware-ServicePath}}",
-						"type": "text"
-					}
-				],
-				"body": {
-					"mode": "raw",
-					"raw": "{\n    \"id\": \"{{fdaId}}\",\n    \"query\": \"SELECT * FROM alcobendas.widgetsvalidation_lifestockmonitoring_animal\",\n    \"description\": \"FDA 1 para la bd alcobendas\",\n    \"refreshPolicy\": { \"type\": \"interval\", \"value\": \"1 hour\" }\n}",
-					"options": {
-						"raw": {
-							"language": "json"
-						}
-					}
+					"response": []
 				},
-				"url": {
-					"raw": "{{url}}/fdas",
-					"host": [
-						"{{url}}"
-					],
-					"path": [
-						"fdas"
-					]
-				}
-			},
-			"response": []
-		},
-		{
-			"name": "Get FDAs",
-			"request": {
-				"method": "GET",
-				"header": [
-					{
-						"key": "Fiware-Service",
-						"value": "{{Fiware-Service}}",
-						"type": "text"
-					}
-				],
-				"url": {
-					"raw": "{{url}}/fdas",
-					"host": [
-						"{{url}}"
-					],
-					"path": [
-						"fdas"
-					]
-				}
-			},
-			"response": []
-		},
-		{
-			"name": "Get FDA",
-			"request": {
-				"method": "GET",
-				"header": [
-					{
-						"key": "Fiware-Service",
-						"value": "{{Fiware-Service}}",
-						"type": "text"
-					}
-				],
-				"url": {
-					"raw": "{{url}}/fdas/{{fdaId}}",
-					"host": [
-						"{{url}}"
-					],
-					"path": [
-						"fdas",
-						"{{fdaId}}"
-					]
-				}
-			},
-			"response": []
-		},
-		{
-			"name": "Regenerate FDA",
-			"request": {
-				"method": "PUT",
-				"header": [
-					{
-						"key": "Fiware-Service",
-						"value": "{{Fiware-Service}}",
-						"type": "text"
-					}
-				],
-				"url": {
-					"raw": "{{url}}/fdas/{{fdaId}}",
-					"host": [
-						"{{url}}"
-					],
-					"path": [
-						"fdas",
-						"{{fdaId}}"
-					]
-				}
-			},
-			"response": []
-		},
-		{
-			"name": "Delete FDA",
-			"request": {
-				"method": "DELETE",
-				"header": [
-					{
-						"key": "Fiware-Service",
-						"value": "{{Fiware-Service}}",
-						"type": "text"
-					}
-				],
-				"url": {
-					"raw": "{{url}}/fdas/{{fdaId}}",
-					"host": [
-						"{{url}}"
-					],
-					"path": [
-						"fdas",
-						"{{fdaId}}"
-					]
-				}
-			},
-			"response": []
-		},
-		{
-			"name": "Get DAs",
-			"request": {
-				"method": "GET",
-				"header": [
-					{
-						"key": "Fiware-Service",
-						"value": "{{Fiware-Service}}",
-						"type": "text"
-					}
-				],
-				"url": {
-					"raw": "{{url}}/fdas/{{fdaId}}/das",
-					"host": [
-						"{{url}}"
-					],
-					"path": [
-						"fdas",
-						"{{fdaId}}",
-						"das"
-					]
-				}
-			},
-			"response": []
-		},
-		{
-			"name": "Get DA",
-			"request": {
-				"method": "GET",
-				"header": [
-					{
-						"key": "Fiware-Service",
-						"value": "{{Fiware-Service}}",
-						"type": "text"
-					}
-				],
-				"url": {
-					"raw": "{{url}}/fdas/{{fdaId}}/das/{{daId}}",
-					"host": [
-						"{{url}}"
-					],
-					"path": [
-						"fdas",
-						"{{fdaId}}",
-						"das",
-						"{{daId}}"
-					]
-				}
-			},
-			"response": []
-		},
-		{
-			"name": "Put DA",
-			"request": {
-				"method": "PUT",
-				"header": [
-					{
-						"key": "Fiware-Service",
-						"value": "{{Fiware-Service}}",
-						"type": "text"
-					}
-				],
-				"body": {
-					"mode": "raw",
-					"raw": "{\n    \"description\": \"New description\",\n    \"query\": \"SELECT * WHERE animalname = $animalname AND animalbreed = $animalbreed;\",\n    \"params\": [        \n        {\n            \"name\": \"activity\",\n            \"required\": true,\n            \"type\": \"Number\",\n            \"default\": 16,\n            \"range\": [10, 14] \n        }\n    ]\n}",
-					"options": {
-						"raw": {
-							"language": "json"
+				{
+					"name": "Get FDA",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Fiware-Service",
+								"value": "{{Fiware-Service}}",
+								"type": "text"
+							},
+							{
+								"key": "Fiware-ServicePath",
+								"value": "{{Fiware-ServicePath}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{url}}/{{visibility}}/fdas/{{fdaId}}",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"{{visibility}}",
+								"fdas",
+								"{{fdaId}}"
+							]
 						}
-					}
-				},
-				"url": {
-					"raw": "{{url}}/fdas/{{fdaId}}/das/{{daId}}",
-					"host": [
-						"{{url}}"
-					],
-					"path": [
-						"fdas",
-						"{{fdaId}}",
-						"das",
-						"{{daId}}"
-					]
-				}
-			},
-			"response": []
-		},
-		{
-			"name": "Delete DA",
-			"request": {
-				"method": "DELETE",
-				"header": [
-					{
-						"key": "Fiware-Service",
-						"value": "{{Fiware-Service}}",
-						"type": "text"
-					}
-				],
-				"url": {
-					"raw": "{{url}}/fdas/{{fdaId}}/das/{{daId}}",
-					"host": [
-						"{{url}}"
-					],
-					"path": [
-						"fdas",
-						"{{fdaId}}",
-						"das",
-						"{{daId}}"
-					]
-				}
-			},
-			"response": []
-		},
-		{
-			"name": "doQuery (CDA compatibility)",
-			"request": {
-				"method": "POST",
-				"header": [
-					{
-						"key": "Content-Type",
-						"value": "application/x-www-form-urlencoded"
 					},
-					{
-						"key": "Fiware-Service",
-						"value": "{{Fiware-Service}}"
-					}
-				],
-				"body": {
-					"mode": "urlencoded",
-					"urlencoded": [
-						{
-							"key": "path",
-							"value": "{{Fiware-ServicePath}}/{{Fiware-Service}}/verticals/sql/{{daId}}",
-							"type": "text"
-						},
-						{
-							"key": "dataAccessId",
-							"value": "{{daId}}",
-							"type": "text"
-						},
-						{
-							"key": "pageSize",
-							"value": "10",
-							"type": "text"
-						}
-					]
+					"response": []
 				},
-				"url": {
-					"raw": "http://localhost:8085/plugin/cda/api/doQuery",
-					"protocol": "http",
-					"host": [
-						"localhost"
-					],
-					"port": "8085",
-					"path": [
-						"plugin",
-						"cda",
-						"api",
-						"doQuery"
-					]
+				{
+					"name": "Regenerate FDA",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Fiware-Service",
+								"value": "{{Fiware-Service}}",
+								"type": "text"
+							},
+							{
+								"key": "Fiware-ServicePath",
+								"value": "{{Fiware-ServicePath}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{url}}/{{visibility}}/fdas/{{fdaId}}",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"{{visibility}}",
+								"fdas",
+								"{{fdaId}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete FDA",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Fiware-Service",
+								"value": "{{Fiware-Service}}",
+								"type": "text"
+							},
+							{
+								"key": "Fiware-ServicePath",
+								"value": "{{Fiware-ServicePath}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{url}}/{{visibility}}/fdas/{{fdaId}}",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"{{visibility}}",
+								"fdas",
+								"{{fdaId}}"
+							]
+						}
+					},
+					"response": []
 				}
-			},
-			"response": []
+			]
+		},
+		{
+			"name": "DA",
+			"item": [
+				{
+					"name": "Create DA",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Fiware-Service",
+								"value": "{{Fiware-Service}}",
+								"type": "text"
+							},
+							{
+								"key": "Fiware-ServicePath",
+								"value": "{{Fiware-ServicePath}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"id\": \"{{daId}}\",\n    \"description\": \"Filter the animals by name, breed and time.\",\n    \"query\": \"SELECT * WHERE animalname = $animalname AND timeinstant = $timeinstant AND activity = $activity;\",\n    \"params\": [\n        {\n            \"name\": \"timeinstant\", \n            \"type\": \"DateTime\",\n            \"default\": \"2020-08-17T18:25:28.332+01:00\"\n        },\n        {\n            \"name\": \"animalname\", \n            \"type\": \"Text\",\n            \"enum\": [\"TUNA\", \"Bandolera\"]\n        },\n        {\n            \"name\": \"activity\",\n            \"required\": true,\n            \"type\": \"Number\",\n            \"default\": 16,\n            \"range\": [10, 14] \n        }\n    ]\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{url}}/{{visibility}}/fdas/{{fdaId}}/das",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"{{visibility}}",
+								"fdas",
+								"{{fdaId}}",
+								"das"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get DAs",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Fiware-Service",
+								"value": "{{Fiware-Service}}",
+								"type": "text"
+							},
+							{
+								"key": "Fiware-ServicePath",
+								"value": "{{Fiware-ServicePath}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{url}}/{{visibility}}/fdas/{{fdaId}}/das",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"{{visibility}}",
+								"fdas",
+								"{{fdaId}}",
+								"das"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get DA",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Fiware-Service",
+								"value": "{{Fiware-Service}}",
+								"type": "text"
+							},
+							{
+								"key": "Fiware-ServicePath",
+								"value": "{{Fiware-ServicePath}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{url}}/{{visibility}}/fdas/{{fdaId}}/das/{{daId}}",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"{{visibility}}",
+								"fdas",
+								"{{fdaId}}",
+								"das",
+								"{{daId}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Put DA",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Fiware-Service",
+								"value": "{{Fiware-Service}}",
+								"type": "text"
+							},
+							{
+								"key": "Fiware-ServicePath",
+								"value": "{{Fiware-ServicePath}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"description\": \"New description\",\n    \"query\": \"SELECT * WHERE animalname = $animalname AND animalbreed = $animalbreed;\",\n    \"params\": [        \n        {\n            \"name\": \"activity\",\n            \"required\": true,\n            \"type\": \"Number\",\n            \"default\": 16,\n            \"range\": [10, 14] \n        }\n    ]\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{url}}/{{visibility}}/fdas/{{fdaId}}/das/{{daId}}",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"{{visibility}}",
+								"fdas",
+								"{{fdaId}}",
+								"das",
+								"{{daId}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete DA",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Fiware-Service",
+								"value": "{{Fiware-Service}}",
+								"type": "text"
+							},
+							{
+								"key": "Fiware-ServicePath",
+								"value": "{{Fiware-ServicePath}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{url}}/{{visibility}}/fdas/{{fdaId}}/das/{{daId}}",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"{{visibility}}",
+								"fdas",
+								"{{fdaId}}",
+								"das",
+								"{{daId}}"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Query",
+			"item": [
+				{
+					"name": "Execute DA query",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Fiware-Service",
+								"value": "{{Fiware-Service}}",
+								"type": "text"
+							},
+							{
+								"key": "Fiware-ServicePath",
+								"value": "{{Fiware-ServicePath}}",
+								"type": "text"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{url}}/{{visibility}}/fdas/{{fdaId}}/das/{{daId}}/data?animalname=TUNA&timeinstant=2020-08-17T18:25:28.332%2B01:00&activity=12",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"{{visibility}}",
+								"fdas",
+								"{{fdaId}}",
+								"das",
+								"{{daId}}",
+								"data"
+							],
+							"query": [
+								{
+									"key": "animalname",
+									"value": "TUNA"
+								},
+								{
+									"key": "timeinstant",
+									"value": "2020-08-17T18:25:28.332%2B01:00"
+								},
+								{
+									"key": "activity",
+									"value": "12"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Execute DA query (NDJSON stream)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Fiware-Service",
+								"value": "{{Fiware-Service}}",
+								"type": "text"
+							},
+							{
+								"key": "Fiware-ServicePath",
+								"value": "{{Fiware-ServicePath}}",
+								"type": "text"
+							},
+							{
+								"key": "Accept",
+								"value": "application/x-ndjson",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{url}}/{{visibility}}/fdas/{{fdaId}}/das/{{daId}}/data?animalname=TUNA&timeinstant=2020-08-17T18:25:28.332%2B01:00&activity=12",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"{{visibility}}",
+								"fdas",
+								"{{fdaId}}",
+								"das",
+								"{{daId}}",
+								"data"
+							],
+							"query": [
+								{
+									"key": "animalname",
+									"value": "TUNA"
+								},
+								{
+									"key": "timeinstant",
+									"value": "2020-08-17T18:25:28.332%2B01:00"
+								},
+								{
+									"key": "activity",
+									"value": "12"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Execute DA query (CSV)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Fiware-Service",
+								"value": "{{Fiware-Service}}",
+								"type": "text"
+							},
+							{
+								"key": "Fiware-ServicePath",
+								"value": "{{Fiware-ServicePath}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{url}}/{{visibility}}/fdas/{{fdaId}}/das/{{daId}}/data?outputType=csv&animalname=TUNA&activity=12",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"{{visibility}}",
+								"fdas",
+								"{{fdaId}}",
+								"das",
+								"{{daId}}",
+								"data"
+							],
+							"query": [
+								{
+									"key": "outputType",
+									"value": "csv"
+								},
+								{
+									"key": "animalname",
+									"value": "TUNA"
+								},
+								{
+									"key": "activity",
+									"value": "12"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Execute DA query (XLS)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Fiware-Service",
+								"value": "{{Fiware-Service}}",
+								"type": "text"
+							},
+							{
+								"key": "Fiware-ServicePath",
+								"value": "{{Fiware-ServicePath}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{url}}/{{visibility}}/fdas/{{fdaId}}/das/{{daId}}/data?outputType=xls&animalname=TUNA&activity=12",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"{{visibility}}",
+								"fdas",
+								"{{fdaId}}",
+								"das",
+								"{{daId}}",
+								"data"
+							],
+							"query": [
+								{
+									"key": "outputType",
+									"value": "xls"
+								},
+								{
+									"key": "animalname",
+									"value": "TUNA"
+								},
+								{
+									"key": "activity",
+									"value": "12"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "CDA Compatibility",
+			"item": [
+				{
+					"name": "doQuery (CDA compatibility)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/x-www-form-urlencoded"
+							},
+							{
+								"key": "Fiware-Service",
+								"value": "{{Fiware-Service}}"
+							}
+						],
+						"body": {
+							"mode": "urlencoded",
+							"urlencoded": [
+								{
+									"key": "path",
+									"value": "/{{visibility}}/{{Fiware-Service}}/verticals/sql/{{fdaId}}",
+									"type": "text"
+								},
+								{
+									"key": "dataAccessId",
+									"value": "{{daId}}",
+									"type": "text"
+								},
+								{
+									"key": "pageSize",
+									"value": "10",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{url}}/plugin/cda/api/doQuery",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"plugin",
+								"cda",
+								"api",
+								"doQuery"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "doQuery (CDA compatibility, CSV)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/x-www-form-urlencoded"
+							},
+							{
+								"key": "Fiware-Service",
+								"value": "{{Fiware-Service}}"
+							}
+						],
+						"body": {
+							"mode": "urlencoded",
+							"urlencoded": [
+								{
+									"key": "path",
+									"value": "/{{visibility}}/{{Fiware-Service}}/verticals/sql/{{fdaId}}",
+									"type": "text"
+								},
+								{
+									"key": "dataAccessId",
+									"value": "{{daId}}",
+									"type": "text"
+								},
+								{
+									"key": "outputType",
+									"value": "csv",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{url}}/plugin/cda/api/doQuery",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"plugin",
+								"cda",
+								"api",
+								"doQuery"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Health",
+			"item": [
+				{
+					"name": "Health check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{url}}/health",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"health"
+							]
+						}
+					},
+					"response": []
+				}
+			]
 		}
 	]
 }

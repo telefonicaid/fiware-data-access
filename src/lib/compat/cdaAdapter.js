@@ -25,10 +25,13 @@
 import { executeQuery } from '../fda.js';
 
 export async function handleCdaQuery({ body, outputType = 'json' }) {
-  const { service, fdaId, daId, queryParams } = adaptCdaParams(body);
+  const { service, visibility, fdaId, daId, queryParams, servicePath } =
+    adaptCdaParams(body);
 
   const rows = await executeQuery({
     service,
+    visibility,
+    servicePath,
     params: {
       fdaId,
       daId,
@@ -49,7 +52,9 @@ function adaptCdaParams(body) {
 
   // --------- RESOLVE SERVICE ----------
   const pathParts = path.split('/').filter(Boolean);
+  const visibility = pathParts[0] || 'private';
   const service = pathParts.length <= 1 ? pathParts[0] : pathParts[1];
+  const servicePath = `/${visibility}`;
 
   const fdaId = body.cda || dataAccessId;
   const daId = dataAccessId;
@@ -78,6 +83,8 @@ function adaptCdaParams(body) {
 
   return {
     service,
+    visibility,
+    servicePath,
     fdaId,
     daId,
     queryParams,

@@ -27,7 +27,8 @@ Before sending requests, create or update a Postman environment and define the f
 | -------------------- | --------------------------------------------- | ----------------------- |
 | `url`                | API base endpoint including protocol and port | `http://localhost:8080` |
 | `Fiware-Service`     | Header indicating the FIWARE service          | `my-service`            |
-| `Fiware-ServicePath` | Header indicating the FIWARE service path     | `/public`               |
+| `Fiware-ServicePath` | Header indicating the FIWARE service path     | `/servicePath`          |
+| `visibility`         | FDA visibility segment in the URL path        | `public` or `private`   |
 | `fdaId`              | Identifier of the FDA                         | `fda_alarms`            |
 | `daId`               | Identifier of the DA                          | `da_all_alarms`         |
 

@@ -28,6 +28,7 @@ Key characteristics:
 -   Created from a base SQL query
 -   Physically stored as a Parquet file
 -   Stored inside a bucket named after the `Fiware-Service`
+-   Associated with a `visibility` level (`public` or `private`) that controls access authorization
 -   Can be regenerated (manually or configured) to refresh the data
 -   Parent resource of one or more DAs
 -   Has status, progress and lastFetch fields, and an optional refreshPolicy.
@@ -35,8 +36,9 @@ Key characteristics:
 #### Example FDA
 
 ```http
-POST /fdas
+POST /{visibility}/fdas
 Fiware-Service: acme
+Fiware-ServicePath: /servicePath
 Content-Type: application/json
 ```
 
@@ -82,8 +84,9 @@ Key characteristics:
 #### Example DA
 
 ```http
-POST /fdas/animals_fda/das
+POST /{visibility}/fdas/animals_fda/das
 Fiware-Service: acme
+Fiware-ServicePath: /servicePath
 Content-Type: application/json
 ```
 
@@ -116,7 +119,7 @@ Data flow:
 
 Optional fresh mode:
 
--   For use cases that require real-time data, `GET /query` supports `fresh=true`.
+-   For use cases that require real-time data, `GET /{visibility}/fdas/{fdaId}/das/{daId}/data` supports `fresh=true`.
 -   In this mode the DA is executed directly on PostgreSQL using the FDA base query as source (without waiting for the
     next FDA refresh cycle).
 -   Fresh mode is controlled per instance with `FDA_ROLE_SYNCQUERIES`.
@@ -135,6 +138,7 @@ Each document corresponds to one FDA:
 -   **fdaId**: FDA identifier
 -   **service**: FIWARE service (`fiware-service`) name
 -   **servicePath**: FIWARE service path (`fiware-servicePath`) for access control
+-   **visibility**: FDA access visibility level (`public` or `private`)
 -   **description**: FDA description
 -   **query**: SQL query used to generate the Parquet file
 -   **das**: keymap of DAs associated with the FDA
@@ -156,10 +160,11 @@ Each DA contains:
     "fdaId": "fda1",
     "description": "Description for the first FDA",
     "query": "SELECT population, timeinstant FROM exampleSchema.exampleTable",
-    "servicePath": "/public",
+    "servicePath": "/servicePath",
     "service": "fiwareService",
     "progress": 10,
     "lastFetch": null,
+    "visibility": "public",
     "refreshPolicy": {
         "type": "interval",
         "value": "1 hour"
