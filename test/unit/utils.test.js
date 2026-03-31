@@ -145,6 +145,8 @@ describe('utils', () => {
     test('returns date 1 month ago for "month" windowSize', async () => {
       const { getWindowDate } = await loadUtilsModule();
 
+      jest.useFakeTimers({ now: new Date(2026, 2, 31, 12, 34, 56, 789) });
+
       const now = new Date();
       const expected = new Date(now);
       expected.setMonth(expected.getMonth() - 1);
@@ -153,6 +155,8 @@ describe('utils', () => {
       expect(result).toBeInstanceOf(Date);
       expect(result.getTime()).toBeLessThan(now.getTime());
       expect(result.getTime()).toBe(expected.getTime());
+
+      jest.useRealTimers();
     });
 
     test('returns date 1 year ago for "year" windowSize', async () => {

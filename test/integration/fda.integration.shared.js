@@ -2646,11 +2646,8 @@ export function runFDAIntegrationSuite({ mode, label }) {
       });
 
       expect(completedFDA).toMatchObject({
-        fdaId: fdaId2,
         query: 'SELECT id, name, age FROM public.users ORDER BY id',
         description: 'users dataset',
-        service,
-        servicePath,
         status: 'completed',
         progress: 100,
         refreshPolicy: {
@@ -2658,6 +2655,9 @@ export function runFDAIntegrationSuite({ mode, label }) {
           value: '1 hour',
         },
       });
+      expect(completedFDA.fdaId).toBeUndefined();
+      expect(completedFDA.service).toBeUndefined();
+      expect(completedFDA.servicePath).toBeUndefined();
       expect(completedFDA.lastFetch).toBeDefined();
       expect(typeof completedFDA.lastFetch).toBe('string');
     });
