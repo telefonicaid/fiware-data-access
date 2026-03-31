@@ -437,14 +437,11 @@ This object configures certain aspects of the object storage app when uploading 
 
 These fields are **provided in responses** but **cannot be included or modified** in POST or PUT requests:
 
-| Parameter     | Optional | Type   | Description                                                                                   |
-| ------------- | -------- | ------ | --------------------------------------------------------------------------------------------- |
-| `status`      |          | string | Current FDA execution status (`fetching`, `transforming`, `uploading`, `completed`, `failed`) |
-| `progress`    |          | number | Execution progress percentage (0–100)                                                         |
-| `lastFetch`   |          | string | Timestamp of the last fetch (ISO date format)                                                 |
-| `visibility`  |          | string | FDA access visibility level (`public` or `private`). Set by the path segment in the request.  |
-| `service`     |          | string | Tenant or service identifier. Set by the `Fiware-Service` header in the request.              |
-| `servicePath` |          | string | NGSI hierarchical service path. Set by the `Fiware-ServicePath` header in the request.        |
+| Parameter   | Optional | Type   | Description                                                                                   |
+| ----------- | -------- | ------ | --------------------------------------------------------------------------------------------- |
+| `status`    |          | string | Current FDA execution status (`fetching`, `transforming`, `uploading`, `completed`, `failed`) |
+| `progress`  |          | number | Execution progress percentage (0–100)                                                         |
+| `lastFetch` |          | string | Timestamp of the last fetch (ISO date format)                                                 |
 
 > Note: Including operational fields like `progress` or `status` in POST/PUT requests is ignored by the server. Requests
 > including these fields are rejected with `400 BadRequest`.
@@ -453,7 +450,7 @@ These fields are **provided in responses** but **cannot be included or modified*
 
 #### List FDAs `GET /{visibility}/fdas`
 
-Returns a list of all the FDAs present in the system.
+Returns a list of all the FDAs for that `service`, `servicePath` and visibility.
 
 _**Request path parameters**_
 
@@ -491,6 +488,9 @@ _**Response payload**_
 The payload is an array containing one object per FDA. Each FDA follows the JSON FDA representation format (described in
 [FDA payload datamodel](#fda-payload-datamodel) section).
 
+Each element includes `id` and excludes context/internal fields (`_id`, `fdaId`, `service`, `visibility`, `servicePath`)
+because those are already provided by request scope.
+
 _**Example Request:**_
 
 ```bash
@@ -504,13 +504,9 @@ _**Example Response:**_
 ```json
 [
     {
-        "_id": "698c572d1cd0982695cc3a8e",
-        "fdaId": "fda_alarms",
+        "id": "fda_alarms",
         "query": "SELECT * FROM public.alarms",
         "das": {},
-        "service": "my-bucket",
-        "visibility": "public",
-        "servicePath": "/servicePath",
         "status": "completed",
         "progress": 100,
         "lastFetch": "2026-02-19T07:38:21.263Z",
@@ -630,7 +626,8 @@ Successful operations return `Content-Type` header with `application/json` value
 
 _**Response payload**_
 
-None
+A JSON object containing the FDA data, excluding redundant context/internal fields (`_id`, `fdaId`, `service`,
+`visibility`, `servicePath`).
 
 _**Example Request:**_
 
@@ -642,19 +639,14 @@ curl -i -X GET http://localhost:8080/public/fdas/fda_alarms \
 
 _**Example Response:**_
 
-```
+```json
 {
-    "_id": "698c572d1cd0982695cc3a8e",
-    "fdaId": "fda_alarms",
     "query": "SELECT * FROM public.alarms",
     "das": {},
-    "service": "my-bucket",
-    "visibility": "public",
-    "servicePath": "/servicePath",
-    "status":"completed",
+    "status": "completed",
     "progress": 100,
-    "lastFetch": "2026-02-19T07:38:21.263Z,
-    "refreshPolicy": { "type": "interval", "value": "1 hour"},
+    "lastFetch": "2026-02-19T07:38:21.263Z",
+    "refreshPolicy": { "type": "interval", "value": "1 hour" },
     "description": "FDA de alarmas del sistema"
 }
 ```
@@ -994,14 +986,9 @@ _**Example Response:**_
 
 ```json
 {
-  "description": "Todas las alarmas",
-  "query": "SELECT * LIMIT 10",
-  "id": "da_all_alarms"
-},
-{
-  "das": {},
-  "service": "my-bucket",
-  "description": "FDA de alarmas del sistema"
+    "description": "Todas las alarmas",
+    "query": "SELECT * LIMIT 10",
+    "id": "da_all_alarms"
 }
 ```
 
