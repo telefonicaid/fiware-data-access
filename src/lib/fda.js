@@ -987,15 +987,22 @@ function toFDAApiResponse(fda, { includeId }) {
     return fda;
   }
 
-  const { fdaId, ...rest } = fda;
+  const response = { ...fda };
+  const fdaId = response.fdaId;
+
+  delete response._id;
+  delete response.fdaId;
+  delete response.service;
+  delete response.visibility;
+  delete response.servicePath;
 
   if (!includeId) {
-    return rest;
+    return response;
   }
 
   return {
     id: fdaId,
-    ...rest,
+    ...response,
   };
 }
 
