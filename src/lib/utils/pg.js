@@ -39,11 +39,57 @@ function getPoolKey(user, host, port, database) {
   return `${user}@${host}:${port}/${database}`;
 }
 
+function clearPoolIdleTimer(entry) {
+  if (!entry?.idleTimer) {
+    return;
+  }
+
+  clearTimeout(entry.idleTimer);
+  entry.idleTimer = null;
+}
+
+function schedulePoolIdleClose(key) {
+  const timeoutMs = Number(config.pg.pool.databaseIdleTimeoutMillis);
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    return;
+  }
+
+  const entry = pools.get(key);
+  if (!entry) {
+    return;
+  }
+
+  clearPoolIdleTimer(entry);
+
+  entry.idleTimer = setTimeout(async () => {
+    const current = pools.get(key);
+    if (!current) {
+      return;
+    }
+
+    const { pool } = current;
+    const allIdle =
+      pool.totalCount === pool.idleCount && pool.waitingCount === 0;
+
+    if (!allIdle) {
+      // Keep checking while there is active or queued work.
+      schedulePoolIdleClose(key);
+      return;
+    }
+
+    pools.delete(key);
+    clearPoolIdleTimer(current);
+    await pool.end().catch(() => {});
+  }, timeoutMs);
+}
+
 export function getPgPool(user, password, host, port, database) {
   const key = getPoolKey(user, host, port, database);
 
   if (pools.has(key)) {
-    return pools.get(key);
+    const existing = pools.get(key);
+    clearPoolIdleTimer(existing);
+    return existing.pool;
   }
 
   const pool = new Pool({
@@ -62,17 +108,18 @@ export function getPgPool(user, password, host, port, database) {
     logger.error({ err, database }, 'PostgreSQL pool error');
   });
 
-  pools.set(key, pool);
+  pools.set(key, { pool, idleTimer: null });
   return pool;
 }
 
-function releasePgClient(pgClient) {
+function releasePgClient(key, pgClient) {
   if (!pgClient || typeof pgClient.release !== 'function') {
     return;
   }
 
   try {
     pgClient.release();
+    schedulePoolIdleClose(key);
   } catch {
     // Ignore release errors to avoid masking the original operation error.
   }
@@ -81,8 +128,9 @@ function releasePgClient(pgClient) {
 export async function closePgPools() {
   const closePromises = [];
 
-  for (const pool of pools.values()) {
-    closePromises.push(pool.end().catch(() => {}));
+  for (const entry of pools.values()) {
+    clearPoolIdleTimer(entry);
+    closePromises.push(entry.pool.end().catch(() => {}));
   }
 
   await Promise.all(closePromises);
@@ -101,6 +149,12 @@ export function getPgClient(user, password, host, port, database) {
 
 export async function uploadTable(s3Client, bucket, database, query, path) {
   logger.debug({ bucket, database, query, path }, '[DEBUG]: uploadTable');
+  const key = getPoolKey(
+    config.pg.usr,
+    config.pg.host,
+    config.pg.port,
+    database,
+  );
   const pgPool = getPgPool(
     config.pg.usr,
     config.pg.pass,
@@ -138,11 +192,17 @@ export async function uploadTable(s3Client, bucket, database, query, path) {
     );
   } finally {
     pgStream.destroy();
-    releasePgClient(pgClient);
+    releasePgClient(key, pgClient);
   }
 }
 
 export async function runPgQuery(database, text, values) {
+  const key = getPoolKey(
+    config.pg.usr,
+    config.pg.host,
+    config.pg.port,
+    database,
+  );
   const pgPool = getPgPool(
     config.pg.usr,
     config.pg.pass,
@@ -167,11 +227,17 @@ export async function runPgQuery(database, text, values) {
       `Error running fresh query: ${e.message}`,
     );
   } finally {
-    releasePgClient(pgClient);
+    releasePgClient(key, pgClient);
   }
 }
 
 export async function createPgCursorReader(database, text, values, batchSize) {
+  const key = getPoolKey(
+    config.pg.usr,
+    config.pg.host,
+    config.pg.port,
+    database,
+  );
   const pgPool = getPgPool(
     config.pg.usr,
     config.pg.pass,
@@ -197,7 +263,7 @@ export async function createPgCursorReader(database, text, values, batchSize) {
         await closeCursor().catch(() => {});
       }
     } finally {
-      releasePgClient(pgClient);
+      releasePgClient(key, pgClient);
     }
   };
 
