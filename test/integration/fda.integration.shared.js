@@ -2234,7 +2234,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       expect(res.json.description).toContain('Invalid outputType');
     });
 
-    test('GET /:visibility/... returns 400 for an invalid visibility value', async () => {
+    test('GET /{visibility}/... returns 400 for an invalid visibility value', async () => {
       const res = await httpReq({
         method: 'GET',
         url: `${baseUrl}/shared/fdas/${fdaId}/das/${daId}/data?minAge=25`,
@@ -2245,7 +2245,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       expect(res.json.error).toBe('InvalidVisibility');
     });
 
-    test('GET /:visibility/... returns 403 when visibility does not match the FDA visibility', async () => {
+    test('GET /{visibility}/... returns 403 when visibility does not match the FDA visibility', async () => {
       // fdaId was created with Fiware-ServicePath: /public, so querying it
       // through /private/... must be rejected with 403 VisibilityMismatch.
       const res = await httpReq({

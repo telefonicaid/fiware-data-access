@@ -101,7 +101,7 @@ if (config.roles.fetcher) {
 | Mixed (default) | ✅  | ✅      | Simple deployments           |
 
 `FDA_ROLE_SYNCQUERIES` is an additional API capability flag (not a standalone worker role): when enabled, the API
-accepts `fresh=true` in `GET /:visibility/fdas/{fdaId}/das/{daId}/data` to execute DA queries directly on PostgreSQL.
+accepts `fresh=true` in `GET /{visibility}/fdas/{fdaId}/das/{daId}/data` to execute DA queries directly on PostgreSQL.
 
 To protect API workers from overload, fresh-query concurrency is bounded by `FDA_MAX_CONCURRENT_FRESH_QUERIES` (default
 `5`). Extra requests return `429 TooManyFreshQueries`.
@@ -356,8 +356,8 @@ This separation:
 When:
 
 ```
-POST /:visibility/fdas
-PUT /:visibility/fdas/:fdaId
+POST /{visibility}/fdas
+PUT /{visibility}/fdas/:fdaId
 ```
 
 Flow:

@@ -56,7 +56,7 @@ its asynchronous processing state.
 
 ### Flow
 
--   On `POST /:visibility/fdas` or `PUT /:visibility/fdas/:fdaId`, FDA starts **fetching** (progress 0). If a
+-   On `POST /{visibility}/fdas` or `PUT /{visibility}/fdas/:fdaId`, FDA starts **fetching** (progress 0). If a
     `refreshPolicy` is defined, subsequent refreshes are scheduled via the job system (agenda).
 -   `transforming` → `uploading` as processing steps complete.
 -   On success → `completed` (progress 100).

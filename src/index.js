@@ -129,7 +129,7 @@ app.get('/health', (req, res) => {
   });
 });
 
-app.get('/:visibility/fdas', async (req, res) => {
+app.get('/{visibility}/fdas', async (req, res) => {
   const service = req.get('Fiware-Service');
   const servicePath = req.get('Fiware-ServicePath');
   const { visibility } = req.params;
@@ -145,7 +145,7 @@ app.get('/:visibility/fdas', async (req, res) => {
   return res.status(200).json(fdas);
 });
 
-app.post('/:visibility/fdas', async (req, res) => {
+app.post('/{visibility}/fdas', async (req, res) => {
   validateAllowedFieldsBody(req.body, [
     'id',
     'query',
@@ -188,7 +188,7 @@ app.post('/:visibility/fdas', async (req, res) => {
   });
 });
 
-app.get('/:visibility/fdas/:fdaId', async (req, res) => {
+app.get('/{visibility}/fdas/:fdaId', async (req, res) => {
   const service = req.get('Fiware-Service');
   const servicePath = req.get('Fiware-ServicePath');
   const { visibility, fdaId } = req.params;
@@ -204,7 +204,7 @@ app.get('/:visibility/fdas/:fdaId', async (req, res) => {
   return res.status(200).json(fda);
 });
 
-app.put('/:visibility/fdas/:fdaId', async (req, res) => {
+app.put('/{visibility}/fdas/:fdaId', async (req, res) => {
   const service = req.get('Fiware-Service');
   const servicePath = req.get('Fiware-ServicePath');
   const { visibility, fdaId } = req.params;
@@ -231,7 +231,7 @@ app.put('/:visibility/fdas/:fdaId', async (req, res) => {
   });
 });
 
-app.delete('/:visibility/fdas/:fdaId', async (req, res) => {
+app.delete('/{visibility}/fdas/:fdaId', async (req, res) => {
   const service = req.get('Fiware-Service');
   const servicePath = req.get('Fiware-ServicePath');
   const { visibility, fdaId } = req.params;
@@ -247,7 +247,7 @@ app.delete('/:visibility/fdas/:fdaId', async (req, res) => {
   return res.sendStatus(204);
 });
 
-app.get('/:visibility/fdas/:fdaId/das', async (req, res) => {
+app.get('/{visibility}/fdas/:fdaId/das', async (req, res) => {
   const service = req.get('Fiware-Service');
   const servicePath = req.get('Fiware-ServicePath');
   const { visibility, fdaId } = req.params;
@@ -263,7 +263,7 @@ app.get('/:visibility/fdas/:fdaId/das', async (req, res) => {
   return res.status(200).json(das);
 });
 
-app.post('/:visibility/fdas/:fdaId/das', async (req, res) => {
+app.post('/{visibility}/fdas/:fdaId/das', async (req, res) => {
   const service = req.get('Fiware-Service');
   const servicePath = req.get('Fiware-ServicePath');
   const { visibility, fdaId } = req.params;
@@ -291,7 +291,7 @@ app.post('/:visibility/fdas/:fdaId/das', async (req, res) => {
   return res.sendStatus(201);
 });
 
-app.get('/:visibility/fdas/:fdaId/das/:daId', async (req, res) => {
+app.get('/{visibility}/fdas/:fdaId/das/:daId', async (req, res) => {
   const service = req.get('Fiware-Service');
   const servicePath = req.get('Fiware-ServicePath');
   const { visibility, fdaId, daId } = req.params;
@@ -307,7 +307,7 @@ app.get('/:visibility/fdas/:fdaId/das/:daId', async (req, res) => {
   return res.status(200).json(da);
 });
 
-app.put('/:visibility/fdas/:fdaId/das/:daId', async (req, res) => {
+app.put('/{visibility}/fdas/:fdaId/das/:daId', async (req, res) => {
   const service = req.get('Fiware-Service');
   const servicePath = req.get('Fiware-ServicePath');
   const { visibility, fdaId, daId } = req.params;
@@ -336,7 +336,7 @@ app.put('/:visibility/fdas/:fdaId/das/:daId', async (req, res) => {
   return res.sendStatus(204);
 });
 
-app.delete('/:visibility/fdas/:fdaId/das/:daId', async (req, res) => {
+app.delete('/{visibility}/fdas/:fdaId/das/:daId', async (req, res) => {
   const service = req.get('Fiware-Service');
   const servicePath = req.get('Fiware-ServicePath');
   const { visibility, fdaId, daId } = req.params;
@@ -352,7 +352,7 @@ app.delete('/:visibility/fdas/:fdaId/das/:daId', async (req, res) => {
   return res.sendStatus(204);
 });
 
-app.get('/:visibility/fdas/:fdaId/das/:daId/data', async (req, res) => {
+app.get('/{visibility}/fdas/:fdaId/das/:daId/data', async (req, res) => {
   const { visibility, fdaId, daId } = req.params;
   const service = req.get('Fiware-Service');
   const servicePath = req.get('Fiware-ServicePath');
