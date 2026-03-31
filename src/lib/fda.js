@@ -987,7 +987,7 @@ function toFDAApiResponse(fda, { includeId }) {
     return fda;
   }
 
-  const { _id, fdaId, service, visibility, servicePath, ...rest } = fda;
+  const { fdaId, ...rest } = fda;
 
   if (!includeId) {
     return rest;
