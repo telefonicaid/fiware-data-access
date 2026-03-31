@@ -925,7 +925,7 @@ _**Response code**_
 
 _**Response headers**_
 
--   Return the header `Location` with the value of the path used to create the DA (I.E : `/public/fda01/das/da01`) when
+-   Return the header `Location` with the value of the path used to create the DA (I.E : `/public/fdas/fda01/das/da01`) when
     the creation succeeds (Response code 201).
 
 _**Response payload**_
