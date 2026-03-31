@@ -393,7 +393,6 @@ A FDA is represented by a JSON object with the following fields:
 | `id`                                                     |          | string | FDA unique identifier                                                                                                             |
 | `description`                                            | ✓        | string | A free text used by the client to describe the FDA                                                                                |
 | `query`                                                  |          | string | Base `postgreSQL` query to create the file in the bucket-based storage system                                                     |
-| `servicePath`                                            |          | string | NGSI hierarchical service path. Exact-matched on every access. Must be a valid absolute path (e.g. `/servicePath`).               |
 | `refreshPolicy`                                          | ✓        | object | Optional policy for automatic refresh.                                                                                            |
 | [`objStgConf`](#object-storage-configuration-objstgconf) | ✓        | object | Various options to configure the FDA uploaded in the object storage app.                                                          |
 | `timeColumn`                                             | ✓        | string | Required with `refreshPolicy` of type `window` and `partition`. Column in the table indicating when the data was received (date). |
@@ -438,11 +437,14 @@ This object configures certain aspects of the object storage app when uploading 
 
 These fields are **provided in responses** but **cannot be included or modified** in POST or PUT requests:
 
-| Parameter   | Optional | Type   | Description                                                                                   |
-| ----------- | -------- | ------ | --------------------------------------------------------------------------------------------- |
-| `status`    |          | string | Current FDA execution status (`fetching`, `transforming`, `uploading`, `completed`, `failed`) |
-| `progress`  |          | number | Execution progress percentage (0–100)                                                         |
-| `lastFetch` |          | string | Timestamp of the last fetch (ISO date format)                                                 |
+| Parameter     | Optional | Type   | Description                                                                                   |
+| ------------- | -------- | ------ | --------------------------------------------------------------------------------------------- |
+| `status`      |          | string | Current FDA execution status (`fetching`, `transforming`, `uploading`, `completed`, `failed`) |
+| `progress`    |          | number | Execution progress percentage (0–100)                                                         |
+| `lastFetch`   |          | string | Timestamp of the last fetch (ISO date format)                                                 |
+| `visibility`  |          | string | FDA access visibility level (`public` or `private`). Set by the path segment in the request.  |
+| `service`     |          | string | Tenant or service identifier. Set by the `Fiware-Service` header in the request.              |
+| `servicePath` |          | string | NGSI hierarchical service path. Set by the `Fiware-ServicePath` header in the request.        |
 
 > Note: Including operational fields like `progress` or `status` in POST/PUT requests is ignored by the server. Requests
 > including these fields are rejected with `400 BadRequest`.

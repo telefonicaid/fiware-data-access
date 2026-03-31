@@ -28,6 +28,7 @@ Key characteristics:
 -   Created from a base SQL query
 -   Physically stored as a Parquet file
 -   Stored inside a bucket named after the `Fiware-Service`
+-   Associated with a `visibility` level (`public` or `private`) that controls access authorization
 -   Can be regenerated (manually or configured) to refresh the data
 -   Parent resource of one or more DAs
 -   Has status, progress and lastFetch fields, and an optional refreshPolicy.
