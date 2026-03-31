@@ -393,7 +393,6 @@ A FDA is represented by a JSON object with the following fields:
 | `id`                                                     |          | string | FDA unique identifier                                                                                                             |
 | `description`                                            | ✓        | string | A free text used by the client to describe the FDA                                                                                |
 | `query`                                                  |          | string | Base `postgreSQL` query to create the file in the bucket-based storage system                                                     |
-| `visibility`                                             |          | string | Access visibility of the FDA. Allowed values: `public`, `private`. Derived from the route path segment.                           |
 | `servicePath`                                            |          | string | NGSI hierarchical service path. Exact-matched on every access. Must be a valid absolute path (e.g. `/servicePath`).               |
 | `refreshPolicy`                                          | ✓        | object | Optional policy for automatic refresh.                                                                                            |
 | [`objStgConf`](#object-storage-configuration-objstgconf) | ✓        | object | Various options to configure the FDA uploaded in the object storage app.                                                          |

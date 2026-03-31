@@ -35,7 +35,7 @@ Key characteristics:
 #### Example FDA
 
 ```http
-POST /public/fdas
+POST /{visibility}/fdas
 Fiware-Service: acme
 Fiware-ServicePath: /servicePath
 Content-Type: application/json
@@ -83,7 +83,7 @@ Key characteristics:
 #### Example DA
 
 ```http
-POST /public/fdas/animals_fda/das
+POST /{visibility}/fdas/animals_fda/das
 Fiware-Service: acme
 Fiware-ServicePath: /servicePath
 Content-Type: application/json
@@ -158,10 +158,11 @@ Each DA contains:
     "fdaId": "fda1",
     "description": "Description for the first FDA",
     "query": "SELECT population, timeinstant FROM exampleSchema.exampleTable",
-    "servicePath": "/public",
+    "servicePath": "/servicePath",
     "service": "fiwareService",
     "progress": 10,
     "lastFetch": null,
+    "visibility": "public",
     "refreshPolicy": {
         "type": "interval",
         "value": "1 hour"
