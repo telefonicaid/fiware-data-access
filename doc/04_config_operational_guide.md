@@ -165,7 +165,16 @@ Health endpoint with liveness and runtime summary.
     "process": { "pid": 3210, "nodeVersion": "v24.0.0", "memory": { "rssBytes": 85422080 } },
     "roles": { "apiServer": true, "fetcher": true, "syncQueries": false },
     "traffic": { "totalRequests": 105, "errorRequests": 3, "inFlightRequests": 0, "routesObserved": 8 },
-    "fiware": { "requestsWithHeaders": 98, "servicesObserved": 3, "servicePathsObserved": 4 }
+    "fiware": { "requestsWithHeaders": 98, "servicesObserved": 3, "servicePathsObserved": 4 },
+    "mongo": {
+        "scrapeOk": true,
+        "source": "live",
+        "fdasTotal": 12,
+        "dasTotal": 27,
+        "agendaJobsTotal": 7,
+        "agendaJobsFailed": 1,
+        "agendaJobsLocked": 0
+    }
 }
 ```
 
@@ -189,11 +198,48 @@ OpenMetrics/Prometheus telemetry endpoint.
 # HELP fda_up Service liveness indicator (1=up).
 # TYPE fda_up gauge
 fda_up 1
-# HELP fda_fiware_catalog_services Distinct Fiware-Service values seen.
-# TYPE fda_fiware_catalog_services gauge
-fda_fiware_catalog_services 3
+# HELP fda_catalog_services_observed Distinct Fiware-Service values seen in traffic.
+# TYPE fda_catalog_services_observed gauge
+fda_catalog_services_observed 3
+# HELP fda_catalog_fdas_total Total number of FDA documents stored in MongoDB.
+# TYPE fda_catalog_fdas_total gauge
+fda_catalog_fdas_total 12
+# HELP fda_jobs_agenda_total Total number of Agenda jobs stored in MongoDB.
+# TYPE fda_jobs_agenda_total gauge
+fda_jobs_agenda_total 7
 # EOF
 ```
+
+### Metrics Reference Table
+
+The following table summarizes the main metrics exposed by `GET /metrics`, their labels, and typical operational use.
+
+| Metric                                      | Type    | Labels                                                                                   | Purpose                                                           | Typical alert idea                          |
+| ------------------------------------------- | ------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------- |
+| `fda_up`                                    | gauge   | none                                                                                     | Process liveness indicator (`1` when running).                    | `== 0` for 1-2 scrape intervals             |
+| `fda_info`                                  | gauge   | `version`, `node_version`, `env`, `role_api_server`, `role_fetcher`, `role_sync_queries` | Static runtime/build metadata.                                    | no alert; metadata only                     |
+| `fda_process_start_time_seconds`            | gauge   | none                                                                                     | Process start time in epoch seconds.                              | no alert; change detection                  |
+| `fda_uptime_seconds`                        | gauge   | none                                                                                     | Process uptime.                                                   | frequent resets may indicate instability    |
+| `fda_http_server_in_flight_requests`        | gauge   | none                                                                                     | Current in-flight HTTP requests.                                  | sustained high value indicates saturation   |
+| `fda_http_server_requests_total`            | counter | `method`, `route`, `status_code`, `status_class`                                         | HTTP usage counter by endpoint and status.                        | sudden drop to zero or unusual distribution |
+| `fda_http_server_request_duration_ms_sum`   | counter | `method`, `route`, `status_class`                                                        | Total HTTP latency in ms (sum).                                   | used with `_count` for latency SLI          |
+| `fda_http_server_request_duration_ms_count` | counter | `method`, `route`, `status_class`                                                        | Number of timed HTTP requests.                                    | used with `_sum` for latency SLI            |
+| `fda_http_server_errors_total`              | counter | `method`, `route`, `status_code`, `status_class`                                         | Error responses (`>= 400`).                                       | error-rate threshold by route               |
+| `fda_tenant_requests_total`                 | counter | `fiware_service`, `fiware_service_path`, `method`, `route`, `status_class`               | Tenant/subservice usage breakdown.                                | unusual spikes by tenant or path            |
+| `fda_catalog_services_observed`             | gauge   | none                                                                                     | Number of unique `Fiware-Service` values observed in traffic.     | no alert; cardinality watch                 |
+| `fda_catalog_service_paths_observed`        | gauge   | none                                                                                     | Number of unique `Fiware-ServicePath` values observed in traffic. | no alert; cardinality watch                 |
+| `fda_mongo_scrape_success`                  | gauge   | none                                                                                     | Indicates Mongo snapshot success (`1`) or failure (`0`).          | `== 0` for N consecutive scrapes            |
+| `fda_catalog_fdas_total`                    | gauge   | none                                                                                     | Total FDA documents in Mongo (`fdas`).                            | sudden drops / unexpected growth            |
+| `fda_catalog_das_total`                     | gauge   | none                                                                                     | Total DA entries in all FDAs.                                     | unexpected drops / growth                   |
+| `fda_catalog_fdas_by_status`                | gauge   | `status`                                                                                 | FDAs grouped by execution status (`completed`, `failed`, etc.).   | high `status="failed"` ratio                |
+| `fda_catalog_fdas_by_service`               | gauge   | `fiware_service`, `fiware_service_path`                                                  | FDAs by tenant/subservice from persisted catalog.                 | tenant-level drift monitoring               |
+| `fda_jobs_agenda_total`                     | gauge   | none                                                                                     | Total jobs in `agendaJobs`.                                       | no alert by itself                          |
+| `fda_jobs_agenda_failed_total`              | gauge   | none                                                                                     | Jobs with `failCount > 0`.                                        | increasing value over baseline              |
+| `fda_jobs_agenda_locked_total`              | gauge   | none                                                                                     | Jobs currently locked (`lockedAt != null`).                       | prolonged non-zero values                   |
+| `fda_jobs_agenda_by_name`                   | gauge   | `job_name`                                                                               | Job count by Agenda job name.                                     | per-job anomaly detection                   |
+| `fda_process_resident_memory_bytes`         | gauge   | none                                                                                     | RSS memory usage in bytes.                                        | sustained growth / threshold                |
+| `fda_process_heap_total_bytes`              | gauge   | none                                                                                     | Total V8 heap allocation.                                         | no alert by itself                          |
+| `fda_process_heap_used_bytes`               | gauge   | none                                                                                     | Used V8 heap memory.                                              | sustained growth / threshold                |
 
 ---
 

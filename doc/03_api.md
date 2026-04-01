@@ -440,9 +440,18 @@ OpenMetrics-compatible plain text, including HELP/TYPE metadata, e.g.:
 # HELP fda_up Service liveness indicator (1=up).
 # TYPE fda_up gauge
 fda_up 1
-# HELP fda_http_requests_total Total HTTP requests served.
-# TYPE fda_http_requests_total counter
-fda_http_requests_total{method="GET",route="/health",status_class="2xx",status_code="200"} 4
+# HELP fda_http_server_requests_total Total HTTP requests served.
+# TYPE fda_http_server_requests_total counter
+fda_http_server_requests_total{method="GET",route="/health",status_class="2xx",status_code="200"} 4
+# HELP fda_tenant_requests_total Total HTTP requests carrying FIWARE tenant headers.
+# TYPE fda_tenant_requests_total counter
+fda_tenant_requests_total{fiware_service="my-bucket",fiware_service_path="/",method="GET",route="/:visibility/fdas",status_class="2xx"} 8
+# HELP fda_catalog_fdas_by_service Number of FDA documents by fiware service and servicePath.
+# TYPE fda_catalog_fdas_by_service gauge
+fda_catalog_fdas_by_service{fiware_service="my-bucket",fiware_service_path="/"} 12
+# HELP fda_jobs_agenda_total Total number of Agenda jobs stored in MongoDB.
+# TYPE fda_jobs_agenda_total gauge
+fda_jobs_agenda_total 7
 # EOF
 ```
 
