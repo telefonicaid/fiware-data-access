@@ -70,6 +70,10 @@ const envVarsSchema = {
       type: 'number',
       default: 5000,
     },
+    FDA_PG_POOL_DB_IDLE_TIMEOUT_MS: {
+      type: 'number',
+      default: 300000,
+    },
     FDA_OBJSTG_USER: {
       type: 'string',
       default: null,
@@ -147,6 +151,7 @@ export const config = {
       max: envVars.FDA_PG_POOL_MAX,
       idleTimeoutMillis: envVars.FDA_PG_POOL_IDLE_TIMEOUT_MS,
       connectionTimeoutMillis: envVars.FDA_PG_POOL_CONN_TIMEOUT_MS,
+      databaseIdleTimeoutMillis: envVars.FDA_PG_POOL_DB_IDLE_TIMEOUT_MS,
     },
   },
   objstg: {
