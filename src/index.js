@@ -60,6 +60,13 @@ import {
   rowsToCsv,
   rowsToXlsx,
 } from './lib/utils/outputFormat.js';
+import {
+  onRequestStart,
+  onRequestFinish,
+  buildHealthPayload,
+  buildMetricsText,
+  getMetricsContentType,
+} from './lib/metrics.js';
 
 export const app = express();
 const PORT = config.port;
@@ -69,6 +76,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use((req, res, next) => {
+  const reqStartMs = onRequestStart();
   const oldSend = res.send;
   const oldJson = res.json;
 
@@ -99,6 +107,8 @@ app.use((req, res, next) => {
   const start = Date.now();
 
   res.on('finish', () => {
+    onRequestFinish(req, res, reqStartMs);
+
     logger.info(
       {
         method: req.method,
@@ -123,10 +133,22 @@ app.use((req, res, next) => {
 });
 
 app.get('/health', (req, res) => {
-  res.status(200).json({
-    status: 'UP',
-    timestamp: new Date().toISOString(),
-  });
+  res.status(200).json(buildHealthPayload());
+});
+
+app.get('/metrics', (req, res) => {
+  const contentNegotiation = getMetricsContentType(req.get('Accept'));
+
+  if (!contentNegotiation.ok) {
+    return res.status(406).json({
+      error: 'NotAcceptable',
+      description:
+        'Accept header must allow application/openmetrics-text or text/plain',
+    });
+  }
+
+  res.setHeader('Content-Type', contentNegotiation.contentType);
+  return res.status(200).send(buildMetricsText());
 });
 
 app.get('/:visibility/fdas', async (req, res) => {
