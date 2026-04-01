@@ -132,11 +132,12 @@ app.use((req, res, next) => {
   next();
 });
 
-app.get('/health', (req, res) => {
-  res.status(200).json(buildHealthPayload());
+app.get('/health', async (req, res) => {
+  const payload = await buildHealthPayload();
+  res.status(200).json(payload);
 });
 
-app.get('/metrics', (req, res) => {
+app.get('/metrics', async (req, res) => {
   const contentNegotiation = getMetricsContentType(req.get('Accept'));
 
   if (!contentNegotiation.ok) {
@@ -148,7 +149,8 @@ app.get('/metrics', (req, res) => {
   }
 
   res.setHeader('Content-Type', contentNegotiation.contentType);
-  return res.status(200).send(buildMetricsText());
+  const payload = await buildMetricsText();
+  return res.status(200).send(payload);
 });
 
 app.get('/:visibility/fdas', async (req, res) => {

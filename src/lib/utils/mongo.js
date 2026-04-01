@@ -32,7 +32,7 @@ const client = new MongoClient(uri);
 const logger = getBasicLogger();
 let isConnected = false;
 
-async function getCollection() {
+async function getDb() {
   if (!isConnected) {
     try {
       await client.connect();
@@ -45,8 +45,14 @@ async function getCollection() {
     }
     isConnected = true;
   }
+
   const db = client.db();
   logger.debug('MongoDB connection to db %s', db.databaseName);
+  return db;
+}
+
+async function getCollection() {
+  const db = await getDb();
   return db.collection('fdas');
 }
 
@@ -365,4 +371,101 @@ export async function removeDA(service, fdaId, daId) {
       `Error removing DA ${daId} of FDA ${fdaId} and service ${service}: ${e}`,
     );
   }
+}
+
+export async function getOperationalCollectionsSnapshot() {
+  const db = await getDb();
+  const fdasCollection = db.collection('fdas');
+  const agendaCollection = db.collection('agendaJobs');
+
+  const [
+    fdasTotal,
+    fdasByStatus,
+    fdasByServiceAndPath,
+    dasTotalAgg,
+    agendaTotal,
+    agendaFailed,
+    agendaLocked,
+    agendaByName,
+  ] = await Promise.all([
+    fdasCollection.countDocuments({}),
+    fdasCollection
+      .aggregate([
+        {
+          $group: {
+            _id: { $ifNull: ['$status', 'unknown'] },
+            count: { $sum: 1 },
+          },
+        },
+      ])
+      .toArray(),
+    fdasCollection
+      .aggregate([
+        {
+          $group: {
+            _id: {
+              service: { $ifNull: ['$service', 'unknown'] },
+              servicePath: { $ifNull: ['$servicePath', '/'] },
+            },
+            count: { $sum: 1 },
+          },
+        },
+      ])
+      .toArray(),
+    fdasCollection
+      .aggregate([
+        {
+          $project: {
+            daCount: {
+              $size: {
+                $ifNull: [{ $objectToArray: '$das' }, []],
+              },
+            },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: '$daCount' },
+          },
+        },
+      ])
+      .toArray(),
+    agendaCollection.countDocuments({}),
+    agendaCollection.countDocuments({ failCount: { $gt: 0 } }),
+    agendaCollection.countDocuments({ lockedAt: { $ne: null } }),
+    agendaCollection
+      .aggregate([
+        {
+          $group: {
+            _id: { $ifNull: ['$name', 'unknown'] },
+            count: { $sum: 1 },
+          },
+        },
+      ])
+      .toArray(),
+  ]);
+
+  return {
+    fdasTotal,
+    dasTotal: dasTotalAgg[0]?.total || 0,
+    fdasByStatus: fdasByStatus.map((item) => ({
+      status: item._id,
+      count: item.count,
+    })),
+    fdasByServiceAndPath: fdasByServiceAndPath.map((item) => ({
+      service: item._id.service,
+      servicePath: item._id.servicePath,
+      count: item.count,
+    })),
+    agenda: {
+      total: agendaTotal,
+      failed: agendaFailed,
+      locked: agendaLocked,
+      byName: agendaByName.map((item) => ({
+        name: item._id,
+        count: item.count,
+      })),
+    },
+  };
 }

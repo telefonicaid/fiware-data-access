@@ -23,9 +23,11 @@
 // criminal actions it may exercise to protect its rights.
 
 import { config } from './fdaConfig.js';
+import { getOperationalCollectionsSnapshot } from './utils/mongo.js';
 
 const SERVICE_VERSION = process.env.npm_package_version || 'unknown';
 const PROCESS_START_TIME_SECONDS = Math.floor(Date.now() / 1000);
+const MONGO_SNAPSHOT_TTL_MS = 10000;
 
 const state = {
   totalRequests: 0,
@@ -38,6 +40,10 @@ const state = {
   servicesObserved: new Set(),
   servicePathsObserved: new Set(),
   fiwareHeaderRequestsTotal: 0,
+  mongoSnapshot: null,
+  mongoSnapshotLastUpdateMs: 0,
+  mongoSnapshotLastSuccessMs: 0,
+  mongoSnapshotLastError: null,
 };
 
 function nowMs() {
@@ -144,6 +150,47 @@ function renderMetricLines(metricName, map) {
     );
 }
 
+async function getMongoSnapshot() {
+  const currentTimeMs = nowMs();
+  const cacheIsFresh =
+    state.mongoSnapshot &&
+    currentTimeMs - state.mongoSnapshotLastUpdateMs < MONGO_SNAPSHOT_TTL_MS;
+
+  if (cacheIsFresh) {
+    return {
+      snapshot: state.mongoSnapshot,
+      source: 'cache',
+      ok: true,
+      error: null,
+    };
+  }
+
+  try {
+    const snapshot = await getOperationalCollectionsSnapshot();
+    state.mongoSnapshot = snapshot;
+    state.mongoSnapshotLastUpdateMs = currentTimeMs;
+    state.mongoSnapshotLastSuccessMs = currentTimeMs;
+    state.mongoSnapshotLastError = null;
+
+    return {
+      snapshot,
+      source: 'live',
+      ok: true,
+      error: null,
+    };
+  } catch (error) {
+    state.mongoSnapshotLastUpdateMs = currentTimeMs;
+    state.mongoSnapshotLastError = error?.message || String(error);
+
+    return {
+      snapshot: state.mongoSnapshot,
+      source: 'stale',
+      ok: false,
+      error: state.mongoSnapshotLastError,
+    };
+  }
+}
+
 export function onRequestStart() {
   state.inFlightRequests += 1;
   return nowMs();
@@ -203,8 +250,10 @@ export function onRequestFinish(req, res, startMs) {
   }
 }
 
-export function buildHealthPayload() {
+export async function buildHealthPayload() {
   const memory = process.memoryUsage();
+  const mongoData = await getMongoSnapshot();
+  const mongoSnapshot = mongoData.snapshot;
 
   return {
     status: 'UP',
@@ -235,12 +284,31 @@ export function buildHealthPayload() {
       servicesObserved: state.servicesObserved.size,
       servicePathsObserved: state.servicePathsObserved.size,
     },
+    mongo: {
+      scrapeOk: mongoData.ok,
+      source: mongoData.source,
+      ...(mongoData.error && { lastError: mongoData.error }),
+      ...(state.mongoSnapshotLastSuccessMs > 0 && {
+        lastSuccessTimestamp: new Date(
+          state.mongoSnapshotLastSuccessMs,
+        ).toISOString(),
+      }),
+      ...(mongoSnapshot && {
+        fdasTotal: mongoSnapshot.fdasTotal,
+        dasTotal: mongoSnapshot.dasTotal,
+        agendaJobsTotal: mongoSnapshot.agenda.total,
+        agendaJobsFailed: mongoSnapshot.agenda.failed,
+        agendaJobsLocked: mongoSnapshot.agenda.locked,
+      }),
+    },
   };
 }
 
-export function buildMetricsText() {
+export async function buildMetricsText() {
   const lines = [];
   const memory = process.memoryUsage();
+  const mongoData = await getMongoSnapshot();
+  const mongoSnapshot = mongoData.snapshot;
 
   lines.push('# HELP fda_up Service liveness indicator (1=up).');
   lines.push('# TYPE fda_up gauge');
@@ -270,78 +338,151 @@ export function buildMetricsText() {
   lines.push(`fda_uptime_seconds ${Math.floor(process.uptime())}`);
 
   lines.push(
-    '# HELP fda_http_in_flight_requests Current in-flight HTTP requests.',
+    '# HELP fda_http_server_in_flight_requests Current in-flight HTTP requests.',
   );
-  lines.push('# TYPE fda_http_in_flight_requests gauge');
-  lines.push(`fda_http_in_flight_requests ${state.inFlightRequests}`);
-
-  lines.push('# HELP fda_http_requests_total Total HTTP requests served.');
-  lines.push('# TYPE fda_http_requests_total counter');
-  lines.push(
-    ...renderMetricLines('fda_http_requests_total', state.httpRequestsByLabel),
-  );
+  lines.push('# TYPE fda_http_server_in_flight_requests gauge');
+  lines.push(`fda_http_server_in_flight_requests ${state.inFlightRequests}`);
 
   lines.push(
-    '# HELP fda_http_request_duration_ms_sum Total HTTP request latency in milliseconds.',
+    '# HELP fda_http_server_requests_total Total HTTP requests served.',
   );
-  lines.push('# TYPE fda_http_request_duration_ms_sum counter');
-  lines.push(
-    ...Array.from(state.httpDurationByLabel.values())
-      .sort((a, b) => labelsKey(a.labels).localeCompare(labelsKey(b.labels)))
-      .map(
-        (entry) =>
-          `fda_http_request_duration_ms_sum${formatLabels(entry.labels)} ${entry.sumMs}`,
-      ),
-  );
-
-  lines.push(
-    '# HELP fda_http_request_duration_ms_count Total number of timed HTTP requests.',
-  );
-  lines.push('# TYPE fda_http_request_duration_ms_count counter');
-  lines.push(
-    ...Array.from(state.httpDurationByLabel.values())
-      .sort((a, b) => labelsKey(a.labels).localeCompare(labelsKey(b.labels)))
-      .map(
-        (entry) =>
-          `fda_http_request_duration_ms_count${formatLabels(entry.labels)} ${entry.count}`,
-      ),
-  );
-
-  lines.push(
-    '# HELP fda_http_request_errors_total Total HTTP requests resulting in error status codes.',
-  );
-  lines.push('# TYPE fda_http_request_errors_total counter');
+  lines.push('# TYPE fda_http_server_requests_total counter');
   lines.push(
     ...renderMetricLines(
-      'fda_http_request_errors_total',
+      'fda_http_server_requests_total',
+      state.httpRequestsByLabel,
+    ),
+  );
+
+  lines.push(
+    '# HELP fda_http_server_request_duration_ms_sum Total HTTP request latency in milliseconds.',
+  );
+  lines.push('# TYPE fda_http_server_request_duration_ms_sum counter');
+  lines.push(
+    ...Array.from(state.httpDurationByLabel.values())
+      .sort((a, b) => labelsKey(a.labels).localeCompare(labelsKey(b.labels)))
+      .map(
+        (entry) =>
+          `fda_http_server_request_duration_ms_sum${formatLabels(entry.labels)} ${entry.sumMs}`,
+      ),
+  );
+
+  lines.push(
+    '# HELP fda_http_server_request_duration_ms_count Total number of timed HTTP requests.',
+  );
+  lines.push('# TYPE fda_http_server_request_duration_ms_count counter');
+  lines.push(
+    ...Array.from(state.httpDurationByLabel.values())
+      .sort((a, b) => labelsKey(a.labels).localeCompare(labelsKey(b.labels)))
+      .map(
+        (entry) =>
+          `fda_http_server_request_duration_ms_count${formatLabels(entry.labels)} ${entry.count}`,
+      ),
+  );
+
+  lines.push(
+    '# HELP fda_http_server_errors_total Total HTTP requests resulting in error status codes.',
+  );
+  lines.push('# TYPE fda_http_server_errors_total counter');
+  lines.push(
+    ...renderMetricLines(
+      'fda_http_server_errors_total',
       state.httpErrorsByLabel,
     ),
   );
 
   lines.push(
-    '# HELP fda_fiware_requests_total Total HTTP requests carrying FIWARE tenant headers.',
+    '# HELP fda_tenant_requests_total Total HTTP requests carrying FIWARE tenant headers.',
   );
-  lines.push('# TYPE fda_fiware_requests_total counter');
+  lines.push('# TYPE fda_tenant_requests_total counter');
   lines.push(
     ...renderMetricLines(
-      'fda_fiware_requests_total',
+      'fda_tenant_requests_total',
       state.fiwareRequestsByLabel,
     ),
   );
 
   lines.push(
-    '# HELP fda_fiware_catalog_services Distinct Fiware-Service values seen.',
+    '# HELP fda_catalog_services_observed Distinct Fiware-Service values seen in traffic.',
   );
-  lines.push('# TYPE fda_fiware_catalog_services gauge');
-  lines.push(`fda_fiware_catalog_services ${state.servicesObserved.size}`);
+  lines.push('# TYPE fda_catalog_services_observed gauge');
+  lines.push(`fda_catalog_services_observed ${state.servicesObserved.size}`);
 
   lines.push(
-    '# HELP fda_fiware_catalog_service_paths Distinct Fiware-ServicePath values seen.',
+    '# HELP fda_catalog_service_paths_observed Distinct Fiware-ServicePath values seen in traffic.',
   );
-  lines.push('# TYPE fda_fiware_catalog_service_paths gauge');
+  lines.push('# TYPE fda_catalog_service_paths_observed gauge');
   lines.push(
-    `fda_fiware_catalog_service_paths ${state.servicePathsObserved.size}`,
+    `fda_catalog_service_paths_observed ${state.servicePathsObserved.size}`,
   );
+
+  lines.push(
+    '# HELP fda_mongo_scrape_success Mongo operational metrics scrape status (1=ok,0=error).',
+  );
+  lines.push('# TYPE fda_mongo_scrape_success gauge');
+  lines.push(`fda_mongo_scrape_success ${mongoData.ok ? 1 : 0}`);
+
+  if (mongoSnapshot) {
+    lines.push(
+      '# HELP fda_catalog_fdas_total Total number of FDA documents stored in MongoDB.',
+    );
+    lines.push('# TYPE fda_catalog_fdas_total gauge');
+    lines.push(`fda_catalog_fdas_total ${mongoSnapshot.fdasTotal}`);
+
+    lines.push(
+      '# HELP fda_catalog_das_total Total number of DA entries across all FDA documents.',
+    );
+    lines.push('# TYPE fda_catalog_das_total gauge');
+    lines.push(`fda_catalog_das_total ${mongoSnapshot.dasTotal}`);
+
+    lines.push(
+      '# HELP fda_catalog_fdas_by_status Number of FDA documents by execution status.',
+    );
+    lines.push('# TYPE fda_catalog_fdas_by_status gauge');
+    for (const item of mongoSnapshot.fdasByStatus) {
+      lines.push(
+        `fda_catalog_fdas_by_status${formatLabels({ status: item.status })} ${item.count}`,
+      );
+    }
+
+    lines.push(
+      '# HELP fda_catalog_fdas_by_service Number of FDA documents by fiware service and servicePath.',
+    );
+    lines.push('# TYPE fda_catalog_fdas_by_service gauge');
+    for (const item of mongoSnapshot.fdasByServiceAndPath) {
+      lines.push(
+        `fda_catalog_fdas_by_service${formatLabels({ fiware_service: item.service, fiware_service_path: item.servicePath })} ${item.count}`,
+      );
+    }
+
+    lines.push(
+      '# HELP fda_jobs_agenda_total Total number of Agenda jobs stored in MongoDB.',
+    );
+    lines.push('# TYPE fda_jobs_agenda_total gauge');
+    lines.push(`fda_jobs_agenda_total ${mongoSnapshot.agenda.total}`);
+
+    lines.push(
+      '# HELP fda_jobs_agenda_failed_total Number of Agenda jobs with failures (failCount > 0).',
+    );
+    lines.push('# TYPE fda_jobs_agenda_failed_total gauge');
+    lines.push(`fda_jobs_agenda_failed_total ${mongoSnapshot.agenda.failed}`);
+
+    lines.push(
+      '# HELP fda_jobs_agenda_locked_total Number of Agenda jobs currently locked.',
+    );
+    lines.push('# TYPE fda_jobs_agenda_locked_total gauge');
+    lines.push(`fda_jobs_agenda_locked_total ${mongoSnapshot.agenda.locked}`);
+
+    lines.push(
+      '# HELP fda_jobs_agenda_by_name Number of Agenda jobs by job name.',
+    );
+    lines.push('# TYPE fda_jobs_agenda_by_name gauge');
+    for (const item of mongoSnapshot.agenda.byName) {
+      lines.push(
+        `fda_jobs_agenda_by_name${formatLabels({ job_name: item.name })} ${item.count}`,
+      );
+    }
+  }
 
   lines.push(
     '# HELP fda_process_resident_memory_bytes Resident memory size in bytes.',
