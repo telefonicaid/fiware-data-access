@@ -317,6 +317,37 @@ describe('index routes - validation and middleware branches', () => {
 
     const healthRes = await request(app).get('/health').expect(200);
     expect(healthRes.body.status).toBe('UP');
+    expect(healthRes.body).toEqual(
+      expect.objectContaining({
+        timestamp: expect.any(String),
+        uptimeSeconds: expect.any(Number),
+        process: expect.objectContaining({
+          pid: expect.any(Number),
+          nodeVersion: expect.any(String),
+          memory: expect.objectContaining({
+            rssBytes: expect.any(Number),
+            heapTotalBytes: expect.any(Number),
+            heapUsedBytes: expect.any(Number),
+          }),
+        }),
+        roles: expect.objectContaining({
+          apiServer: expect.any(Boolean),
+          fetcher: expect.any(Boolean),
+          syncQueries: expect.any(Boolean),
+        }),
+        traffic: expect.objectContaining({
+          totalRequests: expect.any(Number),
+          errorRequests: expect.any(Number),
+          inFlightRequests: expect.any(Number),
+          routesObserved: expect.any(Number),
+        }),
+        fiware: expect.objectContaining({
+          requestsWithHeaders: expect.any(Number),
+          servicesObserved: expect.any(Number),
+          servicePathsObserved: expect.any(Number),
+        }),
+      }),
+    );
 
     await request(app)
       .get('/public/fdas')
@@ -454,6 +485,49 @@ describe('index routes - validation and middleware branches', () => {
     expect(res.body).toEqual({
       error: 'BadRequest',
       description: 'PUT /fdas does not accept a request body',
+    });
+  });
+
+  test('returns prometheus metrics in text format by default', async () => {
+    await request(app).get('/health').expect(200);
+
+    const res = await request(app).get('/metrics').expect(200);
+    expect(res.headers['content-type']).toContain('text/plain');
+    expect(res.headers['content-type']).toContain('version=0.0.4');
+    expect(res.headers['content-type']).toContain('charset=utf-8');
+    expect(res.text).toContain(
+      '# HELP fda_up Service liveness indicator (1=up).',
+    );
+    expect(res.text).toContain('# TYPE fda_http_requests_total counter');
+    expect(res.text).toContain('fda_http_requests_total');
+    expect(res.text).toContain('# EOF');
+  });
+
+  test('returns openmetrics content-type when requested by Accept header', async () => {
+    const res = await request(app)
+      .get('/metrics')
+      .set('Accept', 'application/openmetrics-text')
+      .expect(200);
+
+    expect(res.headers['content-type']).toContain(
+      'application/openmetrics-text',
+    );
+    expect(res.headers['content-type']).toContain('version=1.0.0');
+    expect(res.headers['content-type']).toContain('charset=utf-8');
+    expect(res.text).toContain('# TYPE fda_up gauge');
+    expect(res.text).toContain('# EOF');
+  });
+
+  test('returns 406 when Accept header does not include a supported metrics format', async () => {
+    const res = await request(app)
+      .get('/metrics')
+      .set('Accept', 'application/json')
+      .expect(406);
+
+    expect(res.body).toEqual({
+      error: 'NotAcceptable',
+      description:
+        'Accept header must allow application/openmetrics-text or text/plain',
     });
   });
 
