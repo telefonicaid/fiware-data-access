@@ -212,6 +212,19 @@ Content-Type: application/json; charset=utf-8
 {"status":"UP","timestamp":"2026-02-11T12:51:25.166Z"}
 ```
 
+Optional: verify metrics endpoint for Prometheus scraping:
+
+```bash
+curl -i http://localhost:8080/metrics
+```
+
+Expected response headers include:
+
+```text
+HTTP/1.1 200 OK
+Content-Type: text/plain; version=0.0.4; charset=utf-8
+```
+
 ### 2. Create a MinIO bucket and PostgreSQL database
 
 Both the bucket and database must have the **same name** and will be referred to as `fiware-service`.

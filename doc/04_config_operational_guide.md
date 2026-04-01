@@ -140,16 +140,16 @@ FDA_LOG_RES_SIZE=100
 
 ---
 
-## Health Check Endpoints
+## Health and Metrics Endpoints
 
-FIWARE Data Access exposes one basic health check endpoint intended for monitoring, container orchestration systems
+FIWARE Data Access exposes health and telemetry endpoints intended for monitoring, container orchestration systems
 (e.g., Kubernetes), load balancers, or uptime checks.
 
 This endpoint does **not** require authentication headers and can be used to verify that the service is running.
 
 ### `GET /health`
 
-Basic root health check endpoint.
+Health endpoint with liveness and runtime summary.
 
 **Response code**
 
@@ -160,8 +160,39 @@ Basic root health check endpoint.
 ```json
 {
     "status": "UP",
-    "timestamp": "2026-02-16T10:15:30.123Z"
+    "timestamp": "2026-02-16T10:15:30.123Z",
+    "uptimeSeconds": 154,
+    "process": { "pid": 3210, "nodeVersion": "v24.0.0", "memory": { "rssBytes": 85422080 } },
+    "roles": { "apiServer": true, "fetcher": true, "syncQueries": false },
+    "traffic": { "totalRequests": 105, "errorRequests": 3, "inFlightRequests": 0, "routesObserved": 8 },
+    "fiware": { "requestsWithHeaders": 98, "servicesObserved": 3, "servicePathsObserved": 4 }
 }
+```
+
+### `GET /metrics`
+
+OpenMetrics/Prometheus telemetry endpoint.
+
+**Response code**
+
+-   `200 OK` on success.
+-   `406 Not Acceptable` when `Accept` does not allow `application/openmetrics-text` or `text/plain`.
+
+**Content negotiation**
+
+-   `application/openmetrics-text` -> `application/openmetrics-text; version=1.0.0; charset=utf-8`
+-   missing `Accept`, `text/plain`, or `*/*` -> `text/plain; version=0.0.4; charset=utf-8`
+
+**Example**
+
+```text
+# HELP fda_up Service liveness indicator (1=up).
+# TYPE fda_up gauge
+fda_up 1
+# HELP fda_fiware_catalog_services Distinct Fiware-Service values seen.
+# TYPE fda_fiware_catalog_services gauge
+fda_fiware_catalog_services 3
+# EOF
 ```
 
 ---
