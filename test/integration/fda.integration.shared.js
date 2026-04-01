@@ -83,6 +83,7 @@ function httpReq({ method, url, headers, body }) {
         res.on('end', () => {
           resolve({
             status: res.statusCode,
+            headers: res.headers,
             text: data,
             json: (() => {
               try {
@@ -131,6 +132,7 @@ function httpFormReq({ method, url, headers, form }) {
         res.on('end', () => {
           resolve({
             status: res.statusCode,
+            headers: res.headers,
             text: data,
             json: (() => {
               try {
