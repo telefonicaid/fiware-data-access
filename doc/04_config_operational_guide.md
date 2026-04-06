@@ -160,19 +160,41 @@ Health endpoint with liveness and runtime summary.
 ```json
 {
     "status": "UP",
-    "timestamp": "2026-02-16T10:15:30.123Z",
-    "uptimeSeconds": 154,
-    "process": { "pid": 3210, "nodeVersion": "v24.0.0", "memory": { "rssBytes": 85422080 } },
-    "roles": { "apiServer": true, "fetcher": true, "syncQueries": false },
-    "traffic": { "totalRequests": 105, "errorRequests": 3, "inFlightRequests": 0, "routesObserved": 8 },
-    "fiware": { "requestsWithHeaders": 98, "servicesObserved": 3, "servicePathsObserved": 4 },
+    "timestamp": "2026-04-06T08:52:58.639Z",
+    "uptimeSeconds": 544,
+    "process": {
+        "pid": 16768,
+        "nodeVersion": "v18.20.7",
+        "memory": {
+            "rssBytes": 151928832,
+            "heapTotalBytes": 44363776,
+            "heapUsedBytes": 41261368
+        }
+    },
+    "roles": {
+        "apiServer": true,
+        "fetcher": true,
+        "syncQueries": true
+    },
+    "traffic": {
+        "totalRequests": 11,
+        "errorRequests": 5,
+        "inFlightRequests": 1,
+        "routesObserved": 7
+    },
+    "fiware": {
+        "requestsWithHeaders": 11,
+        "servicesObserved": 1,
+        "servicePathsObserved": 3
+    },
     "mongo": {
         "scrapeOk": true,
         "source": "live",
-        "fdasTotal": 12,
-        "dasTotal": 27,
-        "agendaJobsTotal": 7,
-        "agendaJobsFailed": 1,
+        "lastSuccessTimestamp": "2026-04-06T08:52:58.595Z",
+        "fdasTotal": 2,
+        "dasTotal": 1,
+        "agendaJobsTotal": 0,
+        "agendaJobsFailed": 0,
         "agendaJobsLocked": 0
     }
 }
@@ -198,15 +220,99 @@ OpenMetrics/Prometheus telemetry endpoint.
 # HELP fda_up Service liveness indicator (1=up).
 # TYPE fda_up gauge
 fda_up 1
+# HELP fda_info Service build/runtime information.
+# TYPE fda_info gauge
+fda_info{env="production",node_version="v18.20.7",role_api_server="true",role_fetcher="true",role_sync_queries="true",version="0.3.0-next"} 1
+# HELP fda_process_start_time_seconds Process start time since unix epoch in seconds.
+# TYPE fda_process_start_time_seconds gauge
+fda_process_start_time_seconds 1775465035
+# HELP fda_uptime_seconds Process uptime in seconds.
+# TYPE fda_uptime_seconds gauge
+fda_uptime_seconds 587
+# HELP fda_http_server_in_flight_requests Current in-flight HTTP requests.
+# TYPE fda_http_server_in_flight_requests gauge
+fda_http_server_in_flight_requests 1
+# HELP fda_http_server_requests_total Total HTTP requests served.
+# TYPE fda_http_server_requests_total counter
+fda_http_server_requests_total{method="GET",route="/:visibility/fdas/:fdaId/das/:daId/data",status_class="2xx",status_code="200"} 2
+fda_http_server_requests_total{method="GET",route="/:visibility/fdas/:fdaId/das/:daId/data",status_class="4xx",status_code="400"} 1
+fda_http_server_requests_total{method="GET",route="/:visibility/fdas/:fdaId/das/:daId/data",status_class="4xx",status_code="403"} 3
+fda_http_server_requests_total{method="GET",route="/:visibility/fdas/:fdaId/das/:daId/data",status_class="4xx",status_code="404"} 1
+fda_http_server_requests_total{method="GET",route="/:visibility/fdas",status_class="2xx",status_code="200"} 1
+fda_http_server_requests_total{method="GET",route="/health",status_class="2xx",status_code="200"} 1
+fda_http_server_requests_total{method="POST",route="/:visibility/fdas/:fdaId/das",status_class="2xx",status_code="201"} 1
+fda_http_server_requests_total{method="POST",route="/:visibility/fdas",status_class="2xx",status_code="202"} 2
+# HELP fda_http_server_request_duration_ms_sum Total HTTP request latency in milliseconds.
+# TYPE fda_http_server_request_duration_ms_sum counter
+fda_http_server_request_duration_ms_sum{method="GET",route="/:visibility/fdas/:fdaId/das/:daId/data",status_class="2xx"} 92
+fda_http_server_request_duration_ms_sum{method="GET",route="/:visibility/fdas/:fdaId/das/:daId/data",status_class="4xx"} 24
+fda_http_server_request_duration_ms_sum{method="GET",route="/:visibility/fdas",status_class="2xx"} 8
+fda_http_server_request_duration_ms_sum{method="GET",route="/health",status_class="2xx"} 46
+fda_http_server_request_duration_ms_sum{method="POST",route="/:visibility/fdas/:fdaId/das",status_class="2xx"} 24
+fda_http_server_request_duration_ms_sum{method="POST",route="/:visibility/fdas",status_class="2xx"} 862
+# HELP fda_http_server_request_duration_ms_count Total number of timed HTTP requests.
+# TYPE fda_http_server_request_duration_ms_count counter
+fda_http_server_request_duration_ms_count{method="GET",route="/:visibility/fdas/:fdaId/das/:daId/data",status_class="2xx"} 2
+fda_http_server_request_duration_ms_count{method="GET",route="/:visibility/fdas/:fdaId/das/:daId/data",status_class="4xx"} 5
+fda_http_server_request_duration_ms_count{method="GET",route="/:visibility/fdas",status_class="2xx"} 1
+fda_http_server_request_duration_ms_count{method="GET",route="/health",status_class="2xx"} 1
+fda_http_server_request_duration_ms_count{method="POST",route="/:visibility/fdas/:fdaId/das",status_class="2xx"} 1
+fda_http_server_request_duration_ms_count{method="POST",route="/:visibility/fdas",status_class="2xx"} 2
+# HELP fda_http_server_errors_total Total HTTP requests resulting in error status codes.
+# TYPE fda_http_server_errors_total counter
+fda_http_server_errors_total{method="GET",route="/:visibility/fdas/:fdaId/das/:daId/data",status_class="4xx",status_code="400"} 1
+fda_http_server_errors_total{method="GET",route="/:visibility/fdas/:fdaId/das/:daId/data",status_class="4xx",status_code="403"} 3
+fda_http_server_errors_total{method="GET",route="/:visibility/fdas/:fdaId/das/:daId/data",status_class="4xx",status_code="404"} 1
+# HELP fda_tenant_requests_total Total HTTP requests carrying FIWARE tenant headers.
+# TYPE fda_tenant_requests_total counter
+fda_tenant_requests_total{fiware_service="my-bucket",fiware_service_path="/other",method="GET",route="/:visibility/fdas/:fdaId/das/:daId/data",status_class="4xx"} 1
+fda_tenant_requests_total{fiware_service="my-bucket",fiware_service_path="/public",method="GET",route="/:visibility/fdas/:fdaId/das/:daId/data",status_class="4xx"} 1
+fda_tenant_requests_total{fiware_service="my-bucket",fiware_service_path="/servicePath",method="GET",route="/:visibility/fdas/:fdaId/das/:daId/data",status_class="2xx"} 2
+fda_tenant_requests_total{fiware_service="my-bucket",fiware_service_path="/servicePath",method="GET",route="/:visibility/fdas/:fdaId/das/:daId/data",status_class="4xx"} 3
+fda_tenant_requests_total{fiware_service="my-bucket",fiware_service_path="/servicePath",method="GET",route="/:visibility/fdas",status_class="2xx"} 1
+fda_tenant_requests_total{fiware_service="my-bucket",fiware_service_path="/servicePath",method="POST",route="/:visibility/fdas/:fdaId/das",status_class="2xx"} 1
+fda_tenant_requests_total{fiware_service="my-bucket",fiware_service_path="/servicePath",method="POST",route="/:visibility/fdas",status_class="2xx"} 2
 # HELP fda_catalog_services_observed Distinct Fiware-Service values seen in traffic.
 # TYPE fda_catalog_services_observed gauge
-fda_catalog_services_observed 3
+fda_catalog_services_observed 1
+# HELP fda_catalog_service_paths_observed Distinct Fiware-ServicePath values seen in traffic.
+# TYPE fda_catalog_service_paths_observed gauge
+fda_catalog_service_paths_observed 3
+# HELP fda_mongo_scrape_success Mongo operational metrics scrape status (1=ok,0=error).
+# TYPE fda_mongo_scrape_success gauge
+fda_mongo_scrape_success 1
 # HELP fda_catalog_fdas_total Total number of FDA documents stored in MongoDB.
 # TYPE fda_catalog_fdas_total gauge
-fda_catalog_fdas_total 12
+fda_catalog_fdas_total 2
+# HELP fda_catalog_das_total Total number of DA entries across all FDA documents.
+# TYPE fda_catalog_das_total gauge
+fda_catalog_das_total 1
+# HELP fda_catalog_fdas_by_status Number of FDA documents by execution status.
+# TYPE fda_catalog_fdas_by_status gauge
+fda_catalog_fdas_by_status{status="completed"} 2
+# HELP fda_catalog_fdas_by_service Number of FDA documents by fiware service and servicePath.
+# TYPE fda_catalog_fdas_by_service gauge
+fda_catalog_fdas_by_service{fiware_service="my-bucket",fiware_service_path="/servicePath"} 2
 # HELP fda_jobs_agenda_total Total number of Agenda jobs stored in MongoDB.
 # TYPE fda_jobs_agenda_total gauge
-fda_jobs_agenda_total 7
+fda_jobs_agenda_total 0
+# HELP fda_jobs_agenda_failed_total Number of Agenda jobs with failures (failCount > 0).
+# TYPE fda_jobs_agenda_failed_total gauge
+fda_jobs_agenda_failed_total 0
+# HELP fda_jobs_agenda_locked_total Number of Agenda jobs currently locked.
+# TYPE fda_jobs_agenda_locked_total gauge
+fda_jobs_agenda_locked_total 0
+# HELP fda_jobs_agenda_by_name Number of Agenda jobs by job name.
+# TYPE fda_jobs_agenda_by_name gauge
+# HELP fda_process_resident_memory_bytes Resident memory size in bytes.
+# TYPE fda_process_resident_memory_bytes gauge
+fda_process_resident_memory_bytes 152313856
+# HELP fda_process_heap_total_bytes Total V8 heap size in bytes.
+# TYPE fda_process_heap_total_bytes gauge
+fda_process_heap_total_bytes 44888064
+# HELP fda_process_heap_used_bytes Used V8 heap size in bytes.
+# TYPE fda_process_heap_used_bytes gauge
+fda_process_heap_used_bytes 41662472
 # EOF
 ```
 

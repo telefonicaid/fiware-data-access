@@ -406,6 +406,16 @@ None required.
         "requestsWithHeaders": 98,
         "servicesObserved": 3,
         "servicePathsObserved": 4
+    },
+    "mongo": {
+        "scrapeOk": true,
+        "source": "live",
+        "lastSuccessTimestamp": "2026-04-06T08:52:58.595Z",
+        "fdasTotal": 2,
+        "dasTotal": 1,
+        "agendaJobsTotal": 0,
+        "agendaJobsFailed": 0,
+        "agendaJobsLocked": 0
     }
 }
 ```
@@ -452,6 +462,7 @@ fda_catalog_fdas_by_service{fiware_service="my-bucket",fiware_service_path="/"} 
 # HELP fda_jobs_agenda_total Total number of Agenda jobs stored in MongoDB.
 # TYPE fda_jobs_agenda_total gauge
 fda_jobs_agenda_total 7
+...
 # EOF
 ```
 
