@@ -53,7 +53,7 @@ async function getCollection() {
 export async function createIndex() {
   const collection = await getCollection();
   await collection.createIndex(
-    { fdaId: 1, service: 1, servicePath: 1 },
+    { service: 1, servicePath: 1, fdaId: 1 },
     { unique: true },
   );
 }
@@ -77,7 +77,7 @@ export async function createFDAMongo(
   logger.debug({ fdaId, query, service, description }, '[DEBUG]: createFDA');
   const collection = await getCollection();
   try {
-    // As there is a unique index on (fdaId, service), this will throw an error if an FDA with the same fdaId and service already exists
+    // As there is a unique index on (service, servicePath, fdaId), this throws an error when the same scoped FDA already exists.
     await collection.insertOne({
       fdaId,
       query,
