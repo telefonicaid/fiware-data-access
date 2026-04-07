@@ -73,7 +73,7 @@ This behavior is implemented in [src/lib/fda.js](../../src/lib/fda.js).
 
 ## 4. Fresh query pressure control
 
-Fresh mode (`GET /query?fresh=true`) executes DA queries directly in PostgreSQL.
+Fresh mode (`GET /{visibility}/fdas/{fdaId}/das/{daId}/data?fresh=true`) executes DA queries directly in PostgreSQL.
 
 To avoid API overload, FDA applies a concurrency cap per API instance:
 
@@ -104,6 +104,7 @@ Tuning variables:
 -   `FDA_PG_POOL_MAX`
 -   `FDA_PG_POOL_IDLE_TIMEOUT_MS`
 -   `FDA_PG_POOL_CONN_TIMEOUT_MS`
+-   `FDA_PG_POOL_DB_IDLE_TIMEOUT_MS`
 
 ### Behavior summary
 
@@ -111,6 +112,7 @@ Tuning variables:
 -   `release()` returns the connection to the pool (does not destroy it).
 -   The pool grows up to `max` connections under load.
 -   Idle connections are eventually cleaned up.
+-   Inactive pools (per target database) are closed and evicted after `FDA_PG_POOL_DB_IDLE_TIMEOUT_MS`.
 
 ---
 
@@ -164,19 +166,19 @@ Operational recommendation:
 
 ---
 
-### 4. Pools grow dynamically and are not centrally bounded
+### 4. Pools grow dynamically and require inactivity tuning
 
 Pools are created lazily per database and stored in memory.
 
 Implications:
 
 -   Each new database (tenant) creates a new pool.
--   Pools are not automatically evicted while the process is running.
--   In environments with many tenants, this can lead to unbounded growth in:
-    -   number of pools
+-   Pools are evicted only after the configured inactivity timeout.
+-   In environments with many tenants, this can increase:
+    -   number of active pools
     -   total potential connections
 
-This is not an issue in low/medium multi-tenant scenarios, but must be considered in large-scale deployments.
+Use `FDA_PG_POOL_DB_IDLE_TIMEOUT_MS` to balance reuse versus resource release.
 
 ---
 
@@ -187,8 +189,6 @@ The following operations share PostgreSQL capacity:
 -   Background refresh jobs (fetchers)
 -   Fresh queries (API)
 -   Validation queries (during provisioning)
-
-There is currently no global coordination between these workloads.
 
 Implication:
 

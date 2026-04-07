@@ -143,6 +143,8 @@ const {
   deleteFDA,
   getDA,
   putDA,
+  getFDAs,
+  cleanPartition,
 } = await import('../../src/lib/fda.js');
 
 function createReqRes() {
@@ -178,6 +180,8 @@ describe('fda fresh query execution', () => {
     });
     mongoMocks.retrieveFDA.mockResolvedValue({
       query: 'SELECT 1 AS id;',
+      visibility: 'private',
+      servicePath: '/servicepath',
     });
 
     dbMocks.resolveDAParams.mockImplementation((params) => params);
@@ -191,12 +195,16 @@ describe('fda fresh query execution', () => {
     });
     mongoMocks.retrieveFDA.mockResolvedValue({
       query: 'SELECT 7::bigint AS id;',
+      visibility: 'private',
+      servicePath: '/servicepath',
     });
     dbMocks.resolveDAParams.mockReturnValue({ id: 7 });
     pgMocks.runPgQuery.mockResolvedValue([{ id: 7n }]);
 
     const rows = await executeQuery({
       service: 'svc',
+      visibility: 'private',
+      servicePath: '/servicepath',
       params: { fdaId: 'fdaA', daId: 'daA', id: 7 },
       fresh: true,
     });
@@ -215,6 +223,8 @@ describe('fda fresh query execution', () => {
     await expect(
       executeQuery({
         service: 'svc',
+        visibility: 'private',
+        servicePath: '/servicepath',
         params: { fdaId: 'fdaA', daId: 'missing' },
         fresh: true,
       }),
@@ -227,6 +237,8 @@ describe('fda fresh query execution', () => {
     await expect(
       executeQuery({
         service: 'svc',
+        visibility: 'private',
+        servicePath: '/servicepath',
         params: { fdaId: 'missing', daId: 'daA' },
         fresh: true,
       }),
@@ -242,6 +254,8 @@ describe('fda fresh query execution', () => {
     await expect(
       executeQuery({
         service: 'svc',
+        visibility: 'private',
+        servicePath: '/servicepath',
         params: { fdaId: 'fdaA', daId: 'daA' },
         fresh: true,
       }),
@@ -257,6 +271,8 @@ describe('fda fresh query execution', () => {
     await expect(
       executeQuery({
         service: 'svc',
+        visibility: 'private',
+        servicePath: '/servicepath',
         params: { fdaId: 'fdaA', daId: 'daA' },
         fresh: true,
       }),
@@ -274,6 +290,8 @@ describe('fda fresh query execution', () => {
     await expect(
       executeQuery({
         service: 'svc',
+        visibility: 'private',
+        servicePath: '/servicepath',
         params: { fdaId: 'fdaA', daId: 'daA' },
         fresh: true,
       }),
@@ -289,6 +307,8 @@ describe('fda fresh query execution', () => {
     await expect(
       executeQuery({
         service: 'svc',
+        visibility: 'private',
+        servicePath: '/servicepath',
         params: { fdaId: 'fdaA', daId: 'daA' },
         fresh: true,
       }),
@@ -307,6 +327,8 @@ describe('fda fresh query execution', () => {
     await expect(
       executeQuery({
         service: 'svc',
+        visibility: 'private',
+        servicePath: '/servicepath',
         params: { fdaId: 'fdaA', daId: 'daA', id: 1 },
         fresh: true,
       }),
@@ -320,10 +342,30 @@ describe('fda fresh query execution', () => {
     await expect(
       executeQuery({
         service: 'svc',
+        visibility: 'private',
+        servicePath: '/servicepath',
         params: { fdaId: 'fdaA', daId: 'daA', id: 1 },
         fresh: true,
       }),
     ).rejects.toBe(pgError);
+  });
+
+  test('rejects query execution when requested visibility does not match FDA visibility', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      query: 'SELECT 7::bigint AS id;',
+      visibility: 'public',
+      servicePath: '/servicepath',
+    });
+
+    await expect(
+      executeQuery({
+        service: 'svc',
+        visibility: 'private',
+        servicePath: '/servicepath',
+        params: { fdaId: 'fdaA', daId: 'daA' },
+        fresh: true,
+      }),
+    ).rejects.toMatchObject({ status: 403, type: 'VisibilityMismatch' });
   });
 
   test('streams NDJSON rows and handles backpressure', async () => {
@@ -341,6 +383,8 @@ describe('fda fresh query execution', () => {
 
     await executeQueryStream({
       service: 'svc',
+      visibility: 'private',
+      servicePath: '/servicepath',
       params: { fdaId: 'fdaA', daId: 'daA', id: 1 },
       req,
       res,
@@ -367,6 +411,8 @@ describe('fda fresh query execution', () => {
 
     await executeQueryStream({
       service: 'svc',
+      visibility: 'private',
+      servicePath: '/servicepath',
       params: { fdaId: 'fdaA', daId: 'daA', id: 1 },
       req,
       res,
@@ -391,6 +437,8 @@ describe('fda fresh query execution', () => {
     await expect(
       executeQueryStream({
         service: 'svc',
+        visibility: 'private',
+        servicePath: '/servicepath',
         params: { fdaId: 'fdaA', daId: 'daA', id: 1 },
         req,
         res,
@@ -427,7 +475,8 @@ describe('fetchFDA', () => {
       'fda1',
       'SELECT id FROM users;',
       'svc',
-      '/svc',
+      'public',
+      '/servicepath',
       'test FDA',
       {
         type: 'none',
@@ -439,7 +488,8 @@ describe('fetchFDA', () => {
       'fda1',
       'SELECT id FROM users;',
       'svc',
-      '/svc',
+      'public',
+      '/servicepath',
       'test FDA',
       { type: 'none' },
       'timeinstant',
@@ -473,7 +523,8 @@ describe('fetchFDA', () => {
       'fda1',
       'SELECT 1',
       'svc',
-      '/svc',
+      'public',
+      '/servicepath',
       'desc',
       {
         type: 'interval',
@@ -530,13 +581,100 @@ describe('fetchFDA', () => {
     pgMocks.uploadTable.mockRejectedValue(uploadError);
 
     await expect(
-      fetchFDA('fda1', 'SELECT 1', 'svc', '/svc', 'desc', { type: 'none' }),
+      fetchFDA('fda1', 'SELECT 1', 'svc', 'public', '/servicepath', 'desc', {
+        type: 'none',
+      }),
     ).rejects.toBe(uploadError);
 
     expect(mongoMocks.removeFDA).toHaveBeenCalledWith('svc', 'fda1');
     expect(awsMocks.dropFile).toHaveBeenCalledWith({}, 'svc', 'fda1.csv');
     expect(awsMocks.dropFile).toHaveBeenCalledWith({}, 'svc', 'fda1.parquet');
     expect(agenda.now).not.toHaveBeenCalled();
+  });
+
+  test('fetchFDA with cron refresh policy schedules periodic job', async () => {
+    await fetchFDA(
+      'fda1',
+      'SELECT 1',
+      'svc',
+      'public',
+      '/servicepath',
+      'desc',
+      {
+        type: 'cron',
+        value: '0 0 * * *',
+      },
+    );
+
+    expect(agenda.every).toHaveBeenCalledWith(
+      '0 0 * * *',
+      'refresh-fda',
+      expect.objectContaining({ fdaId: 'fda1', query: 'SELECT 1' }),
+      {
+        skipImmediate: true,
+        unique: { name: 'refresh-fda', 'data.fdaId': 'fda1' },
+      },
+    );
+  });
+
+  test('fetchFDA with window refresh policy and deleteInterval schedules cleanup', async () => {
+    await fetchFDA(
+      'fda1',
+      'SELECT 1',
+      'svc',
+      'public',
+      '/servicepath',
+      'desc',
+      {
+        type: 'window',
+        value: 'daily',
+        deleteInterval: '1 day',
+        windowSize: 'day',
+      },
+    );
+
+    expect(agenda.every).toHaveBeenCalledWith(
+      expect.any(String),
+      'refresh-fda',
+      expect.any(Object),
+      expect.any(Object),
+    );
+  });
+
+  test('fetchFDA throws when deleteInterval provided without windowSize', async () => {
+    await expect(
+      fetchFDA('fda1', 'SELECT 1', 'svc', 'public', '/servicepath', 'desc', {
+        type: 'interval',
+        value: '10 minutes',
+        deleteInterval: '1 day',
+      }),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidParam',
+      message: 'Window size is required with a delete interval.',
+    });
+  });
+
+  test('fetchFDA throws when servicePath is missing', async () => {
+    await expect(
+      fetchFDA('fda1', 'SELECT 1', 'svc', 'public', undefined, 'desc', {
+        type: 'none',
+      }),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidServicePath',
+    });
+  });
+
+  test('fetchFDA throws when servicePath is missing', async () => {
+    await expect(
+      fetchFDA('fda1', 'SELECT 1', 'svc', 'public', undefined, 'desc', {
+        type: 'none',
+      }),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidServicePath',
+    });
   });
 });
 
@@ -789,7 +927,8 @@ describe('fetchFDA with refresh policies', () => {
       'fda1',
       'SELECT 1',
       'svc',
-      '/svc',
+      'public',
+      '/servicepath',
       'desc',
       {
         type: 'cron',
@@ -820,7 +959,8 @@ describe('fetchFDA with refresh policies', () => {
       'fda1',
       'SELECT 1',
       'svc',
-      '/svc',
+      'public',
+      '/servicepath',
       'desc',
       {
         type: 'window',
@@ -852,7 +992,8 @@ describe('fetchFDA with refresh policies', () => {
         'fda1',
         'SELECT 1',
         'svc',
-        '/svc',
+        'public',
+        '/servicepath',
         'desc',
         {
           type: 'window',
@@ -874,6 +1015,42 @@ describe('fetchFDA with refresh policies', () => {
     });
 
     expect(agenda.every).not.toHaveBeenCalled();
+  });
+
+  test('fetchFDA with window policy throws when deleteInterval provided without windowSize', async () => {
+    await expect(
+      fetchFDA(
+        'fda1',
+        'SELECT 1',
+        'svc',
+        'public',
+        '/servicepath',
+        'desc',
+        {
+          type: 'window',
+          value: 'daily',
+          deleteInterval: '1 day',
+        },
+        'timeinstant',
+      ),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidParam',
+      message: 'Fetch size "week" must be equal to partition size "day".',
+    });
+
+    expect(agenda.every).not.toHaveBeenCalled();
+  });
+
+  test('fetchFDA throws when servicePath is missing', async () => {
+    await expect(
+      fetchFDA('fda1', 'SELECT 1', 'svc', 'public', undefined, 'desc', {
+        type: 'none',
+      }),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidServicePath',
+    });
   });
 });
 
@@ -904,6 +1081,105 @@ describe('deleteFDA', () => {
     expect(agenda.cancel).toHaveBeenNthCalledWith(2, {
       name: 'clean-partition',
       'data.fdaId': 'fda1',
+    });
+  });
+});
+
+describe('getFDAs', () => {
+  const allFdas = [
+    {
+      _id: 'mongo1',
+      fdaId: 'fda1',
+      service: 'svc',
+      visibility: 'public',
+      servicePath: '/public',
+      query: 'SELECT 1',
+      status: 'completed',
+    },
+    {
+      _id: 'mongo2',
+      fdaId: 'fda2',
+      service: 'svc',
+      visibility: 'private',
+      servicePath: '/private',
+      query: 'SELECT 2',
+      status: 'completed',
+    },
+  ];
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mongoMocks.retrieveFDAs.mockResolvedValue(allFdas);
+  });
+
+  test('returns all FDAs unfiltered when visibility and servicePath are both undefined', async () => {
+    const result = await getFDAs('svc');
+
+    expect(mongoMocks.retrieveFDAs).toHaveBeenCalledWith('svc');
+    expect(result).toEqual([
+      { id: 'fda1', query: 'SELECT 1', status: 'completed' },
+      { id: 'fda2', query: 'SELECT 2', status: 'completed' },
+    ]);
+  });
+
+  test('filters FDAs by visibility and servicePath when provided', async () => {
+    const result = await getFDAs('svc', 'public', '/public');
+
+    expect(result).toEqual([
+      { id: 'fda1', query: 'SELECT 1', status: 'completed' },
+    ]);
+  });
+});
+
+describe('cleanPartition', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    awsMocks.getS3Client.mockReturnValue({});
+    awsMocks.listObjects.mockResolvedValue([
+      'svc/fdaA/2020-01-01.parquet',
+      'svc/fdaA/2099-01-01.parquet',
+    ]);
+    awsMocks.dropFiles.mockResolvedValue(undefined);
+  });
+
+  test('drops only partitions older than the cutoff date', async () => {
+    const oldDate = new Date('2020-01-01');
+    const futureDate = new Date('2099-01-01');
+    dbMocks.extractDate
+      .mockReturnValueOnce(oldDate)
+      .mockReturnValueOnce(futureDate);
+
+    await cleanPartition('svc', 'fdaA', 'month', { partition: true });
+
+    expect(awsMocks.dropFiles).toHaveBeenCalledWith({}, 'svc', [
+      'svc/fdaA/2020-01-01.parquet',
+    ]);
+  });
+
+  test('calls dropFiles with empty array when no partitions are older than cutoff', async () => {
+    const futureDate = new Date('2099-01-01');
+    dbMocks.extractDate.mockReturnValue(futureDate);
+
+    await cleanPartition('svc', 'fdaA', 'month', { partition: true });
+
+    expect(awsMocks.dropFiles).toHaveBeenCalledWith({}, 'svc', []);
+  });
+
+  test('throws CleaningError when FDA is not partitioned', async () => {
+    await expect(
+      cleanPartition('svc', 'fdaA', 'month', {}),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'CleaningError',
+    });
+  });
+
+  test('throws CleaningError when windowSize is invalid', async () => {
+    await expect(
+      cleanPartition('svc', 'fdaA', 'invalid_size', { partition: true }),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'CleaningError',
     });
   });
 });

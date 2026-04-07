@@ -209,7 +209,59 @@ Expected response:
 HTTP/1.1 200 OK
 Content-Type: application/json; charset=utf-8
 
-{"status":"UP","timestamp":"2026-02-11T12:51:25.166Z"}
+{
+  "status": "UP",
+  "timestamp": "2026-04-06T08:52:58.639Z",
+  "uptimeSeconds": 544,
+  "process": {
+    "pid": 16768,
+    "nodeVersion": "v18.20.7",
+    "memory": {
+      "rssBytes": 151928832,
+      "heapTotalBytes": 44363776,
+      "heapUsedBytes": 41261368
+    }
+  },
+  "roles": {
+    "apiServer": true,
+    "fetcher": true,
+    "syncQueries": true
+  },
+  "traffic": {
+    "totalRequests": 11,
+    "errorRequests": 5,
+    "inFlightRequests": 1,
+    "routesObserved": 7
+  },
+  "fiware": {
+    "requestsWithHeaders": 11,
+    "servicesObserved": 1,
+    "servicePathsObserved": 3
+  },
+  "mongo": {
+    "scrapeOk": true,
+    "source": "live",
+    "lastSuccessTimestamp": "2026-04-06T08:52:58.595Z",
+    "fdasTotal": 2,
+    "dasTotal": 1,
+    "agendaJobsTotal": 0,
+    "agendaJobsFailed": 0,
+    "agendaJobsLocked": 0
+  }
+}
+```
+
+Optional: verify metrics endpoint for Prometheus scraping:
+
+```bash
+curl -i http://localhost:8080/metrics
+```
+
+Expected response headers include:
+
+```text
+HTTP/1.1 200 OK
+Content-Type: text/plain; version=0.0.4; charset=utf-8
 ```
 
 ### 2. Create a MinIO bucket and PostgreSQL database
@@ -343,11 +395,12 @@ EOF
 
 ### 4. List existing FDAs
 
-List all FDAs for the service `my-bucket`:
+List all FDAs for the service `my-bucket` and servicePath `public`:
 
 ```bash
-curl -i -X GET http://localhost:8080/fdas \
-  -H "Fiware-Service: my-bucket"
+curl -i -X GET http://localhost:8080/public/fdas \
+  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-ServicePath: /public"
 ```
 
 Expected response (should be empty initially):
@@ -364,7 +417,7 @@ Content-Type: application/json; charset=utf-8
 Create an FDA that extracts all alarms from the PostgreSQL table:
 
 ```bash
-curl -i -X POST http://localhost:8080/fdas \
+curl -i -X POST http://localhost:8080/public/fdas \
   -H "Content-Type: application/json" \
   -H "Fiware-Service: my-bucket" \
   -H "Fiware-ServicePath: /public" \
@@ -391,8 +444,9 @@ If the response is `202`, the FDA was accepted and it will be created.
 List FDAs again to confirm:
 
 ```bash
-curl -i -X GET http://localhost:8080/fdas \
-  -H "Fiware-Service: my-bucket"
+curl -i -X GET http://localhost:8080/public/fdas \
+  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-ServicePath: /public"
 ```
 
 Expected response (should now contain the FDA and his status):
@@ -403,18 +457,15 @@ Content-Type: application/json; charset=utf-8
 
 [
   {
-    "_id": "...",
-    "fdaId": "fda_alarms",
+    "id": "fda_alarms",
     "query": "SELECT * FROM public.alarms",
     "das": {},
-    "service": "my-bucket",
     "status": "fetching",
     "progress": 10,
     "lastFetch": null,
     "refreshPolicy": {
       "type": "none"
     },
-    "servicePath": "/public",
     "description": "FDA de alarmas del sistema"
   }
 ]
@@ -430,9 +481,10 @@ against it.
 Create the DA for `fda_alarms`:
 
 ```bash
-curl -i -X POST http://localhost:8080/fdas/fda_alarms/das \
+curl -i -X POST http://localhost:8080/public/fdas/fda_alarms/das \
   -H "Content-Type: application/json" \
   -H "Fiware-Service: my-bucket" \
+  -H "Fiware-ServicePath: /public" \
   -d '{
     "id": "da_all_alarms",
     "description": "Todas las alarmas (actualizado)",
@@ -456,8 +508,9 @@ Created
 Run a query against the FDA/DA (JSON response):
 
 ```bash
-curl -i -X GET "http://localhost:8080/query?fdaId=fda_alarms&daId=da_all_alarms" \
-  -H "Fiware-Service: my-bucket"
+curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_all_alarms/data" \
+  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-ServicePath: /public"
 ```
 
 Example JSON response (array):
@@ -469,8 +522,9 @@ Example JSON response (array):
 Or request streaming NDJSON by setting the `Accept` header:
 
 ```bash
-curl -i -X GET "http://localhost:8080/query?fdaId=fda_alarms&daId=da_all_alarms" \
+curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_all_alarms/data" \
   -H "Fiware-Service: my-bucket" \
+  -H "Fiware-ServicePath: /public" \
   -H 'Accept: application/x-ndjson'
 ```
 

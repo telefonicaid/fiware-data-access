@@ -68,32 +68,52 @@ import { config } from './fdaConfig.js';
 import { FDAError } from './fdaError.js';
 
 const FRESH_CURSOR_BATCH_SIZE = 250;
+export const VALID_VISIBILITIES = ['public', 'private'];
+const VALID_VISIBILITIES_SET = new Set(VALID_VISIBILITIES);
 
-export function getFDAs(service) {
-  return retrieveFDAs(service);
-}
+export async function getFDAs(service, visibility, servicePath) {
+  const fdas = await retrieveFDAs(service);
 
-export async function getFDA(service, fdaId) {
-  const fda = await retrieveFDA(service, fdaId);
-  if (!fda) {
-    throw new FDAError(
-      404,
-      'FDANotFound',
-      `FDA ${fdaId} not found in service ${service}`,
-    );
+  if (visibility === undefined && servicePath === undefined) {
+    return fdas.map((fda) => toFDAApiResponse(fda, { includeId: true }));
   }
 
-  return fda;
+  const normalizedVisibility = normalizeVisibility(visibility);
+  const normalizedServicePath = normalizeServicePath(servicePath);
+
+  return fdas
+    .filter(
+      (fda) =>
+        normalizeVisibility(fda.visibility) === normalizedVisibility &&
+        normalizeServicePath(fda.servicePath) === normalizedServicePath,
+    )
+    .map((fda) => toFDAApiResponse(fda, { includeId: true }));
 }
 
-export async function executeQuery({ service, params, fresh = false }) {
+export async function getFDA(service, fdaId, visibility, servicePath) {
+  if (visibility === undefined && servicePath === undefined) {
+    const fda = await getStoredFDA(service, fdaId);
+    return toFDAApiResponse(fda, { includeId: false });
+  }
+
+  const fda = await getAccessibleFDA(service, fdaId, visibility, servicePath);
+  return toFDAApiResponse(fda, { includeId: false });
+}
+
+export async function executeQuery({
+  service,
+  visibility,
+  servicePath,
+  params,
+  fresh = false,
+}) {
   if (fresh) {
-    return executeFreshQuery({ service, params });
+    return executeFreshQuery({ service, visibility, servicePath, params });
   }
 
   const { fdaId, daId, ...rest } = params;
 
-  await ensureFDAReadyForQuery(service, fdaId);
+  await ensureFDAReadyForQuery(service, fdaId, visibility, servicePath);
 
   const conn = await getDBConnection();
 
@@ -106,18 +126,27 @@ export async function executeQuery({ service, params, fresh = false }) {
 
 export async function executeQueryStream({
   service,
+  visibility,
+  servicePath,
   params,
   req,
   res,
   fresh = false,
 }) {
   if (fresh) {
-    return executeFreshQueryStream({ service, params, req, res });
+    return executeFreshQueryStream({
+      service,
+      visibility,
+      servicePath,
+      params,
+      req,
+      res,
+    });
   }
 
   const { fdaId, daId, ...rest } = params;
 
-  await ensureFDAReadyForQuery(service, fdaId);
+  await ensureFDAReadyForQuery(service, fdaId, visibility, servicePath);
 
   const conn = await getDBConnection();
 
@@ -199,14 +228,19 @@ export async function executeQueryStream({
   return res.end();
 }
 
-async function executeFreshQuery({ service, params }) {
+async function executeFreshQuery({ service, visibility, servicePath, params }) {
   assertFreshQueriesEnabled(config.roles.syncQueries);
 
   const releaseFreshSlot = acquireFreshQuerySlot(
     config.freshQueries.maxConcurrent,
   );
   try {
-    const { text, values } = await buildFreshQueryStatement(service, params);
+    const { text, values } = await buildFreshQueryStatement(
+      service,
+      visibility,
+      servicePath,
+      params,
+    );
 
     const rows = await runPgQuery(service, text, values);
     return convertBigInt(rows);
@@ -221,7 +255,14 @@ async function executeFreshQuery({ service, params }) {
   }
 }
 
-async function executeFreshQueryStream({ service, params, req, res }) {
+async function executeFreshQueryStream({
+  service,
+  visibility,
+  servicePath,
+  params,
+  req,
+  res,
+}) {
   assertFreshQueriesEnabled(config.roles.syncQueries);
 
   const releaseFreshSlot = acquireFreshQuerySlot(
@@ -230,7 +271,12 @@ async function executeFreshQueryStream({ service, params, req, res }) {
   let cursorReader;
 
   try {
-    const { text, values } = await buildFreshQueryStatement(service, params);
+    const { text, values } = await buildFreshQueryStatement(
+      service,
+      visibility,
+      servicePath,
+      params,
+    );
 
     cursorReader = await createPgCursorReader(
       service,
@@ -274,7 +320,12 @@ async function executeFreshQueryStream({ service, params, req, res }) {
   return res.end();
 }
 
-async function buildFreshQueryStatement(service, params) {
+async function buildFreshQueryStatement(
+  service,
+  visibility,
+  servicePath,
+  params,
+) {
   const { fdaId, daId, ...rest } = params;
 
   const da = await retrieveDA(service, fdaId, daId);
@@ -286,14 +337,7 @@ async function buildFreshQueryStatement(service, params) {
     );
   }
 
-  const fda = await retrieveFDA(service, fdaId);
-  if (!fda?.query) {
-    throw new FDAError(
-      404,
-      'FDANotFound',
-      `FDA ${fdaId} not found in service ${service}`,
-    );
-  }
+  const fda = await getAccessibleFDA(service, fdaId, visibility, servicePath);
 
   const validatedParams = resolveDAParams(rest || {}, da.params);
   const freshBaseQuery = buildFreshDAQuery(fda.query, da.query);
@@ -386,10 +430,16 @@ export async function createDA(
   description,
   userQuery,
   params,
+  visibility,
+  servicePath,
 ) {
   const conn = await getDBConnection();
 
   try {
+    if (visibility !== undefined || servicePath !== undefined) {
+      await getAccessibleFDA(service, fdaId, visibility, servicePath);
+    }
+
     const existing = await retrieveDA(service, fdaId, daId);
 
     if (existing) {
@@ -419,6 +469,7 @@ export async function fetchFDA(
   fdaId,
   query,
   service,
+  visibility,
   servicePath,
   description,
   refreshPolicy,
@@ -426,16 +477,19 @@ export async function fetchFDA(
   objStgConf,
 ) {
   validateScheduledOptions(refreshPolicy, objStgConf);
-
   const timeQuery =
     refreshPolicy?.type !== 'none' || objStgConf?.partition
       ? getFinalQuery(query, timeColumn)
       : query;
+  const normalizedVisibility = normalizeVisibility(visibility);
+  const normalizedServicePath = normalizeServicePath(servicePath);
+
   await createFDAMongo(
     fdaId,
     timeQuery,
     service,
-    servicePath,
+    normalizedVisibility,
+    normalizedServicePath,
     description,
     refreshPolicy,
     timeColumn,
@@ -618,7 +672,11 @@ function getUpdateWindowQuery(fetchSize, query, timeColumn) {
   return window;
 }
 
-export async function updateFDA(service, fdaId) {
+export async function updateFDA(service, fdaId, visibility, servicePath) {
+  if (arguments.length >= 4) {
+    await getAccessibleFDA(service, fdaId, visibility, servicePath);
+  }
+
   const previous = await regenerateFDA(service, fdaId);
 
   const agenda = getAgenda();
@@ -663,7 +721,11 @@ export async function processFDAAsync(
   }
 }
 
-export async function deleteFDA(service, fdaId) {
+export async function deleteFDA(service, fdaId, visibility, servicePath) {
+  if (visibility !== undefined || servicePath !== undefined) {
+    await getAccessibleFDA(service, fdaId, visibility, servicePath);
+  }
+
   const { _id } = (await retrieveFDA(service, fdaId)) ?? {};
 
   if (!service || !_id) {
@@ -695,11 +757,19 @@ export async function deleteFDA(service, fdaId) {
   });
 }
 
-export function getDAs(service, fdaId) {
+export async function getDAs(service, fdaId, visibility, servicePath) {
+  if (visibility !== undefined || servicePath !== undefined) {
+    await getAccessibleFDA(service, fdaId, visibility, servicePath);
+  }
+
   return retrieveDAs(service, fdaId);
 }
 
-export async function getDA(service, fdaId, daId) {
+export async function getDA(service, fdaId, daId, visibility, servicePath) {
+  if (visibility !== undefined || servicePath !== undefined) {
+    await getAccessibleFDA(service, fdaId, visibility, servicePath);
+  }
+
   const da = await retrieveDA(service, fdaId, daId);
   if (da) {
     da.id = daId;
@@ -721,10 +791,16 @@ export async function putDA(
   description,
   userQuery,
   params,
+  visibility,
+  servicePath,
 ) {
   const conn = await getDBConnection();
 
   try {
+    if (visibility !== undefined || servicePath !== undefined) {
+      await getAccessibleFDA(service, fdaId, visibility, servicePath);
+    }
+
     const normalizedParams = checkParams(params);
     await validateDAQuery(conn, service, fdaId, userQuery);
     await updateDA(
@@ -740,7 +816,11 @@ export async function putDA(
   }
 }
 
-export async function deleteDA(service, fdaId, daId) {
+export async function deleteDA(service, fdaId, daId, visibility, servicePath) {
+  if (visibility !== undefined || servicePath !== undefined) {
+    await getAccessibleFDA(service, fdaId, visibility, servicePath);
+  }
+
   await removeDA(service, fdaId, daId);
 }
 
@@ -849,7 +929,20 @@ async function uploadTableToObjStg(
   }
 }
 
-async function ensureFDAReadyForQuery(service, fdaId) {
+async function ensureFDAReadyForQuery(service, fdaId, visibility, servicePath) {
+  const fda = await getAccessibleFDA(service, fdaId, visibility, servicePath);
+
+  // Queries are blocked only before the first successful fetch.
+  if (!fda.lastFetch) {
+    throw new FDAError(
+      409,
+      'FDAUnavailable',
+      `FDA ${fdaId} is not queryable yet because the first fetch has not completed`,
+    );
+  }
+}
+
+async function getStoredFDA(service, fdaId) {
   const fda = await retrieveFDA(service, fdaId);
 
   if (!fda) {
@@ -860,14 +953,89 @@ async function ensureFDAReadyForQuery(service, fdaId) {
     );
   }
 
-  // Queries are blocked only before the first successful fetch.
-  if (!fda.lastFetch) {
+  return fda;
+}
+
+async function getAccessibleFDA(service, fdaId, visibility, servicePath) {
+  const normalizedVisibility = normalizeVisibility(visibility);
+  const normalizedServicePath = normalizeServicePath(servicePath);
+  const fda = await getStoredFDA(service, fdaId);
+
+  if (normalizeVisibility(fda.visibility) !== normalizedVisibility) {
     throw new FDAError(
-      409,
-      'FDAUnavailable',
-      `FDA ${fdaId} is not queryable yet because the first fetch has not completed`,
+      403,
+      'VisibilityMismatch',
+      `FDA ${fdaId} does not belong to ${normalizedVisibility}`,
     );
   }
+
+  if (normalizeServicePath(fda.servicePath) !== normalizedServicePath) {
+    throw new FDAError(
+      403,
+      'ServicePathMismatch',
+      `FDA ${fdaId} does not belong to servicePath ${normalizedServicePath}`,
+    );
+  }
+
+  return fda;
+}
+
+function normalizeVisibility(visibility) {
+  if (!VALID_VISIBILITIES_SET.has(visibility)) {
+    throw new FDAError(
+      400,
+      'InvalidVisibility',
+      'Visibility must be public or private',
+    );
+  }
+
+  return visibility;
+}
+
+function normalizeServicePath(servicePath) {
+  if (!servicePath || typeof servicePath !== 'string') {
+    throw new FDAError(
+      400,
+      'InvalidServicePath',
+      'Fiware-ServicePath header is required',
+    );
+  }
+
+  const normalizedServicePath = servicePath.trim();
+
+  if (!/^\/(?:[^/\s]+(?:\/[^/\s]+)*)?$/.test(normalizedServicePath)) {
+    throw new FDAError(
+      400,
+      'InvalidServicePath',
+      'Fiware-ServicePath must be a valid absolute path (e.g. / or /servicepath)',
+    );
+  }
+
+  return normalizedServicePath;
+}
+
+function toFDAApiResponse(fda, { includeId }) {
+  if (!fda) {
+    return fda;
+  }
+
+  const response = { ...fda };
+  const fdaId = response.fdaId;
+
+  delete response._id;
+  delete response.fdaId;
+  delete response.service;
+  delete response.visibility;
+  delete response.servicePath;
+
+  if (!includeId) {
+    return response;
+  }
+
+  return {
+    id: fdaId,
+    ...response,
+  };
 }
 
 async function createOneRowParquetSync(service, fdaId, query) {

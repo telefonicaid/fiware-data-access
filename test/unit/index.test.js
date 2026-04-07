@@ -59,6 +59,7 @@ const fdaMocks = {
 const mongoMocks = {
   createIndex: jest.fn(),
   disconnectClient: jest.fn(),
+  getOperationalCollectionsSnapshot: jest.fn(),
 };
 
 const awsMocks = {
@@ -114,6 +115,23 @@ function resetModuleMocks() {
 
   mongoMocks.createIndex.mockReset().mockResolvedValue(undefined);
   mongoMocks.disconnectClient.mockReset().mockResolvedValue(undefined);
+  mongoMocks.getOperationalCollectionsSnapshot.mockReset().mockResolvedValue({
+    fdasTotal: 2,
+    dasTotal: 5,
+    fdasByStatus: [
+      { status: 'completed', count: 1 },
+      { status: 'failed', count: 1 },
+    ],
+    fdasByServiceAndPath: [
+      { service: 'svc', servicePath: '/servicepath', count: 2 },
+    ],
+    agenda: {
+      total: 3,
+      failed: 1,
+      locked: 0,
+      byName: [{ name: 'refresh-fda', count: 3 }],
+    },
+  });
 
   awsMocks.destroyS3Client.mockReset().mockResolvedValue(undefined);
   pgUtilsMocks.closePgPools.mockReset().mockResolvedValue(undefined);
@@ -139,6 +157,7 @@ async function loadIndexModule({
   nodeEnv = 'test',
   roles = { apiServer: true, fetcher: true },
   createIndexError,
+  mongoSnapshotError,
   startFetcherError,
   initAgendaError,
   disconnectError,
@@ -152,6 +171,12 @@ async function loadIndexModule({
 
   if (createIndexError) {
     mongoMocks.createIndex.mockRejectedValueOnce(createIndexError);
+  }
+
+  if (mongoSnapshotError) {
+    mongoMocks.getOperationalCollectionsSnapshot.mockRejectedValue(
+      mongoSnapshotError,
+    );
   }
 
   if (startFetcherError) {
@@ -206,10 +231,12 @@ async function loadIndexModule({
   }));
 
   await jest.unstable_mockModule('../../src/lib/fda.js', () => ({
+    VALID_VISIBILITIES: ['public', 'private'],
     getFDAs: fdaMocks.getFDAs,
     fetchFDA: fdaMocks.fetchFDA,
     executeQuery: fdaMocks.executeQuery,
     executeQueryStream: fdaMocks.executeQueryStream,
+    assertFDAAccess: jest.fn(),
     createDA: fdaMocks.createDA,
     getFDA: fdaMocks.getFDA,
     updateFDA: fdaMocks.updateFDA,
@@ -223,6 +250,8 @@ async function loadIndexModule({
   await jest.unstable_mockModule('../../src/lib/utils/mongo.js', () => ({
     createIndex: mongoMocks.createIndex,
     disconnectClient: mongoMocks.disconnectClient,
+    getOperationalCollectionsSnapshot:
+      mongoMocks.getOperationalCollectionsSnapshot,
   }));
 
   await jest.unstable_mockModule('../../src/lib/utils/aws.js', () => ({
@@ -284,99 +313,144 @@ describe('index routes - validation and middleware branches', () => {
   });
 
   test('returns 400 for missing mandatory params across route guards', async () => {
-    await request(app).get('/fdas').expect(400);
-    await request(app).post('/fdas').send({}).expect(400);
-    await request(app).get('/fdas/fda1').expect(400);
-    await request(app).put('/fdas/fda1').expect(400);
-    await request(app).delete('/fdas/fda1').expect(400);
+    await request(app).get('/public/fdas').expect(400);
+    await request(app).post('/public/fdas').send({}).expect(400);
+    await request(app).get('/public/fdas/fda1').expect(400);
+    await request(app).put('/public/fdas/fda1').expect(400);
+    await request(app).delete('/public/fdas/fda1').expect(400);
 
-    await request(app).get('/fdas/fda1/das').expect(400);
-    await request(app).post('/fdas/fda1/das').send({}).expect(400);
-    await request(app).get('/fdas/fda1/das/da1').expect(400);
+    await request(app).get('/public/fdas/fda1/das').expect(400);
+    await request(app).post('/public/fdas/fda1/das').send({}).expect(400);
+    await request(app).get('/public/fdas/fda1/das/da1').expect(400);
     await request(app)
-      .put('/fdas/fda1/das/da1')
+      .put('/public/fdas/fda1/das/da1')
       .set('Fiware-Service', 'svc')
       .send({ description: 'without query' })
       .expect(400);
 
-    await request(app).delete('/fdas/fda1/das/da1').expect(400);
+    await request(app).delete('/public/fdas/fda1/das/da1').expect(400);
 
-    await request(app).get('/query').expect(400);
+    await request(app).get('/public/fdas/fda1/das/da1/data').expect(400);
     await request(app).post('/plugin/cda/api/doQuery').send({}).expect(400);
   });
 
   test('covers health and successful CRUD-like route flows', async () => {
-    fdaMocks.getFDAs.mockResolvedValueOnce([{ id: 'fda1' }]);
+    fdaMocks.getFDAs.mockResolvedValueOnce([
+      { id: 'fda1', visibility: 'public', servicePath: '/servicepath' },
+    ]);
     fdaMocks.getFDA.mockResolvedValueOnce({ id: 'fda1' });
     fdaMocks.getDAs.mockResolvedValueOnce([{ id: 'da1' }]);
     fdaMocks.getDA.mockResolvedValueOnce({ id: 'da1' });
 
     const healthRes = await request(app).get('/health').expect(200);
     expect(healthRes.body.status).toBe('UP');
+    expect(healthRes.body).toEqual(
+      expect.objectContaining({
+        timestamp: expect.any(String),
+        uptimeSeconds: expect.any(Number),
+        process: expect.objectContaining({
+          pid: expect.any(Number),
+          nodeVersion: expect.any(String),
+          memory: expect.objectContaining({
+            rssBytes: expect.any(Number),
+            heapTotalBytes: expect.any(Number),
+            heapUsedBytes: expect.any(Number),
+          }),
+        }),
+        roles: expect.objectContaining({
+          apiServer: expect.any(Boolean),
+          fetcher: expect.any(Boolean),
+          syncQueries: expect.any(Boolean),
+        }),
+        traffic: expect.objectContaining({
+          totalRequests: expect.any(Number),
+          errorRequests: expect.any(Number),
+          inFlightRequests: expect.any(Number),
+          routesObserved: expect.any(Number),
+        }),
+        fiware: expect.objectContaining({
+          requestsWithHeaders: expect.any(Number),
+          servicesObserved: expect.any(Number),
+          servicePathsObserved: expect.any(Number),
+        }),
+      }),
+    );
 
     await request(app)
-      .get('/fdas')
+      .get('/public/fdas')
       .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
       .expect(200)
-      .expect([{ id: 'fda1' }]);
+      .expect([
+        { id: 'fda1', visibility: 'public', servicePath: '/servicepath' },
+      ]);
 
     await request(app)
-      .post('/fdas')
+      .post('/public/fdas')
       .set('Fiware-Service', 'svc')
-      .set('Fiware-ServicePath', '/a')
+      .set('Fiware-ServicePath', '/servicepath')
       .send({ id: 'fda1', query: 'SELECT 1', description: 'desc' })
       .expect(202);
 
     await request(app)
-      .get('/fdas/fda1')
+      .get('/public/fdas/fda1')
       .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
       .expect(200)
       .expect({ id: 'fda1' });
 
     await request(app)
-      .put('/fdas/fda1')
+      .put('/public/fdas/fda1')
       .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
       .send({})
       .expect(202);
 
     await request(app)
-      .delete('/fdas/fda1')
+      .delete('/public/fdas/fda1')
       .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
       .expect(204);
 
     await request(app)
-      .get('/fdas/fda1/das')
+      .get('/public/fdas/fda1/das')
       .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
       .expect(200)
       .expect([{ id: 'da1' }]);
 
     await request(app)
-      .post('/fdas/fda1/das')
+      .post('/public/fdas/fda1/das')
       .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
       .send({ id: 'da1', query: 'SELECT 2', description: 'da' })
       .expect(201);
 
     await request(app)
-      .get('/fdas/fda1/das/da1')
+      .get('/public/fdas/fda1/das/da1')
       .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
       .expect(200)
       .expect({ id: 'da1' });
 
     await request(app)
-      .put('/fdas/fda1/das/da1')
+      .put('/public/fdas/fda1/das/da1')
       .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
       .send({ query: 'SELECT 3', description: 'new' })
       .expect(204);
 
     await request(app)
-      .get('/query')
+      .get('/public/fdas/fda1/das/da1/data')
       .set('Fiware-Service', 'svc')
-      .query({ fdaId: 'fda1', daId: 'da1', fresh: 'false', limit: 10 })
+      .set('Fiware-ServicePath', '/servicepath')
+      .query({ fresh: 'false', limit: 10 })
       .expect(200);
 
     await request(app)
       .post('/plugin/cda/api/doQuery')
       .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
       .send({ path: '/public/svc', dataAccessId: 'da1' })
       .expect(200)
       .expect({ rows: [] });
@@ -385,14 +459,25 @@ describe('index routes - validation and middleware branches', () => {
       'fda1',
       'SELECT 1',
       'svc',
-      '/a',
+      'public',
+      '/servicepath',
       'desc',
       { type: 'none' },
       undefined,
       {},
     );
-    expect(fdaMocks.updateFDA).toHaveBeenCalledWith('svc', 'fda1');
-    expect(fdaMocks.deleteFDA).toHaveBeenCalledWith('svc', 'fda1');
+    expect(fdaMocks.updateFDA).toHaveBeenCalledWith(
+      'svc',
+      'fda1',
+      'public',
+      '/servicepath',
+    );
+    expect(fdaMocks.deleteFDA).toHaveBeenCalledWith(
+      'svc',
+      'fda1',
+      'public',
+      '/servicepath',
+    );
     expect(fdaMocks.createDA).toHaveBeenCalledWith(
       'svc',
       'fda1',
@@ -400,6 +485,8 @@ describe('index routes - validation and middleware branches', () => {
       'da',
       'SELECT 2',
       undefined,
+      'public',
+      '/servicepath',
     );
     expect(fdaMocks.putDA).toHaveBeenCalledWith(
       'svc',
@@ -408,14 +495,17 @@ describe('index routes - validation and middleware branches', () => {
       'new',
       'SELECT 3',
       undefined,
+      'public',
+      '/servicepath',
     );
     expect(utilsMocks.validateAllowedFieldsBody).toHaveBeenCalled();
   });
 
   test('returns 400 when PUT /fdas receives a body payload', async () => {
     const res = await request(app)
-      .put('/fdas/fda1')
+      .put('/public/fdas/fda1')
       .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
       .send({ invalid: true })
       .expect(400);
 
@@ -425,18 +515,100 @@ describe('index routes - validation and middleware branches', () => {
     });
   });
 
-  test('routes /query through NDJSON streaming when Accept requests ndjson', async () => {
+  test('returns prometheus metrics in text format by default', async () => {
+    await request(app).get('/health').expect(200);
+
+    const res = await request(app).get('/metrics').expect(200);
+    expect(res.headers['content-type']).toContain('text/plain');
+    expect(res.headers['content-type']).toContain('version=0.0.4');
+    expect(res.headers['content-type']).toContain('charset=utf-8');
+    expect(res.text).toContain(
+      '# HELP fda_up Service liveness indicator (1=up).',
+    );
+    expect(res.text).toContain('# TYPE fda_http_server_requests_total counter');
+    expect(res.text).toContain('fda_http_server_requests_total');
+    expect(res.text).toContain('fda_tenant_requests_total');
+    expect(res.text).toContain('fda_catalog_fdas_by_service');
+    expect(res.text).toContain('fda_jobs_agenda_total');
+    expect(res.text).toContain('# EOF');
+  });
+
+  test('health payload includes mongo operational snapshot fields', async () => {
+    const res = await request(app).get('/health').expect(200);
+
+    expect(res.body.mongo).toEqual(
+      expect.objectContaining({
+        scrapeOk: true,
+        source: expect.stringMatching(/live|cache/),
+        fdasTotal: 2,
+        dasTotal: 5,
+        agendaJobsTotal: 3,
+        agendaJobsFailed: 1,
+        agendaJobsLocked: 0,
+      }),
+    );
+  });
+
+  test('metrics still respond when mongo snapshot fails and expose scrape failure metric', async () => {
+    ({ app } = await loadIndexModule({
+      nodeEnv: 'test',
+      roles: { apiServer: true, fetcher: true },
+      mongoSnapshotError: new Error('mongo offline'),
+    }));
+
+    const healthRes = await request(app).get('/health').expect(200);
+    expect(healthRes.body.mongo.scrapeOk).toBe(false);
+    expect(healthRes.body.mongo.source).toBe('stale');
+    expect(healthRes.body.mongo.lastError).toContain('mongo offline');
+
+    const metricsRes = await request(app).get('/metrics').expect(200);
+    expect(metricsRes.text).toContain('fda_mongo_scrape_success 0');
+    expect(metricsRes.text).toContain('# EOF');
+  });
+
+  test('returns openmetrics content-type when requested by Accept header', async () => {
+    const res = await request(app)
+      .get('/metrics')
+      .set('Accept', 'application/openmetrics-text')
+      .expect(200);
+
+    expect(res.headers['content-type']).toContain(
+      'application/openmetrics-text',
+    );
+    expect(res.headers['content-type']).toContain('version=1.0.0');
+    expect(res.headers['content-type']).toContain('charset=utf-8');
+    expect(res.text).toContain('# TYPE fda_up gauge');
+    expect(res.text).toContain('# EOF');
+  });
+
+  test('returns 406 when Accept header does not include a supported metrics format', async () => {
+    const res = await request(app)
+      .get('/metrics')
+      .set('Accept', 'application/json')
+      .expect(406);
+
+    expect(res.body).toEqual({
+      error: 'NotAcceptable',
+      description:
+        'Accept header must allow application/openmetrics-text or text/plain',
+    });
+  });
+
+  test('routes data endpoint through NDJSON streaming when Accept requests ndjson', async () => {
     await request(app)
-      .get('/query')
+      .get('/public/fdas/fda1/das/da1/data')
       .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
       .set('Accept', 'application/x-ndjson')
-      .query({ fdaId: 'fda1', daId: 'da1', fresh: 'true', offset: 2 })
+      .query({ fresh: 'true', offset: 2 })
       .expect(200)
       .expect('streamed');
 
     expect(fdaMocks.executeQueryStream).toHaveBeenCalledWith(
       expect.objectContaining({
         service: 'svc',
+        visibility: 'public',
+        servicePath: '/servicepath',
         params: expect.objectContaining({
           fdaId: 'fda1',
           daId: 'da1',
@@ -450,12 +622,11 @@ describe('index routes - validation and middleware branches', () => {
 
   test('uses NDJSON streaming when Accept is ndjson even if outputType is not json', async () => {
     await request(app)
-      .get('/query')
+      .get('/public/fdas/fda1/das/da1/data')
       .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
       .set('Accept', 'application/x-ndjson')
       .query({
-        fdaId: 'fda1',
-        daId: 'da1',
         outputType: 'csv',
         minAge: 25,
       })
@@ -465,6 +636,8 @@ describe('index routes - validation and middleware branches', () => {
     expect(fdaMocks.executeQueryStream).toHaveBeenCalledWith(
       expect.objectContaining({
         service: 'svc',
+        visibility: 'public',
+        servicePath: '/servicepath',
         params: expect.objectContaining({
           fdaId: 'fda1',
           daId: 'da1',
@@ -477,11 +650,18 @@ describe('index routes - validation and middleware branches', () => {
 
   test('covers DELETE DA route success path', async () => {
     await request(app)
-      .delete('/fdas/fda1/das/da1')
+      .delete('/public/fdas/fda1/das/da1')
       .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
       .expect(204);
 
-    expect(fdaMocks.deleteDA).toHaveBeenCalledWith('svc', 'fda1', 'da1');
+    expect(fdaMocks.deleteDA).toHaveBeenCalledWith(
+      'svc',
+      'fda1',
+      'da1',
+      'public',
+      '/servicepath',
+    );
   });
 
   test('handles CDA adapter exceptions with a 500 response', async () => {
@@ -492,6 +672,7 @@ describe('index routes - validation and middleware branches', () => {
     const res = await request(app)
       .post('/plugin/cda/api/doQuery')
       .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
       .send({ path: '/public/svc', dataAccessId: 'da1' });
 
     expect(res.status).toBe(500);
@@ -509,9 +690,10 @@ describe('index routes - validation and middleware branches', () => {
     fdaMocks.executeQuery.mockResolvedValueOnce([{ total: 1n }]);
 
     const res = await request(app)
-      .get('/query')
+      .get('/public/fdas/fda1/das/da1/data')
       .set('Fiware-Service', 'svc')
-      .query({ fdaId: 'fda1', daId: 'da1' });
+      .set('Fiware-ServicePath', '/servicepath')
+      .query({});
 
     expect(res.status).toBe(500);
     expect(res.body.error).toBe('InternalServerError');
@@ -521,8 +703,9 @@ describe('index routes - validation and middleware branches', () => {
     fdaMocks.getFDAs.mockRejectedValueOnce(new Error('unexpected failure'));
 
     const res = await request(app)
-      .get('/fdas')
+      .get('/public/fdas')
       .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
       .expect(500);
 
     expect(res.body).toEqual({
@@ -539,8 +722,9 @@ describe('index routes - validation and middleware branches', () => {
     fdaMocks.getFDAs.mockRejectedValueOnce(err);
 
     const res = await request(app)
-      .get('/fdas')
+      .get('/public/fdas')
       .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
       .expect(404);
 
     expect(res.body).toEqual({
@@ -550,11 +734,12 @@ describe('index routes - validation and middleware branches', () => {
     expect(loggerMock.warn).toHaveBeenCalledWith(expect.any(Error));
   });
 
-  test('returns 400 for invalid outputType on GET /query', async () => {
+  test('returns 400 for invalid outputType on data endpoint', async () => {
     const res = await request(app)
-      .get('/query')
+      .get('/public/fdas/fda1/das/da1/data')
       .set('Fiware-Service', 'svc')
-      .query({ fdaId: 'fda1', daId: 'da1', outputType: 'xml' })
+      .set('Fiware-ServicePath', '/servicepath')
+      .query({ outputType: 'xml' })
       .expect(400);
 
     expect(res.body).toEqual({
@@ -564,16 +749,17 @@ describe('index routes - validation and middleware branches', () => {
     expect(fdaMocks.executeQuery).not.toHaveBeenCalled();
   });
 
-  test('returns CSV when outputType=csv is requested on GET /query', async () => {
+  test('returns CSV when outputType=csv is requested on data endpoint', async () => {
     fdaMocks.executeQuery.mockResolvedValueOnce([
       { col1: 'a', col2: 'b' },
       { col1: 'c,d', col2: 'e"f' },
     ]);
 
     const res = await request(app)
-      .get('/query')
+      .get('/public/fdas/fda1/das/da1/data')
       .set('Fiware-Service', 'svc')
-      .query({ fdaId: 'fda1', daId: 'da1', outputType: 'csv' })
+      .set('Fiware-ServicePath', '/servicepath')
+      .query({ outputType: 'csv' })
       .expect(200);
 
     expect(res.headers['content-type']).toMatch(/text\/csv/);
@@ -585,18 +771,21 @@ describe('index routes - validation and middleware branches', () => {
     expect(fdaMocks.executeQuery).toHaveBeenCalledWith(
       expect.objectContaining({
         service: 'svc',
+        visibility: 'public',
+        servicePath: '/servicepath',
         params: expect.not.objectContaining({ outputType: 'csv' }),
       }),
     );
   });
 
-  test('returns Excel buffer when outputType=xls is requested on GET /query', async () => {
+  test('returns Excel buffer when outputType=xls is requested on data endpoint', async () => {
     fdaMocks.executeQuery.mockResolvedValueOnce([{ col1: 'v1', col2: 42 }]);
 
     const res = await request(app)
-      .get('/query')
+      .get('/public/fdas/fda1/das/da1/data')
       .set('Fiware-Service', 'svc')
-      .query({ fdaId: 'fda1', daId: 'da1', outputType: 'xls' })
+      .set('Fiware-ServicePath', '/servicepath')
+      .query({ outputType: 'xls' })
       .expect(200);
 
     expect(res.headers['content-type']).toMatch(
@@ -606,10 +795,53 @@ describe('index routes - validation and middleware branches', () => {
     expect(res.body).toBeTruthy();
   });
 
+  test('returns 400 for invalid visibility on data endpoint', async () => {
+    const invalidVisibilityError = new Error(
+      'Visibility must be public or private',
+    );
+    invalidVisibilityError.status = 400;
+    invalidVisibilityError.type = 'InvalidVisibility';
+    fdaMocks.executeQuery.mockRejectedValueOnce(invalidVisibilityError);
+
+    const res = await request(app)
+      .get('/shared/fdas/fda1/das/da1/data')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .expect(400);
+
+    expect(res.body).toEqual({
+      error: 'InvalidVisibility',
+      description: 'Visibility must be public or private',
+    });
+  });
+
+  test('returns 400 for invalid Fiware-ServicePath when creating FDAs', async () => {
+    const invalidServicePathError = new Error(
+      'Fiware-ServicePath must be a valid absolute path (e.g. / or /servicepath)',
+    );
+    invalidServicePathError.status = 400;
+    invalidServicePathError.type = 'InvalidServicePath';
+    fdaMocks.fetchFDA.mockRejectedValueOnce(invalidServicePathError);
+
+    const res = await request(app)
+      .post('/public/fdas')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', 'shared')
+      .send({ id: 'fda1', query: 'SELECT 1' })
+      .expect(400);
+
+    expect(res.body).toEqual({
+      error: 'InvalidServicePath',
+      description:
+        'Fiware-ServicePath must be a valid absolute path (e.g. / or /servicepath)',
+    });
+  });
+
   test('returns 400 for invalid outputType on POST /doQuery', async () => {
     const res = await request(app)
       .post('/plugin/cda/api/doQuery')
       .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
       .send({ path: '/public/svc', dataAccessId: 'da1', outputType: 'html' })
       .expect(400);
 
@@ -626,13 +858,16 @@ describe('index routes - validation and middleware branches', () => {
     const res = await request(app)
       .post('/plugin/cda/api/doQuery')
       .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
       .send({ path: '/public/svc', dataAccessId: 'da1', outputType: 'csv' })
       .expect(200);
 
     expect(res.headers['content-type']).toMatch(/text\/csv/);
     expect(res.text).toContain('col1,col2');
     expect(cdaMocks.handleCdaQuery).toHaveBeenCalledWith(
-      expect.objectContaining({ outputType: 'csv' }),
+      expect.objectContaining({
+        outputType: 'csv',
+      }),
     );
   });
 
@@ -642,6 +877,7 @@ describe('index routes - validation and middleware branches', () => {
     const res = await request(app)
       .post('/plugin/cda/api/doQuery')
       .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
       .send({ path: '/public/svc', dataAccessId: 'da1', outputType: 'xls' })
       .expect(200);
 

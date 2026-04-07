@@ -22,7 +22,14 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
-import { beforeEach, describe, expect, jest, test } from '@jest/globals';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  jest,
+  test,
+} from '@jest/globals';
 import { FDAError } from '../../src/lib/fdaError.js';
 
 let currentClient;
@@ -84,6 +91,7 @@ await jest.unstable_mockModule('../../src/lib/fdaConfig.js', () => ({
         max: 10,
         idleTimeoutMillis: 10000,
         connectionTimeoutMillis: 5000,
+        databaseIdleTimeoutMillis: 50,
       },
     },
   },
@@ -92,10 +100,12 @@ await jest.unstable_mockModule('../../src/lib/fdaConfig.js', () => ({
 const { getPgClient, uploadTable, runPgQuery, createPgCursorReader } =
   await import('../../src/lib/utils/pg.js');
 const { closePgPools } = await import('../../src/lib/utils/pg.js');
+const { config } = await import('../../src/lib/fdaConfig.js');
 
 describe('pg utils', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
+    jest.useRealTimers();
 
     await closePgPools();
 
@@ -109,6 +119,10 @@ describe('pg utils', () => {
       end: jest.fn().mockResolvedValue(undefined),
       on: jest.fn(),
     };
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
   });
 
   test('getPgClient builds a pg client with expected config', () => {
@@ -247,5 +261,70 @@ describe('pg utils', () => {
 
     expect(poolCtorMock).toHaveBeenCalledTimes(2);
     expect(currentPool.end).toHaveBeenCalled();
+  });
+
+  test('closes inactive per-database pool after timeout', async () => {
+    jest.useFakeTimers();
+    currentClient.query.mockResolvedValue({ rows: [{ id: 1 }] });
+    currentPool.totalCount = 1;
+    currentPool.idleCount = 1;
+    currentPool.waitingCount = 0;
+
+    await runPgQuery('svc_db_idle', 'SELECT 1', []);
+
+    await jest.advanceTimersByTimeAsync(60);
+
+    expect(currentPool.end).toHaveBeenCalledTimes(1);
+  });
+
+  test('does not schedule idle close when database idle timeout is disabled', async () => {
+    jest.useFakeTimers();
+    currentClient.query.mockResolvedValue({ rows: [{ id: 1 }] });
+    currentPool.totalCount = 1;
+    currentPool.idleCount = 1;
+    currentPool.waitingCount = 0;
+
+    const previousTimeout = config.pg.pool.databaseIdleTimeoutMillis;
+    config.pg.pool.databaseIdleTimeoutMillis = 0;
+
+    await runPgQuery('svc_db_no_idle_close', 'SELECT 1', []);
+    await jest.advanceTimersByTimeAsync(120);
+
+    expect(currentPool.end).not.toHaveBeenCalled();
+
+    config.pg.pool.databaseIdleTimeoutMillis = previousTimeout;
+  });
+
+  test('returns early when pool entry does not exist at release time', async () => {
+    currentClient.query.mockImplementation(async () => {
+      await closePgPools();
+      return { rows: [{ id: 1 }] };
+    });
+
+    await expect(
+      runPgQuery('svc_db_missing_entry', 'SELECT 1', []),
+    ).resolves.toEqual([{ id: 1 }]);
+
+    expect(currentClient.release).toHaveBeenCalledTimes(1);
+  });
+
+  test('reschedules idle close while pool still has active work', async () => {
+    jest.useFakeTimers();
+    currentClient.query.mockResolvedValue({ rows: [{ id: 1 }] });
+    currentPool.totalCount = 2;
+    currentPool.idleCount = 1;
+    currentPool.waitingCount = 0;
+
+    await runPgQuery('svc_db_busy_pool', 'SELECT 1', []);
+
+    await jest.advanceTimersByTimeAsync(60);
+    expect(currentPool.end).not.toHaveBeenCalled();
+
+    currentPool.totalCount = 1;
+    currentPool.idleCount = 1;
+    currentPool.waitingCount = 0;
+
+    await jest.advanceTimersByTimeAsync(60);
+    expect(currentPool.end).toHaveBeenCalledTimes(1);
   });
 });
