@@ -36,6 +36,7 @@ export async function startFetcher() {
       fdaId,
       query,
       service,
+      servicePath,
       timeColumn,
       objStgConf,
       partitionFlag = false,
@@ -46,6 +47,7 @@ export async function startFetcher() {
         fdaId,
         query,
         service,
+        servicePath,
         timeColumn,
         objStgConf,
         partitionFlag,
@@ -56,9 +58,10 @@ export async function startFetcher() {
   });
 
   agenda.define('clean-partition', async (job) => {
-    const { fdaId, service, windowSize, objStgConf } = job.attrs.data;
+    const { fdaId, service, servicePath, windowSize, objStgConf } =
+      job.attrs.data;
     try {
-      await cleanPartition(service, fdaId, windowSize, objStgConf);
+      await cleanPartition(service, fdaId, windowSize, objStgConf, servicePath);
     } catch (e) {
       logger.error('Fetcher error: ', e);
     }
