@@ -822,6 +822,90 @@ export function runFDAIntegrationSuite({ mode, label }) {
       await waitUntilFDACompleted({ baseUrl, service, fdaId: fdaId3 });
     });
 
+    test('POST /fdas allows same id in same service when servicePath differs', async () => {
+      const scopedFdaId = 'fda_same_id_diff_servicepath';
+      const otherServicePath = '/other-path';
+
+      const firstCreate = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: scopedFdaId,
+          query: 'SELECT id FROM public.users',
+          description: 'scope one',
+        },
+      });
+
+      expect(firstCreate.status).toBe(202);
+
+      const secondCreate = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': otherServicePath,
+        },
+        body: {
+          id: scopedFdaId,
+          query: 'SELECT id FROM public.users',
+          description: 'scope two',
+        },
+      });
+
+      expect(secondCreate.status).toBe(202);
+
+      const wrongScopeRead = await httpReq({
+        method: 'GET',
+        url: `${baseUrl}/${visibility}/fdas/${scopedFdaId}`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': '/unknown-path',
+        },
+      });
+
+      expect(wrongScopeRead.status).toBe(403);
+      expect(wrongScopeRead.json.error).toBe('ServicePathMismatch');
+
+      const scopeOneRead = await httpReq({
+        method: 'GET',
+        url: `${baseUrl}/${visibility}/fdas/${scopedFdaId}`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+      });
+
+      expect(scopeOneRead.status).toBe(200);
+
+      const scopeTwoRead = await httpReq({
+        method: 'GET',
+        url: `${baseUrl}/${visibility}/fdas/${scopedFdaId}`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': otherServicePath,
+        },
+      });
+
+      expect(scopeTwoRead.status).toBe(200);
+
+      await waitUntilFDACompleted({
+        baseUrl,
+        service,
+        fdaId: scopedFdaId,
+        servicePath,
+      });
+      await waitUntilFDACompleted({
+        baseUrl,
+        service,
+        fdaId: scopedFdaId,
+        servicePath: otherServicePath,
+      });
+    });
+
     test('POST /fdas pending allows DA creation but rejects /query until first completion', async () => {
       const pendingFdaId = 'fda_pending_first_fetch';
       const pendingDaId = 'da_pending_first_fetch';
