@@ -227,7 +227,7 @@ export async function retrieveFDA(service, fdaId, servicePath) {
   logger.debug({ service, fdaId }, '[DEBUG]: retrieveFDA');
   const collection = await getCollection();
   try {
-    return collection.findOne({ service, fdaId, servicePath });
+    return await collection.findOne({ service, fdaId, servicePath });
   } catch (e) {
     throw new FDAError(
       500,
