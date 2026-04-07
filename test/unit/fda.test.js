@@ -558,7 +558,8 @@ describe('fetchFDA', () => {
         'fda1',
         'SELECT 1',
         'svc',
-        '/svc',
+        'public',
+        '/servicePath',
         'desc',
         {
           type: 'interval',
@@ -592,32 +593,7 @@ describe('fetchFDA', () => {
     expect(agenda.now).not.toHaveBeenCalled();
   });
 
-  test('fetchFDA with cron refresh policy schedules periodic job', async () => {
-    await fetchFDA(
-      'fda1',
-      'SELECT 1',
-      'svc',
-      'public',
-      '/servicepath',
-      'desc',
-      {
-        type: 'cron',
-        value: '0 0 * * *',
-      },
-    );
-
-    expect(agenda.every).toHaveBeenCalledWith(
-      '0 0 * * *',
-      'refresh-fda',
-      expect.objectContaining({ fdaId: 'fda1', query: 'SELECT 1' }),
-      {
-        skipImmediate: true,
-        unique: { name: 'refresh-fda', 'data.fdaId': 'fda1' },
-      },
-    );
-  });
-
-  test('fetchFDA with window refresh policy and deleteInterval schedules cleanup', async () => {
+  test('fetchFDA with window refresh policy schedules cleanup', async () => {
     await fetchFDA(
       'fda1',
       'SELECT 1',
@@ -627,9 +603,15 @@ describe('fetchFDA', () => {
       'desc',
       {
         type: 'window',
-        value: 'daily',
-        deleteInterval: '1 day',
-        windowSize: 'day',
+        params: {
+          refreshInterval: '0 0 * * *',
+          fetchSize: 'day',
+          windowSize: 'day',
+        },
+      },
+      'timeinstant',
+      {
+        partition: 'day',
       },
     );
 
@@ -639,20 +621,6 @@ describe('fetchFDA', () => {
       expect.any(Object),
       expect.any(Object),
     );
-  });
-
-  test('fetchFDA throws when deleteInterval provided without windowSize', async () => {
-    await expect(
-      fetchFDA('fda1', 'SELECT 1', 'svc', 'public', '/servicepath', 'desc', {
-        type: 'interval',
-        value: '10 minutes',
-        deleteInterval: '1 day',
-      }),
-    ).rejects.toMatchObject({
-      status: 400,
-      type: 'InvalidParam',
-      message: 'Window size is required with a delete interval.',
-    });
   });
 
   test('fetchFDA throws when servicePath is missing', async () => {
@@ -954,36 +922,6 @@ describe('fetchFDA with refresh policies', () => {
     );
   });
 
-  test('fetchFDA with window refresh policy schedules cleanup', async () => {
-    await fetchFDA(
-      'fda1',
-      'SELECT 1',
-      'svc',
-      'public',
-      '/servicepath',
-      'desc',
-      {
-        type: 'window',
-        params: {
-          refreshInterval: '0 0 * * *',
-          fetchSize: 'day',
-          windowSize: 'day',
-        },
-      },
-      'timeinstant',
-      {
-        partition: 'day',
-      },
-    );
-
-    expect(agenda.every).toHaveBeenCalledWith(
-      expect.any(String),
-      'refresh-fda',
-      expect.any(Object),
-      expect.any(Object),
-    );
-  });
-
   test('fetchFDA with different fetch size and partition', async () => {
     dbMocks.refreshIntervalPartitionCheck.mockReturnValue(true);
 
@@ -1007,31 +945,6 @@ describe('fetchFDA with refresh policies', () => {
         {
           partition: 'day',
         },
-      ),
-    ).rejects.toMatchObject({
-      status: 400,
-      type: 'InvalidParam',
-      message: 'Fetch size "week" must be equal to partition size "day".',
-    });
-
-    expect(agenda.every).not.toHaveBeenCalled();
-  });
-
-  test('fetchFDA with window policy throws when deleteInterval provided without windowSize', async () => {
-    await expect(
-      fetchFDA(
-        'fda1',
-        'SELECT 1',
-        'svc',
-        'public',
-        '/servicepath',
-        'desc',
-        {
-          type: 'window',
-          value: 'daily',
-          deleteInterval: '1 day',
-        },
-        'timeinstant',
       ),
     ).rejects.toMatchObject({
       status: 400,

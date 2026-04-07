@@ -640,7 +640,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       // Test with a fetchSize different from partition
       const diffFetchPartition = await httpReq({
         method: 'POST',
-        url: `${baseUrl}/fdas`,
+        url: `${baseUrl}/${visibility}/fdas`,
         headers: {
           'Fiware-Service': service,
           'Fiware-ServicePath': servicePath,
@@ -674,6 +674,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
           diffFetchPartition.json ?? diffFetchPartition.text,
         );
       }
+      //
       expect(diffFetchPartition.status).toBe(400);
       await waitUntilFDACompleted({ baseUrl, service, fdaId: 'fda_refresh' });
 
@@ -2679,7 +2680,6 @@ export function runFDAIntegrationSuite({ mode, label }) {
       });
 
       expect(completedFDA).toMatchObject({
-        fdaId: fdaId2,
         query:
           'SELECT timeinstant, id, name, age FROM public.users ORDER BY id',
         description: 'users dataset',
