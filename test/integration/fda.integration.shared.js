@@ -268,32 +268,6 @@ async function waitUntilFDACompleted({
   );
 }
 
-async function waitUntilFDAFailed({
-  baseUrl,
-  service,
-  fdaId,
-  timeout = 10000,
-  interval = 300,
-}) {
-  const start = Date.now();
-
-  while (Date.now() - start < timeout) {
-    const res = await httpReq({
-      method: 'GET',
-      url: `${baseUrl}/fdas/${encodeURIComponent(fdaId)}`,
-      headers: { 'Fiware-Service': service },
-    });
-
-    if (res.status === 200 && res.json?.status === 'failed') {
-      return res.json;
-    }
-
-    await new Promise((r) => setTimeout(r, interval));
-  }
-
-  throw new Error(`Timeout waiting for FDA ${fdaId} to reach completed state`);
-}
-
 export const EXECUTION_MODES = Object.freeze({
   COMBINED: 'combined',
   SEPARATED: 'separated',
@@ -714,19 +688,12 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       if (res3.status >= 400) {
         console.error(
-          'POST /fdas failed:',
+          'POST /fdas failedas expected:',
           res3.status,
           res3.json ?? res3.text,
         );
       }
-      expect(res3.status).toBe(202);
-      const fdaResult = await waitUntilFDAFailed({
-        baseUrl,
-        service,
-        fdaId: 'fda_refresh3',
-      });
-      expect(fdaResult.status).toBe('failed');
-      expect(fdaResult.error).toBe('Missing timeColumn value.');
+      expect(res3.status).toBe(400);
 
       // Test with invalid partition type
       const res4 = await httpReq({
@@ -2488,6 +2455,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
           // query base to extract from PG to CSV
           query: 'SELECT id, name, age FROM public.users ORDER BY id',
           description: 'users dataset',
+          timeColumn: 'timeinstant',
           refreshPolicy: {
             type: 'interval',
             params: {
@@ -2514,7 +2482,8 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       expect(completedFDA).toMatchObject({
         fdaId: fdaId2,
-        query: 'SELECT id, name, age FROM public.users ORDER BY id',
+        query:
+          'SELECT timeinstant, id, name, age FROM public.users ORDER BY id',
         description: 'users dataset',
         service,
         servicePath,

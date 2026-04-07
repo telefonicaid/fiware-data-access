@@ -62,6 +62,7 @@ import {
   getWindowDate,
   assertFreshQueriesEnabled,
   acquireFreshQuerySlot,
+  getFinalQuery,
 } from './utils/utils.js';
 import { config } from './fdaConfig.js';
 import { FDAError } from './fdaError.js';
@@ -426,9 +427,13 @@ export async function fetchFDA(
 ) {
   validateScheduledOptions(refreshPolicy, objStgConf);
 
+  const timeQuery =
+    refreshPolicy?.type !== 'none' || objStgConf?.partition
+      ? getFinalQuery(query, timeColumn)
+      : query;
   await createFDAMongo(
     fdaId,
-    query,
+    timeQuery,
     service,
     servicePath,
     description,
@@ -438,7 +443,7 @@ export async function fetchFDA(
   );
 
   try {
-    await createOneRowParquetSync(service, fdaId, query);
+    await createOneRowParquetSync(service, fdaId, timeQuery);
   } catch (err) {
     await rollbackFDAProvisioning(service, fdaId);
     throw err;
@@ -449,7 +454,7 @@ export async function fetchFDA(
   // Execute first fetch immediately (when a fetcher is free)
   await agenda.now('refresh-fda', {
     fdaId,
-    query,
+    query: timeQuery,
     service,
     timeColumn,
     objStgConf,
@@ -463,7 +468,7 @@ export async function fetchFDA(
     await agenda.every(
       refreshInterval,
       'refresh-fda',
-      { fdaId, query, service, timeColumn, objStgConf },
+      { fdaId, query: timeQuery, service, timeColumn, objStgConf },
       {
         skipImmediate: true,
         unique: {
@@ -498,7 +503,7 @@ export async function fetchFDA(
     const { refreshInterval, fetchSize, windowSize } =
       refreshPolicy.params || {};
 
-    const refreshQuery = getUpdateWindowQuery(fetchSize, query, timeColumn);
+    const refreshQuery = getUpdateWindowQuery(fetchSize, timeQuery, timeColumn);
 
     // partitionFlag lets us know we are refreshing already existing partitioned files for performance purposes
     await agenda.every(

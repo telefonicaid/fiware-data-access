@@ -30,15 +30,24 @@ const loggerMock = {
   error: jest.fn(),
 };
 
+const cronParserMock = {
+  parse: jest.fn(),
+};
+
 async function loadUtilsModule() {
   jest.resetModules();
 
   loggerMock.debug.mockClear();
   loggerMock.info.mockClear();
   loggerMock.error.mockClear();
+  cronParserMock.parse.mockClear();
 
   await jest.unstable_mockModule('../../src/lib/utils/logger.js', () => ({
     getBasicLogger: () => loggerMock,
+  }));
+
+  await jest.unstable_mockModule('cron-parser', () => ({
+    CronExpressionParser: cronParserMock,
   }));
 
   return import('../../src/lib/utils/utils.js');
@@ -124,44 +133,52 @@ describe('utils', () => {
       const { getWindowDate } = await loadUtilsModule();
 
       const now = new Date();
+      const expected = new Date(now);
+      expected.setDate(expected.getDate() - 1);
       const result = getWindowDate('day');
 
       expect(result).toBeInstanceOf(Date);
       expect(result.getTime()).toBeLessThan(now.getTime());
-      expect(result.getDate()).toBe(now.getDate() - 1);
+      expect(result.toDateString()).toBe(expected.toDateString());
     });
 
     test('returns date 7 days ago for "week" windowSize', async () => {
       const { getWindowDate } = await loadUtilsModule();
 
       const now = new Date();
+      const expected = new Date(now);
+      expected.setDate(expected.getDate() - 7);
       const result = getWindowDate('week');
 
       expect(result).toBeInstanceOf(Date);
       expect(result.getTime()).toBeLessThan(now.getTime());
-      expect(result.getDate()).toBe(now.getDate() - 7);
+      expect(result.toDateString()).toBe(expected.toDateString());
     });
 
     test('returns date 1 month ago for "month" windowSize', async () => {
       const { getWindowDate } = await loadUtilsModule();
 
       const now = new Date();
+      const expected = new Date(now);
+      expected.setMonth(expected.getMonth() - 1);
       const result = getWindowDate('month');
 
       expect(result).toBeInstanceOf(Date);
       expect(result.getTime()).toBeLessThan(now.getTime());
-      expect(result.getMonth()).toBe(now.getMonth() - 1);
+      expect(result.toDateString()).toBe(expected.toDateString());
     });
 
     test('returns date 1 year ago for "year" windowSize', async () => {
       const { getWindowDate } = await loadUtilsModule();
 
       const now = new Date();
+      const expected = new Date(now);
+      expected.setFullYear(expected.getFullYear() - 1);
       const result = getWindowDate('year');
 
       expect(result).toBeInstanceOf(Date);
       expect(result.getTime()).toBeLessThan(now.getTime());
-      expect(result.getFullYear()).toBe(now.getFullYear() - 1);
+      expect(result.toDateString()).toBe(expected.toDateString());
     });
 
     test('returns undefined for invalid windowSize', async () => {
@@ -224,6 +241,185 @@ describe('utils', () => {
       expect(result.getDate()).toBe(29);
 
       jest.useRealTimers();
+    });
+  });
+
+  describe('convertRefreshIntervalToMs', () => {
+    let convertRefreshIntervalToMs;
+
+    beforeAll(async () => {
+      const utils = await loadUtilsModule();
+      convertRefreshIntervalToMs = utils.convertRefreshIntervalToMs;
+    });
+
+    describe('invalid inputs', () => {
+      test('returns null for undefined', () => {
+        expect(convertRefreshIntervalToMs(undefined)).toBeNull();
+      });
+
+      test('returns null for null', () => {
+        expect(convertRefreshIntervalToMs(null)).toBeNull();
+      });
+
+      test('returns null for non-string values', () => {
+        expect(convertRefreshIntervalToMs(123)).toBeNull();
+        expect(convertRefreshIntervalToMs({})).toBeNull();
+        expect(convertRefreshIntervalToMs([])).toBeNull();
+      });
+
+      test('returns null for empty string', () => {
+        expect(convertRefreshIntervalToMs('')).toBeNull();
+        expect(convertRefreshIntervalToMs('   ')).toBeNull();
+      });
+
+      test('returns null for invalid format', () => {
+        expect(convertRefreshIntervalToMs('abc')).toBeNull();
+        expect(convertRefreshIntervalToMs('10 lightyears')).toBeNull();
+        expect(convertRefreshIntervalToMs('minutes 5')).toBeNull();
+      });
+    });
+
+    describe('human-readable intervals', () => {
+      test('parses seconds', () => {
+        expect(convertRefreshIntervalToMs('1 second')).toBe(1000);
+        expect(convertRefreshIntervalToMs('10 seconds')).toBe(10000);
+      });
+
+      test('parses minutes', () => {
+        expect(convertRefreshIntervalToMs('1 minute')).toBe(60 * 1000);
+        expect(convertRefreshIntervalToMs('5 minutes')).toBe(5 * 60 * 1000);
+      });
+
+      test('parses hours', () => {
+        expect(convertRefreshIntervalToMs('1 hour')).toBe(60 * 60 * 1000);
+        expect(convertRefreshIntervalToMs('2 hours')).toBe(2 * 60 * 60 * 1000);
+      });
+
+      test('parses days', () => {
+        expect(convertRefreshIntervalToMs('1 day')).toBe(24 * 60 * 60 * 1000);
+      });
+
+      test('parses weeks', () => {
+        expect(convertRefreshIntervalToMs('1 week')).toBe(
+          7 * 24 * 60 * 60 * 1000,
+        );
+      });
+
+      test('parses months (30 days)', () => {
+        expect(convertRefreshIntervalToMs('1 month')).toBe(
+          30 * 24 * 60 * 60 * 1000,
+        );
+      });
+
+      test('parses years (365 days)', () => {
+        expect(convertRefreshIntervalToMs('1 year')).toBe(
+          365 * 24 * 60 * 60 * 1000,
+        );
+      });
+    });
+
+    describe('normalization', () => {
+      test('handles uppercase input', () => {
+        expect(convertRefreshIntervalToMs('1 MINUTE')).toBe(60 * 1000);
+      });
+
+      test('handles extra whitespace', () => {
+        expect(convertRefreshIntervalToMs('   2   hours   ')).toBe(
+          2 * 60 * 60 * 1000,
+        );
+      });
+
+      test('handles singular and plural forms', () => {
+        expect(convertRefreshIntervalToMs('1 minute')).toBe(60 * 1000);
+        expect(convertRefreshIntervalToMs('2 minutes')).toBe(2 * 60 * 1000);
+      });
+    });
+
+    describe('cron fallback', () => {
+      test('returns interval between two cron executions', () => {
+        const nextMock = jest
+          .fn()
+          .mockReturnValueOnce({ getTime: () => 1000 })
+          .mockReturnValueOnce({ getTime: () => 4000 });
+
+        cronParserMock.parse.mockReturnValue({
+          next: nextMock,
+        });
+
+        expect(convertRefreshIntervalToMs('* * * * *')).toBe(3000);
+      });
+    });
+  });
+
+  describe('getFinalQuery', () => {
+    let getFinalQuery;
+
+    beforeAll(async () => {
+      const utils = await loadUtilsModule();
+      getFinalQuery = utils.getFinalQuery;
+    });
+
+    describe('invalid inputs', () => {
+      test('throws for invalid timeColumn (special chars)', () => {
+        expect(() =>
+          getFinalQuery('SELECT a FROM table', 'time-column'),
+        ).toThrow('Invalid time column name');
+      });
+
+      test('throws for invalid timeColumn (empty)', () => {
+        expect(() => getFinalQuery('SELECT a FROM table', '')).toThrow(
+          'Invalid time column name',
+        );
+      });
+
+      test('throws if query has no SELECT', () => {
+        expect(() => getFinalQuery('DELETE FROM table', 'time')).toThrow(
+          'Missing SELECT',
+        );
+      });
+    });
+
+    describe('no modification cases', () => {
+      test('returns query if SELECT *', () => {
+        const query = 'SELECT * FROM table';
+        expect(getFinalQuery(query, 'time')).toBe(query);
+      });
+
+      test('returns query if timeColumn already present', () => {
+        const query = 'SELECT time, value FROM table';
+        expect(getFinalQuery(query, 'time')).toBe(query);
+      });
+
+      test('returns query if timeColumn already present (middle)', () => {
+        const query = 'SELECT value, time, other FROM table';
+        expect(getFinalQuery(query, 'time')).toBe(query);
+      });
+    });
+
+    describe('insertion behavior', () => {
+      test('inserts timeColumn after SELECT', () => {
+        const result = getFinalQuery('SELECT value FROM table', 'time');
+
+        expect(result).toBe('SELECT time, value FROM table');
+      });
+
+      test('handles multiple columns', () => {
+        const result = getFinalQuery('SELECT value, other FROM table', 'time');
+
+        expect(result).toBe('SELECT time, value, other FROM table');
+      });
+
+      test('handles extra whitespace after SELECT', () => {
+        const result = getFinalQuery('SELECT   value FROM table', 'time');
+
+        expect(result).toBe('SELECT   time, value FROM table');
+      });
+
+      test('handles lowercase select/from', () => {
+        const result = getFinalQuery('select value from table', 'time');
+
+        expect(result).toBe('select time, value from table');
+      });
     });
   });
 });

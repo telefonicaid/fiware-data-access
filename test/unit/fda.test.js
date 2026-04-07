@@ -469,15 +469,29 @@ describe('fetchFDA', () => {
   });
 
   test('schedules periodic refresh for interval policy', async () => {
-    await fetchFDA('fda1', 'SELECT 1', 'svc', '/svc', 'desc', {
-      type: 'interval',
-      params: { refreshInterval: '10 minutes' },
-    });
+    await fetchFDA(
+      'fda1',
+      'SELECT 1',
+      'svc',
+      '/svc',
+      'desc',
+      {
+        type: 'interval',
+        params: { refreshInterval: '10 minutes' },
+      },
+      'timeinstant',
+    );
 
     expect(agenda.every).toHaveBeenCalledWith(
       '10 minutes',
       'refresh-fda',
-      { fdaId: 'fda1', query: 'SELECT 1', service: 'svc' },
+      {
+        fdaId: 'fda1',
+        query: 'SELECT timeinstant, 1',
+        service: 'svc',
+        timeColumn: 'timeinstant',
+        objStgConf: undefined,
+      },
       {
         skipImmediate: true,
         unique: { name: 'refresh-fda', 'data.fdaId': 'fda1' },
@@ -771,15 +785,29 @@ describe('fetchFDA with refresh policies', () => {
   });
 
   test('fetchFDA with cron refresh policy schedules periodic job', async () => {
-    await fetchFDA('fda1', 'SELECT 1', 'svc', '/svc', 'desc', {
-      type: 'cron',
-      params: { refreshInterval: '0 0 * * *' },
-    });
+    await fetchFDA(
+      'fda1',
+      'SELECT 1',
+      'svc',
+      '/svc',
+      'desc',
+      {
+        type: 'cron',
+        params: { refreshInterval: '0 0 * * *' },
+      },
+      'timeinstant',
+    );
 
     expect(agenda.every).toHaveBeenCalledWith(
       '0 0 * * *',
       'refresh-fda',
-      expect.objectContaining({ fdaId: 'fda1', query: 'SELECT 1' }),
+      expect.objectContaining({
+        fdaId: 'fda1',
+        query: 'SELECT timeinstant, 1',
+        service: 'svc',
+        timeColumn: 'timeinstant',
+        objStgConf: undefined,
+      }),
       {
         skipImmediate: true,
         unique: { name: 'refresh-fda', 'data.fdaId': 'fda1' },
