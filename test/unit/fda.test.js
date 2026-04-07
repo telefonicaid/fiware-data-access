@@ -134,6 +134,7 @@ const {
   executeQuery,
   executeQueryStream,
   fetchFDA,
+  getFDA,
   updateFDA,
   processFDAAsync,
   deleteFDA,
@@ -1133,6 +1134,33 @@ describe('getFDAs', () => {
   });
 });
 
+describe('getFDA', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test('returns stored FDA when visibility is undefined', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      _id: 'mongo1',
+      fdaId: 'fdaA',
+      service: 'svc',
+      servicePath: '/public',
+      visibility: 'private',
+      query: 'SELECT 1',
+      status: 'completed',
+    });
+
+    const result = await getFDA('svc', 'fdaA', undefined, '/public');
+
+    expect(mongoMocks.retrieveFDA).toHaveBeenCalledWith(
+      'svc',
+      'fdaA',
+      '/public',
+    );
+    expect(result).toEqual({ query: 'SELECT 1', status: 'completed' });
+  });
+});
+
 describe('cleanPartition', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -1158,6 +1186,8 @@ describe('cleanPartition', () => {
       { partition: true },
       '/public',
     );
+
+    expect(awsMocks.listObjects).toHaveBeenCalledWith({}, 'svc', 'public/fdaA');
 
     expect(awsMocks.dropFiles).toHaveBeenCalledWith({}, 'svc', [
       'svc/fdaA/2020-01-01.parquet',
