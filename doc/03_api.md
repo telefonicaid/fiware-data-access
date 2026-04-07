@@ -7,6 +7,8 @@
 -   [API Routes](#api-routes)
     -   [Health Endpoint](#health-endpoint)
         -   [Health Check `GET /health`](#health-check-get-health)
+    -   [Metrics Endpoint](#metrics-endpoint)
+        -   [Retrieve metrics `GET /metrics`](#retrieve-metrics-get-metrics)
     -   [FDA payload datamodel](#fda-payload-datamodel)
     -   [FDAs operations](#fdas-operations)
         -   [List FDAs](#list-fdas-get-visibilityfdas)
@@ -532,7 +534,7 @@ These fields are **provided in responses** but **cannot be included or modified*
 
 #### List FDAs `GET /{visibility}/fdas`
 
-Returns a list of all the FDAs for that `service`, `servicePath` and visibility.
+Returns a list of all the FDAs for that `service`, `servicePath` and `visibility`.
 
 _**Request path parameters**_
 
