@@ -1,4 +1,4 @@
-Add: observability in health endpoint and Prometheus/OpenMetrics metrics endpoint `GET /metrics` (#90)
+- Add: observability in health endpoint and Prometheus/OpenMetrics metrics endpoint `GET /metrics` (#90)
 - Add: postgres db connection pool and env vars (`FDA_PG_POOL_MAX`, `FDA_PG_POOL_IDLE_TIMEOUT_MS`, `FDA_PG_POOL_CONN_TIMEOUT_MS`, `FDA_PG_POOL_DB_IDLE_TIMEOUT_MS`) (#28)
 - Add: response format selection in query and doQuery using outputType, with csv and xls support (#20)
 - Fix: value of default params are checked when creating DA (#107)
