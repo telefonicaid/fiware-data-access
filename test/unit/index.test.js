@@ -59,6 +59,7 @@ const fdaMocks = {
 const mongoMocks = {
   createIndex: jest.fn(),
   disconnectClient: jest.fn(),
+  getOperationalCollectionsSnapshot: jest.fn(),
 };
 
 const awsMocks = {
@@ -114,6 +115,23 @@ function resetModuleMocks() {
 
   mongoMocks.createIndex.mockReset().mockResolvedValue(undefined);
   mongoMocks.disconnectClient.mockReset().mockResolvedValue(undefined);
+  mongoMocks.getOperationalCollectionsSnapshot.mockReset().mockResolvedValue({
+    fdasTotal: 2,
+    dasTotal: 5,
+    fdasByStatus: [
+      { status: 'completed', count: 1 },
+      { status: 'failed', count: 1 },
+    ],
+    fdasByServiceAndPath: [
+      { service: 'svc', servicePath: '/servicepath', count: 2 },
+    ],
+    agenda: {
+      total: 3,
+      failed: 1,
+      locked: 0,
+      byName: [{ name: 'refresh-fda', count: 3 }],
+    },
+  });
 
   awsMocks.destroyS3Client.mockReset().mockResolvedValue(undefined);
   pgUtilsMocks.closePgPools.mockReset().mockResolvedValue(undefined);
@@ -139,6 +157,7 @@ async function loadIndexModule({
   nodeEnv = 'test',
   roles = { apiServer: true, fetcher: true },
   createIndexError,
+  mongoSnapshotError,
   startFetcherError,
   initAgendaError,
   disconnectError,
@@ -152,6 +171,12 @@ async function loadIndexModule({
 
   if (createIndexError) {
     mongoMocks.createIndex.mockRejectedValueOnce(createIndexError);
+  }
+
+  if (mongoSnapshotError) {
+    mongoMocks.getOperationalCollectionsSnapshot.mockRejectedValue(
+      mongoSnapshotError,
+    );
   }
 
   if (startFetcherError) {
@@ -225,6 +250,8 @@ async function loadIndexModule({
   await jest.unstable_mockModule('../../src/lib/utils/mongo.js', () => ({
     createIndex: mongoMocks.createIndex,
     disconnectClient: mongoMocks.disconnectClient,
+    getOperationalCollectionsSnapshot:
+      mongoMocks.getOperationalCollectionsSnapshot,
   }));
 
   await jest.unstable_mockModule('../../src/lib/utils/aws.js', () => ({
@@ -317,6 +344,37 @@ describe('index routes - validation and middleware branches', () => {
 
     const healthRes = await request(app).get('/health').expect(200);
     expect(healthRes.body.status).toBe('UP');
+    expect(healthRes.body).toEqual(
+      expect.objectContaining({
+        timestamp: expect.any(String),
+        uptimeSeconds: expect.any(Number),
+        process: expect.objectContaining({
+          pid: expect.any(Number),
+          nodeVersion: expect.any(String),
+          memory: expect.objectContaining({
+            rssBytes: expect.any(Number),
+            heapTotalBytes: expect.any(Number),
+            heapUsedBytes: expect.any(Number),
+          }),
+        }),
+        roles: expect.objectContaining({
+          apiServer: expect.any(Boolean),
+          fetcher: expect.any(Boolean),
+          syncQueries: expect.any(Boolean),
+        }),
+        traffic: expect.objectContaining({
+          totalRequests: expect.any(Number),
+          errorRequests: expect.any(Number),
+          inFlightRequests: expect.any(Number),
+          routesObserved: expect.any(Number),
+        }),
+        fiware: expect.objectContaining({
+          requestsWithHeaders: expect.any(Number),
+          servicesObserved: expect.any(Number),
+          servicePathsObserved: expect.any(Number),
+        }),
+      }),
+    );
 
     await request(app)
       .get('/public/fdas')
@@ -454,6 +512,85 @@ describe('index routes - validation and middleware branches', () => {
     expect(res.body).toEqual({
       error: 'BadRequest',
       description: 'PUT /fdas does not accept a request body',
+    });
+  });
+
+  test('returns prometheus metrics in text format by default', async () => {
+    await request(app).get('/health').expect(200);
+
+    const res = await request(app).get('/metrics').expect(200);
+    expect(res.headers['content-type']).toContain('text/plain');
+    expect(res.headers['content-type']).toContain('version=0.0.4');
+    expect(res.headers['content-type']).toContain('charset=utf-8');
+    expect(res.text).toContain(
+      '# HELP fda_up Service liveness indicator (1=up).',
+    );
+    expect(res.text).toContain('# TYPE fda_http_server_requests_total counter');
+    expect(res.text).toContain('fda_http_server_requests_total');
+    expect(res.text).toContain('fda_tenant_requests_total');
+    expect(res.text).toContain('fda_catalog_fdas_by_service');
+    expect(res.text).toContain('fda_jobs_agenda_total');
+    expect(res.text).toContain('# EOF');
+  });
+
+  test('health payload includes mongo operational snapshot fields', async () => {
+    const res = await request(app).get('/health').expect(200);
+
+    expect(res.body.mongo).toEqual(
+      expect.objectContaining({
+        scrapeOk: true,
+        source: expect.stringMatching(/live|cache/),
+        fdasTotal: 2,
+        dasTotal: 5,
+        agendaJobsTotal: 3,
+        agendaJobsFailed: 1,
+        agendaJobsLocked: 0,
+      }),
+    );
+  });
+
+  test('metrics still respond when mongo snapshot fails and expose scrape failure metric', async () => {
+    ({ app } = await loadIndexModule({
+      nodeEnv: 'test',
+      roles: { apiServer: true, fetcher: true },
+      mongoSnapshotError: new Error('mongo offline'),
+    }));
+
+    const healthRes = await request(app).get('/health').expect(200);
+    expect(healthRes.body.mongo.scrapeOk).toBe(false);
+    expect(healthRes.body.mongo.source).toBe('stale');
+    expect(healthRes.body.mongo.lastError).toContain('mongo offline');
+
+    const metricsRes = await request(app).get('/metrics').expect(200);
+    expect(metricsRes.text).toContain('fda_mongo_scrape_success 0');
+    expect(metricsRes.text).toContain('# EOF');
+  });
+
+  test('returns openmetrics content-type when requested by Accept header', async () => {
+    const res = await request(app)
+      .get('/metrics')
+      .set('Accept', 'application/openmetrics-text')
+      .expect(200);
+
+    expect(res.headers['content-type']).toContain(
+      'application/openmetrics-text',
+    );
+    expect(res.headers['content-type']).toContain('version=1.0.0');
+    expect(res.headers['content-type']).toContain('charset=utf-8');
+    expect(res.text).toContain('# TYPE fda_up gauge');
+    expect(res.text).toContain('# EOF');
+  });
+
+  test('returns 406 when Accept header does not include a supported metrics format', async () => {
+    const res = await request(app)
+      .get('/metrics')
+      .set('Accept', 'application/json')
+      .expect(406);
+
+    expect(res.body).toEqual({
+      error: 'NotAcceptable',
+      description:
+        'Accept header must allow application/openmetrics-text or text/plain',
     });
   });
 

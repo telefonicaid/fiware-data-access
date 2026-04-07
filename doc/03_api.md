@@ -7,6 +7,8 @@
 -   [API Routes](#api-routes)
     -   [Health Endpoint](#health-endpoint)
         -   [Health Check `GET /health`](#health-check-get-health)
+    -   [Metrics Endpoint](#metrics-endpoint)
+        -   [Retrieve metrics `GET /metrics`](#retrieve-metrics-get-metrics)
     -   [FDA payload datamodel](#fda-payload-datamodel)
     -   [FDAs operations](#fdas-operations)
         -   [List FDAs](#list-fdas-get-visibilityfdas)
@@ -357,7 +359,7 @@ curl -i -X POST http://localhost:8080/public/fdas \
 
 ### Health Endpoint
 
-This endpoint allow checking whether the FIWARE Data Access service is running.
+This endpoint allows checking whether the FIWARE Data Access service is running.
 
 It does not require the `Fiware-Service` header and is intended for monitoring purposes.
 
@@ -365,7 +367,7 @@ It does not require the `Fiware-Service` header and is intended for monitoring p
 
 #### Health Check `GET /health`
 
-Returns the operational status of the service.
+Returns the operational status of the service plus runtime and traffic context useful for operations.
 
 **Request headers**
 
@@ -380,8 +382,90 @@ None required.
 ```json
 {
     "status": "UP",
-    "timestamp": "2026-02-16T10:15:30.123Z"
+    "timestamp": "2026-02-16T10:15:30.123Z",
+    "uptimeSeconds": 154,
+    "process": {
+        "pid": 3210,
+        "nodeVersion": "v24.0.0",
+        "memory": {
+            "rssBytes": 85422080,
+            "heapTotalBytes": 33230848,
+            "heapUsedBytes": 19459968
+        }
+    },
+    "roles": {
+        "apiServer": true,
+        "fetcher": true,
+        "syncQueries": false
+    },
+    "traffic": {
+        "totalRequests": 105,
+        "errorRequests": 3,
+        "inFlightRequests": 0,
+        "routesObserved": 8
+    },
+    "fiware": {
+        "requestsWithHeaders": 98,
+        "servicesObserved": 3,
+        "servicePathsObserved": 4
+    },
+    "mongo": {
+        "scrapeOk": true,
+        "source": "live",
+        "lastSuccessTimestamp": "2026-04-06T08:52:58.595Z",
+        "fdasTotal": 2,
+        "dasTotal": 1,
+        "agendaJobsTotal": 0,
+        "agendaJobsFailed": 0,
+        "agendaJobsLocked": 0
+    }
 }
+```
+
+### Metrics Endpoint
+
+The service exposes a telemetry endpoint compatible with Prometheus text format and OpenMetrics content negotiation.
+
+#### Retrieve metrics `GET /metrics`
+
+**Request headers**
+
+-   Optional `Accept` header.
+
+**Response code**
+
+-   `200 OK` if successful.
+-   `406 Not Acceptable` if the `Accept` header does not include a supported format.
+
+**Response content-type**
+
+-   If `Accept` contains `application/openmetrics-text`, response content-type is
+    `application/openmetrics-text; version=1.0.0; charset=utf-8`.
+-   If `Accept` is missing or supports `text/plain` (explicitly or through `*/*`), response content-type is
+    `text/plain; version=0.0.4; charset=utf-8`.
+
+**Response payload**
+
+OpenMetrics-compatible plain text, including HELP/TYPE metadata, e.g.:
+
+```text
+# HELP fda_up Service liveness indicator (1=up).
+# TYPE fda_up gauge
+fda_up 1
+# HELP fda_http_server_requests_total Total HTTP requests served.
+# TYPE fda_http_server_requests_total counter
+fda_http_server_requests_total{method="GET",route="/health",status_class="2xx",status_code="200"} 4
+# HELP fda_tenant_requests_total Total HTTP requests carrying FIWARE tenant headers.
+# TYPE fda_tenant_requests_total counter
+fda_tenant_requests_total{fiware_service="my-bucket",fiware_service_path="/",method="GET",route="/:visibility/fdas",status_class="2xx"} 8
+# HELP fda_catalog_fdas_by_service Number of FDA documents by fiware service and servicePath.
+# TYPE fda_catalog_fdas_by_service gauge
+fda_catalog_fdas_by_service{fiware_service="my-bucket",fiware_service_path="/"} 12
+# HELP fda_jobs_agenda_total Total number of Agenda jobs stored in MongoDB.
+# TYPE fda_jobs_agenda_total gauge
+fda_jobs_agenda_total 7
+...
+# EOF
 ```
 
 ### FDA payload datamodel
@@ -450,7 +534,7 @@ These fields are **provided in responses** but **cannot be included or modified*
 
 #### List FDAs `GET /{visibility}/fdas`
 
-Returns a list of all the FDAs for that `service`, `servicePath` and visibility.
+Returns a list of all the FDAs for that `service`, `servicePath` and `visibility`.
 
 _**Request path parameters**_
 
@@ -488,8 +572,8 @@ _**Response payload**_
 The payload is an array containing one object per FDA. Each FDA follows the JSON FDA representation format (described in
 [FDA payload datamodel](#fda-payload-datamodel) section).
 
-Each element includes `id` and excludes context/internal fields (`_id`, `fdaId`, `service`, `visibility`, `servicePath`, etc.)
-because those are already provided by request scope.
+Each element includes `id` and excludes context/internal fields (`_id`, `fdaId`, `service`, `visibility`, `servicePath`,
+etc.) because those are already provided by request scope.
 
 _**Example Request:**_
 
@@ -925,8 +1009,8 @@ _**Response code**_
 
 _**Response headers**_
 
--   Return the header `Location` with the value of the path used to create the DA (I.E : `/public/fdas/fda01/das/da01`) when
-    the creation succeeds (Response code 201).
+-   Return the header `Location` with the value of the path used to create the DA (I.E : `/public/fdas/fda01/das/da01`)
+    when the creation succeeds (Response code 201).
 
 _**Response payload**_
 

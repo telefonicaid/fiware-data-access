@@ -209,7 +209,59 @@ Expected response:
 HTTP/1.1 200 OK
 Content-Type: application/json; charset=utf-8
 
-{"status":"UP","timestamp":"2026-02-11T12:51:25.166Z"}
+{
+  "status": "UP",
+  "timestamp": "2026-04-06T08:52:58.639Z",
+  "uptimeSeconds": 544,
+  "process": {
+    "pid": 16768,
+    "nodeVersion": "v18.20.7",
+    "memory": {
+      "rssBytes": 151928832,
+      "heapTotalBytes": 44363776,
+      "heapUsedBytes": 41261368
+    }
+  },
+  "roles": {
+    "apiServer": true,
+    "fetcher": true,
+    "syncQueries": true
+  },
+  "traffic": {
+    "totalRequests": 11,
+    "errorRequests": 5,
+    "inFlightRequests": 1,
+    "routesObserved": 7
+  },
+  "fiware": {
+    "requestsWithHeaders": 11,
+    "servicesObserved": 1,
+    "servicePathsObserved": 3
+  },
+  "mongo": {
+    "scrapeOk": true,
+    "source": "live",
+    "lastSuccessTimestamp": "2026-04-06T08:52:58.595Z",
+    "fdasTotal": 2,
+    "dasTotal": 1,
+    "agendaJobsTotal": 0,
+    "agendaJobsFailed": 0,
+    "agendaJobsLocked": 0
+  }
+}
+```
+
+Optional: verify metrics endpoint for Prometheus scraping:
+
+```bash
+curl -i http://localhost:8080/metrics
+```
+
+Expected response headers include:
+
+```text
+HTTP/1.1 200 OK
+Content-Type: text/plain; version=0.0.4; charset=utf-8
 ```
 
 ### 2. Create a MinIO bucket and PostgreSQL database

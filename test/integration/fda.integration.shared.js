@@ -83,6 +83,7 @@ function httpReq({ method, url, headers, body }) {
         res.on('end', () => {
           resolve({
             status: res.statusCode,
+            headers: res.headers,
             text: data,
             json: (() => {
               try {
@@ -131,6 +132,7 @@ function httpFormReq({ method, url, headers, form }) {
         res.on('end', () => {
           resolve({
             status: res.statusCode,
+            headers: res.headers,
             text: data,
             json: (() => {
               try {
@@ -585,6 +587,20 @@ export function runFDAIntegrationSuite({ mode, label }) {
       });
       expect(res.status).toBe(200);
       expect(res.json.status).toBe('UP');
+      expect(typeof res.json.uptimeSeconds).toBe('number');
+    });
+
+    test('GET /metrics returns text-format telemetry', async () => {
+      const res = await httpReq({
+        method: 'GET',
+        url: `http://127.0.0.1:${appPort}/metrics`,
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toContain('text/plain');
+      expect(res.headers['content-type']).toContain('version=0.0.4');
+      expect(res.headers['content-type']).toContain('charset=utf-8');
+      expect(res.text).toContain('# TYPE fda_up gauge');
+      expect(res.text).toContain('# EOF');
     });
 
     test('POST /fdas creates an FDA (uploads CSV then converts to Parquet)', async () => {
