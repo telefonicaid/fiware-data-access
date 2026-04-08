@@ -73,7 +73,7 @@ All error responses follow this structure:
 | 400  | Bad Request           | `BadRequest`           | Missing or invalid values in request body, headers, or query parameters. `Fiware-Service`, `Fiware-ServicePath`, and `visibility` (path segment) are required for all operations. |
 | 400  | Bad Request           | `BadRequest`           | An unsupported `outputType` value was provided. Allowed values: `json`, `csv`, `xls`.                                                                                             |
 | 400  | Bad Request           | `InvalidVisibility`    | The `visibility` path segment is not one of the allowed values (`public`, `private`).                                                                                             |
-| 400  | Bad Request           | `InvalidServicePath`   | The `Fiware-ServicePath` header value is not a valid absolute path (e.g. `/` or `/servicePath/site`).                                                                             |
+| 400  | Bad Request           | `InvalidServicePath`   | The `Fiware-ServicePath` header value is not a valid non-root absolute path (e.g. `/servicePath/site`). The root path `/` is not allowed.                                         |
 | 400  | Bad Request           | `InvalidQueryParam`    | Some of the params in the request don't comply with the [params](#params) array restrictions.                                                                                     |
 | 403  | Forbidden             | `VisibilityMismatch`   | The FDA exists but was created under a different `visibility`. Cannot access a private FDA through a public route and vice-versa.                                                 |
 | 400  | Bad Request           | `PartitionError`       | Some of the params related to the creation of the parquet partition don't comply with the [object storage configuration](#object-storage-configuration-objstgconf) requirements.  |
@@ -488,8 +488,8 @@ _**Response payload**_
 The payload is an array containing one object per FDA. Each FDA follows the JSON FDA representation format (described in
 [FDA payload datamodel](#fda-payload-datamodel) section).
 
-Each element includes `id` and excludes context/internal fields (`_id`, `fdaId`, `service`, `visibility`, `servicePath`, etc.)
-because those are already provided by request scope.
+Each element includes `id` and excludes context/internal fields (`_id`, `fdaId`, `service`, `visibility`, `servicePath`,
+etc.) because those are already provided by request scope.
 
 _**Example Request:**_
 
@@ -925,8 +925,8 @@ _**Response code**_
 
 _**Response headers**_
 
--   Return the header `Location` with the value of the path used to create the DA (I.E : `/public/fdas/fda01/das/da01`) when
-    the creation succeeds (Response code 201).
+-   Return the header `Location` with the value of the path used to create the DA (I.E : `/public/fdas/fda01/das/da01`)
+    when the creation succeeds (Response code 201).
 
 _**Response payload**_
 

@@ -31,7 +31,7 @@ scoped by `Fiware-ServicePath` and `fdaId`.
 -   Base object key: `servicePathScope/fdaId`
 -   Non-partitioned FDA: `servicePathScope/fdaId.parquet`
 -   Partitioned FDA: `servicePathScope/fdaId/**/*.parquet`
--   Root service path (`/`) uses `_root` as scope: `_root/fdaId.parquet`
+-   Root service path (`/`) is not allowed
 
 This object key is updated and removed in sync with the _fda_ information in `MongoDB`.
 
