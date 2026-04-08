@@ -133,6 +133,7 @@ await jest.unstable_mockModule('../../src/lib/fdaConfig.js', () => ({
 const {
   executeQuery,
   executeQueryStream,
+  executeQueryCsvStream,
   fetchFDA,
   getFDA,
   updateFDA,
@@ -396,6 +397,70 @@ describe('fda fresh query execution', () => {
     expect(res.write).toHaveBeenCalledWith('{"total":12}\n');
     expect(res.once).toHaveBeenCalledWith('drain', expect.any(Function));
     expect(cursorReader.close).toHaveBeenCalledTimes(1);
+    expect(res.end).toHaveBeenCalledTimes(1);
+  });
+
+  test('serializes Date values as ISO strings in fresh NDJSON stream', async () => {
+    const { req, res } = createReqRes();
+    const cursorReader = {
+      readNextChunk: jest
+        .fn()
+        .mockResolvedValueOnce([
+          { date: new Date('2026-04-08T10:11:12.000Z'), count: 1n },
+        ])
+        .mockResolvedValueOnce([]),
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+    pgMocks.createPgCursorReader.mockResolvedValue(cursorReader);
+
+    await executeQueryStream({
+      service: 'svc',
+      visibility: 'private',
+      servicePath: '/servicepath',
+      params: { fdaId: 'fdaA', daId: 'daA', id: 1 },
+      req,
+      res,
+      fresh: true,
+    });
+
+    expect(res.write).toHaveBeenCalledWith(
+      '{"date":"2026-04-08T10:11:12.000Z","count":1}\n',
+    );
+    expect(res.end).toHaveBeenCalledTimes(1);
+  });
+
+  test('streams CSV rows in fresh mode', async () => {
+    const { req, res } = createReqRes();
+    const cursorReader = {
+      readNextChunk: jest
+        .fn()
+        .mockResolvedValueOnce([
+          { date: new Date('2026-04-08T10:11:12.000Z'), count: 1n },
+        ])
+        .mockResolvedValueOnce([]),
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+    pgMocks.createPgCursorReader.mockResolvedValue(cursorReader);
+
+    await executeQueryCsvStream({
+      service: 'svc',
+      visibility: 'private',
+      servicePath: '/servicepath',
+      params: { fdaId: 'fdaA', daId: 'daA', id: 1 },
+      req,
+      res,
+      fresh: true,
+    });
+
+    expect(res.setHeader).toHaveBeenCalledWith(
+      'Content-Type',
+      'text/csv; charset=utf-8',
+    );
+    expect(res.write).toHaveBeenNthCalledWith(1, 'date,count\n');
+    expect(res.write).toHaveBeenNthCalledWith(
+      2,
+      '2026-04-08T10:11:12.000Z,1\n',
+    );
     expect(res.end).toHaveBeenCalledTimes(1);
   });
 

@@ -46,6 +46,7 @@ const fdaMocks = {
   fetchFDA: jest.fn(),
   executeQuery: jest.fn(),
   executeQueryStream: jest.fn(),
+  executeQueryCsvStream: jest.fn(),
   createDA: jest.fn(),
   getFDA: jest.fn(),
   updateFDA: jest.fn(),
@@ -103,6 +104,9 @@ function resetModuleMocks() {
   fdaMocks.executeQuery.mockReset().mockResolvedValue([{ ok: true }]);
   fdaMocks.executeQueryStream.mockReset().mockImplementation(({ res }) => {
     res.status(200).send('streamed');
+  });
+  fdaMocks.executeQueryCsvStream.mockReset().mockImplementation(({ res }) => {
+    res.status(200).send('streamed-csv');
   });
   fdaMocks.createDA.mockReset().mockResolvedValue(undefined);
   fdaMocks.getFDA.mockReset().mockResolvedValue({ fdaId: 'fda1' });
@@ -236,6 +240,7 @@ async function loadIndexModule({
     fetchFDA: fdaMocks.fetchFDA,
     executeQuery: fdaMocks.executeQuery,
     executeQueryStream: fdaMocks.executeQueryStream,
+    executeQueryCsvStream: fdaMocks.executeQueryCsvStream,
     assertFDAAccess: jest.fn(),
     createDA: fdaMocks.createDA,
     getFDA: fdaMocks.getFDA,
@@ -620,7 +625,7 @@ describe('index routes - validation and middleware branches', () => {
     expect(fdaMocks.executeQuery).not.toHaveBeenCalled();
   });
 
-  test('uses NDJSON streaming when Accept is ndjson even if outputType is not json', async () => {
+  test('uses NDJSON streaming when Accept is ndjson even if outputType is present', async () => {
     await request(app)
       .get('/public/fdas/fda1/das/da1/data')
       .set('Fiware-Service', 'svc')
@@ -734,58 +739,50 @@ describe('index routes - validation and middleware branches', () => {
     expect(loggerMock.warn).toHaveBeenCalledWith(expect.any(Error));
   });
 
-  test('returns 400 for invalid outputType on data endpoint', async () => {
+  test('ignores outputType query param on data endpoint and defaults to JSON', async () => {
     const res = await request(app)
       .get('/public/fdas/fda1/das/da1/data')
       .set('Fiware-Service', 'svc')
       .set('Fiware-ServicePath', '/servicepath')
       .query({ outputType: 'xml' })
-      .expect(400);
+      .expect(200);
 
-    expect(res.body).toEqual({
-      error: 'BadRequest',
-      description: expect.stringContaining("Invalid outputType 'xml'"),
-    });
-    expect(fdaMocks.executeQuery).not.toHaveBeenCalled();
+    expect(res.body).toEqual([{ ok: true }]);
+    expect(fdaMocks.executeQuery).toHaveBeenCalled();
   });
 
-  test('returns CSV when outputType=csv is requested on data endpoint', async () => {
-    fdaMocks.executeQuery.mockResolvedValueOnce([
-      { col1: 'a', col2: 'b' },
-      { col1: 'c,d', col2: 'e"f' },
-    ]);
-
+  test('routes data endpoint through CSV streaming when Accept requests csv', async () => {
     const res = await request(app)
       .get('/public/fdas/fda1/das/da1/data')
       .set('Fiware-Service', 'svc')
       .set('Fiware-ServicePath', '/servicepath')
-      .query({ outputType: 'csv' })
+      .set('Accept', 'text/csv')
+      .query({ fresh: 'true' })
       .expect(200);
 
-    expect(res.headers['content-type']).toMatch(/text\/csv/);
-    expect(res.headers['content-disposition']).toMatch(/attachment/);
-    const lines = res.text.split('\n');
-    expect(lines[0]).toBe('col1,col2');
-    expect(lines[1]).toBe('a,b');
-    expect(lines[2]).toBe('"c,d","e""f"');
-    expect(fdaMocks.executeQuery).toHaveBeenCalledWith(
+    expect(res.text).toBe('streamed-csv');
+    expect(fdaMocks.executeQueryCsvStream).toHaveBeenCalledWith(
       expect.objectContaining({
         service: 'svc',
         visibility: 'public',
         servicePath: '/servicepath',
-        params: expect.not.objectContaining({ outputType: 'csv' }),
+        fresh: false,
       }),
     );
+    expect(fdaMocks.executeQuery).not.toHaveBeenCalled();
   });
 
-  test('returns Excel buffer when outputType=xls is requested on data endpoint', async () => {
+  test('returns Excel buffer when Accept requests xlsx on data endpoint', async () => {
     fdaMocks.executeQuery.mockResolvedValueOnce([{ col1: 'v1', col2: 42 }]);
 
     const res = await request(app)
       .get('/public/fdas/fda1/das/da1/data')
       .set('Fiware-Service', 'svc')
       .set('Fiware-ServicePath', '/servicepath')
-      .query({ outputType: 'xls' })
+      .set(
+        'Accept',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      )
       .expect(200);
 
     expect(res.headers['content-type']).toMatch(
