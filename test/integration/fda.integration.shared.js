@@ -1778,6 +1778,125 @@ export function runFDAIntegrationSuite({ mode, label }) {
       }
     });
 
+    test('GET /query serializes date consistently for fresh CSV/NDJSON and keeps numeric types in NDJSON', async () => {
+      const fdaSerializationId = 'fda_fresh_serialization_issue137';
+      const daSerializationId = 'da_fresh_serialization_issue137';
+
+      const createFda = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: fdaSerializationId,
+          description: 'issue 137 serialization regression fda',
+          query: `
+            SELECT
+              id,
+              timeinstant AS date,
+              EXTRACT(DAY FROM timeinstant)::INT AS day,
+              COUNT(*) OVER() AS countperperiod
+            FROM public.users
+            ORDER BY id
+          `,
+        },
+      });
+
+      expect(createFda.status).toBe(202);
+
+      await waitUntilFDACompleted({
+        baseUrl,
+        service,
+        fdaId: fdaSerializationId,
+      });
+
+      const createDa = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas/${fdaSerializationId}/das`,
+        headers: { 'Fiware-Service': service },
+        body: {
+          id: daSerializationId,
+          description: 'issue 137 serialization regression da',
+          query: `
+            SELECT date, day, countperperiod
+            ORDER BY day, date
+          `,
+        },
+      });
+
+      expect(createDa.status).toBe(201);
+
+      const cachedCsv = await httpReqRaw({
+        method: 'GET',
+        url: buildDaDataUrl(
+          baseUrl,
+          servicePath,
+          fdaSerializationId,
+          daSerializationId,
+        ),
+        headers: {
+          'Fiware-Service': service,
+          Accept: 'text/csv',
+        },
+      });
+
+      expect(cachedCsv.status).toBe(200);
+      expect(cachedCsv.headers['content-type']).toContain('text/csv');
+      expect(cachedCsv.text).not.toContain('[object Object]');
+
+      const freshCsv = await httpReqRaw({
+        method: 'GET',
+        url: buildDaDataUrl(
+          baseUrl,
+          servicePath,
+          fdaSerializationId,
+          daSerializationId,
+          { fresh: true },
+        ),
+        headers: {
+          'Fiware-Service': service,
+          Accept: 'text/csv',
+        },
+      });
+
+      expect(freshCsv.status).toBe(200);
+      expect(freshCsv.headers['content-type']).toContain('text/csv');
+      expect(freshCsv.text).not.toContain('[object Object]');
+
+      const freshNdjson = await httpReqRaw({
+        method: 'GET',
+        url: buildDaDataUrl(
+          baseUrl,
+          servicePath,
+          fdaSerializationId,
+          daSerializationId,
+          { fresh: true },
+        ),
+        headers: {
+          'Fiware-Service': service,
+          Accept: 'application/x-ndjson',
+        },
+      });
+
+      expect(freshNdjson.status).toBe(200);
+      expect(freshNdjson.headers['content-type']).toContain(
+        'application/x-ndjson',
+      );
+
+      const rows = freshNdjson.text
+        .split('\n')
+        .filter((line) => line.trim())
+        .map((line) => JSON.parse(line));
+
+      expect(rows.length).toBeGreaterThan(0);
+      expect(typeof rows[0].date).toBe('string');
+      expect(rows[0].date).not.toEqual({});
+      expect(rows[0].date).toContain('T');
+      expect(typeof rows[0].countperperiod).toBe('number');
+    });
+
     test('GET /query rejects invalid fresh query param', async () => {
       const res = await httpReq({
         method: 'GET',
@@ -2258,14 +2377,54 @@ export function runFDAIntegrationSuite({ mode, label }) {
       expect(row2).toEqual({ id: 3, name: 'carlos', age: 40 });
     });
 
-    test('GET /query supports outputType=csv', async () => {
+    test('GET /query returns CSV when Accept: text/csv', async () => {
+      const fdaCsvId = `fda_accept_csv_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+      const daCsvId = `da_accept_csv_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+
+      const createFda = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: fdaCsvId,
+          query: 'SELECT id, name, age FROM public.users ORDER BY id',
+          description: 'accept csv fixture',
+        },
+      });
+
+      expect(createFda.status).toBe(202);
+      await waitUntilFDACompleted({ baseUrl, service, fdaId: fdaCsvId });
+
+      const createDa = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas/${fdaCsvId}/das`,
+        headers: { 'Fiware-Service': service },
+        body: {
+          id: daCsvId,
+          description: 'accept csv da fixture',
+          query: `
+            SELECT id, name, age
+            WHERE age > $minAge
+            ORDER BY id
+          `,
+          params: [{ name: 'minAge', type: 'Number', required: true }],
+        },
+      });
+
+      expect(createDa.status).toBe(201);
+
       const res = await httpReqRaw({
         method: 'GET',
-        url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId, {
+        url: buildDaDataUrl(baseUrl, servicePath, fdaCsvId, daCsvId, {
           minAge: 25,
-          outputType: 'csv',
         }),
-        headers: { 'Fiware-Service': service },
+        headers: {
+          'Fiware-Service': service,
+          Accept: 'text/csv',
+        },
       });
 
       if (res.status >= 400) {
@@ -2289,14 +2448,55 @@ export function runFDAIntegrationSuite({ mode, label }) {
       expect(lines[2]).toBe('3,carlos,40');
     });
 
-    test('GET /query supports outputType=xls', async () => {
+    test('GET /query returns XLSX when Accept requests spreadsheet mime', async () => {
+      const fdaXlsId = `fda_accept_xls_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+      const daXlsId = `da_accept_xls_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+
+      const createFda = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: fdaXlsId,
+          query: 'SELECT id, name, age FROM public.users ORDER BY id',
+          description: 'accept xls fixture',
+        },
+      });
+
+      expect(createFda.status).toBe(202);
+      await waitUntilFDACompleted({ baseUrl, service, fdaId: fdaXlsId });
+
+      const createDa = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas/${fdaXlsId}/das`,
+        headers: { 'Fiware-Service': service },
+        body: {
+          id: daXlsId,
+          description: 'accept xls da fixture',
+          query: `
+            SELECT id, name, age
+            WHERE age > $minAge
+            ORDER BY id
+          `,
+          params: [{ name: 'minAge', type: 'Number', required: true }],
+        },
+      });
+
+      expect(createDa.status).toBe(201);
+
       const res = await httpReqRaw({
         method: 'GET',
-        url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId, {
+        url: buildDaDataUrl(baseUrl, servicePath, fdaXlsId, daXlsId, {
           minAge: 25,
-          outputType: 'xls',
         }),
-        headers: { 'Fiware-Service': service },
+        headers: {
+          'Fiware-Service': service,
+          Accept:
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        },
       });
 
       if (res.status >= 400) {
@@ -2319,19 +2519,60 @@ export function runFDAIntegrationSuite({ mode, label }) {
       expect(res.buffer.length).toBeGreaterThan(100);
     });
 
-    test('GET /query rejects unsupported outputType', async () => {
+    test('GET /query ignores outputType and defaults to JSON when Accept is generic', async () => {
+      const fdaJsonId = `fda_accept_json_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+      const daJsonId = `da_accept_json_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+
+      const createFda = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: fdaJsonId,
+          query: 'SELECT id, name, age FROM public.users ORDER BY id',
+          description: 'accept json fixture',
+        },
+      });
+
+      expect(createFda.status).toBe(202);
+      await waitUntilFDACompleted({ baseUrl, service, fdaId: fdaJsonId });
+
+      const createDa = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas/${fdaJsonId}/das`,
+        headers: { 'Fiware-Service': service },
+        body: {
+          id: daJsonId,
+          description: 'accept json da fixture',
+          query: `
+            SELECT id, name, age
+            WHERE age > $minAge
+            ORDER BY id
+          `,
+          params: [{ name: 'minAge', type: 'Number', required: true }],
+        },
+      });
+
+      expect(createDa.status).toBe(201);
+
       const res = await httpReq({
         method: 'GET',
-        url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId, {
+        url: buildDaDataUrl(baseUrl, servicePath, fdaJsonId, daJsonId, {
           minAge: 25,
           outputType: 'html',
         }),
         headers: { 'Fiware-Service': service },
       });
 
-      expect(res.status).toBe(400);
-      expect(res.json.error).toBe('BadRequest');
-      expect(res.json.description).toContain('Invalid outputType');
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.json)).toBe(true);
+      expect(res.json).toEqual([
+        { id: '1', name: 'ana', age: '30' },
+        { id: '3', name: 'carlos', age: '40' },
+      ]);
     });
 
     test('GET /{visibility}/... returns 400 for an invalid visibility value', async () => {
