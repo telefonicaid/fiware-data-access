@@ -32,6 +32,9 @@ import { FDAError } from '../fdaError.js';
 import { getBasicLogger } from './logger.js';
 
 const { Client, Pool } = pg;
+pg.types.setTypeParser(pg.types.builtins.INT8, (value) =>
+  value === null ? null : BigInt(value),
+);
 const logger = getBasicLogger();
 const pools = new Map();
 
