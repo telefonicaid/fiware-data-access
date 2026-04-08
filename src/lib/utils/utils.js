@@ -26,8 +26,8 @@ import { FDAError } from '../fdaError.js';
 
 let activeFreshQueries = 0;
 
-// Convert BigInt values to numbers for JSON serialization
-export function convertBigInt(obj) {
+// Normalize runtime values so downstream serializers emit stable output.
+export function normalizeForSerialization(obj) {
   if (typeof obj === 'bigint') {
     return Number(obj);
   }
@@ -35,12 +35,12 @@ export function convertBigInt(obj) {
     return obj.toISOString();
   }
   if (Array.isArray(obj)) {
-    return obj.map(convertBigInt);
+    return obj.map(normalizeForSerialization);
   }
   if (obj !== null && typeof obj === 'object') {
     const converted = {};
     for (const key in obj) {
-      converted[key] = convertBigInt(obj[key]);
+      converted[key] = normalizeForSerialization(obj[key]);
     }
     return converted;
   }

@@ -56,7 +56,7 @@ import {
   updateFDAStatus,
 } from './utils/mongo.js';
 import {
-  convertBigInt,
+  normalizeForSerialization,
   getWindowDate,
   assertFreshQueriesEnabled,
   acquireFreshQuerySlot,
@@ -75,7 +75,7 @@ const VALID_VISIBILITIES_SET = new Set(VALID_VISIBILITIES);
 const CSV_CONTENT_TYPE = 'text/csv; charset=utf-8';
 
 function stringifyCsvValue(value) {
-  const normalizedValue = convertBigInt(value);
+  const normalizedValue = normalizeForSerialization(value);
 
   if (normalizedValue === null || normalizedValue === undefined) {
     return '';
@@ -264,7 +264,7 @@ export async function executeQueryStream({
           rowObj[columnNames[i]] = row[i];
         }
 
-        const safeObj = convertBigInt(rowObj);
+        const safeObj = normalizeForSerialization(rowObj);
         lines.push(JSON.stringify(safeObj));
       }
 
@@ -397,7 +397,7 @@ async function executeFreshQuery({ service, visibility, servicePath, params }) {
     );
 
     const rows = await runPgQuery(service, text, values);
-    return convertBigInt(rows);
+    return normalizeForSerialization(rows);
   } catch (e) {
     if (e instanceof FDAError) {
       throw e;
@@ -453,7 +453,7 @@ async function executeFreshQueryStream({
       }
 
       for (const row of rows) {
-        const safeObj = convertBigInt(row);
+        const safeObj = normalizeForSerialization(row);
         const ok = res.write(JSON.stringify(safeObj) + '\n');
         if (!ok) {
           await new Promise((resolve) => res.once('drain', resolve));

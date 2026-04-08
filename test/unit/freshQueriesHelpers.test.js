@@ -24,7 +24,7 @@
 
 import { describe, expect, test } from '@jest/globals';
 import {
-  convertBigInt,
+  normalizeForSerialization,
   validateAllowedFieldsBody,
   parseBooleanQueryParam,
   assertFreshQueriesEnabled,
@@ -38,7 +38,7 @@ describe('fresh query helpers', () => {
     );
   });
 
-  test('convertBigInt converts bigint values recursively', () => {
+  test('normalizeForSerialization converts bigint values recursively', () => {
     const payload = {
       id: 7n,
       nested: {
@@ -46,7 +46,7 @@ describe('fresh query helpers', () => {
       },
     };
 
-    expect(convertBigInt(payload)).toEqual({
+    expect(normalizeForSerialization(payload)).toEqual({
       id: 7,
       nested: {
         values: [1, { count: 2 }],

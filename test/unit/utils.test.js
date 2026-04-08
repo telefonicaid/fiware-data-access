@@ -49,25 +49,25 @@ describe('utils', () => {
     jest.clearAllMocks();
   });
 
-  describe('convertBigInt', () => {
+  describe('normalizeForSerialization', () => {
     test('converts Date values to ISO strings recursively', async () => {
-      const { convertBigInt } = await loadUtilsModule();
+      const { normalizeForSerialization } = await loadUtilsModule();
       const value = {
         date: new Date('2026-04-08T10:11:12.000Z'),
         nested: [new Date('2026-04-08T10:11:13.000Z')],
       };
 
-      expect(convertBigInt(value)).toEqual({
+      expect(normalizeForSerialization(value)).toEqual({
         date: '2026-04-08T10:11:12.000Z',
         nested: ['2026-04-08T10:11:13.000Z'],
       });
     });
 
     test('converts bigint values to numbers recursively', async () => {
-      const { convertBigInt } = await loadUtilsModule();
+      const { normalizeForSerialization } = await loadUtilsModule();
 
       expect(
-        convertBigInt({
+        normalizeForSerialization({
           count: 1n,
           nested: { values: [2n] },
         }),
