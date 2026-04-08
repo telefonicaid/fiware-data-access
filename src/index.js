@@ -74,6 +74,23 @@ export const app = express();
 const PORT = config.port;
 const logger = getBasicLogger();
 
+// Supported MIME types for /data, listed in server-default preference order.
+const DATA_CONTENT_TYPES = [
+  'application/json',
+  'application/x-ndjson',
+  'text/csv',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-excel',
+];
+
+const DATA_CONTENT_TYPE_TO_OUTPUT = {
+  'application/json': 'json',
+  'application/x-ndjson': 'ndjson',
+  'text/csv': 'csv',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xls',
+  'application/vnd.ms-excel': 'xls',
+};
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -382,45 +399,20 @@ app.get('/:visibility/fdas/:fdaId/das/:daId/data', async (req, res) => {
   const { visibility, fdaId, daId } = req.params;
   const service = req.get('Fiware-Service');
   const servicePath = req.get('Fiware-ServicePath');
-  const accept = req.get('Accept');
-  let outputType = 'json';
 
   validateForbiddenFieldsQuery(req.query, ['outputType']);
   const fresh = parseBooleanQueryParam(req.query.fresh, 'fresh');
 
-  if (!accept || accept.trim() === '*/*') {
-    outputType = 'json';
-  } else if (
-    accept.includes('application/x-ndjson') &&
-    req.accepts('application/x-ndjson')
-  ) {
-    outputType = 'ndjson';
-  } else if (accept.includes('text/csv') && req.accepts('text/csv')) {
-    outputType = 'csv';
-  } else if (
-    (accept.includes(
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    ) &&
-      req.accepts(
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      )) ||
-    (accept.includes('application/vnd.ms-excel') &&
-      req.accepts('application/vnd.ms-excel'))
-  ) {
-    outputType = 'xls';
-  } else if (
-    accept.includes('application/json') ||
-    accept.includes('application/*') ||
-    accept.includes('*/*')
-  ) {
-    outputType = 'json';
-  } else {
+  const matched = req.accepts(DATA_CONTENT_TYPES);
+  if (!matched) {
     return res.status(406).json({
       error: 'NotAcceptable',
       description:
         'Accept header must allow application/json, application/x-ndjson, text/csv, or application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     });
   }
+
+  const outputType = DATA_CONTENT_TYPE_TO_OUTPUT[matched];
 
   const queryParams = { ...req.query };
   delete queryParams.fresh;
