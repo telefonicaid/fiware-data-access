@@ -1079,11 +1079,11 @@ function normalizeServicePath(servicePath) {
 
   const normalizedServicePath = servicePath.trim();
 
-  if (!/^\/(?:[^/\s]+(?:\/[^/\s]+)*)?$/.test(normalizedServicePath)) {
+  if (!/^\/[^/\s]+(\/[^/\s]+)*$/.test(normalizedServicePath)) {
     throw new FDAError(
       400,
       'InvalidServicePath',
-      'Fiware-ServicePath must be a valid absolute path (e.g. / or /servicepath)',
+      'Fiware-ServicePath must be a non-root absolute path (e.g. /servicepath)',
     );
   }
 

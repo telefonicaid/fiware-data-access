@@ -32,17 +32,18 @@ export function normalizeScopedServicePath(servicePath) {
     throw new Error('servicePath is required');
   }
 
+  if (!/^\/[^/\s]+(\/[^/\s]+)*$/.test(normalizedServicePath)) {
+    throw new Error(
+      'servicePath must be a non-root absolute path (e.g. /servicepath)',
+    );
+  }
+
   return normalizedServicePath;
 }
 
 export function getFDAStoragePath(fdaId, servicePath) {
   const normalizedServicePath = normalizeScopedServicePath(servicePath);
-
-  const servicePathScope =
-    normalizedServicePath === '/'
-      ? '_root'
-      : normalizedServicePath.replace(/^\//, '');
-
+  const servicePathScope = normalizedServicePath.replace(/^\//, '');
   return `${servicePathScope}/${fdaId}`;
 }
 
