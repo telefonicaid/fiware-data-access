@@ -381,21 +381,42 @@ app.get('/:visibility/fdas/:fdaId/das/:daId/data', async (req, res) => {
   const { visibility, fdaId, daId } = req.params;
   const service = req.get('Fiware-Service');
   const servicePath = req.get('Fiware-ServicePath');
-  const accept = req.get('Accept') || 'application/json';
+  const accept = req.get('Accept');
   const fresh = parseBooleanQueryParam(req.query.fresh, 'fresh');
   let outputType = 'json';
 
-  if (accept.includes('application/x-ndjson')) {
+  if (!accept || accept.trim() === '*/*') {
+    outputType = 'json';
+  } else if (
+    accept.includes('application/x-ndjson') &&
+    req.accepts('application/x-ndjson')
+  ) {
     outputType = 'ndjson';
-  } else if (accept.includes('text/csv')) {
+  } else if (accept.includes('text/csv') && req.accepts('text/csv')) {
     outputType = 'csv';
   } else if (
-    accept.includes(
+    (accept.includes(
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    ) ||
-    accept.includes('application/vnd.ms-excel')
+    ) &&
+      req.accepts(
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      )) ||
+    (accept.includes('application/vnd.ms-excel') &&
+      req.accepts('application/vnd.ms-excel'))
   ) {
     outputType = 'xls';
+  } else if (
+    accept.includes('application/json') ||
+    accept.includes('application/*') ||
+    accept.includes('*/*')
+  ) {
+    outputType = 'json';
+  } else {
+    return res.status(406).json({
+      error: 'NotAcceptable',
+      description:
+        'Accept header must allow application/json, application/x-ndjson, text/csv, or application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
   }
 
   const queryParams = { ...req.query };
