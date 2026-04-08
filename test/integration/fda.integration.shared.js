@@ -1779,8 +1779,8 @@ export function runFDAIntegrationSuite({ mode, label }) {
     });
 
     test('GET /{visibility}/fdas/{fdaId}/das/{daId}/data serializes date consistently for fresh CSV/NDJSON and keeps numeric types in NDJSON', async () => {
-      const fdaSerializationId = 'fda_fresh_serialization_issue137';
-      const daSerializationId = 'da_fresh_serialization_issue137';
+      const fdaSerializationId = 'fda_serialization_regression';
+      const daSerializationId = 'da_serialization_regression';
 
       const createFda = await httpReq({
         method: 'POST',
@@ -2378,8 +2378,8 @@ export function runFDAIntegrationSuite({ mode, label }) {
     });
 
     test('GET /{visibility}/fdas/{fdaId}/das/{daId}/data returns CSV when Accept: text/csv', async () => {
-      const fdaCsvId = `fda_accept_csv_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
-      const daCsvId = `da_accept_csv_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+      const fdaCsvId = 'fda_accept_csv';
+      const daCsvId = 'da_accept_csv';
 
       const createFda = await httpReq({
         method: 'POST',
@@ -2429,7 +2429,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       if (res.status >= 400) {
         console.error(
-          'GET /{visibility}/fdas/{fdaId}/das/{daId}/data outputType=csv failed:',
+          'GET /{visibility}/fdas/{fdaId}/das/{daId}/data Accept=text/csv failed:',
           res.status,
           res.text,
         );
@@ -2449,8 +2449,8 @@ export function runFDAIntegrationSuite({ mode, label }) {
     });
 
     test('GET /{visibility}/fdas/{fdaId}/das/{daId}/data returns XLSX when Accept requests spreadsheet mime', async () => {
-      const fdaXlsId = `fda_accept_xls_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
-      const daXlsId = `da_accept_xls_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+      const fdaXlsId = 'fda_accept_xls';
+      const daXlsId = 'da_accept_xls';
 
       const createFda = await httpReq({
         method: 'POST',
@@ -2501,7 +2501,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       if (res.status >= 400) {
         console.error(
-          'GET /{visibility}/fdas/{fdaId}/das/{daId}/data outputType=xls failed:',
+          'GET /{visibility}/fdas/{fdaId}/das/{daId}/data Accept=xlsx failed:',
           res.status,
           res.text,
         );
@@ -2519,9 +2519,9 @@ export function runFDAIntegrationSuite({ mode, label }) {
       expect(res.buffer.length).toBeGreaterThan(100);
     });
 
-    test('GET /{visibility}/fdas/{fdaId}/das/{daId}/data ignores outputType and defaults to JSON when Accept is generic', async () => {
-      const fdaJsonId = `fda_accept_json_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
-      const daJsonId = `da_accept_json_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+    test('GET /{visibility}/fdas/{fdaId}/das/{daId}/data rejects outputType query param', async () => {
+      const fdaJsonId = 'fda_accept_json';
+      const daJsonId = 'da_accept_json';
 
       const createFda = await httpReq({
         method: 'POST',
@@ -2567,12 +2567,30 @@ export function runFDAIntegrationSuite({ mode, label }) {
         headers: { 'Fiware-Service': service },
       });
 
-      expect(res.status).toBe(200);
-      expect(Array.isArray(res.json)).toBe(true);
-      expect(res.json).toEqual([
-        { id: '1', name: 'ana', age: '30' },
-        { id: '3', name: 'carlos', age: '40' },
-      ]);
+      expect(res.status).toBe(400);
+      expect(res.json.error).toBe('BadRequest');
+      expect(res.json.description).toContain(
+        'Query param "outputType" is no longer supported.',
+      );
+    });
+
+    test('GET /{visibility}/fdas/{fdaId}/das/{daId}/data returns 406 for unsupported Accept header', async () => {
+      const res = await httpReq({
+        method: 'GET',
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId, {
+          minAge: 25,
+        }),
+        headers: {
+          'Fiware-Service': service,
+          Accept: 'video/mpg4',
+        },
+      });
+
+      expect(res.status).toBe(406);
+      expect(res.json.error).toBe('NotAcceptable');
+      expect(res.json.description).toContain(
+        'Accept header must allow application/json',
+      );
     });
 
     test('GET /{visibility}/... returns 400 for an invalid visibility value', async () => {
