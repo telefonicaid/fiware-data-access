@@ -355,6 +355,93 @@ describe('index routes - validation and middleware branches', () => {
     await request(app).post('/plugin/cda/api/doQuery').send({}).expect(400);
   });
 
+  test('returns 400 when Fiware-ServicePath is missing in GET /:visibility/fdas', async () => {
+    await request(app)
+      .get('/public/fdas')
+      .set('Fiware-Service', 'svc')
+      .expect(400);
+  });
+
+  test('returns 400 when query is missing in POST /:visibility/fdas', async () => {
+    await request(app)
+      .post('/public/fdas')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .send({ id: 'fda1' })
+      .expect(400);
+  });
+
+  test('returns 400 when Fiware-Service is missing in GET /:visibility/fdas/:fdaId', async () => {
+    await request(app)
+      .get('/public/fdas/fda1')
+      .set('Fiware-ServicePath', '/servicepath')
+      .expect(400);
+  });
+
+  test('returns 400 when Fiware-ServicePath is missing in PUT /:visibility/fdas/:fdaId', async () => {
+    await request(app)
+      .put('/public/fdas/fda1')
+      .set('Fiware-Service', 'svc')
+      .send({})
+      .expect(400);
+  });
+
+  test('returns 400 when Fiware-Service is missing in DELETE /:visibility/fdas/:fdaId', async () => {
+    await request(app)
+      .delete('/public/fdas/fda1')
+      .set('Fiware-ServicePath', '/servicepath')
+      .expect(400);
+  });
+
+  test('returns 400 when Fiware-ServicePath is missing in GET /:visibility/fdas/:fdaId/das', async () => {
+    await request(app)
+      .get('/public/fdas/fda1/das')
+      .set('Fiware-Service', 'svc')
+      .expect(400);
+  });
+
+  test('returns 400 when required body fields are missing in POST /:visibility/fdas/:fdaId/das', async () => {
+    await request(app)
+      .post('/public/fdas/fda1/das')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .send({ id: 'da1' })
+      .expect(400);
+  });
+
+  test('returns 400 when Fiware-Service is missing in GET /:visibility/fdas/:fdaId/das/:daId', async () => {
+    await request(app)
+      .get('/public/fdas/fda1/das/da1')
+      .set('Fiware-ServicePath', '/servicepath')
+      .expect(400);
+  });
+
+  test('returns 400 when query is missing in PUT /:visibility/fdas/:fdaId/das/:daId', async () => {
+    await request(app)
+      .put('/public/fdas/fda1/das/da1')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .send({ description: 'desc only' })
+      .expect(400);
+  });
+
+  test('returns 400 when Fiware-Service is missing in GET /:visibility/fdas/:fdaId/das/:daId/data', async () => {
+    await request(app)
+      .get('/public/fdas/fda1/das/da1/data')
+      .set('Fiware-ServicePath', '/servicepath')
+      .set('Accept', 'application/json')
+      .expect(400);
+  });
+
+  test('returns 400 when dataAccessId is missing in POST /plugin/cda/api/doQuery', async () => {
+    await request(app)
+      .post('/plugin/cda/api/doQuery')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .send({ path: '/public/svc' })
+      .expect(400);
+  });
+
   test('covers health and successful CRUD-like route flows', async () => {
     fdaMocks.getFDAs.mockResolvedValueOnce([
       { id: 'fda1', visibility: 'public', servicePath: '/servicepath' },
@@ -697,6 +784,25 @@ describe('index routes - validation and middleware branches', () => {
       'Error executing query:',
       expect.any(Error),
     );
+  });
+
+  test('uses typed CDA adapter errors in /plugin/cda/api/doQuery response', async () => {
+    const typedErr = new Error('invalid query for tenant');
+    typedErr.status = 422;
+    typedErr.type = 'CDAValidationError';
+    cdaMocks.handleCdaQuery.mockRejectedValueOnce(typedErr);
+
+    const res = await request(app)
+      .post('/plugin/cda/api/doQuery')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .send({ path: '/public/svc', dataAccessId: 'da1' })
+      .expect(422);
+
+    expect(res.body).toEqual({
+      error: 'CDAValidationError',
+      description: 'invalid query for tenant',
+    });
   });
 
   test('covers middleware capture fallback for unserializable payloads', async () => {
