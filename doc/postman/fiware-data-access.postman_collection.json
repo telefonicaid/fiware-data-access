@@ -470,10 +470,15 @@
 								"key": "Fiware-ServicePath",
 								"value": "{{Fiware-ServicePath}}",
 								"type": "text"
+							},
+							{
+								"key": "Accept",
+								"value": "text/csv",
+								"type": "text"
 							}
 						],
 						"url": {
-							"raw": "{{url}}/{{visibility}}/fdas/{{fdaId}}/das/{{daId}}/data?outputType=csv&animalname=TUNA&activity=12",
+							"raw": "{{url}}/{{visibility}}/fdas/{{fdaId}}/das/{{daId}}/data?animalname=TUNA&activity=12",
 							"host": [
 								"{{url}}"
 							],
@@ -486,10 +491,6 @@
 								"data"
 							],
 							"query": [
-								{
-									"key": "outputType",
-									"value": "csv"
-								},
 								{
 									"key": "animalname",
 									"value": "TUNA"
@@ -517,10 +518,15 @@
 								"key": "Fiware-ServicePath",
 								"value": "{{Fiware-ServicePath}}",
 								"type": "text"
+							},
+							{
+								"key": "Accept",
+								"value": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+								"type": "text"
 							}
 						],
 						"url": {
-							"raw": "{{url}}/{{visibility}}/fdas/{{fdaId}}/das/{{daId}}/data?outputType=xls&animalname=TUNA&activity=12",
+							"raw": "{{url}}/{{visibility}}/fdas/{{fdaId}}/das/{{daId}}/data?animalname=TUNA&activity=12",
 							"host": [
 								"{{url}}"
 							],
@@ -533,10 +539,6 @@
 								"data"
 							],
 							"query": [
-								{
-									"key": "outputType",
-									"value": "xls"
-								},
 								{
 									"key": "animalname",
 									"value": "TUNA"

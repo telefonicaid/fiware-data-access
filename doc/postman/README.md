@@ -34,3 +34,14 @@ Before sending requests, create or update a Postman environment and define the f
 
 > ⚠️ These variables are required. The requests in the collection depend on them and will not work correctly if they are
 > not properly configured.
+
+---
+
+### 3. Content negotiation for DA data endpoint
+
+For `GET /{visibility}/fdas/{fdaId}/das/{daId}/data`, response format is selected only through the `Accept` header:
+
+-   `application/json` (or missing/`*/*`) returns JSON.
+-   `application/x-ndjson` returns NDJSON stream.
+-   `text/csv` returns CSV stream.
+-   `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` returns XLSX.
