@@ -1224,6 +1224,22 @@ describe('getFDA', () => {
     );
     expect(result).toEqual({ query: 'SELECT 1', status: 'completed' });
   });
+
+  test('throws FDANotFound when visibility is undefined and FDA does not exist', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue(null);
+
+    await expect(
+      getFDA('svc', 'fdaA', undefined, '/public'),
+    ).rejects.toMatchObject({
+      status: 404,
+      type: 'FDANotFound',
+    });
+    expect(mongoMocks.retrieveFDA).toHaveBeenCalledWith(
+      'svc',
+      'fdaA',
+      '/public',
+    );
+  });
 });
 
 describe('cleanPartition', () => {
