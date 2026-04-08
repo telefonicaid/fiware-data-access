@@ -817,7 +817,7 @@ describe('index routes - validation and middleware branches', () => {
 
   test('returns 400 for invalid Fiware-ServicePath when creating FDAs', async () => {
     const invalidServicePathError = new Error(
-      'Fiware-ServicePath must be a valid absolute path (e.g. / or /servicepath)',
+      'Fiware-ServicePath must be a non-root absolute path (e.g. /servicepath)',
     );
     invalidServicePathError.status = 400;
     invalidServicePathError.type = 'InvalidServicePath';
@@ -833,7 +833,7 @@ describe('index routes - validation and middleware branches', () => {
     expect(res.body).toEqual({
       error: 'InvalidServicePath',
       description:
-        'Fiware-ServicePath must be a valid absolute path (e.g. / or /servicepath)',
+        'Fiware-ServicePath must be a non-root absolute path (e.g. /servicepath)',
     });
   });
 

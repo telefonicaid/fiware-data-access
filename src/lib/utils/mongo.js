@@ -58,7 +58,10 @@ async function getCollection() {
 
 export async function createIndex() {
   const collection = await getCollection();
-  collection.createIndex({ fdaId: 1, service: 1 }, { unique: true });
+  await collection.createIndex(
+    { service: 1, servicePath: 1, fdaId: 1 },
+    { unique: true },
+  );
 }
 
 export async function disconnectClient() {
@@ -80,7 +83,7 @@ export async function createFDAMongo(
   logger.debug({ fdaId, query, service, description }, '[DEBUG]: createFDA');
   const collection = await getCollection();
   try {
-    // As there is a unique index on (fdaId, service), this will throw an error if an FDA with the same fdaId and service already exists
+    // As there is a unique index on (service, servicePath, fdaId), this throws an error when the same scoped FDA already exists.
     await collection.insertOne({
       fdaId,
       query,
@@ -101,7 +104,7 @@ export async function createFDAMongo(
       throw new FDAError(
         409,
         'DuplicatedKey',
-        `FDA with id ${fdaId} and ${service} already exists: ${e}`,
+        `FDA with id ${fdaId}, service ${service} and servicePath ${servicePath} already exists: ${e}`,
       );
     } else {
       throw new FDAError(
@@ -116,6 +119,7 @@ export async function createFDAMongo(
 export async function updateFDAStatus(
   service,
   fdaId,
+  servicePath,
   status,
   progress,
   error = null,
@@ -123,7 +127,7 @@ export async function updateFDAStatus(
   const collection = await getCollection();
 
   await collection.updateOne(
-    { service, fdaId },
+    { service, fdaId, servicePath },
     {
       $set: {
         status,
@@ -135,13 +139,14 @@ export async function updateFDAStatus(
   );
 }
 
-export async function regenerateFDA(service, fdaId) {
+export async function regenerateFDA(service, fdaId, servicePath) {
   const collection = await getCollection();
 
   const previous = await collection.findOneAndUpdate(
     {
       service,
       fdaId,
+      servicePath,
       status: { $in: ['completed', 'failed'] },
     },
     {
@@ -154,13 +159,13 @@ export async function regenerateFDA(service, fdaId) {
   );
 
   if (!previous) {
-    const existing = await collection.findOne({ service, fdaId });
+    const existing = await collection.findOne({ service, fdaId, servicePath });
 
     if (!existing) {
       throw new FDAError(
         404,
         'NotFound',
-        `FDA ${fdaId} not found in service ${service}`,
+        `FDA ${fdaId} not found in service ${service} and servicePath ${servicePath}`,
       );
     }
 
@@ -185,6 +190,7 @@ export async function regenerateFDA(service, fdaId) {
 export async function storeDA(
   service,
   fdaId,
+  servicePath,
   daId,
   description,
   query,
@@ -197,7 +203,7 @@ export async function storeDA(
   const collection = await getCollection();
   try {
     await collection.updateOne(
-      { service, fdaId },
+      { service, fdaId, servicePath },
       { $set: { [`das.${daId}`]: { description, query, params } } },
     );
   } catch (e) {
@@ -223,11 +229,11 @@ export async function retrieveFDAs(service) {
   }
 }
 
-export async function retrieveFDA(service, fdaId) {
+export async function retrieveFDA(service, fdaId, servicePath) {
   logger.debug({ service, fdaId }, '[DEBUG]: retrieveFDA');
   const collection = await getCollection();
   try {
-    return collection.findOne({ service, fdaId });
+    return await collection.findOne({ service, fdaId, servicePath });
   } catch (e) {
     throw new FDAError(
       500,
@@ -237,11 +243,11 @@ export async function retrieveFDA(service, fdaId) {
   }
 }
 
-export async function removeFDA(service, fdaId) {
+export async function removeFDA(service, fdaId, servicePath) {
   logger.debug({ service, fdaId }, '[DEBUG]: removeFDA');
   const collection = await getCollection();
   try {
-    const result = await collection.deleteOne({ service, fdaId });
+    const result = await collection.deleteOne({ service, fdaId, servicePath });
     if (result.deletedCount === 0) {
       throw new FDAError(
         404,
@@ -258,13 +264,13 @@ export async function removeFDA(service, fdaId) {
   }
 }
 
-export async function retrieveDAs(service, fdaId) {
+export async function retrieveDAs(service, fdaId, servicePath) {
   logger.debug({ service, fdaId }, '[DEBUG]: retrieveDAs');
   const collection = await getCollection();
   try {
     const das = await collection
       .aggregate([
-        { $match: { service, fdaId } },
+        { $match: { service, fdaId, servicePath } },
         {
           $project: {
             _id: 0,
@@ -295,12 +301,12 @@ export async function retrieveDAs(service, fdaId) {
   }
 }
 
-export async function retrieveDA(service, fdaId, daId) {
+export async function retrieveDA(service, fdaId, daId, servicePath) {
   logger.debug({ service, fdaId, daId }, '[DEBUG]: retrieveDA');
   const collection = await getCollection();
   try {
     const result = await collection.findOne(
-      { service, fdaId },
+      { service, fdaId, servicePath },
       { projection: { [`das.${daId}`]: 1, _id: 0 } },
     );
     return result?.das?.[daId] || null;
@@ -316,6 +322,7 @@ export async function retrieveDA(service, fdaId, daId) {
 export async function updateDA(
   service,
   fdaId,
+  servicePath,
   daId,
   description,
   query,
@@ -328,7 +335,7 @@ export async function updateDA(
   const collection = await getCollection();
 
   try {
-    const filter = { service, fdaId };
+    const filter = { service, fdaId, servicePath };
 
     const setFields = {};
     if (description !== undefined) {
@@ -357,11 +364,11 @@ export async function updateDA(
   }
 }
 
-export async function removeDA(service, fdaId, daId) {
+export async function removeDA(service, fdaId, daId, servicePath) {
   logger.debug({ service, fdaId, daId }, '[DEBUG]: removeDA');
   const collection = await getCollection();
   try {
-    const filter = { service, fdaId };
+    const filter = { service, fdaId, servicePath };
     const update = { $unset: { [`das.${daId}`]: '' } };
     await collection.updateOne(filter, update);
   } catch (e) {

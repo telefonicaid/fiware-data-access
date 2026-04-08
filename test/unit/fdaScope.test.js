@@ -22,51 +22,30 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
-import { getAgenda } from './lib/jobs.js';
-import { cleanPartition, processFDAAsync } from './lib/fda.js';
-import { getBasicLogger } from './lib/utils/logger.js';
+import { describe, expect, test } from '@jest/globals';
+import {
+  normalizeScopedServicePath,
+  getFDAStoragePath,
+} from '../../src/lib/utils/fdaScope.js';
 
-const logger = getBasicLogger();
-
-export async function startFetcher() {
-  const agenda = getAgenda();
-
-  agenda.define('refresh-fda', async (job) => {
-    const {
-      fdaId,
-      query,
-      service,
-      servicePath,
-      timeColumn,
-      objStgConf,
-      partitionFlag = false,
-    } = job.attrs.data;
-    // Should agenda also log errors?
-    try {
-      await processFDAAsync(
-        fdaId,
-        query,
-        service,
-        servicePath,
-        timeColumn,
-        objStgConf,
-        partitionFlag,
-      );
-    } catch (e) {
-      logger.error('Fetcher error: ', e);
-    }
+describe('fdaScope utils', () => {
+  test('normalizeScopedServicePath throws when servicePath is missing', () => {
+    expect(() => normalizeScopedServicePath(undefined)).toThrow(
+      'servicePath is required',
+    );
   });
 
-  agenda.define('clean-partition', async (job) => {
-    const { fdaId, service, servicePath, windowSize, objStgConf } =
-      job.attrs.data;
-    try {
-      await cleanPartition(service, fdaId, windowSize, objStgConf, servicePath);
-    } catch (e) {
-      logger.error('Fetcher error: ', e);
-    }
+  test('normalizeScopedServicePath throws when servicePath is blank', () => {
+    expect(() => normalizeScopedServicePath('   ')).toThrow(
+      'servicePath is required',
+    );
   });
 
-  await agenda.start();
-  logger.info('[Fetcher] Agenda started');
-}
+  test('getFDAStoragePath throws when servicePath is root /', () => {
+    expect(() => getFDAStoragePath('fdaA', '/')).toThrow();
+  });
+
+  test('getFDAStoragePath builds scoped path for non-root servicePath', () => {
+    expect(getFDAStoragePath('fdaA', '/public')).toBe('public/fdaA');
+  });
+});

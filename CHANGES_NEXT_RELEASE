@@ -4,6 +4,8 @@
 - Fix: value of default params are checked when creating DA (#107)
 - Fix: query operation is now REST-like using `GET /{visibility}/fdas/{fdaId}/das/{daId}/data` instead of `/query` (#62)
 - Add: visibility-based data access segmentation (`public` / `private`) with FDA visibility validation, including CDA `doQuery` compatibility path handling (#21)
+- Fix: FDA now includes `servicePath` in Mongo unique index (`service + servicePath + fdaId`) and operational storage layout is now scoped as `/service/servicePath/fdaId/` (#132)
+- Fix: forbids the usage of `/` as servicePath
 - Fix: sanitize FDA retrieval payloads to avoid redundant/internal fields (#129)
   - `GET /{visibility}/fdas` returns `id` and omits `_id`, `fdaId`, `service`, `visibility`, `servicePath`
   - `GET /{visibility}/fdas/{fdaId}` omits those fields as they are already in request scope
