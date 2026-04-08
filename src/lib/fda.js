@@ -72,6 +72,43 @@ import { FDAError } from './fdaError.js';
 const FRESH_CURSOR_BATCH_SIZE = 250;
 export const VALID_VISIBILITIES = ['public', 'private'];
 const VALID_VISIBILITIES_SET = new Set(VALID_VISIBILITIES);
+const CSV_CONTENT_TYPE = 'text/csv; charset=utf-8';
+
+function stringifyCsvValue(value) {
+  const normalizedValue = convertBigInt(value);
+
+  if (normalizedValue === null || normalizedValue === undefined) {
+    return '';
+  }
+
+  if (typeof normalizedValue === 'object') {
+    return JSON.stringify(normalizedValue);
+  }
+
+  return String(normalizedValue);
+}
+
+function escapeCsvValue(value) {
+  const strValue = stringifyCsvValue(value);
+
+  if (
+    strValue.includes(',') ||
+    strValue.includes('"') ||
+    strValue.includes('\n') ||
+    strValue.includes('\r')
+  ) {
+    return '"' + strValue.replace(/"/g, '""') + '"';
+  }
+
+  return strValue;
+}
+
+async function writeCsvLine(res, line) {
+  const ok = res.write(line);
+  if (!ok) {
+    await new Promise((resolve) => res.once('drain', resolve));
+  }
+}
 
 export async function getFDAs(service, visibility, servicePath) {
   const fdas = await retrieveFDAs(service);
@@ -245,6 +282,106 @@ export async function executeQueryStream({
   return res.end();
 }
 
+export async function executeQueryCsvStream({
+  service,
+  visibility,
+  servicePath,
+  params,
+  req,
+  res,
+  fresh = false,
+}) {
+  if (fresh) {
+    return executeFreshQueryCsvStream({
+      service,
+      visibility,
+      servicePath,
+      params,
+      req,
+      res,
+    });
+  }
+
+  const { fdaId, daId, ...rest } = params;
+
+  await ensureFDAReadyForQuery(service, fdaId, visibility, servicePath);
+
+  const conn = await getDBConnection();
+
+  let stream;
+  let close;
+
+  try {
+    const result = await runPreparedStatementStream(
+      conn,
+      service,
+      fdaId,
+      daId,
+      rest,
+      servicePath,
+    );
+
+    stream = result.stream;
+    close = result.close;
+  } catch (err) {
+    await releaseDBConnection(conn);
+    throw err;
+  }
+
+  let cleaned = false;
+
+  const cleanup = async () => {
+    if (cleaned) {
+      return;
+    }
+    cleaned = true;
+
+    try {
+      await close();
+    } finally {
+      await releaseDBConnection(conn);
+    }
+  };
+
+  req.on('close', () => {
+    cleanup().catch(() => {});
+  });
+
+  res.setHeader('Content-Type', CSV_CONTENT_TYPE);
+  res.setHeader('Content-Disposition', 'attachment; filename="results.csv"');
+
+  try {
+    const columnNames = stream.columnNames();
+    if (columnNames.length > 0) {
+      await writeCsvLine(
+        res,
+        columnNames.map((columnName) => escapeCsvValue(columnName)).join(',') +
+          '\n',
+      );
+    }
+
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const chunk = await stream.fetchChunk();
+      if (chunk.rowCount === 0) {
+        break;
+      }
+
+      const rows = chunk.getRows();
+
+      for (const row of rows) {
+        const csvLine =
+          row.map((cell) => escapeCsvValue(cell)).join(',') + '\n';
+        await writeCsvLine(res, csvLine);
+      }
+    }
+  } finally {
+    await cleanup();
+  }
+
+  return res.end();
+}
+
 async function executeFreshQuery({ service, visibility, servicePath, params }) {
   assertFreshQueriesEnabled(config.roles.syncQueries);
 
@@ -321,6 +458,83 @@ async function executeFreshQueryStream({
         if (!ok) {
           await new Promise((resolve) => res.once('drain', resolve));
         }
+      }
+    }
+  } catch (e) {
+    if (e instanceof FDAError) {
+      throw e;
+    }
+
+    throw e;
+  } finally {
+    await cursorReader?.close();
+    releaseFreshSlot();
+  }
+
+  return res.end();
+}
+
+async function executeFreshQueryCsvStream({
+  service,
+  visibility,
+  servicePath,
+  params,
+  req,
+  res,
+}) {
+  assertFreshQueriesEnabled(config.roles.syncQueries);
+
+  const releaseFreshSlot = acquireFreshQuerySlot(
+    config.freshQueries.maxConcurrent,
+  );
+  let cursorReader;
+
+  try {
+    const { text, values } = await buildFreshQueryStatement(
+      service,
+      visibility,
+      servicePath,
+      params,
+    );
+
+    cursorReader = await createPgCursorReader(
+      service,
+      text,
+      values,
+      FRESH_CURSOR_BATCH_SIZE,
+    );
+
+    req.on('close', () => {
+      cursorReader?.close().catch(() => {});
+    });
+
+    res.setHeader('Content-Type', CSV_CONTENT_TYPE);
+    res.setHeader('Content-Disposition', 'attachment; filename="results.csv"');
+
+    let columns;
+
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const rows = await cursorReader.readNextChunk();
+      if (rows.length === 0) {
+        break;
+      }
+
+      if (!columns) {
+        columns = Object.keys(rows[0]);
+        if (columns.length > 0) {
+          await writeCsvLine(
+            res,
+            columns.map((columnName) => escapeCsvValue(columnName)).join(',') +
+              '\n',
+          );
+        }
+      }
+
+      for (const row of rows) {
+        const csvLine =
+          columns.map((column) => escapeCsvValue(row[column])).join(',') + '\n';
+        await writeCsvLine(res, csvLine);
       }
     }
   } catch (e) {

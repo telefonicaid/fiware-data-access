@@ -31,6 +31,7 @@ import {
   fetchFDA,
   executeQuery,
   executeQueryStream,
+  executeQueryCsvStream,
   createDA,
   getFDA,
   updateFDA,
@@ -382,13 +383,19 @@ app.get('/:visibility/fdas/:fdaId/das/:daId/data', async (req, res) => {
   const servicePath = req.get('Fiware-ServicePath');
   const accept = req.get('Accept') || 'application/json';
   const fresh = parseBooleanQueryParam(req.query.fresh, 'fresh');
-  const rawOutputType = req.query.outputType || DEFAULT_OUTPUT_TYPE;
+  let outputType = 'json';
 
-  if (!VALID_OUTPUT_TYPES.includes(rawOutputType)) {
-    return res.status(400).json({
-      error: 'BadRequest',
-      description: `Invalid outputType '${rawOutputType}'. Allowed values: ${VALID_OUTPUT_TYPES.join(', ')}`,
-    });
+  if (accept.includes('application/x-ndjson')) {
+    outputType = 'ndjson';
+  } else if (accept.includes('text/csv')) {
+    outputType = 'csv';
+  } else if (
+    accept.includes(
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ) ||
+    accept.includes('application/vnd.ms-excel')
+  ) {
+    outputType = 'xls';
   }
 
   const queryParams = { ...req.query };
@@ -408,9 +415,20 @@ app.get('/:visibility/fdas/:fdaId/das/:daId/data', async (req, res) => {
     ...queryParams,
   };
 
-  // Content negotiation: NDJSON streaming takes precedence over outputType
-  if (accept.includes('application/x-ndjson')) {
+  if (outputType === 'ndjson') {
     return executeQueryStream({
+      service,
+      visibility,
+      servicePath,
+      params,
+      req,
+      res,
+      fresh,
+    });
+  }
+
+  if (outputType === 'csv') {
+    return executeQueryCsvStream({
       service,
       visibility,
       servicePath,
@@ -429,14 +447,7 @@ app.get('/:visibility/fdas/:fdaId/das/:daId/data', async (req, res) => {
     fresh,
   });
 
-  if (rawOutputType === 'csv') {
-    const csv = rowsToCsv(rows);
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', 'attachment; filename="results.csv"');
-    return res.send(csv);
-  }
-
-  if (rawOutputType === 'xls') {
+  if (outputType === 'xls') {
     const buffer = await rowsToXlsx(rows);
     res.setHeader(
       'Content-Type',
