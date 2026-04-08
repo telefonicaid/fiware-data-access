@@ -632,7 +632,6 @@ function replaceNamedParamsWithPositional(query, params) {
 
   const text = query.replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (_m, name) => {
     if (!Object.prototype.hasOwnProperty.call(params, name)) {
-      // c8 reports a false negative on multiline constructor lines in this branch.
       /* c8 ignore next 5 */
       throw new FDAError(
         400,
@@ -1087,7 +1086,6 @@ export async function cleanPartition(
 
   const cutoff = getWindowDate(windowSize);
   if (!cutoff) {
-    // c8 reports a false negative on multiline constructor lines in this branch.
     /* c8 ignore next 5 */
     throw new FDAError(
       400,
