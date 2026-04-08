@@ -70,27 +70,28 @@ All error responses follow this structure:
 
 ### HTTP status codes
 
-| Code | Status                | Error Code             | Cause                                                                                                                                                                             |
-| ---- | --------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 400  | Bad Request           | `BadRequest`           | Missing or invalid values in request body, headers, or query parameters. `Fiware-Service`, `Fiware-ServicePath`, and `visibility` (path segment) are required for all operations. |
-| 400  | Bad Request           | `BadRequest`           | An unsupported `outputType` value was provided. Allowed values: `json`, `csv`, `xls`.                                                                                             |
-| 400  | Bad Request           | `InvalidVisibility`    | The `visibility` path segment is not one of the allowed values (`public`, `private`).                                                                                             |
-| 400  | Bad Request           | `InvalidServicePath`   | The `Fiware-ServicePath` header value is not a valid non-root absolute path (e.g. `/servicePath/site`). The root path `/` is not allowed.                                         |
-| 400  | Bad Request           | `InvalidQueryParam`    | Some of the params in the request don't comply with the [params](#params) array restrictions.                                                                                     |
-| 403  | Forbidden             | `VisibilityMismatch`   | The FDA exists but was created under a different `visibility`. Cannot access a private FDA through a public route and vice-versa.                                                 |
-| 400  | Bad Request           | `PartitionError`       | Some of the params related to the creation of the parquet partition don't comply with the [object storage configuration](#object-storage-configuration-objstgconf) requirements.  |
-| 400  | Bad Request           | `CleaningError`        | Trying to remove a non partitioned FDA or incorrect value in the [delete interval key](#refresh-policy-object).                                                                   |
-| 404  | Not Found             | `FDANotFound`          | The requested FDA was not found.                                                                                                                                                  |
-| 404  | Not Found             | `DaNotFound`           | The requested Data Access (DA) was not found.                                                                                                                                     |
-| 409  | Conflict              | `DuplicatedKey`        | The resource already exists in the database. Attempting to create a duplicate resource.                                                                                           |
-| 429  | Too Many Requests     | `TooManyFreshQueries`  | The number of concurrent `fresh=true` queries exceeded `FDA_MAX_CONCURRENT_FRESH_QUERIES`.                                                                                        |
-| 409  | Conflict              | `FDAUnavailable`       | FDA `exampleId` is not queryable yet because the first fetch has not completed.                                                                                                   |
-| 500  | Internal Server Error | `S3ServerError`        | An error occurred in the S3 object storage component.                                                                                                                             |
-| 500  | Internal Server Error | `DuckDBServerError`    | An error occurred in the DuckDB component.                                                                                                                                        |
-| 500  | Internal Server Error | `MongoDBServerError`   | An error occurred in the MongoDB component.                                                                                                                                       |
-| 503  | Service Unavailable   | `UploadError`          | Connection error with the PostgreSQL database component.                                                                                                                          |
-| 503  | Service Unavailable   | `SyncQueriesDisabled`  | A request was sent with `fresh=true` but the API instance is running with `FDA_ROLE_SYNCQUERIES=false`.                                                                           |
-| 503  | Service Unavailable   | `MongoConnectionError` | Connection error with the MongoDB component.                                                                                                                                      |
+| Code | Status                | Error Code             | Cause                                                                                                                                                                                       |
+| ---- | --------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 400  | Bad Request           | `BadRequest`           | Missing or invalid values in request body, headers, or query parameters. `Fiware-Service`, `Fiware-ServicePath`, and `visibility` (path segment) are required for all operations.           |
+| 400  | Bad Request           | `BadRequest`           | Query param `outputType` is no longer supported in `GET /{visibility}/fdas/{fdaId}/das/{daId}/data`. Use the `Accept` header for content negotiation.                                       |
+| 400  | Bad Request           | `InvalidVisibility`    | The `visibility` path segment is not one of the allowed values (`public`, `private`).                                                                                                       |
+| 400  | Bad Request           | `InvalidServicePath`   | The `Fiware-ServicePath` header value is not a valid non-root absolute path (e.g. `/servicePath/site`). The root path `/` is not allowed.                                                   |
+| 400  | Bad Request           | `InvalidQueryParam`    | Some of the params in the request don't comply with the [params](#params) array restrictions.                                                                                               |
+| 403  | Forbidden             | `VisibilityMismatch`   | The FDA exists but was created under a different `visibility`. Cannot access a private FDA through a public route and vice-versa.                                                           |
+| 400  | Bad Request           | `PartitionError`       | Some of the params related to the creation of the parquet partition don't comply with the [object storage configuration](#object-storage-configuration-objstgconf) requirements.            |
+| 400  | Bad Request           | `CleaningError`        | Trying to remove a non partitioned FDA or incorrect value in the [delete interval key](#refresh-policy-object).                                                                             |
+| 404  | Not Found             | `FDANotFound`          | The requested FDA was not found.                                                                                                                                                            |
+| 404  | Not Found             | `DaNotFound`           | The requested Data Access (DA) was not found.                                                                                                                                               |
+| 409  | Conflict              | `DuplicatedKey`        | The resource already exists in the database. Attempting to create a duplicate resource.                                                                                                     |
+| 429  | Too Many Requests     | `TooManyFreshQueries`  | The number of concurrent `fresh=true` queries exceeded `FDA_MAX_CONCURRENT_FRESH_QUERIES`.                                                                                                  |
+| 406  | Not Acceptable        | `NotAcceptable`        | `Accept` header does not allow any supported response format (`application/json`, `application/x-ndjson`, `text/csv`, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`). |
+| 409  | Conflict              | `FDAUnavailable`       | FDA `exampleId` is not queryable yet because the first fetch has not completed.                                                                                                             |
+| 500  | Internal Server Error | `S3ServerError`        | An error occurred in the S3 object storage component.                                                                                                                                       |
+| 500  | Internal Server Error | `DuckDBServerError`    | An error occurred in the DuckDB component.                                                                                                                                                  |
+| 500  | Internal Server Error | `MongoDBServerError`   | An error occurred in the MongoDB component.                                                                                                                                                 |
+| 503  | Service Unavailable   | `UploadError`          | Connection error with the PostgreSQL database component.                                                                                                                                    |
+| 503  | Service Unavailable   | `SyncQueriesDisabled`  | A request was sent with `fresh=true` but the API instance is running with `FDA_ROLE_SYNCQUERIES=false`.                                                                                     |
+| 503  | Service Unavailable   | `MongoConnectionError` | Connection error with the MongoDB component.                                                                                                                                                |
 
 ### Common error scenarios
 
@@ -1190,12 +1191,13 @@ _**Request path parameters**_
 
 _**Request query parameters**_
 
-| Parameter    | Optional | Description                                                                                                                                              | Example |
-| ------------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| `outputType` | ✓        | Format of the returned results. **Default:** `json`. Allowed values: `json`, `csv`, `xls`.                                                               | `csv`   |
-| `fresh`      | ✓        | If `true`, executes the DA directly against PostgreSQL instead of the cached Parquet snapshot. Requires `FDA_ROLE_SYNCQUERIES=true` in the API instance. | `true`  |
+| Parameter | Optional | Description                                                                                                                                              | Example |
+| --------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| `fresh`   | ✓        | If `true`, executes the DA directly against PostgreSQL instead of the cached Parquet snapshot. Requires `FDA_ROLE_SYNCQUERIES=true` in the API instance. | `true`  |
 
 Additionally, the DA-specific parameters must be included in the query string together with the previous ones.
+
+`outputType` is not accepted anymore in this endpoint. If provided, the API returns `400 BadRequest`.
 
 _**Request headers**_
 
@@ -1225,30 +1227,35 @@ _**Behavior note**_
 
 _**Response headers**_
 
-| `outputType` value | `Content-Type`                                                      | `Content-Disposition`                 |
-| ------------------ | ------------------------------------------------------------------- | ------------------------------------- |
-| `json` (default)   | `application/json`                                                  | —                                     |
-| `csv`              | `text/csv`                                                          | `attachment; filename="results.csv"`  |
-| `xls`              | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` | `attachment; filename="results.xlsx"` |
+| `Accept` request header                                                                           | `Content-Type`                                                      | `Content-Disposition`                 |
+| ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------- |
+| `application/json` or missing/`*/*`                                                               | `application/json`                                                  | —                                     |
+| `application/x-ndjson`                                                                            | `application/x-ndjson`                                              | —                                     |
+| `text/csv`                                                                                        | `text/csv; charset=utf-8`                                           | `attachment; filename="results.csv"`  |
+| `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` or `application/vnd.ms-excel` | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` | `attachment; filename="results.xlsx"` |
 
 _**Response payload**_
 
-Depends on `outputType`:
+Depends on `Accept`:
 
--   `json` (default): array of JSON objects, each one being a record result of the stored parameterized query.
--   `csv`: comma-separated values file. The first row contains column names. Values containing commas, double-quotes or
-    newlines are quoted.
--   `xls`: Excel workbook (`.xlsx` format, Office Open XML). The first row contains column names.
+-   `application/json` (or default): array of JSON objects, each one being a record result of the stored parameterized
+    query.
+-   `application/x-ndjson`: one JSON object per line (streamed response).
+-   `text/csv`: comma-separated values file. The first row contains column names. Values containing commas,
+    double-quotes or newlines are quoted.
+-   spreadsheet MIME types: Excel workbook (`.xlsx` format, Office Open XML). The first row contains column names.
 
-_**Output type and NDJSON streaming**_
+_**Content negotiation and serialization notes**_
 
--   `outputType` applies to the standard (buffered) response path.
--   If the client sets the `Accept: application/x-ndjson` header, NDJSON streaming takes precedence over `outputType`
-    and the server responds with `Content-Type: application/x-ndjson`, streaming one JSON object per line.
--   NDJSON output uses numeric types for integer columns (BigInt values are converted to numbers before serialization).
+-   Response format is negotiated only through the `Accept` header.
+-   If `Accept` does not include a supported format, the API returns `406 NotAcceptable`.
+-   `outputType` query parameter is rejected with `400 BadRequest`.
+-   Date values are normalized to strings (ISO 8601) before JSON/NDJSON/CSV serialization.
+-   Integer database values are normalized to numeric JSON values.
 -   The `fresh` parameter can be combined with all output modes.
 -   With `fresh=true` and `Accept: application/x-ndjson`, results are streamed incrementally from PostgreSQL using a
     cursor to avoid loading full result sets in memory.
+-   With `Accept: text/csv`, responses are streamed in both cached and fresh modes.
 
 _**Example Request (without DA parameters):**_
 
@@ -1314,18 +1321,20 @@ _**Example Response:**_
 _**Example Request (CSV output):**_
 
 ```bash
-curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_all_alarms/data?outputType=csv" \
+curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_all_alarms/data" \
   -H "Fiware-Service: my-bucket" \
   -H "Fiware-ServicePath: /servicePath" \
+    -H "Accept: text/csv" \
   --output results.csv
 ```
 
 _**Example Request (Excel output):**_
 
 ```bash
-curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_all_alarms/data?outputType=xls" \
+curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_all_alarms/data" \
   -H "Fiware-Service: my-bucket" \
   -H "Fiware-ServicePath: /servicePath" \
+    -H "Accept: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" \
   --output results.xlsx
 ```
 
