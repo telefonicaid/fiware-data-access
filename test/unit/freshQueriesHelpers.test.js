@@ -26,6 +26,7 @@ import { describe, expect, test } from '@jest/globals';
 import {
   normalizeForSerialization,
   validateAllowedFieldsBody,
+  validateForbiddenFieldsQuery,
   parseBooleanQueryParam,
   assertFreshQueriesEnabled,
   acquireFreshQuerySlot,
@@ -61,6 +62,14 @@ describe('fresh query helpers', () => {
         'description',
       ]),
     ).toThrow('Invalid fields in request body, check your request');
+  });
+
+  test('validateForbiddenFieldsQuery throws when query includes forbidden fields', () => {
+    expect(() =>
+      validateForbiddenFieldsQuery({ minAge: '25', outputType: 'csv' }, [
+        'outputType',
+      ]),
+    ).toThrow('Invalid fields in request query, check your request');
   });
 
   test('parseBooleanQueryParam parses valid values and rejects invalid ones', () => {

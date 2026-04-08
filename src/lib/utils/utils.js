@@ -59,6 +59,19 @@ export function validateAllowedFieldsBody(body, allowedFields) {
   }
 }
 
+export function validateForbiddenFieldsQuery(query, forbiddenFields) {
+  const keys = Object.keys(query);
+  const invalid = keys.filter((k) => forbiddenFields.includes(k));
+  if (invalid.length > 0) {
+    const err = new Error(
+      'Invalid fields in request query, check your request',
+    );
+    err.status = 400;
+    err.type = 'BadRequest';
+    throw err;
+  }
+}
+
 export function parseBooleanQueryParam(value, name) {
   if (value === undefined) {
     return false;

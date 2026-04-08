@@ -2569,8 +2569,8 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       expect(res.status).toBe(400);
       expect(res.json.error).toBe('BadRequest');
-      expect(res.json.description).toContain(
-        'Query param "outputType" is no longer supported.',
+      expect(res.json.description).toBe(
+        'Invalid fields in request query, check your request',
       );
     });
 

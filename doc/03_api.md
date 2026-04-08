@@ -73,7 +73,7 @@ All error responses follow this structure:
 | Code | Status                | Error Code             | Cause                                                                                                                                                                                       |
 | ---- | --------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 400  | Bad Request           | `BadRequest`           | Missing or invalid values in request body, headers, or query parameters. `Fiware-Service`, `Fiware-ServicePath`, and `visibility` (path segment) are required for all operations.           |
-| 400  | Bad Request           | `BadRequest`           | Query param `outputType` is no longer supported in `GET /{visibility}/fdas/{fdaId}/das/{daId}/data`. Use the `Accept` header for content negotiation.                                       |
+| 400  | Bad Request           | `BadRequest`           | Invalid or unsupported query fields were provided (for example, using `outputType` in `GET /{visibility}/fdas/{fdaId}/das/{daId}/data`).                                                    |
 | 400  | Bad Request           | `InvalidVisibility`    | The `visibility` path segment is not one of the allowed values (`public`, `private`).                                                                                                       |
 | 400  | Bad Request           | `InvalidServicePath`   | The `Fiware-ServicePath` header value is not a valid non-root absolute path (e.g. `/servicePath/site`). The root path `/` is not allowed.                                                   |
 | 400  | Bad Request           | `InvalidQueryParam`    | Some of the params in the request don't comply with the [params](#params) array restrictions.                                                                                               |
@@ -1197,7 +1197,7 @@ _**Request query parameters**_
 
 Additionally, the DA-specific parameters must be included in the query string together with the previous ones.
 
-`outputType` is not accepted anymore in this endpoint. If provided, the API returns `400 BadRequest`.
+`outputType` is not accepted in this endpoint. If provided, the API returns `400 BadRequest` as an invalid query field.
 
 _**Request headers**_
 
@@ -1249,7 +1249,7 @@ _**Content negotiation and serialization notes**_
 
 -   Response format is negotiated only through the `Accept` header.
 -   If `Accept` does not include a supported format, the API returns `406 NotAcceptable`.
--   `outputType` query parameter is rejected with `400 BadRequest`.
+-   Unsupported query fields (including `outputType`) are rejected with `400 BadRequest`.
 -   Date values are normalized to strings (ISO 8601) before JSON/NDJSON/CSV serialization.
 -   Integer database values are normalized to numeric JSON values.
 -   The `fresh` parameter can be combined with all output modes.

@@ -88,6 +88,7 @@ const cdaMocks = {
 
 const utilsMocks = {
   validateAllowedFieldsBody: jest.fn(),
+  validateForbiddenFieldsQuery: jest.fn(),
   parseBooleanQueryParam: jest.fn(),
 };
 
@@ -149,6 +150,22 @@ function resetModuleMocks() {
   cdaMocks.handleCdaQuery.mockReset().mockResolvedValue({ rows: [] });
 
   utilsMocks.validateAllowedFieldsBody.mockReset().mockReturnValue(undefined);
+  utilsMocks.validateForbiddenFieldsQuery
+    .mockReset()
+    .mockImplementation((query, forbiddenFields) => {
+      const hasForbiddenField = Object.keys(query).some((key) =>
+        forbiddenFields.includes(key),
+      );
+
+      if (hasForbiddenField) {
+        const err = new Error(
+          'Invalid fields in request query, check your request',
+        );
+        err.status = 400;
+        err.type = 'BadRequest';
+        throw err;
+      }
+    });
   utilsMocks.parseBooleanQueryParam.mockReset().mockReturnValue(false);
 }
 
@@ -287,6 +304,7 @@ async function loadIndexModule({
 
   await jest.unstable_mockModule('../../src/lib/utils/utils.js', () => ({
     validateAllowedFieldsBody: utilsMocks.validateAllowedFieldsBody,
+    validateForbiddenFieldsQuery: utilsMocks.validateForbiddenFieldsQuery,
     parseBooleanQueryParam: utilsMocks.parseBooleanQueryParam,
   }));
 
@@ -637,8 +655,7 @@ describe('index routes - validation and middleware branches', () => {
 
     expect(res.body).toEqual({
       error: 'BadRequest',
-      description:
-        'Query param "outputType" is no longer supported. Use the Accept header for content negotiation.',
+      description: 'Invalid fields in request query, check your request',
     });
     expect(fdaMocks.executeQuery).not.toHaveBeenCalled();
     expect(fdaMocks.executeQueryStream).not.toHaveBeenCalled();
@@ -740,8 +757,7 @@ describe('index routes - validation and middleware branches', () => {
 
     expect(res.body).toEqual({
       error: 'BadRequest',
-      description:
-        'Query param "outputType" is no longer supported. Use the Accept header for content negotiation.',
+      description: 'Invalid fields in request query, check your request',
     });
     expect(fdaMocks.executeQuery).not.toHaveBeenCalled();
   });

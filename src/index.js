@@ -53,6 +53,7 @@ import {
 import { handleCdaQuery } from './lib/compat/cdaAdapter.js';
 import {
   validateAllowedFieldsBody,
+  validateForbiddenFieldsQuery,
   parseBooleanQueryParam,
 } from './lib/utils/utils.js';
 import {
@@ -382,8 +383,10 @@ app.get('/:visibility/fdas/:fdaId/das/:daId/data', async (req, res) => {
   const service = req.get('Fiware-Service');
   const servicePath = req.get('Fiware-ServicePath');
   const accept = req.get('Accept');
-  const fresh = parseBooleanQueryParam(req.query.fresh, 'fresh');
   let outputType = 'json';
+
+  validateForbiddenFieldsQuery(req.query, ['outputType']);
+  const fresh = parseBooleanQueryParam(req.query.fresh, 'fresh');
 
   if (!accept || accept.trim() === '*/*') {
     outputType = 'json';
