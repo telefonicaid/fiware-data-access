@@ -4,6 +4,9 @@
     "ecmaVersion": 2024,
     "sourceType": "module"
   },
+  "env": {
+    "es2020": true
+  },
   "plugins": ["prettier"],
   "rules": {
     "prettier/prettier": "error",
