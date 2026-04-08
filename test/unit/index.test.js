@@ -780,6 +780,79 @@ describe('index routes - validation and middleware branches', () => {
     expect(fdaMocks.executeQueryCsvStream).not.toHaveBeenCalled();
   });
 
+  test('defaults to JSON when no Accept header is sent', async () => {
+    fdaMocks.executeQuery.mockResolvedValueOnce([{ col: 1 }]);
+
+    const res = await request(app)
+      .get('/public/fdas/fda1/das/da1/data')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .expect(200);
+
+    expect(res.body).toEqual([{ col: 1 }]);
+    expect(fdaMocks.executeQuery).toHaveBeenCalled();
+    expect(fdaMocks.executeQueryStream).not.toHaveBeenCalled();
+    expect(fdaMocks.executeQueryCsvStream).not.toHaveBeenCalled();
+  });
+
+  test('defaults to JSON when Accept is */*', async () => {
+    fdaMocks.executeQuery.mockResolvedValueOnce([{ col: 2 }]);
+
+    const res = await request(app)
+      .get('/public/fdas/fda1/das/da1/data')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .set('Accept', '*/*')
+      .expect(200);
+
+    expect(res.body).toEqual([{ col: 2 }]);
+    expect(fdaMocks.executeQuery).toHaveBeenCalled();
+    expect(fdaMocks.executeQueryStream).not.toHaveBeenCalled();
+    expect(fdaMocks.executeQueryCsvStream).not.toHaveBeenCalled();
+  });
+
+  test('routes to CSV streaming when Accept is text/*', async () => {
+    await request(app)
+      .get('/public/fdas/fda1/das/da1/data')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .set('Accept', 'text/*')
+      .expect(200);
+
+    expect(fdaMocks.executeQueryCsvStream).toHaveBeenCalled();
+    expect(fdaMocks.executeQuery).not.toHaveBeenCalled();
+    expect(fdaMocks.executeQueryStream).not.toHaveBeenCalled();
+  });
+
+  test('uses q-value priority: skips unsupported type and picks ndjson over json', async () => {
+    await request(app)
+      .get('/public/fdas/fda1/das/da1/data')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .set('Accept', 'text/html;q=1.0, application/x-ndjson;q=0.8, */*;q=0.1')
+      .expect(200);
+
+    expect(fdaMocks.executeQueryStream).toHaveBeenCalled();
+    expect(fdaMocks.executeQuery).not.toHaveBeenCalled();
+    expect(fdaMocks.executeQueryCsvStream).not.toHaveBeenCalled();
+  });
+
+  test('routes to xls when Accept is application/vnd.ms-excel', async () => {
+    fdaMocks.executeQuery.mockResolvedValueOnce([{ col: 'v' }]);
+
+    const res = await request(app)
+      .get('/public/fdas/fda1/das/da1/data')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .set('Accept', 'application/vnd.ms-excel')
+      .expect(200);
+
+    expect(res.headers['content-type']).toMatch(
+      /application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet/,
+    );
+    expect(fdaMocks.executeQuery).toHaveBeenCalled();
+  });
+
   test('routes data endpoint through CSV streaming when Accept requests csv', async () => {
     const res = await request(app)
       .get('/public/fdas/fda1/das/da1/data')
