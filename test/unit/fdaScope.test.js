@@ -41,8 +41,8 @@ describe('fdaScope utils', () => {
     );
   });
 
-  test('getFDAStoragePath builds scoped path for root servicePath', () => {
-    expect(getFDAStoragePath('fdaA', '/')).toBe('_root/fdaA');
+  test('getFDAStoragePath throws when servicePath is root /', () => {
+    expect(() => getFDAStoragePath('fdaA', '/')).toThrow();
   });
 
   test('getFDAStoragePath builds scoped path for non-root servicePath', () => {
