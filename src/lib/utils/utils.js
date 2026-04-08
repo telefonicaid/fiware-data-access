@@ -31,6 +31,9 @@ export function convertBigInt(obj) {
   if (typeof obj === 'bigint') {
     return Number(obj);
   }
+  if (obj instanceof Date) {
+    return obj.toISOString();
+  }
   if (Array.isArray(obj)) {
     return obj.map(convertBigInt);
   }
