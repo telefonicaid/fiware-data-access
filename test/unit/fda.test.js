@@ -1368,6 +1368,25 @@ describe('getFDA', () => {
     );
   });
 
+  test('throws exact stored-FDA error message and does not query candidate list', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue(undefined);
+
+    await expect(
+      getFDA('svc', 'fdaX', undefined, '/public'),
+    ).rejects.toMatchObject({
+      status: 404,
+      type: 'FDANotFound',
+      message: 'FDA fdaX not found in service svc',
+    });
+
+    expect(mongoMocks.retrieveFDAs).not.toHaveBeenCalled();
+    expect(mongoMocks.retrieveFDA).toHaveBeenCalledWith(
+      'svc',
+      'fdaX',
+      '/public',
+    );
+  });
+
   test('returns accessible FDA when visibility is provided', async () => {
     mongoMocks.retrieveFDA.mockResolvedValue({
       _id: 'mongo1',
