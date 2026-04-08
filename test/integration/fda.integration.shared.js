@@ -922,7 +922,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       });
     });
 
-    test('POST /fdas pending allows DA creation but rejects /query until first completion', async () => {
+    test('POST /fdas pending allows DA creation but rejects GET /{visibility}/fdas/{fdaId}/das/{daId}/data until first completion', async () => {
       const pendingFdaId = 'fda_pending_first_fetch';
       const pendingDaId = 'da_pending_first_fetch';
 
@@ -978,7 +978,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       if (queryRes.status >= 400) {
         console.error(
-          'GET /query failed as expected while FDA is pending:',
+          'GET /{visibility}/fdas/{fdaId}/das/{daId}/data failed as expected while FDA is pending:',
           queryRes.status,
           queryRes.json ?? queryRes.text,
         );
@@ -1024,7 +1024,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       expect(res.json.some((x) => x.id === fdaId)).toBe(true);
     });
 
-    test('POST /fdas/:fdaId/das + GET /query executes DuckDB against Parquet', async () => {
+    test('POST /fdas/:fdaId/das + GET /{visibility}/fdas/{fdaId}/das/{daId}/data executes DuckDB against Parquet', async () => {
       // DuckDB reads parquet generated in  s3://<bucket>/<fdaID>.parquet
       const daQuery = `
       SELECT id, name, age
@@ -1069,7 +1069,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       if (queryRes.status >= 400) {
         console.error(
-          'GET /query failed:',
+          'GET /{visibility}/fdas/{fdaId}/das/{daId}/data failed:',
           queryRes.status,
           queryRes.json ?? queryRes.text,
         );
@@ -1298,7 +1298,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       expect(enumUpdateRes.status).toBe(400);
     });
 
-    test('GET /query returns JSON array when Accept: application/json', async () => {
+    test('GET /{visibility}/fdas/{fdaId}/das/{daId}/data returns JSON array when Accept: application/json', async () => {
       const res = await httpReq({
         method: 'GET',
         url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId, {
@@ -1309,7 +1309,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       if (res.status >= 400) {
         console.error(
-          'GET /query (json) failed:',
+          'GET /{visibility}/fdas/{fdaId}/das/{daId}/data (json) failed:',
           res.status,
           res.json ?? res.text,
         );
@@ -1321,7 +1321,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       ]);
     });
 
-    test('GET /query with fresh=true runs query against PostgreSQL source', async () => {
+    test('GET /{visibility}/fdas/{fdaId}/das/{daId}/data with fresh=true runs query against PostgreSQL source', async () => {
       const daFreshId = 'da_fresh_users';
 
       const createDa = await httpReq({
@@ -1401,7 +1401,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       }
     });
 
-    test('GET /query with fresh=true supports default Boolean and DateTime params', async () => {
+    test('GET /{visibility}/fdas/{fdaId}/das/{daId}/data with fresh=true supports default Boolean and DateTime params', async () => {
       const fdaFreshDefaultsId = 'fda_fresh_defaults';
       const daFreshDefaultsId = 'da_fresh_defaults';
 
@@ -1473,7 +1473,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       if (freshRes.status >= 400) {
         console.error(
-          'GET /query fresh defaults failed:',
+          'GET /{visibility}/fdas/{fdaId}/das/{daId}/data fresh defaults failed:',
           freshRes.status,
           freshRes.json ?? freshRes.text,
         );
@@ -1541,7 +1541,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       );
     });
 
-    test('GET /query with fresh=true returns 429 when max concurrent fresh queries is reached', async () => {
+    test('GET /{visibility}/fdas/{fdaId}/das/{daId}/data with fresh=true returns 429 when max concurrent fresh queries is reached', async () => {
       const fdaFreshLimitId = 'fda_fresh_limit';
       const daFreshLimitId = 'da_fresh_limit';
 
@@ -1633,7 +1633,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       expect(firstFreshRes.status).toBe(200);
     });
 
-    test('GET /query with fresh=true streams NDJSON progressively from PostgreSQL (real streaming)', async () => {
+    test('GET /{visibility}/fdas/{fdaId}/das/{daId}/data with fresh=true streams NDJSON progressively from PostgreSQL (real streaming)', async () => {
       const fdaFreshStreamId = 'fda_fresh_stream_real';
       const daFreshStreamId = 'da_fresh_stream_real';
 
@@ -1778,7 +1778,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       }
     });
 
-    test('GET /query serializes date consistently for fresh CSV/NDJSON and keeps numeric types in NDJSON', async () => {
+    test('GET /{visibility}/fdas/{fdaId}/das/{daId}/data serializes date consistently for fresh CSV/NDJSON and keeps numeric types in NDJSON', async () => {
       const fdaSerializationId = 'fda_fresh_serialization_issue137';
       const daSerializationId = 'da_fresh_serialization_issue137';
 
@@ -1897,7 +1897,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       expect(typeof rows[0].countperperiod).toBe('number');
     });
 
-    test('GET /query rejects invalid fresh query param', async () => {
+    test('GET /{visibility}/fdas/{fdaId}/das/{daId}/data rejects invalid fresh query param', async () => {
       const res = await httpReq({
         method: 'GET',
         url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId, {
@@ -1911,7 +1911,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       expect(res.json.error).toBe('BadRequest');
     });
 
-    test('POST /fdas/:fdaId/das + GET /query using default params', async () => {
+    test('POST /fdas/:fdaId/das + GET /{visibility}/fdas/{fdaId}/das/{daId}/data using default params', async () => {
       // DuckDB reads parquet generated in  s3://<bucket>/<fdaID>.parquet
       const daQuery = `
       SELECT id, name, age
@@ -2176,7 +2176,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       if (enumQueryRes.status >= 400) {
         console.error(
-          'GET /query failed as expected:',
+          'GET /{visibility}/fdas/{fdaId}/das/{daId}/data failed as expected:',
           enumQueryRes.status,
           enumQueryRes.json ?? enumQueryRes.text,
         );
@@ -2195,7 +2195,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       if (rangeQueryRes.status >= 400) {
         console.error(
-          'GET /query failed as expected:',
+          'GET /{visibility}/fdas/{fdaId}/das/{daId}/data failed as expected:',
           rangeQueryRes.status,
           rangeQueryRes.json ?? rangeQueryRes.text,
         );
@@ -2213,7 +2213,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       if (defaultsQueryRes.status >= 400) {
         console.error(
-          'GET /query failed:',
+          'GET /{visibility}/fdas/{fdaId}/das/{daId}/data failed:',
           defaultsQueryRes.status,
           defaultsQueryRes.json ?? defaultsQueryRes.text,
         );
@@ -2234,7 +2234,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       if (requiredQueryRes.status >= 400) {
         console.error(
-          'GET /query failed as expected:',
+          'GET /{visibility}/fdas/{fdaId}/das/{daId}/data failed as expected:',
           requiredQueryRes.status,
           requiredQueryRes.json ?? requiredQueryRes.text,
         );
@@ -2253,7 +2253,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       if (typeQueryRes.status >= 400) {
         console.error(
-          'GET /query failed as expected:',
+          'GET /{visibility}/fdas/{fdaId}/das/{daId}/data failed as expected:',
           typeQueryRes.status,
           typeQueryRes.json ?? typeQueryRes.text,
         );
@@ -2272,7 +2272,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       if (dateQueryRes.status >= 400) {
         console.error(
-          'GET /query failed as expected:',
+          'GET /{visibility}/fdas/{fdaId}/das/{daId}/data failed as expected:',
           dateQueryRes.status,
           dateQueryRes.json ?? dateQueryRes.text,
         );
@@ -2291,7 +2291,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       if (boolQueryRes.status >= 400) {
         console.error(
-          'GET /query failed as expected:',
+          'GET /{visibility}/fdas/{fdaId}/das/{daId}/data failed as expected:',
           boolQueryRes.status,
           boolQueryRes.json ?? boolQueryRes.text,
         );
@@ -2344,7 +2344,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       ]);
     });
 
-    test('GET /query returns NDJSON when Accept: application/x-ndjson', async () => {
+    test('GET /{visibility}/fdas/{fdaId}/das/{daId}/data returns NDJSON when Accept: application/x-ndjson', async () => {
       const queryRes = await httpReq({
         method: 'GET',
         url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId, {
@@ -2358,7 +2358,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       if (queryRes.status >= 400) {
         console.error(
-          'GET /query NDJSON failed:',
+          'GET /{visibility}/fdas/{fdaId}/das/{daId}/data NDJSON failed:',
           queryRes.status,
           queryRes.text,
         );
@@ -2377,7 +2377,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       expect(row2).toEqual({ id: 3, name: 'carlos', age: 40 });
     });
 
-    test('GET /query returns CSV when Accept: text/csv', async () => {
+    test('GET /{visibility}/fdas/{fdaId}/das/{daId}/data returns CSV when Accept: text/csv', async () => {
       const fdaCsvId = `fda_accept_csv_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
       const daCsvId = `da_accept_csv_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
 
@@ -2429,7 +2429,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       if (res.status >= 400) {
         console.error(
-          'GET /query outputType=csv failed:',
+          'GET /{visibility}/fdas/{fdaId}/das/{daId}/data outputType=csv failed:',
           res.status,
           res.text,
         );
@@ -2448,7 +2448,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       expect(lines[2]).toBe('3,carlos,40');
     });
 
-    test('GET /query returns XLSX when Accept requests spreadsheet mime', async () => {
+    test('GET /{visibility}/fdas/{fdaId}/das/{daId}/data returns XLSX when Accept requests spreadsheet mime', async () => {
       const fdaXlsId = `fda_accept_xls_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
       const daXlsId = `da_accept_xls_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
 
@@ -2501,7 +2501,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       if (res.status >= 400) {
         console.error(
-          'GET /query outputType=xls failed:',
+          'GET /{visibility}/fdas/{fdaId}/das/{daId}/data outputType=xls failed:',
           res.status,
           res.text,
         );
@@ -2519,7 +2519,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       expect(res.buffer.length).toBeGreaterThan(100);
     });
 
-    test('GET /query ignores outputType and defaults to JSON when Accept is generic', async () => {
+    test('GET /{visibility}/fdas/{fdaId}/das/{daId}/data ignores outputType and defaults to JSON when Accept is generic', async () => {
       const fdaJsonId = `fda_accept_json_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
       const daJsonId = `da_accept_json_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
 
