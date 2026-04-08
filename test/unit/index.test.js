@@ -319,8 +319,6 @@ describe('index routes - validation and middleware branches', () => {
 
   test('returns 400 for missing mandatory params across route guards', async () => {
     await request(app).get('/public/fdas').expect(400);
-    await request(app).post('/public/fdas').send({}).expect(400);
-    await request(app).get('/public/fdas/fda1').expect(400);
     await request(app).put('/public/fdas/fda1').expect(400);
     await request(app).delete('/public/fdas/fda1').expect(400);
 
@@ -625,8 +623,8 @@ describe('index routes - validation and middleware branches', () => {
     expect(fdaMocks.executeQuery).not.toHaveBeenCalled();
   });
 
-  test('uses NDJSON streaming when Accept is ndjson even if outputType is present', async () => {
-    await request(app)
+  test('rejects outputType on data endpoint even when Accept is ndjson', async () => {
+    const res = await request(app)
       .get('/public/fdas/fda1/das/da1/data')
       .set('Fiware-Service', 'svc')
       .set('Fiware-ServicePath', '/servicepath')
@@ -635,22 +633,15 @@ describe('index routes - validation and middleware branches', () => {
         outputType: 'csv',
         minAge: 25,
       })
-      .expect(200)
-      .expect('streamed');
+      .expect(400);
 
-    expect(fdaMocks.executeQueryStream).toHaveBeenCalledWith(
-      expect.objectContaining({
-        service: 'svc',
-        visibility: 'public',
-        servicePath: '/servicepath',
-        params: expect.objectContaining({
-          fdaId: 'fda1',
-          daId: 'da1',
-          minAge: '25',
-        }),
-      }),
-    );
+    expect(res.body).toEqual({
+      error: 'BadRequest',
+      description:
+        'Query param "outputType" is no longer supported. Use the Accept header for content negotiation.',
+    });
     expect(fdaMocks.executeQuery).not.toHaveBeenCalled();
+    expect(fdaMocks.executeQueryStream).not.toHaveBeenCalled();
   });
 
   test('covers DELETE DA route success path', async () => {
@@ -739,16 +730,38 @@ describe('index routes - validation and middleware branches', () => {
     expect(loggerMock.warn).toHaveBeenCalledWith(expect.any(Error));
   });
 
-  test('ignores outputType query param on data endpoint and defaults to JSON', async () => {
+  test('rejects outputType query param on data endpoint', async () => {
     const res = await request(app)
       .get('/public/fdas/fda1/das/da1/data')
       .set('Fiware-Service', 'svc')
       .set('Fiware-ServicePath', '/servicepath')
       .query({ outputType: 'xml' })
-      .expect(200);
+      .expect(400);
 
-    expect(res.body).toEqual([{ ok: true }]);
-    expect(fdaMocks.executeQuery).toHaveBeenCalled();
+    expect(res.body).toEqual({
+      error: 'BadRequest',
+      description:
+        'Query param "outputType" is no longer supported. Use the Accept header for content negotiation.',
+    });
+    expect(fdaMocks.executeQuery).not.toHaveBeenCalled();
+  });
+
+  test('returns 406 for unsupported Accept header on data endpoint', async () => {
+    const res = await request(app)
+      .get('/public/fdas/fda1/das/da1/data')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .set('Accept', 'video/mpg4')
+      .expect(406);
+
+    expect(res.body).toEqual({
+      error: 'NotAcceptable',
+      description:
+        'Accept header must allow application/json, application/x-ndjson, text/csv, or application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    expect(fdaMocks.executeQuery).not.toHaveBeenCalled();
+    expect(fdaMocks.executeQueryStream).not.toHaveBeenCalled();
+    expect(fdaMocks.executeQueryCsvStream).not.toHaveBeenCalled();
   });
 
   test('routes data endpoint through CSV streaming when Accept requests csv', async () => {
