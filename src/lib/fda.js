@@ -246,13 +246,11 @@ export async function executeQueryStream({
 
   try {
     const columnNames = stream.columnNames();
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const chunk = await stream.fetchChunk();
-      if (chunk.rowCount === 0) {
-        break;
-      }
-
+    for (
+      let chunk = await stream.fetchChunk();
+      chunk.rowCount > 0;
+      chunk = await stream.fetchChunk()
+    ) {
       const rows = chunk.getRows();
 
       const lines = [];
@@ -360,13 +358,11 @@ export async function executeQueryCsvStream({
       );
     }
 
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const chunk = await stream.fetchChunk();
-      if (chunk.rowCount === 0) {
-        break;
-      }
-
+    for (
+      let chunk = await stream.fetchChunk();
+      chunk.rowCount > 0;
+      chunk = await stream.fetchChunk()
+    ) {
       const rows = chunk.getRows();
 
       for (const row of rows) {
@@ -445,13 +441,11 @@ async function executeFreshQueryStream({
 
     res.setHeader('Content-Type', 'application/x-ndjson');
 
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const rows = await cursorReader.readNextChunk();
-      if (rows.length === 0) {
-        break;
-      }
-
+    for (
+      let rows = await cursorReader.readNextChunk();
+      rows.length > 0;
+      rows = await cursorReader.readNextChunk()
+    ) {
       for (const row of rows) {
         const safeObj = normalizeForSerialization(row);
         const ok = res.write(JSON.stringify(safeObj) + '\n');
@@ -513,13 +507,11 @@ async function executeFreshQueryCsvStream({
 
     let columns;
 
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const rows = await cursorReader.readNextChunk();
-      if (rows.length === 0) {
-        break;
-      }
-
+    for (
+      let rows = await cursorReader.readNextChunk();
+      rows.length > 0;
+      rows = await cursorReader.readNextChunk()
+    ) {
       if (!columns) {
         columns = Object.keys(rows[0]);
         if (columns.length > 0) {

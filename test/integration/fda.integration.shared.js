@@ -493,8 +493,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
     async function waitForApiReady() {
       const start = Date.now();
-      // eslint-disable-next-line no-constant-condition
-      while (true) {
+      while (Date.now() - start <= 30000) {
         try {
           const res = await httpReq({
             method: 'GET',
@@ -506,11 +505,10 @@ export function runFDAIntegrationSuite({ mode, label }) {
         } catch {
           // ignore, server not up yet
         }
-        if (Date.now() - start > 30000) {
-          throw new Error('Timeout waiting API to start');
-        }
         await wait(200);
       }
+
+      throw new Error('Timeout waiting API to start');
     }
 
     async function startApp() {
