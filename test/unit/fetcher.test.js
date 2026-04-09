@@ -92,6 +92,7 @@ describe('fetcher', () => {
           query: 'SELECT 1',
           service: 'svcA',
           timeColumn: 'timeinstant',
+          refreshPolicy: {},
           objStgConf: {},
         },
       },
@@ -102,6 +103,7 @@ describe('fetcher', () => {
       'SELECT 1',
       'svcA',
       'timeinstant',
+      {},
       {},
       false,
     );

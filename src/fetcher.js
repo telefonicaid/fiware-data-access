@@ -37,6 +37,7 @@ export async function startFetcher() {
       query,
       service,
       timeColumn,
+      refreshPolicy,
       objStgConf,
       partitionFlag = false,
     } = job.attrs.data;
@@ -47,6 +48,7 @@ export async function startFetcher() {
         query,
         service,
         timeColumn,
+        refreshPolicy,
         objStgConf,
         partitionFlag,
       );

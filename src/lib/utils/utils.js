@@ -189,7 +189,7 @@ function cronToIntervalMs(cron) {
   return next2 - next;
 }
 
-export function getFinalQuery(query, timeColumn) {
+export function getTimeColumnQuery(query, timeColumn) {
   if (typeof timeColumn !== 'string' || !/^[a-zA-Z0-9_]+$/.test(timeColumn)) {
     throw new FDAError(
       400,

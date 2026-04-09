@@ -363,29 +363,29 @@ describe('utils', () => {
     });
   });
 
-  describe('getFinalQuery', () => {
-    let getFinalQuery;
+  describe('getTimeColumnQuery', () => {
+    let getTimeColumnQuery;
 
     beforeAll(async () => {
       const utils = await loadUtilsModule();
-      getFinalQuery = utils.getFinalQuery;
+      getTimeColumnQuery = utils.getTimeColumnQuery;
     });
 
     describe('invalid inputs', () => {
       test('throws for invalid timeColumn (special chars)', () => {
         expect(() =>
-          getFinalQuery('SELECT a FROM table', 'time-column'),
+          getTimeColumnQuery('SELECT a FROM table', 'time-column'),
         ).toThrow('Invalid time column name');
       });
 
       test('throws for invalid timeColumn (empty)', () => {
-        expect(() => getFinalQuery('SELECT a FROM table', '')).toThrow(
+        expect(() => getTimeColumnQuery('SELECT a FROM table', '')).toThrow(
           'Invalid time column name',
         );
       });
 
       test('throws if query has no SELECT', () => {
-        expect(() => getFinalQuery('DELETE FROM table', 'time')).toThrow(
+        expect(() => getTimeColumnQuery('DELETE FROM table', 'time')).toThrow(
           'Missing SELECT',
         );
       });
@@ -394,41 +394,44 @@ describe('utils', () => {
     describe('no modification cases', () => {
       test('returns query if SELECT *', () => {
         const query = 'SELECT * FROM table';
-        expect(getFinalQuery(query, 'time')).toBe(query);
+        expect(getTimeColumnQuery(query, 'time')).toBe(query);
       });
 
       test('returns query if timeColumn already present', () => {
         const query = 'SELECT time, value FROM table';
-        expect(getFinalQuery(query, 'time')).toBe(query);
+        expect(getTimeColumnQuery(query, 'time')).toBe(query);
       });
 
       test('returns query if timeColumn already present (middle)', () => {
         const query = 'SELECT value, time, other FROM table';
-        expect(getFinalQuery(query, 'time')).toBe(query);
+        expect(getTimeColumnQuery(query, 'time')).toBe(query);
       });
     });
 
     describe('insertion behavior', () => {
       test('inserts timeColumn after SELECT', () => {
-        const result = getFinalQuery('SELECT value FROM table', 'time');
+        const result = getTimeColumnQuery('SELECT value FROM table', 'time');
 
         expect(result).toBe('SELECT time, value FROM table');
       });
 
       test('handles multiple columns', () => {
-        const result = getFinalQuery('SELECT value, other FROM table', 'time');
+        const result = getTimeColumnQuery(
+          'SELECT value, other FROM table',
+          'time',
+        );
 
         expect(result).toBe('SELECT time, value, other FROM table');
       });
 
       test('handles extra whitespace after SELECT', () => {
-        const result = getFinalQuery('SELECT   value FROM table', 'time');
+        const result = getTimeColumnQuery('SELECT   value FROM table', 'time');
 
         expect(result).toBe('SELECT   time, value FROM table');
       });
 
       test('handles lowercase select/from', () => {
-        const result = getFinalQuery('select value from table', 'time');
+        const result = getTimeColumnQuery('select value from table', 'time');
 
         expect(result).toBe('select time, value from table');
       });
