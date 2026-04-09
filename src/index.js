@@ -83,7 +83,7 @@ const DATA_CONTENT_TYPES = [
   'application/vnd.ms-excel',
 ];
 
-const DATA_CONTENT_TYPE_TO_OUTPUT = {
+const DATA_ACCEPT_CONTENT_TYPE_TO_OUTPUT = {
   'application/json': 'json',
   'application/x-ndjson': 'ndjson',
   'text/csv': 'csv',
@@ -412,7 +412,7 @@ app.get('/:visibility/fdas/:fdaId/das/:daId/data', async (req, res) => {
     });
   }
 
-  const outputType = DATA_CONTENT_TYPE_TO_OUTPUT[matched];
+  const outputType = DATA_ACCEPT_CONTENT_TYPE_TO_OUTPUT[matched];
 
   const queryParams = { ...req.query };
   delete queryParams.fresh;
