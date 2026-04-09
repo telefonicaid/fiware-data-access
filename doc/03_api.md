@@ -1245,9 +1245,9 @@ Depends on `Accept`:
 
 _**Content negotiation and serialization notes**_
 
--   Response format is negotiated only through the `Accept` header.
+-   Response format is negotiated only through the `Accept` header (using the [standard HTTP content negotiation mechanism](https://datatracker.ietf.org/doc/html/rfc2616#section-12)).
 -   If `Accept` does not include a supported format, the API returns `406 NotAcceptable`.
--   Unsupported query fields (including `outputType`) are rejected with `400 BadRequest`.
+-   Unsupported query fields are rejected with `400 BadRequest`.
 -   Date values are normalized to strings (ISO 8601) before JSON/NDJSON/CSV serialization.
 -   Integer database values are normalized to numeric JSON values.
 -   The `fresh` parameter can be combined with all output modes.
