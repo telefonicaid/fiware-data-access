@@ -77,15 +77,15 @@ All error responses follow this structure:
 | 400  | Bad Request           | `InvalidVisibility`    | The `visibility` path segment is not one of the allowed values (`public`, `private`).                                                                                                       |
 | 400  | Bad Request           | `InvalidServicePath`   | The `Fiware-ServicePath` header value is not a valid non-root absolute path (e.g. `/servicePath/site`). The root path `/` is not allowed.                                                   |
 | 400  | Bad Request           | `InvalidQueryParam`    | Some of the params in the request don't comply with the [params](#params) array restrictions.                                                                                               |
-| 403  | Forbidden             | `VisibilityMismatch`   | The FDA exists but was created under a different `visibility`. Cannot access a private FDA through a public route and vice-versa.                                                           |
 | 400  | Bad Request           | `PartitionError`       | Some of the params related to the creation of the parquet partition don't comply with the [object storage configuration](#object-storage-configuration-objstgconf) requirements.            |
 | 400  | Bad Request           | `CleaningError`        | Trying to remove a non partitioned FDA or incorrect value in the [delete interval key](#refresh-policy-object).                                                                             |
+| 403  | Forbidden             | `VisibilityMismatch`   | The FDA exists but was created under a different `visibility`. Cannot access a private FDA through a public route and vice-versa.                                                           |
 | 404  | Not Found             | `FDANotFound`          | The requested FDA was not found.                                                                                                                                                            |
 | 404  | Not Found             | `DaNotFound`           | The requested Data Access (DA) was not found.                                                                                                                                               |
-| 409  | Conflict              | `DuplicatedKey`        | The resource already exists in the database. Attempting to create a duplicate resource.                                                                                                     |
-| 429  | Too Many Requests     | `TooManyFreshQueries`  | The number of concurrent `fresh=true` queries exceeded `FDA_MAX_CONCURRENT_FRESH_QUERIES`.                                                                                                  |
 | 406  | Not Acceptable        | `NotAcceptable`        | `Accept` header does not allow any supported response format (`application/json`, `application/x-ndjson`, `text/csv`, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`). |
+| 409  | Conflict              | `DuplicatedKey`        | The resource already exists in the database. Attempting to create a duplicate resource.                                                                                                     |
 | 409  | Conflict              | `FDAUnavailable`       | FDA `exampleId` is not queryable yet because the first fetch has not completed.                                                                                                             |
+| 429  | Too Many Requests     | `TooManyFreshQueries`  | The number of concurrent `fresh=true` queries exceeded `FDA_MAX_CONCURRENT_FRESH_QUERIES`.                                                                                                  |
 | 500  | Internal Server Error | `S3ServerError`        | An error occurred in the S3 object storage component.                                                                                                                                       |
 | 500  | Internal Server Error | `DuckDBServerError`    | An error occurred in the DuckDB component.                                                                                                                                                  |
 | 500  | Internal Server Error | `MongoDBServerError`   | An error occurred in the MongoDB component.                                                                                                                                                 |
@@ -1245,7 +1245,8 @@ Depends on `Accept`:
 
 _**Content negotiation and serialization notes**_
 
--   Response format is negotiated only through the `Accept` header (using the [standard HTTP content negotiation mechanism](https://datatracker.ietf.org/doc/html/rfc2616#section-12)).
+-   Response format is negotiated only through the `Accept` header (using the
+    [standard HTTP content negotiation mechanism](https://datatracker.ietf.org/doc/html/rfc2616#section-12)).
 -   If `Accept` does not include a supported format, the API returns `406 NotAcceptable`.
 -   Unsupported query fields are rejected with `400 BadRequest`.
 -   Date values are normalized to strings (ISO 8601) before JSON/NDJSON/CSV serialization.
