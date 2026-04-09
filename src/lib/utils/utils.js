@@ -26,18 +26,21 @@ import { FDAError } from '../fdaError.js';
 
 let activeFreshQueries = 0;
 
-// Convert BigInt values to numbers for JSON serialization
-export function convertBigInt(obj) {
+// Normalize runtime values so downstream serializers emit stable output.
+export function normalizeForSerialization(obj) {
   if (typeof obj === 'bigint') {
     return Number(obj);
   }
+  if (obj instanceof Date) {
+    return obj.toISOString();
+  }
   if (Array.isArray(obj)) {
-    return obj.map(convertBigInt);
+    return obj.map(normalizeForSerialization);
   }
   if (obj !== null && typeof obj === 'object') {
     const converted = {};
     for (const key in obj) {
-      converted[key] = convertBigInt(obj[key]);
+      converted[key] = normalizeForSerialization(obj[key]);
     }
     return converted;
   }
@@ -50,6 +53,19 @@ export function validateAllowedFieldsBody(body, allowedFields) {
   const invalid = keys.filter((k) => !allowedFields.includes(k));
   if (invalid.length > 0) {
     const err = new Error(`Invalid fields in request body, check your request`);
+    err.status = 400;
+    err.type = 'BadRequest';
+    throw err;
+  }
+}
+
+export function validateForbiddenFieldsQuery(query, forbiddenFields) {
+  const keys = Object.keys(query);
+  const invalid = keys.filter((k) => forbiddenFields.includes(k));
+  if (invalid.length > 0) {
+    const err = new Error(
+      'Invalid fields in request query, check your request',
+    );
     err.status = 400;
     err.type = 'BadRequest';
     throw err;

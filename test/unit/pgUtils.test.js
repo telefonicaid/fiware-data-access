@@ -61,6 +61,10 @@ await jest.unstable_mockModule('pg', () => ({
   default: {
     Client: clientCtorMock,
     Pool: poolCtorMock,
+    types: {
+      setTypeParser: jest.fn(),
+      builtins: { INT8: 20 },
+    },
   },
 }));
 
