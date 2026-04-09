@@ -1227,7 +1227,7 @@ _**Response headers**_
 
 | `Accept` request header                                                                           | `Content-Type`                                                      | `Content-Disposition`                 |
 | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------- |
-| `application/json` or missing/`*/*`                                                               | `application/json`                                                  | —                                     |
+| `application/json`, missing, or `*/*`                                                             | `application/json`                                                  | —                                     |
 | `application/x-ndjson`                                                                            | `application/x-ndjson`                                              | —                                     |
 | `text/csv`                                                                                        | `text/csv; charset=utf-8`                                           | `attachment; filename="results.csv"`  |
 | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` or `application/vnd.ms-excel` | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` | `attachment; filename="results.xlsx"` |
