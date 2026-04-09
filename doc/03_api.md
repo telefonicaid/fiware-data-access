@@ -1197,8 +1197,6 @@ _**Request query parameters**_
 
 Additionally, the DA-specific parameters must be included in the query string together with the previous ones.
 
-`outputType` is not accepted in this endpoint. If provided, the API returns `400 BadRequest` as an invalid query field.
-
 _**Request headers**_
 
 | Header               | Optional | Description                                                          | Example        |
