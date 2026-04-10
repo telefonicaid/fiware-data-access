@@ -133,7 +133,6 @@ await jest.unstable_mockModule('../../src/lib/fdaConfig.js', () => ({
 const {
   executeQuery,
   executeQueryStream,
-  executeQueryCsvStream,
   fetchFDA,
   getFDA,
   updateFDA,
@@ -463,7 +462,7 @@ describe('fda fresh query execution', () => {
     };
     pgMocks.createPgCursorReader.mockResolvedValue(cursorReader);
 
-    await executeQueryCsvStream({
+    await executeQueryStream({
       service: 'svc',
       visibility: 'private',
       servicePath: '/servicepath',
@@ -471,6 +470,7 @@ describe('fda fresh query execution', () => {
       req,
       res,
       fresh: true,
+      format: 'csv',
     });
 
     expect(res.setHeader).toHaveBeenCalledWith(
@@ -509,7 +509,7 @@ describe('fda fresh query execution', () => {
       lastFetch: new Date('2026-04-08T00:00:00.000Z').toISOString(),
     });
 
-    await executeQueryCsvStream({
+    await executeQueryStream({
       service: 'svc',
       visibility: 'private',
       servicePath: '/servicepath',
@@ -517,6 +517,7 @@ describe('fda fresh query execution', () => {
       req,
       res,
       fresh: false,
+      format: 'csv',
     });
 
     expect(res.write).toHaveBeenNthCalledWith(1, 'a,b,c\n');
@@ -550,7 +551,7 @@ describe('fda fresh query execution', () => {
       lastFetch: new Date('2026-04-08T00:00:00.000Z').toISOString(),
     });
 
-    await executeQueryCsvStream({
+    await executeQueryStream({
       service: 'svc',
       visibility: 'private',
       servicePath: '/servicepath',
@@ -558,6 +559,7 @@ describe('fda fresh query execution', () => {
       req,
       res,
       fresh: false,
+      format: 'csv',
     });
 
     expect(res.once).toHaveBeenCalledWith('drain', expect.any(Function));
@@ -581,7 +583,7 @@ describe('fda fresh query execution', () => {
     });
 
     await expect(
-      executeQueryCsvStream({
+      executeQueryStream({
         service: 'svc',
         visibility: 'private',
         servicePath: '/servicepath',
@@ -589,6 +591,7 @@ describe('fda fresh query execution', () => {
         req,
         res,
         fresh: false,
+        format: 'csv',
       }),
     ).rejects.toThrow('stream init failed');
 
@@ -706,7 +709,7 @@ describe('fda fresh query execution', () => {
       lastFetch: new Date('2026-04-08T00:00:00.000Z').toISOString(),
     });
 
-    await executeQueryCsvStream({
+    await executeQueryStream({
       service: 'svc',
       visibility: 'private',
       servicePath: '/servicepath',
@@ -714,6 +717,7 @@ describe('fda fresh query execution', () => {
       req,
       res,
       fresh: false,
+      format: 'csv',
     });
 
     expect(res.write).toHaveBeenNthCalledWith(1, 'date\n');
