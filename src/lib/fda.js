@@ -217,49 +217,7 @@ export async function executeQueryStream({
   req,
   res,
   fresh = false,
-}) {
-  return executeQueryAsStream({
-    service,
-    visibility,
-    servicePath,
-    params,
-    req,
-    res,
-    fresh,
-    format: 'ndjson',
-  });
-}
-
-export async function executeQueryCsvStream({
-  service,
-  visibility,
-  servicePath,
-  params,
-  req,
-  res,
-  fresh = false,
-}) {
-  return executeQueryAsStream({
-    service,
-    visibility,
-    servicePath,
-    params,
-    req,
-    res,
-    fresh,
-    format: 'csv',
-  });
-}
-
-async function executeQueryAsStream({
-  service,
-  visibility,
-  servicePath,
-  params,
-  req,
-  res,
-  fresh,
-  format,
+  format = 'ndjson',
 }) {
   const source = fresh
     ? await createFreshRowSource({

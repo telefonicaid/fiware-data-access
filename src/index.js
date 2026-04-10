@@ -31,7 +31,6 @@ import {
   fetchFDA,
   executeQuery,
   executeQueryStream,
-  executeQueryCsvStream,
   createDA,
   getFDA,
   updateFDA,
@@ -90,6 +89,27 @@ const DATA_ACCEPT_CONTENT_TYPE_TO_OUTPUT = {
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xls',
   'application/vnd.ms-excel': 'xls',
 };
+
+async function sendRowsByOutputType(res, rows, outputType) {
+  if (outputType === 'csv') {
+    const csv = rowsToCsv(rows);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="results.csv"');
+    return res.send(csv);
+  }
+
+  if (outputType === 'xls') {
+    const buffer = await rowsToXlsx(rows);
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader('Content-Disposition', 'attachment; filename="results.xlsx"');
+    return res.send(Buffer.from(buffer));
+  }
+
+  return res.json(rows);
+}
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -431,7 +451,7 @@ app.get('/:visibility/fdas/:fdaId/das/:daId/data', async (req, res) => {
     ...queryParams,
   };
 
-  if (outputType === 'ndjson') {
+  if (outputType === 'ndjson' || outputType === 'csv') {
     return executeQueryStream({
       service,
       visibility,
@@ -440,18 +460,7 @@ app.get('/:visibility/fdas/:fdaId/das/:daId/data', async (req, res) => {
       req,
       res,
       fresh,
-    });
-  }
-
-  if (outputType === 'csv') {
-    return executeQueryCsvStream({
-      service,
-      visibility,
-      servicePath,
-      params,
-      req,
-      res,
-      fresh,
+      format: outputType,
     });
   }
 
@@ -463,17 +472,7 @@ app.get('/:visibility/fdas/:fdaId/das/:daId/data', async (req, res) => {
     fresh,
   });
 
-  if (outputType === 'xls') {
-    const buffer = await rowsToXlsx(rows);
-    res.setHeader(
-      'Content-Type',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    );
-    res.setHeader('Content-Disposition', 'attachment; filename="results.xlsx"');
-    return res.send(Buffer.from(buffer));
-  }
-
-  return res.json(rows);
+  return sendRowsByOutputType(res, rows, outputType);
 });
 
 app.post('/plugin/cda/api/doQuery', async (req, res) => {
@@ -502,30 +501,7 @@ app.post('/plugin/cda/api/doQuery', async (req, res) => {
       outputType: rawOutputType,
     });
 
-    if (rawOutputType === 'csv') {
-      const csv = rowsToCsv(result);
-      res.setHeader('Content-Type', 'text/csv');
-      res.setHeader(
-        'Content-Disposition',
-        'attachment; filename="results.csv"',
-      );
-      return res.send(csv);
-    }
-
-    if (rawOutputType === 'xls') {
-      const buffer = await rowsToXlsx(result);
-      res.setHeader(
-        'Content-Type',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      );
-      res.setHeader(
-        'Content-Disposition',
-        'attachment; filename="results.xlsx"',
-      );
-      return res.send(Buffer.from(buffer));
-    }
-
-    return res.json(result);
+    return sendRowsByOutputType(res, result, rawOutputType);
   } catch (err) {
     logger.error('Error executing query:', err);
     const status = err.status || 500;
