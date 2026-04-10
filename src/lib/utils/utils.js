@@ -27,7 +27,7 @@ import { FDAError } from '../fdaError.js';
 let activeFreshQueries = 0;
 
 function toIsoFromMicros(value) {
-  const micros = typeof value === 'bigint' ? Number(value) : Number(value);
+  const micros = Number(value);
   if (!Number.isFinite(micros)) {
     return undefined;
   }
