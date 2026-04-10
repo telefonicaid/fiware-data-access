@@ -658,9 +658,19 @@ export async function updateFDA(service, fdaId, visibility, servicePath) {
     query: previous.query,
     service,
     timeColumn: previous.timeColumn,
+    refreshPolicy: previous.refreshPolicy,
     objStgConf: previous.objStgConf,
     partitionFlag: true,
   });
+
+  if (previous.refreshPolicy?.params?.windowSize) {
+    await agenda.now('clean-partition', {
+      fdaId,
+      service,
+      windowSize: previous.refreshPolicy.params.windowSize,
+      objStgConf: previous.objStgConf,
+    });
+  }
 }
 
 export async function processFDAAsync(
