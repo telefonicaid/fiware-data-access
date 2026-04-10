@@ -2943,6 +2943,170 @@ export function runFDAIntegrationSuite({ mode, label }) {
       expect(res.buffer.length).toBeGreaterThan(100);
     });
 
+    test('POST /plugin/cda/api/doQuery serializes dates consistently for json/csv/xls', async () => {
+      const fixtureTable = 'cda_format_serialization_fixture';
+      const cdaFdaId = 'fda_cda_serialization_regression';
+      const cdaDaId = 'da_cda_serialization_regression';
+      const expectedDates = [
+        '2024-01-10T12:34:56.789Z',
+        '2024-01-11T08:15:30.123Z',
+      ];
+
+      const pgClient = new Client({
+        host: pgHost,
+        port: pgPort,
+        user: 'postgres',
+        password: 'postgres',
+        database: service,
+      });
+
+      await connectWithRetry(pgClient);
+
+      try {
+        await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
+        await pgClient.query(`
+          CREATE TABLE public.${fixtureTable} (
+            id INT PRIMARY KEY,
+            observed_at TIMESTAMPTZ NOT NULL,
+            total_bigint BIGINT NOT NULL,
+            note TEXT
+          )
+        `);
+        await pgClient.query(
+          `
+            INSERT INTO public.${fixtureTable} (id, observed_at, total_bigint, note)
+            VALUES
+              (1, $1::timestamptz, 42, 'alpha'),
+              (2, $2::timestamptz, 84, 'with,comma')
+          `,
+          expectedDates,
+        );
+
+        const createFda = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: cdaFdaId,
+            description: 'cda serialization regression fda',
+            query: `
+              SELECT
+                id,
+                observed_at AS date,
+                total_bigint AS total,
+                note
+              FROM public.${fixtureTable}
+              ORDER BY id
+            `,
+          },
+        });
+
+        expect(createFda.status).toBe(202);
+
+        await waitUntilFDACompleted({
+          baseUrl,
+          service,
+          fdaId: cdaFdaId,
+        });
+
+        const createDa = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas/${cdaFdaId}/das`,
+          headers: { 'Fiware-Service': service },
+          body: {
+            id: cdaDaId,
+            description: 'cda serialization regression da',
+            query: `
+              SELECT date, total, note
+              ORDER BY date
+            `,
+          },
+        });
+
+        expect(createDa.status).toBe(201);
+
+        const jsonRes = await httpFormReq({
+          method: 'POST',
+          url: `${baseUrl}/plugin/cda/api/doQuery`,
+          headers: { 'Fiware-Service': service },
+          form: {
+            path: `/public/${service}/verticals/sql/${cdaDaId}`,
+            cda: cdaFdaId,
+            dataAccessId: cdaDaId,
+            pageSize: '10',
+            pageStart: '0',
+          },
+        });
+
+        expect(jsonRes.status).toBe(200);
+        expect(Array.isArray(jsonRes.json.metadata)).toBe(true);
+        expect(Array.isArray(jsonRes.json.resultset)).toBe(true);
+
+        const dateColIndex = jsonRes.json.metadata.findIndex(
+          (col) => col.colName === 'date',
+        );
+        const totalColIndex = jsonRes.json.metadata.findIndex(
+          (col) => col.colName === 'total',
+        );
+
+        expect(dateColIndex).toBeGreaterThanOrEqual(0);
+        expect(totalColIndex).toBeGreaterThanOrEqual(0);
+        expect(jsonRes.json.resultset.map((row) => row[dateColIndex])).toEqual(
+          expectedDates,
+        );
+        expect(
+          jsonRes.json.resultset.every((row) =>
+            ['string', 'number'].includes(typeof row[totalColIndex]),
+          ),
+        ).toBe(true);
+
+        const csvRes = await httpReqRaw({
+          method: 'POST',
+          url: `${baseUrl}/plugin/cda/api/doQuery`,
+          headers: { 'Fiware-Service': service },
+          form: {
+            path: `/public/${service}/verticals/sql/${cdaDaId}`,
+            cda: cdaFdaId,
+            dataAccessId: cdaDaId,
+            outputType: 'csv',
+          },
+        });
+
+        expect(csvRes.status).toBe(200);
+        expect(csvRes.headers['content-type']).toContain('text/csv');
+        expect(csvRes.text).toContain(expectedDates[0]);
+        expect(csvRes.text).toContain(expectedDates[1]);
+        expect(csvRes.text).not.toContain('[object Object]');
+
+        const xlsRes = await httpReqRaw({
+          method: 'POST',
+          url: `${baseUrl}/plugin/cda/api/doQuery`,
+          headers: { 'Fiware-Service': service },
+          form: {
+            path: `/public/${service}/verticals/sql/${cdaDaId}`,
+            cda: cdaFdaId,
+            dataAccessId: cdaDaId,
+            outputType: 'xls',
+          },
+        });
+
+        expect(xlsRes.status).toBe(200);
+        expect(xlsRes.headers['content-type']).toContain(
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        );
+        expect(xlsRes.headers['content-disposition']).toContain('results.xlsx');
+        expect(xlsRes.buffer[0]).toBe(0x50);
+        expect(xlsRes.buffer[1]).toBe(0x4b);
+        expect(xlsRes.buffer.length).toBeGreaterThan(100);
+      } finally {
+        await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
+        await pgClient.end();
+      }
+    });
+
     test('POST /plugin/cda/api/doQuery rejects unsupported outputType', async () => {
       const res = await httpFormReq({
         method: 'POST',
