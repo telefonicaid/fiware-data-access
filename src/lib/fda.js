@@ -218,81 +218,16 @@ export async function executeQueryStream({
   res,
   fresh = false,
 }) {
-  if (fresh) {
-    return executeFreshQueryStream({
-      service,
-      visibility,
-      servicePath,
-      params,
-      req,
-      res,
-    });
-  }
-
-  const { fdaId, daId, ...rest } = params;
-
-  await ensureFDAReadyForQuery(service, fdaId, visibility, servicePath);
-
-  const conn = await getDBConnection();
-
-  let stream;
-  let close;
-
-  try {
-    const result = await runPreparedStatementStream(
-      conn,
-      service,
-      fdaId,
-      daId,
-      rest,
-      servicePath,
-    );
-
-    stream = result.stream;
-    close = result.close;
-  } catch (err) {
-    await releaseDBConnection(conn);
-    throw err;
-  }
-
-  let cleaned = false;
-
-  const cleanup = async () => {
-    if (cleaned) {
-      return;
-    }
-    cleaned = true;
-
-    try {
-      await close();
-    } finally {
-      await releaseDBConnection(conn);
-    }
-  };
-
-  req.on('close', () => {
-    cleanup().catch(() => {});
+  return executeQueryAsStream({
+    service,
+    visibility,
+    servicePath,
+    params,
+    req,
+    res,
+    fresh,
+    format: 'ndjson',
   });
-
-  res.setHeader('Content-Type', 'application/x-ndjson');
-
-  try {
-    const columnNames = stream.columnNames();
-    for (
-      let chunk = await stream.fetchChunk();
-      chunk.rowCount > 0;
-      chunk = await stream.fetchChunk()
-    ) {
-      const rows = chunk.getRows();
-      for (const row of rows) {
-        await writeNdjsonLine(res, toRowObject(row, columnNames));
-      }
-    }
-  } finally {
-    await cleanup();
-  }
-
-  return res.end();
 }
 
 export async function executeQueryCsvStream({
@@ -304,17 +239,96 @@ export async function executeQueryCsvStream({
   res,
   fresh = false,
 }) {
-  if (fresh) {
-    return executeFreshQueryCsvStream({
-      service,
-      visibility,
-      servicePath,
-      params,
-      req,
-      res,
-    });
+  return executeQueryAsStream({
+    service,
+    visibility,
+    servicePath,
+    params,
+    req,
+    res,
+    fresh,
+    format: 'csv',
+  });
+}
+
+async function executeQueryAsStream({
+  service,
+  visibility,
+  servicePath,
+  params,
+  req,
+  res,
+  fresh,
+  format,
+}) {
+  const source = fresh
+    ? await createFreshRowSource({
+        service,
+        visibility,
+        servicePath,
+        params,
+        req,
+      })
+    : await createCachedRowSource({
+        service,
+        visibility,
+        servicePath,
+        params,
+        req,
+      });
+
+  if (format === 'ndjson') {
+    res.setHeader('Content-Type', 'application/x-ndjson');
+  } else {
+    res.setHeader('Content-Type', CSV_CONTENT_TYPE);
+    res.setHeader('Content-Disposition', 'attachment; filename="results.csv"');
   }
 
+  let csvColumns;
+
+  try {
+    for (
+      let rows = await source.readNextRows();
+      rows.length > 0;
+      rows = await source.readNextRows()
+    ) {
+      if (format === 'ndjson') {
+        for (const row of rows) {
+          const rowObj = source.columnNames
+            ? toRowObject(row, source.columnNames)
+            : row;
+          await writeNdjsonLine(res, rowObj);
+        }
+        continue;
+      }
+
+      if (!csvColumns) {
+        csvColumns = source.columnNames ?? Object.keys(rows[0] ?? {});
+        await writeCsvHeader(res, csvColumns);
+      }
+
+      for (const row of rows) {
+        const csvLine = source.columnNames
+          ? row.map((cell) => escapeCsvValue(cell)).join(',') + '\n'
+          : csvColumns.map((column) => escapeCsvValue(row[column])).join(',') +
+            '\n';
+        await writeCsvLine(res, csvLine);
+      }
+    }
+  } finally {
+    await source.close();
+  }
+
+  return res.end();
+}
+
+async function createCachedRowSource({
+  service,
+  visibility,
+  servicePath,
+  params,
+  req,
+}) {
   const { fdaId, daId, ...rest } = params;
 
   await ensureFDAReadyForQuery(service, fdaId, visibility, servicePath);
@@ -322,7 +336,7 @@ export async function executeQueryCsvStream({
   const conn = await getDBConnection();
 
   let stream;
-  let close;
+  let closeStream;
 
   try {
     const result = await runPreparedStatementStream(
@@ -335,14 +349,13 @@ export async function executeQueryCsvStream({
     );
 
     stream = result.stream;
-    close = result.close;
+    closeStream = result.close;
   } catch (err) {
     await releaseDBConnection(conn);
     throw err;
   }
 
   let cleaned = false;
-
   const cleanup = async () => {
     if (cleaned) {
       return;
@@ -350,7 +363,7 @@ export async function executeQueryCsvStream({
     cleaned = true;
 
     try {
-      await close();
+      await closeStream();
     } finally {
       await releaseDBConnection(conn);
     }
@@ -360,31 +373,61 @@ export async function executeQueryCsvStream({
     cleanup().catch(() => {});
   });
 
-  res.setHeader('Content-Type', CSV_CONTENT_TYPE);
-  res.setHeader('Content-Disposition', 'attachment; filename="results.csv"');
+  return {
+    columnNames: stream.columnNames(),
+    async readNextRows() {
+      const chunk = await stream.fetchChunk();
+      return chunk.rowCount > 0 ? chunk.getRows() : [];
+    },
+    close: cleanup,
+  };
+}
+
+async function createFreshRowSource({
+  service,
+  visibility,
+  servicePath,
+  params,
+  req,
+}) {
+  assertFreshQueriesEnabled(config.roles.syncQueries);
+
+  const releaseFreshSlot = acquireFreshQuerySlot(
+    config.freshQueries.maxConcurrent,
+  );
+  let cursorReader;
 
   try {
-    const columnNames = stream.columnNames();
-    await writeCsvHeader(res, columnNames);
+    const { text, values } = await buildFreshQueryStatement(
+      service,
+      visibility,
+      servicePath,
+      params,
+    );
 
-    for (
-      let chunk = await stream.fetchChunk();
-      chunk.rowCount > 0;
-      chunk = await stream.fetchChunk()
-    ) {
-      const rows = chunk.getRows();
+    cursorReader = await createPgCursorReader(
+      service,
+      text,
+      values,
+      FRESH_CURSOR_BATCH_SIZE,
+    );
 
-      for (const row of rows) {
-        const csvLine =
-          row.map((cell) => escapeCsvValue(cell)).join(',') + '\n';
-        await writeCsvLine(res, csvLine);
-      }
-    }
-  } finally {
-    await cleanup();
+    req.on('close', () => {
+      cursorReader?.close().catch(() => {});
+    });
+
+    return {
+      columnNames: null,
+      readNextRows: async () => cursorReader.readNextChunk(),
+      close: async () => {
+        await cursorReader?.close();
+        releaseFreshSlot();
+      },
+    };
+  } catch (e) {
+    releaseFreshSlot();
+    throw e;
   }
-
-  return res.end();
 }
 
 async function executeFreshQuery({ service, visibility, servicePath, params }) {
@@ -412,134 +455,6 @@ async function executeFreshQuery({ service, visibility, servicePath, params }) {
   } finally {
     releaseFreshSlot();
   }
-}
-
-async function executeFreshQueryStream({
-  service,
-  visibility,
-  servicePath,
-  params,
-  req,
-  res,
-}) {
-  assertFreshQueriesEnabled(config.roles.syncQueries);
-
-  const releaseFreshSlot = acquireFreshQuerySlot(
-    config.freshQueries.maxConcurrent,
-  );
-  let cursorReader;
-
-  try {
-    const { text, values } = await buildFreshQueryStatement(
-      service,
-      visibility,
-      servicePath,
-      params,
-    );
-
-    cursorReader = await createPgCursorReader(
-      service,
-      text,
-      values,
-      FRESH_CURSOR_BATCH_SIZE,
-    );
-
-    req.on('close', () => {
-      cursorReader?.close().catch(() => {});
-    });
-
-    res.setHeader('Content-Type', 'application/x-ndjson');
-
-    for (
-      let rows = await cursorReader.readNextChunk();
-      rows.length > 0;
-      rows = await cursorReader.readNextChunk()
-    ) {
-      for (const row of rows) {
-        await writeNdjsonLine(res, row);
-      }
-    }
-  } catch (e) {
-    if (e instanceof FDAError) {
-      throw e;
-    }
-
-    throw e;
-  } finally {
-    await cursorReader?.close();
-    releaseFreshSlot();
-  }
-
-  return res.end();
-}
-
-async function executeFreshQueryCsvStream({
-  service,
-  visibility,
-  servicePath,
-  params,
-  req,
-  res,
-}) {
-  assertFreshQueriesEnabled(config.roles.syncQueries);
-
-  const releaseFreshSlot = acquireFreshQuerySlot(
-    config.freshQueries.maxConcurrent,
-  );
-  let cursorReader;
-
-  try {
-    const { text, values } = await buildFreshQueryStatement(
-      service,
-      visibility,
-      servicePath,
-      params,
-    );
-
-    cursorReader = await createPgCursorReader(
-      service,
-      text,
-      values,
-      FRESH_CURSOR_BATCH_SIZE,
-    );
-
-    req.on('close', () => {
-      cursorReader?.close().catch(() => {});
-    });
-
-    res.setHeader('Content-Type', CSV_CONTENT_TYPE);
-    res.setHeader('Content-Disposition', 'attachment; filename="results.csv"');
-
-    let columns;
-
-    for (
-      let rows = await cursorReader.readNextChunk();
-      rows.length > 0;
-      rows = await cursorReader.readNextChunk()
-    ) {
-      if (!columns) {
-        columns = Object.keys(rows[0]);
-        await writeCsvHeader(res, columns);
-      }
-
-      for (const row of rows) {
-        const csvLine =
-          columns.map((column) => escapeCsvValue(row[column])).join(',') + '\n';
-        await writeCsvLine(res, csvLine);
-      }
-    }
-  } catch (e) {
-    if (e instanceof FDAError) {
-      throw e;
-    }
-
-    throw e;
-  } finally {
-    await cursorReader?.close();
-    releaseFreshSlot();
-  }
-
-  return res.end();
 }
 
 async function buildFreshQueryStatement(
