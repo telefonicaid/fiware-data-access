@@ -215,6 +215,27 @@ describe('fda fresh query execution', () => {
     expect(rows).toEqual([{ id: 7 }]);
   });
 
+  test('serializes Date values as ISO strings in fresh JSON results', async () => {
+    mongoMocks.retrieveDA.mockResolvedValue({
+      query: 'SELECT id',
+      params: {},
+    });
+
+    pgMocks.runPgQuery.mockResolvedValue([
+      { date: new Date('2026-04-08T10:11:12.000Z'), count: 1n },
+    ]);
+
+    const rows = await executeQuery({
+      service: 'svc',
+      visibility: 'private',
+      servicePath: '/servicepath',
+      params: { fdaId: 'fdaA', daId: 'daA' },
+      fresh: true,
+    });
+
+    expect(rows).toEqual([{ date: '2026-04-08T10:11:12.000Z', count: 1 }]);
+  });
+
   test('throws DaNotFound when DA does not exist', async () => {
     mongoMocks.retrieveDA.mockResolvedValue(undefined);
 
@@ -618,6 +639,111 @@ describe('fda fresh query execution', () => {
         fresh: true,
       }),
     ).rejects.toBe(streamError);
+  });
+
+  test('serializes DuckDB timestamp micros in non-fresh NDJSON stream', async () => {
+    const { req, res } = createReqRes();
+    const conn = {};
+    const stream = {
+      columnNames: jest.fn().mockReturnValue(['date', 'count']),
+      fetchChunk: jest
+        .fn()
+        .mockResolvedValueOnce({
+          rowCount: 1,
+          getRows: () => [[{ micros: 1700524800000000 }, 1n]],
+        })
+        .mockResolvedValueOnce({ rowCount: 0, getRows: () => [] }),
+    };
+    const close = jest.fn().mockResolvedValue(undefined);
+
+    dbMocks.getDBConnection.mockResolvedValue(conn);
+    dbMocks.runPreparedStatementStream.mockResolvedValue({ stream, close });
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      status: 'completed',
+      visibility: 'private',
+      servicePath: '/servicepath',
+      lastFetch: new Date('2026-04-08T00:00:00.000Z').toISOString(),
+    });
+
+    await executeQueryStream({
+      service: 'svc',
+      visibility: 'private',
+      servicePath: '/servicepath',
+      params: { fdaId: 'fdaA', daId: 'daA' },
+      req,
+      res,
+      fresh: false,
+    });
+
+    expect(res.write).toHaveBeenCalledWith(
+      '{"date":"2023-11-21T00:00:00.000Z","count":1}\n',
+    );
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(dbMocks.releaseDBConnection).toHaveBeenCalledWith(conn);
+  });
+
+  test('serializes DuckDB timestamp micros in non-fresh CSV stream', async () => {
+    const { req, res } = createReqRes();
+    const conn = {};
+    const stream = {
+      columnNames: jest.fn().mockReturnValue(['date']),
+      fetchChunk: jest
+        .fn()
+        .mockResolvedValueOnce({
+          rowCount: 1,
+          getRows: () => [[{ micros: 1700524800000000 }]],
+        })
+        .mockResolvedValueOnce({ rowCount: 0, getRows: () => [] }),
+    };
+    const close = jest.fn().mockResolvedValue(undefined);
+
+    dbMocks.getDBConnection.mockResolvedValue(conn);
+    dbMocks.runPreparedStatementStream.mockResolvedValue({ stream, close });
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      status: 'completed',
+      visibility: 'private',
+      servicePath: '/servicepath',
+      lastFetch: new Date('2026-04-08T00:00:00.000Z').toISOString(),
+    });
+
+    await executeQueryCsvStream({
+      service: 'svc',
+      visibility: 'private',
+      servicePath: '/servicepath',
+      params: { fdaId: 'fdaA', daId: 'daA' },
+      req,
+      res,
+      fresh: false,
+    });
+
+    expect(res.write).toHaveBeenNthCalledWith(1, 'date\n');
+    expect(res.write).toHaveBeenNthCalledWith(2, '2023-11-21T00:00:00.000Z\n');
+  });
+
+  test('serializes DuckDB timestamp micros in non-fresh JSON results', async () => {
+    const conn = {};
+
+    dbMocks.getDBConnection.mockResolvedValue(conn);
+    dbMocks.runPreparedStatement.mockResolvedValue([
+      { date: { micros: 1700524800000000 }, count: 1n },
+    ]);
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      status: 'completed',
+      visibility: 'private',
+      servicePath: '/servicepath',
+      lastFetch: new Date('2026-04-08T00:00:00.000Z').toISOString(),
+    });
+
+    const rows = await executeQuery({
+      service: 'svc',
+      visibility: 'private',
+      servicePath: '/servicepath',
+      params: { fdaId: 'fdaA', daId: 'daA' },
+      fresh: false,
+    });
+
+    expect(rows).toEqual([{ date: '2023-11-21T00:00:00.000Z', count: 1 }]);
+    expect(dbMocks.releaseDBConnection).toHaveBeenCalledWith(conn);
   });
 });
 

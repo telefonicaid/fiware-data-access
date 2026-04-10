@@ -55,6 +55,20 @@ describe('fresh query helpers', () => {
     });
   });
 
+  test('normalizeForSerialization converts Date and DuckDB micros timestamps', () => {
+    const payload = {
+      createdAt: new Date('2026-04-08T10:11:12.000Z'),
+      duckdbDate: { micros: 1700524800000000 },
+      duckdbTimestampString: '2024-01-10 14:34:56.789+02',
+    };
+
+    expect(normalizeForSerialization(payload)).toEqual({
+      createdAt: '2026-04-08T10:11:12.000Z',
+      duckdbDate: '2023-11-21T00:00:00.000Z',
+      duckdbTimestampString: '2024-01-10T12:34:56.789Z',
+    });
+  });
+
   test('validateAllowedFieldsBody throws when body includes invalid fields', () => {
     expect(() =>
       validateAllowedFieldsBody({ query: 'SELECT 1', forbidden: true }, [
