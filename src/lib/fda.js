@@ -376,7 +376,7 @@ async function createFreshRowSource({
 
     return {
       columnNames: null,
-      readNextRows: async () => cursorReader.readNextChunk(),
+      readNextRows: () => cursorReader.readNextChunk(),
       close: async () => {
         await cursorReader?.close();
         releaseFreshSlot();
