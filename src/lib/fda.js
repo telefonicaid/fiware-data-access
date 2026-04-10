@@ -110,6 +110,36 @@ async function writeCsvLine(res, line) {
   }
 }
 
+async function writeNdjsonLine(res, row) {
+  const safeObj = normalizeForSerialization(row);
+  const ok = res.write(JSON.stringify(safeObj) + '\n');
+  if (!ok) {
+    await new Promise((resolve) => res.once('drain', resolve));
+  }
+}
+
+async function writeCsvHeader(res, columnNames) {
+  if (columnNames.length === 0) {
+    return;
+  }
+
+  await writeCsvLine(
+    res,
+    columnNames.map((columnName) => escapeCsvValue(columnName)).join(',') +
+      '\n',
+  );
+}
+
+function toRowObject(row, columnNames) {
+  const rowObj = {};
+
+  for (let i = 0; i < columnNames.length; i++) {
+    rowObj[columnNames[i]] = row[i];
+  }
+
+  return rowObj;
+}
+
 export async function getFDAs(service, visibility, servicePath) {
   const fdas = await retrieveFDAs(service);
   const normalizedServicePath = normalizeServicePath(servicePath);
@@ -164,7 +194,7 @@ export async function executeQuery({
   const conn = await getDBConnection();
 
   try {
-    return await runPreparedStatement(
+    const rows = await runPreparedStatement(
       conn,
       service,
       fdaId,
@@ -172,6 +202,8 @@ export async function executeQuery({
       rest,
       servicePath,
     );
+
+    return normalizeForSerialization(rows);
   } finally {
     await releaseDBConnection(conn);
   }
@@ -252,25 +284,8 @@ export async function executeQueryStream({
       chunk = await stream.fetchChunk()
     ) {
       const rows = chunk.getRows();
-
-      const lines = [];
-
       for (const row of rows) {
-        const rowObj = {};
-
-        for (let i = 0; i < columnNames.length; i++) {
-          rowObj[columnNames[i]] = row[i];
-        }
-
-        const safeObj = normalizeForSerialization(rowObj);
-        lines.push(JSON.stringify(safeObj));
-      }
-
-      const payload = lines.join('\n') + '\n';
-
-      const ok = res.write(payload);
-      if (!ok) {
-        await new Promise((resolve) => res.once('drain', resolve));
+        await writeNdjsonLine(res, toRowObject(row, columnNames));
       }
     }
   } finally {
@@ -350,13 +365,7 @@ export async function executeQueryCsvStream({
 
   try {
     const columnNames = stream.columnNames();
-    if (columnNames.length > 0) {
-      await writeCsvLine(
-        res,
-        columnNames.map((columnName) => escapeCsvValue(columnName)).join(',') +
-          '\n',
-      );
-    }
+    await writeCsvHeader(res, columnNames);
 
     for (
       let chunk = await stream.fetchChunk();
@@ -447,11 +456,7 @@ async function executeFreshQueryStream({
       rows = await cursorReader.readNextChunk()
     ) {
       for (const row of rows) {
-        const safeObj = normalizeForSerialization(row);
-        const ok = res.write(JSON.stringify(safeObj) + '\n');
-        if (!ok) {
-          await new Promise((resolve) => res.once('drain', resolve));
-        }
+        await writeNdjsonLine(res, row);
       }
     }
   } catch (e) {
@@ -514,13 +519,7 @@ async function executeFreshQueryCsvStream({
     ) {
       if (!columns) {
         columns = Object.keys(rows[0]);
-        if (columns.length > 0) {
-          await writeCsvLine(
-            res,
-            columns.map((columnName) => escapeCsvValue(columnName)).join(',') +
-              '\n',
-          );
-        }
+        await writeCsvHeader(res, columns);
       }
 
       for (const row of rows) {

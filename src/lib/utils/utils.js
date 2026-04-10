@@ -26,10 +26,41 @@ import { FDAError } from '../fdaError.js';
 
 let activeFreshQueries = 0;
 
+function toIsoFromMicros(value) {
+  const micros = typeof value === 'bigint' ? Number(value) : Number(value);
+  if (!Number.isFinite(micros)) {
+    return undefined;
+  }
+
+  return new Date(micros / 1000).toISOString();
+}
+
+function toIsoFromTimestampString(value) {
+  const match = value.match(
+    /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}(?:\.\d+)?)([+-]\d{2})(?::?(\d{2}))?$/,
+  );
+  if (!match) {
+    return undefined;
+  }
+
+  const [, datePart, timePart, offsetHours, offsetMinutes = '00'] = match;
+  const parsed = new Date(
+    `${datePart}T${timePart}${offsetHours}:${offsetMinutes}`,
+  );
+  if (Number.isNaN(parsed.getTime())) {
+    return undefined;
+  }
+
+  return parsed.toISOString();
+}
+
 // Normalize runtime values so downstream serializers emit stable output.
 export function normalizeForSerialization(obj) {
   if (typeof obj === 'bigint') {
     return Number(obj);
+  }
+  if (typeof obj === 'string') {
+    return toIsoFromTimestampString(obj) ?? obj;
   }
   if (obj instanceof Date) {
     return obj.toISOString();
@@ -38,6 +69,14 @@ export function normalizeForSerialization(obj) {
     return obj.map(normalizeForSerialization);
   }
   if (obj !== null && typeof obj === 'object') {
+    const keys = Object.keys(obj);
+    if (keys.length === 1 && keys[0] === 'micros') {
+      const isoDate = toIsoFromMicros(obj.micros);
+      if (isoDate) {
+        return isoDate;
+      }
+    }
+
     const converted = {};
     for (const key in obj) {
       converted[key] = normalizeForSerialization(obj[key]);
