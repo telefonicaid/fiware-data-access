@@ -25,8 +25,15 @@ hand.
 
 ### File name convention
 
-The `PostgreSQL` data is always uploaded to the `Object Bucket-Based Storage System` in a _parquet_ file using the
-_fdaId_ as the name. This file is updated and removed in unity with the _fda_ information in `MongoDb`.
+The `PostgreSQL` data is uploaded to the `Object Bucket-Based Storage System` in a _parquet_ file using an object key
+scoped by `Fiware-ServicePath` and `fdaId`.
+
+-   Base object key: `servicePathScope/fdaId`
+-   Non-partitioned FDA: `servicePathScope/fdaId.parquet`
+-   Partitioned FDA: `servicePathScope/fdaId/**/*.parquet`
+-   Root service path (`/`) is not allowed
+
+This object key is updated and removed in sync with the _fda_ information in `MongoDB`.
 
 ### Data origin
 

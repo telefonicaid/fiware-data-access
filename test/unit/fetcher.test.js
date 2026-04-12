@@ -91,6 +91,7 @@ describe('fetcher', () => {
           fdaId: 'fdaA',
           query: 'SELECT 1',
           service: 'svcA',
+          servicePath: '/public',
           timeColumn: 'timeinstant',
           refreshPolicy: {},
           objStgConf: {},
@@ -102,6 +103,7 @@ describe('fetcher', () => {
       'fdaA',
       'SELECT 1',
       'svcA',
+      '/public',
       'timeinstant',
       {},
       {},
@@ -121,13 +123,20 @@ describe('fetcher', () => {
         data: {
           fdaId: 'fdaA',
           service: 'svcA',
+          servicePath: '/public',
           windowSize: 'day',
           objStgConf: {},
         },
       },
     });
 
-    expect(cleanPartitionMock).toHaveBeenCalledWith('svcA', 'fdaA', 'day', {});
+    expect(cleanPartitionMock).toHaveBeenCalledWith(
+      'svcA',
+      'fdaA',
+      'day',
+      {},
+      '/public',
+    );
   });
 
   test('registered clean partition handler catches errors', async () => {
@@ -146,6 +155,7 @@ describe('fetcher', () => {
         data: {
           fdaId: 'fdaA',
           service: 'svcA',
+          servicePath: '/public',
           windowSize: 'day',
           objStgConf: {},
         },

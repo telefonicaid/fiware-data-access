@@ -58,6 +58,35 @@ describe('utils', () => {
     jest.clearAllMocks();
   });
 
+  describe('normalizeForSerialization', () => {
+    test('converts Date values to ISO strings recursively', async () => {
+      const { normalizeForSerialization } = await loadUtilsModule();
+      const value = {
+        date: new Date('2026-04-08T10:11:12.000Z'),
+        nested: [new Date('2026-04-08T10:11:13.000Z')],
+      };
+
+      expect(normalizeForSerialization(value)).toEqual({
+        date: '2026-04-08T10:11:12.000Z',
+        nested: ['2026-04-08T10:11:13.000Z'],
+      });
+    });
+
+    test('converts bigint values to numbers recursively', async () => {
+      const { normalizeForSerialization } = await loadUtilsModule();
+
+      expect(
+        normalizeForSerialization({
+          count: 1n,
+          nested: { values: [2n] },
+        }),
+      ).toEqual({
+        count: 1,
+        nested: { values: [2] },
+      });
+    });
+  });
+
   describe('parseBooleanQueryParam', () => {
     test('returns false when value is undefined', async () => {
       const { parseBooleanQueryParam } = await loadUtilsModule();

@@ -41,6 +41,7 @@ async function loadMongoModule({ connectError } = {}) {
   mongoClientCtorMock.mockReset();
 
   collectionMock = {
+    dropIndex: jest.fn().mockResolvedValue(undefined),
     createIndex: jest.fn(),
     insertOne: jest.fn().mockResolvedValue(undefined),
     updateOne: jest.fn().mockResolvedValue(undefined),
@@ -112,7 +113,7 @@ describe('mongo utils', () => {
     collectionMock.insertOne.mockRejectedValueOnce(new Error('insert fail'));
 
     await expect(
-      createFDAMongo('fdaA', 'SELECT 1', 'svc', '/sp', 'desc', {
+      createFDAMongo('fdaA', 'SELECT 1', 'svc', 'public', '/sp', 'desc', {
         type: 'none',
       }),
     ).rejects.toMatchObject({
@@ -124,10 +125,10 @@ describe('mongo utils', () => {
   test('updateFDAStatus includes optional error in update payload', async () => {
     const { updateFDAStatus, collectionMock } = await loadMongoModule();
 
-    await updateFDAStatus('svc', 'fdaA', 'failed', 0, 'boom');
+    await updateFDAStatus('svc', 'fdaA', '/sp', 'failed', 0, 'boom');
 
     expect(collectionMock.updateOne).toHaveBeenCalledWith(
-      { service: 'svc', fdaId: 'fdaA' },
+      { service: 'svc', fdaId: 'fdaA', servicePath: '/sp' },
       {
         $set: expect.objectContaining({
           status: 'failed',
@@ -144,7 +145,7 @@ describe('mongo utils', () => {
     collectionMock.findOneAndUpdate.mockResolvedValueOnce(null);
     collectionMock.findOne.mockResolvedValueOnce(null);
 
-    await expect(regenerateFDA('svc', 'missing')).rejects.toMatchObject({
+    await expect(regenerateFDA('svc', 'missing', '/sp')).rejects.toMatchObject({
       status: 404,
       type: 'NotFound',
     });
@@ -156,8 +157,8 @@ describe('mongo utils', () => {
     collectionMock.findOneAndUpdate.mockResolvedValueOnce(null);
     collectionMock.findOne.mockResolvedValueOnce(null);
 
-    await expect(regenerateFDA('svcA', 'fdaZ')).rejects.toMatchObject({
-      message: 'FDA fdaZ not found in service svcA',
+    await expect(regenerateFDA('svcA', 'fdaZ', '/sp')).rejects.toMatchObject({
+      message: 'FDA fdaZ not found in service svcA and servicePath /sp',
     });
   });
 
@@ -167,7 +168,7 @@ describe('mongo utils', () => {
     collectionMock.updateOne.mockRejectedValueOnce(new Error('store fail'));
 
     await expect(
-      storeDA('svc', 'fdaA', 'daA', 'desc', 'SELECT 1', []),
+      storeDA('svc', 'fdaA', '/sp', 'daA', 'desc', 'SELECT 1', []),
     ).rejects.toMatchObject({
       status: 500,
       type: 'MongoDBServerError',
@@ -194,7 +195,7 @@ describe('mongo utils', () => {
       throw new Error('findOne fail');
     });
 
-    await expect(retrieveFDA('svc', 'fdaA')).rejects.toMatchObject({
+    await expect(retrieveFDA('svc', 'fdaA', '/sp')).rejects.toMatchObject({
       status: 500,
       type: 'MongoDBServerError',
     });
@@ -205,7 +206,7 @@ describe('mongo utils', () => {
 
     collectionMock.deleteOne.mockResolvedValueOnce({ deletedCount: 0 });
 
-    await expect(removeFDA('svc', 'fdaA')).rejects.toMatchObject({
+    await expect(removeFDA('svc', 'fdaA', '/sp')).rejects.toMatchObject({
       status: 500,
       type: 'MongoDBServerError',
     });
@@ -218,7 +219,7 @@ describe('mongo utils', () => {
       throw new Error('aggregate fail');
     });
 
-    await expect(retrieveDAs('svc', 'fdaA')).rejects.toMatchObject({
+    await expect(retrieveDAs('svc', 'fdaA', '/sp')).rejects.toMatchObject({
       status: 500,
       type: 'MongoDBServerError',
     });
@@ -229,16 +230,26 @@ describe('mongo utils', () => {
 
     collectionMock.findOne.mockRejectedValueOnce(new Error('retrieve da fail'));
 
-    await expect(retrieveDA('svc', 'fdaA', 'daA')).rejects.toMatchObject({
-      status: 500,
-      type: 'MongoDBServerError',
-    });
+    await expect(retrieveDA('svc', 'fdaA', 'daA', '/sp')).rejects.toMatchObject(
+      {
+        status: 500,
+        type: 'MongoDBServerError',
+      },
+    );
   });
 
   test('updateDA returns early when there are no fields to update', async () => {
     const { updateDA, collectionMock } = await loadMongoModule();
 
-    await updateDA('svc', 'fdaA', 'daA', undefined, undefined, undefined);
+    await updateDA(
+      'svc',
+      'fdaA',
+      '/sp',
+      'daA',
+      undefined,
+      undefined,
+      undefined,
+    );
 
     expect(collectionMock.updateOne).not.toHaveBeenCalled();
   });
@@ -249,7 +260,7 @@ describe('mongo utils', () => {
     collectionMock.updateOne.mockRejectedValueOnce(new Error('update fail'));
 
     await expect(
-      updateDA('svc', 'fdaA', 'daA', 'desc', 'SELECT 1', []),
+      updateDA('svc', 'fdaA', '/sp', 'daA', 'desc', 'SELECT 1', []),
     ).rejects.toMatchObject({
       status: 500,
       type: 'MongoDBServerError',
@@ -261,7 +272,7 @@ describe('mongo utils', () => {
 
     collectionMock.updateOne.mockRejectedValueOnce(new Error('remove fail'));
 
-    await expect(removeDA('svc', 'fdaA', 'daA')).rejects.toMatchObject({
+    await expect(removeDA('svc', 'fdaA', 'daA', '/sp')).rejects.toMatchObject({
       status: 500,
       type: 'MongoDBServerError',
     });

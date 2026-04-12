@@ -24,8 +24,9 @@
 
 import { describe, expect, test } from '@jest/globals';
 import {
-  convertBigInt,
+  normalizeForSerialization,
   validateAllowedFieldsBody,
+  validateForbiddenFieldsQuery,
   parseBooleanQueryParam,
   assertFreshQueriesEnabled,
   acquireFreshQuerySlot,
@@ -38,7 +39,7 @@ describe('fresh query helpers', () => {
     );
   });
 
-  test('convertBigInt converts bigint values recursively', () => {
+  test('normalizeForSerialization converts bigint values recursively', () => {
     const payload = {
       id: 7n,
       nested: {
@@ -46,7 +47,7 @@ describe('fresh query helpers', () => {
       },
     };
 
-    expect(convertBigInt(payload)).toEqual({
+    expect(normalizeForSerialization(payload)).toEqual({
       id: 7,
       nested: {
         values: [1, { count: 2 }],
@@ -61,6 +62,14 @@ describe('fresh query helpers', () => {
         'description',
       ]),
     ).toThrow('Invalid fields in request body, check your request');
+  });
+
+  test('validateForbiddenFieldsQuery throws when query includes forbidden fields', () => {
+    expect(() =>
+      validateForbiddenFieldsQuery({ minAge: '25', outputType: 'csv' }, [
+        'outputType',
+      ]),
+    ).toThrow('Invalid fields in request query, check your request');
   });
 
   test('parseBooleanQueryParam parses valid values and rejects invalid ones', () => {

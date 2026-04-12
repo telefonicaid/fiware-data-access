@@ -22,53 +22,36 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
-import { getAgenda } from './lib/jobs.js';
-import { cleanPartition, processFDAAsync } from './lib/fda.js';
-import { getBasicLogger } from './lib/utils/logger.js';
+export function normalizeScopedServicePath(servicePath) {
+  if (!servicePath || typeof servicePath !== 'string') {
+    throw new Error('servicePath is required');
+  }
 
-const logger = getBasicLogger();
+  const normalizedServicePath = servicePath.trim();
+  if (!normalizedServicePath) {
+    throw new Error('servicePath is required');
+  }
 
-export async function startFetcher() {
-  const agenda = getAgenda();
+  if (!/^\/[^/\s]+(\/[^/\s]+)*$/.test(normalizedServicePath)) {
+    throw new Error(
+      'servicePath must be a non-root absolute path (e.g. /servicepath)',
+    );
+  }
 
-  agenda.define('refresh-fda', async (job) => {
-    const {
-      fdaId,
-      query,
-      service,
-      servicePath,
-      timeColumn,
-      refreshPolicy,
-      objStgConf,
-      partitionFlag = false,
-    } = job.attrs.data;
-    // Should agenda also log errors?
-    try {
-      await processFDAAsync(
-        fdaId,
-        query,
-        service,
-        servicePath,
-        timeColumn,
-        refreshPolicy,
-        objStgConf,
-        partitionFlag,
-      );
-    } catch (e) {
-      logger.error('Fetcher error: ', e);
-    }
-  });
+  return normalizedServicePath;
+}
 
-  agenda.define('clean-partition', async (job) => {
-    const { fdaId, service, servicePath, windowSize, objStgConf } =
-      job.attrs.data;
-    try {
-      await cleanPartition(service, fdaId, windowSize, objStgConf, servicePath);
-    } catch (e) {
-      logger.error('Fetcher error: ', e);
-    }
-  });
+export function getFDAStoragePath(fdaId, servicePath) {
+  const normalizedServicePath = normalizeScopedServicePath(servicePath);
+  const servicePathScope = normalizedServicePath.replace(/^\//, '');
+  return `${servicePathScope}/${fdaId}`;
+}
 
-  await agenda.start();
-  logger.info('[Fetcher] Agenda started');
+export function buildFDAJobFilter(name, service, fdaId, servicePath) {
+  return {
+    name,
+    'data.service': service,
+    'data.fdaId': fdaId,
+    'data.servicePath': servicePath,
+  };
 }

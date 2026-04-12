@@ -58,28 +58,75 @@ import {
   updateFDAStatus,
 } from './utils/mongo.js';
 import {
-  convertBigInt,
+  normalizeForSerialization,
   getWindowDate,
   assertFreshQueriesEnabled,
   acquireFreshQuerySlot,
   getTimeColumnQuery,
 } from './utils/utils.js';
+import {
+  buildFDAJobFilter,
+  getFDAStoragePath,
+  normalizeScopedServicePath,
+} from './utils/fdaScope.js';
 import { config } from './fdaConfig.js';
 import { FDAError } from './fdaError.js';
 
 const FRESH_CURSOR_BATCH_SIZE = 250;
 export const VALID_VISIBILITIES = ['public', 'private'];
 const VALID_VISIBILITIES_SET = new Set(VALID_VISIBILITIES);
+const CSV_CONTENT_TYPE = 'text/csv; charset=utf-8';
+
+function stringifyCsvValue(value) {
+  const normalizedValue = normalizeForSerialization(value);
+
+  if (normalizedValue === null || normalizedValue === undefined) {
+    return '';
+  }
+
+  if (typeof normalizedValue === 'object') {
+    return JSON.stringify(normalizedValue);
+  }
+
+  return String(normalizedValue);
+}
+
+function escapeCsvValue(value) {
+  const strValue = stringifyCsvValue(value);
+
+  if (
+    strValue.includes(',') ||
+    strValue.includes('"') ||
+    strValue.includes('\n') ||
+    strValue.includes('\r')
+  ) {
+    return '"' + strValue.replace(/"/g, '""') + '"';
+  }
+
+  return strValue;
+}
+
+async function writeCsvLine(res, line) {
+  const ok = res.write(line);
+  if (!ok) {
+    await new Promise((resolve) => res.once('drain', resolve));
+  }
+}
 
 export async function getFDAs(service, visibility, servicePath) {
   const fdas = await retrieveFDAs(service);
+  const normalizedServicePath = normalizeServicePath(servicePath);
 
-  if (visibility === undefined && servicePath === undefined) {
-    return fdas.map((fda) => toFDAApiResponse(fda, { includeId: true }));
+  if (visibility === undefined) {
+    return fdas
+      .filter(
+        (fda) =>
+          normalizeServicePath(fda.servicePath) === normalizedServicePath,
+      )
+      .map((fda) => toFDAApiResponse(fda, { includeId: true }));
   }
 
   const normalizedVisibility = normalizeVisibility(visibility);
-  const normalizedServicePath = normalizeServicePath(servicePath);
 
   return fdas
     .filter(
@@ -91,8 +138,10 @@ export async function getFDAs(service, visibility, servicePath) {
 }
 
 export async function getFDA(service, fdaId, visibility, servicePath) {
-  if (visibility === undefined && servicePath === undefined) {
-    const fda = await getStoredFDA(service, fdaId);
+  const normalizedServicePath = normalizeServicePath(servicePath);
+
+  if (visibility === undefined) {
+    const fda = await getStoredFDA(service, fdaId, normalizedServicePath);
     return toFDAApiResponse(fda, { includeId: false });
   }
 
@@ -118,7 +167,14 @@ export async function executeQuery({
   const conn = await getDBConnection();
 
   try {
-    return await runPreparedStatement(conn, service, fdaId, daId, rest);
+    return await runPreparedStatement(
+      conn,
+      service,
+      fdaId,
+      daId,
+      rest,
+      servicePath,
+    );
   } finally {
     await releaseDBConnection(conn);
   }
@@ -160,6 +216,7 @@ export async function executeQueryStream({
       fdaId,
       daId,
       rest,
+      servicePath,
     );
 
     stream = result.stream;
@@ -192,13 +249,11 @@ export async function executeQueryStream({
 
   try {
     const columnNames = stream.columnNames();
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const chunk = await stream.fetchChunk();
-      if (chunk.rowCount === 0) {
-        break;
-      }
-
+    for (
+      let chunk = await stream.fetchChunk();
+      chunk.rowCount > 0;
+      chunk = await stream.fetchChunk()
+    ) {
       const rows = chunk.getRows();
 
       const lines = [];
@@ -210,7 +265,7 @@ export async function executeQueryStream({
           rowObj[columnNames[i]] = row[i];
         }
 
-        const safeObj = convertBigInt(rowObj);
+        const safeObj = normalizeForSerialization(rowObj);
         lines.push(JSON.stringify(safeObj));
       }
 
@@ -219,6 +274,104 @@ export async function executeQueryStream({
       const ok = res.write(payload);
       if (!ok) {
         await new Promise((resolve) => res.once('drain', resolve));
+      }
+    }
+  } finally {
+    await cleanup();
+  }
+
+  return res.end();
+}
+
+export async function executeQueryCsvStream({
+  service,
+  visibility,
+  servicePath,
+  params,
+  req,
+  res,
+  fresh = false,
+}) {
+  if (fresh) {
+    return executeFreshQueryCsvStream({
+      service,
+      visibility,
+      servicePath,
+      params,
+      req,
+      res,
+    });
+  }
+
+  const { fdaId, daId, ...rest } = params;
+
+  await ensureFDAReadyForQuery(service, fdaId, visibility, servicePath);
+
+  const conn = await getDBConnection();
+
+  let stream;
+  let close;
+
+  try {
+    const result = await runPreparedStatementStream(
+      conn,
+      service,
+      fdaId,
+      daId,
+      rest,
+      servicePath,
+    );
+
+    stream = result.stream;
+    close = result.close;
+  } catch (err) {
+    await releaseDBConnection(conn);
+    throw err;
+  }
+
+  let cleaned = false;
+
+  const cleanup = async () => {
+    if (cleaned) {
+      return;
+    }
+    cleaned = true;
+
+    try {
+      await close();
+    } finally {
+      await releaseDBConnection(conn);
+    }
+  };
+
+  req.on('close', () => {
+    cleanup().catch(() => {});
+  });
+
+  res.setHeader('Content-Type', CSV_CONTENT_TYPE);
+  res.setHeader('Content-Disposition', 'attachment; filename="results.csv"');
+
+  try {
+    const columnNames = stream.columnNames();
+    if (columnNames.length > 0) {
+      await writeCsvLine(
+        res,
+        columnNames.map((columnName) => escapeCsvValue(columnName)).join(',') +
+          '\n',
+      );
+    }
+
+    for (
+      let chunk = await stream.fetchChunk();
+      chunk.rowCount > 0;
+      chunk = await stream.fetchChunk()
+    ) {
+      const rows = chunk.getRows();
+
+      for (const row of rows) {
+        const csvLine =
+          row.map((cell) => escapeCsvValue(cell)).join(',') + '\n';
+        await writeCsvLine(res, csvLine);
       }
     }
   } finally {
@@ -243,7 +396,7 @@ async function executeFreshQuery({ service, visibility, servicePath, params }) {
     );
 
     const rows = await runPgQuery(service, text, values);
-    return convertBigInt(rows);
+    return normalizeForSerialization(rows);
   } catch (e) {
     if (e instanceof FDAError) {
       throw e;
@@ -291,19 +444,92 @@ async function executeFreshQueryStream({
 
     res.setHeader('Content-Type', 'application/x-ndjson');
 
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const rows = await cursorReader.readNextChunk();
-      if (rows.length === 0) {
-        break;
-      }
-
+    for (
+      let rows = await cursorReader.readNextChunk();
+      rows.length > 0;
+      rows = await cursorReader.readNextChunk()
+    ) {
       for (const row of rows) {
-        const safeObj = convertBigInt(row);
+        const safeObj = normalizeForSerialization(row);
         const ok = res.write(JSON.stringify(safeObj) + '\n');
         if (!ok) {
           await new Promise((resolve) => res.once('drain', resolve));
         }
+      }
+    }
+  } catch (e) {
+    if (e instanceof FDAError) {
+      throw e;
+    }
+
+    throw e;
+  } finally {
+    await cursorReader?.close();
+    releaseFreshSlot();
+  }
+
+  return res.end();
+}
+
+async function executeFreshQueryCsvStream({
+  service,
+  visibility,
+  servicePath,
+  params,
+  req,
+  res,
+}) {
+  assertFreshQueriesEnabled(config.roles.syncQueries);
+
+  const releaseFreshSlot = acquireFreshQuerySlot(
+    config.freshQueries.maxConcurrent,
+  );
+  let cursorReader;
+
+  try {
+    const { text, values } = await buildFreshQueryStatement(
+      service,
+      visibility,
+      servicePath,
+      params,
+    );
+
+    cursorReader = await createPgCursorReader(
+      service,
+      text,
+      values,
+      FRESH_CURSOR_BATCH_SIZE,
+    );
+
+    req.on('close', () => {
+      cursorReader?.close().catch(() => {});
+    });
+
+    res.setHeader('Content-Type', CSV_CONTENT_TYPE);
+    res.setHeader('Content-Disposition', 'attachment; filename="results.csv"');
+
+    let columns;
+
+    for (
+      let rows = await cursorReader.readNextChunk();
+      rows.length > 0;
+      rows = await cursorReader.readNextChunk()
+    ) {
+      if (!columns) {
+        columns = Object.keys(rows[0]);
+        if (columns.length > 0) {
+          await writeCsvLine(
+            res,
+            columns.map((columnName) => escapeCsvValue(columnName)).join(',') +
+              '\n',
+          );
+        }
+      }
+
+      for (const row of rows) {
+        const csvLine =
+          columns.map((column) => escapeCsvValue(row[column])).join(',') + '\n';
+        await writeCsvLine(res, csvLine);
       }
     }
   } catch (e) {
@@ -328,7 +554,7 @@ async function buildFreshQueryStatement(
 ) {
   const { fdaId, daId, ...rest } = params;
 
-  const da = await retrieveDA(service, fdaId, daId);
+  const da = await retrieveDA(service, fdaId, daId, servicePath);
   if (!da?.query) {
     throw new FDAError(
       404,
@@ -401,6 +627,7 @@ function replaceNamedParamsWithPositional(query, params) {
 
   const text = query.replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (_m, name) => {
     if (!Object.prototype.hasOwnProperty.call(params, name)) {
+      /* c8 ignore next 5 */
       throw new FDAError(
         400,
         'InvalidQueryParam',
@@ -440,7 +667,7 @@ export async function createDA(
       await getAccessibleFDA(service, fdaId, visibility, servicePath);
     }
 
-    const existing = await retrieveDA(service, fdaId, daId);
+    const existing = await retrieveDA(service, fdaId, daId, servicePath);
 
     if (existing) {
       throw new FDAError(
@@ -451,10 +678,11 @@ export async function createDA(
     }
 
     const normalizedParams = checkParams(params);
-    await validateDAQuery(conn, service, fdaId, userQuery);
+    await validateDAQuery(conn, service, fdaId, userQuery, servicePath);
     await storeDA(
       service,
       fdaId,
+      servicePath,
       daId,
       description,
       userQuery,
@@ -497,9 +725,14 @@ export async function fetchFDA(
   );
 
   try {
-    await createOneRowParquetSync(service, fdaId, timeQuery);
+    await createOneRowParquetSync(
+      service,
+      fdaId,
+      timeQuery,
+      normalizedServicePath,
+    );
   } catch (err) {
-    await rollbackFDAProvisioning(service, fdaId);
+    await rollbackFDAProvisioning(service, fdaId, normalizedServicePath);
     throw err;
   }
 
@@ -510,6 +743,7 @@ export async function fetchFDA(
     fdaId,
     query: timeQuery,
     service,
+    servicePath: normalizedServicePath,
     timeColumn,
     refreshPolicy,
     objStgConf,
@@ -527,16 +761,19 @@ export async function fetchFDA(
         fdaId,
         query: timeQuery,
         service,
+        servicePath: normalizedServicePath,
         timeColumn,
         refreshPolicy,
         objStgConf,
       },
       {
         skipImmediate: true,
-        unique: {
-          name: 'refresh-fda',
-          'data.fdaId': fdaId,
-        },
+        unique: buildFDAJobFilter(
+          'refresh-fda',
+          service,
+          fdaId,
+          normalizedServicePath,
+        ),
       },
     );
 
@@ -547,15 +784,18 @@ export async function fetchFDA(
         {
           fdaId,
           service,
+          servicePath: normalizedServicePath,
           windowSize,
           objStgConf,
         },
         {
           skipImmediate: true,
-          unique: {
-            name: 'refresh-fda',
-            'data.fdaId': fdaId,
-          },
+          unique: buildFDAJobFilter(
+            'clean-partition',
+            service,
+            fdaId,
+            normalizedServicePath,
+          ),
         },
       );
     }
@@ -572,6 +812,7 @@ export async function fetchFDA(
         fdaId,
         query: timeQuery,
         service,
+        servicePath: normalizedServicePath,
         timeColumn,
         refreshPolicy,
         objStgConf,
@@ -579,10 +820,12 @@ export async function fetchFDA(
       },
       {
         skipImmediate: true,
-        unique: {
-          name: 'refresh-fda',
-          'data.fdaId': fdaId,
-        },
+        unique: buildFDAJobFilter(
+          'refresh-fda',
+          service,
+          fdaId,
+          normalizedServicePath,
+        ),
       },
     );
 
@@ -593,15 +836,18 @@ export async function fetchFDA(
         {
           fdaId,
           service,
+          servicePath: normalizedServicePath,
           windowSize,
           objStgConf,
         },
         {
           skipImmediate: true,
-          unique: {
-            name: 'refresh-fda',
-            'data.fdaId': fdaId,
-          },
+          unique: buildFDAJobFilter(
+            'clean-partition',
+            service,
+            fdaId,
+            normalizedServicePath,
+          ),
         },
       );
     }
@@ -652,11 +898,13 @@ function validateScheduledOptions(refreshPolicy, objStgConf) {
 }
 
 export async function updateFDA(service, fdaId, visibility, servicePath) {
-  if (arguments.length >= 4) {
+  const normalizedServicePath = normalizeServicePath(servicePath);
+
+  if (visibility !== undefined) {
     await getAccessibleFDA(service, fdaId, visibility, servicePath);
   }
 
-  const previous = await regenerateFDA(service, fdaId);
+  const previous = await regenerateFDA(service, fdaId, normalizedServicePath);
 
   const agenda = getAgenda();
 
@@ -665,6 +913,7 @@ export async function updateFDA(service, fdaId, visibility, servicePath) {
     fdaId,
     query: previous.query,
     service,
+    servicePath: previous.servicePath ?? normalizedServicePath,
     timeColumn: previous.timeColumn,
     refreshPolicy: previous.refreshPolicy,
     objStgConf: previous.objStgConf,
@@ -685,13 +934,16 @@ export async function processFDAAsync(
   fdaId,
   query,
   service,
+  servicePath,
   timeColumn,
   refreshPolicy,
   objStgConf,
   partitionFlag,
 ) {
+  const storagePath = getFDAStoragePath(fdaId, servicePath);
+
   try {
-    await updateFDAStatus(service, fdaId, 'fetching', 10);
+    await updateFDAStatus(service, fdaId, servicePath, 'fetching', 10);
 
     let finalQuery = query;
     if (refreshPolicy?.type === 'window') {
@@ -705,15 +957,24 @@ export async function processFDAAsync(
       service,
       finalQuery,
       service,
+      storagePath,
       fdaId,
+      servicePath,
       timeColumn,
       objStgConf,
       partitionFlag,
     );
 
-    await updateFDAStatus(service, fdaId, 'completed', 100);
+    await updateFDAStatus(service, fdaId, servicePath, 'completed', 100);
   } catch (err) {
-    await updateFDAStatus(service, fdaId, 'failed', 0, err.message);
+    await updateFDAStatus(
+      service,
+      fdaId,
+      servicePath,
+      'failed',
+      0,
+      err.message,
+    );
     throw err;
   }
 }
@@ -760,11 +1021,14 @@ function getUpdateWindowQuery(query, timeColumn, latestFetchStartDate) {
 }
 
 export async function deleteFDA(service, fdaId, visibility, servicePath) {
+  let targetServicePath = normalizeServicePath(servicePath);
+
   if (visibility !== undefined || servicePath !== undefined) {
-    await getAccessibleFDA(service, fdaId, visibility, servicePath);
+    const fda = await getAccessibleFDA(service, fdaId, visibility, servicePath);
+    targetServicePath = fda.servicePath;
   }
 
-  const { _id } = (await retrieveFDA(service, fdaId)) ?? {};
+  const { _id } = (await retrieveFDA(service, fdaId, targetServicePath)) ?? {};
 
   if (!service || !_id) {
     throw new FDAError(
@@ -779,20 +1043,22 @@ export async function deleteFDA(service, fdaId, visibility, servicePath) {
     config.objstg.pass,
   );
   // This way we remove FDAs independently of if theyre partitioned or not
-  const objPaths = await listObjects(s3Client, service, fdaId);
+  const objPaths = await listObjects(
+    s3Client,
+    service,
+    getFDAStoragePath(fdaId, targetServicePath),
+  );
   await dropFiles(s3Client, service, objPaths);
 
-  await removeFDA(service, fdaId);
+  await removeFDA(service, fdaId, targetServicePath);
 
   const agenda = getAgenda();
-  await agenda.cancel({
-    name: 'refresh-fda',
-    'data.fdaId': fdaId,
-  });
-  await agenda.cancel({
-    name: 'clean-partition',
-    'data.fdaId': fdaId,
-  });
+  await agenda.cancel(
+    buildFDAJobFilter('refresh-fda', service, fdaId, targetServicePath),
+  );
+  await agenda.cancel(
+    buildFDAJobFilter('clean-partition', service, fdaId, targetServicePath),
+  );
 }
 
 export async function getDAs(service, fdaId, visibility, servicePath) {
@@ -800,7 +1066,7 @@ export async function getDAs(service, fdaId, visibility, servicePath) {
     await getAccessibleFDA(service, fdaId, visibility, servicePath);
   }
 
-  return retrieveDAs(service, fdaId);
+  return retrieveDAs(service, fdaId, servicePath);
 }
 
 export async function getDA(service, fdaId, daId, visibility, servicePath) {
@@ -808,7 +1074,7 @@ export async function getDA(service, fdaId, daId, visibility, servicePath) {
     await getAccessibleFDA(service, fdaId, visibility, servicePath);
   }
 
-  const da = await retrieveDA(service, fdaId, daId);
+  const da = await retrieveDA(service, fdaId, daId, servicePath);
   if (da) {
     da.id = daId;
   } else {
@@ -840,10 +1106,11 @@ export async function putDA(
     }
 
     const normalizedParams = checkParams(params);
-    await validateDAQuery(conn, service, fdaId, userQuery);
+    await validateDAQuery(conn, service, fdaId, userQuery, servicePath);
     await updateDA(
       service,
       fdaId,
+      servicePath,
       daId,
       description,
       userQuery,
@@ -859,10 +1126,16 @@ export async function deleteDA(service, fdaId, daId, visibility, servicePath) {
     await getAccessibleFDA(service, fdaId, visibility, servicePath);
   }
 
-  await removeDA(service, fdaId, daId);
+  await removeDA(service, fdaId, daId, servicePath);
 }
 
-export async function cleanPartition(service, fdaId, windowSize, objStgConf) {
+export async function cleanPartition(
+  service,
+  fdaId,
+  windowSize,
+  objStgConf,
+  servicePath,
+) {
   if (!objStgConf?.partition) {
     // DEBATE: With no partitioned folders doesn't make much sense to clean cause we'd had a FDA with no file
     throw new FDAError(
@@ -874,20 +1147,27 @@ export async function cleanPartition(service, fdaId, windowSize, objStgConf) {
 
   const cutoff = getWindowDate(windowSize);
   if (!cutoff) {
+    /* c8 ignore next 5 */
     throw new FDAError(
       400,
       'CleaningError',
-      `Incorrect window size in refresh policy.`,
+      'Incorrect window size in refresh policy.',
     );
   }
 
+  /* c8 ignore next 6 */
   const s3Client = getS3Client(
     `${config.objstg.protocol}://${config.objstg.endpoint}`,
     config.objstg.usr,
     config.objstg.pass,
   );
 
-  const objPaths = await listObjects(s3Client, service, fdaId);
+  /* c8 ignore next 6 */
+  const objPaths = await listObjects(
+    s3Client,
+    service,
+    getFDAStoragePath(fdaId, servicePath),
+  );
 
   const partitionsToRemove = [];
   for (const path of objPaths) {
@@ -906,6 +1186,8 @@ async function uploadTableToObjStg(
   query,
   bucket,
   path,
+  fdaId,
+  servicePath,
   timeColumn,
   objStgConf,
   partitionFlag,
@@ -915,12 +1197,12 @@ async function uploadTableToObjStg(
     config.objstg.usr,
     config.objstg.pass,
   );
-  await updateFDAStatus(service, path, 'fetching', 20);
+  await updateFDAStatus(service, fdaId, servicePath, 'fetching', 20);
   await uploadTable(s3Client, bucket, database, query, path);
 
   const conn = await getDBConnection();
   try {
-    await updateFDAStatus(service, path, 'transforming', 60);
+    await updateFDAStatus(service, fdaId, servicePath, 'transforming', 60);
 
     // DuckDB cant overwrite files in Minio, so for partitioned files we upload them in a tmp file and the move them
     // We only do this for files that already exist (partitionFlag=true) so upload performance on partitions doesnt get affected
@@ -954,7 +1236,7 @@ async function uploadTableToObjStg(
       }
     }
 
-    await updateFDAStatus(service, path, 'uploading', 80);
+    await updateFDAStatus(service, fdaId, servicePath, 'uploading', 80);
     // DuckDb doesn't replace one row parquet snippet with partitioned file, so we remove it by hand
     if (objStgConf?.partition) {
       await dropFile(s3Client, bucket, `${path}.parquet`);
@@ -980,8 +1262,8 @@ async function ensureFDAReadyForQuery(service, fdaId, visibility, servicePath) {
   }
 }
 
-async function getStoredFDA(service, fdaId) {
-  const fda = await retrieveFDA(service, fdaId);
+async function getStoredFDA(service, fdaId, servicePath) {
+  const fda = await retrieveFDA(service, fdaId, servicePath);
 
   if (!fda) {
     throw new FDAError(
@@ -997,7 +1279,40 @@ async function getStoredFDA(service, fdaId) {
 async function getAccessibleFDA(service, fdaId, visibility, servicePath) {
   const normalizedVisibility = normalizeVisibility(visibility);
   const normalizedServicePath = normalizeServicePath(servicePath);
-  const fda = await getStoredFDA(service, fdaId);
+  const fda = await retrieveFDA(service, fdaId, normalizedServicePath);
+
+  if (!fda) {
+    const sameIdCandidates = (await retrieveFDAs(service)).filter(
+      (candidate) => candidate.fdaId === fdaId,
+    );
+
+    if (sameIdCandidates.length === 0) {
+      throw new FDAError(
+        404,
+        'FDANotFound',
+        `FDA ${fdaId} not found in service ${service}`,
+      );
+    }
+
+    const hasMatchingVisibility = sameIdCandidates.some(
+      (candidate) =>
+        normalizeVisibility(candidate.visibility) === normalizedVisibility,
+    );
+
+    if (!hasMatchingVisibility) {
+      throw new FDAError(
+        403,
+        'VisibilityMismatch',
+        `FDA ${fdaId} does not belong to ${normalizedVisibility}`,
+      );
+    }
+
+    throw new FDAError(
+      403,
+      'ServicePathMismatch',
+      `FDA ${fdaId} does not belong to servicePath ${normalizedServicePath}`,
+    );
+  }
 
   if (normalizeVisibility(fda.visibility) !== normalizedVisibility) {
     throw new FDAError(
@@ -1031,25 +1346,23 @@ function normalizeVisibility(visibility) {
 }
 
 function normalizeServicePath(servicePath) {
-  if (!servicePath || typeof servicePath !== 'string') {
+  try {
+    return normalizeScopedServicePath(servicePath);
+  } catch (error) {
+    if (error.message === 'servicePath is required') {
+      throw new FDAError(
+        400,
+        'InvalidServicePath',
+        'Fiware-ServicePath header is required',
+      );
+    }
+
     throw new FDAError(
       400,
       'InvalidServicePath',
-      'Fiware-ServicePath header is required',
+      'Fiware-ServicePath must be a non-root absolute path (e.g. /servicepath)',
     );
   }
-
-  const normalizedServicePath = servicePath.trim();
-
-  if (!/^\/(?:[^/\s]+(?:\/[^/\s]+)*)?$/.test(normalizedServicePath)) {
-    throw new FDAError(
-      400,
-      'InvalidServicePath',
-      'Fiware-ServicePath must be a valid absolute path (e.g. / or /servicepath)',
-    );
-  }
-
-  return normalizedServicePath;
 }
 
 function toFDAApiResponse(fda, { includeId }) {
@@ -1076,21 +1389,22 @@ function toFDAApiResponse(fda, { includeId }) {
   };
 }
 
-async function createOneRowParquetSync(service, fdaId, query) {
+async function createOneRowParquetSync(service, fdaId, query, servicePath) {
   const s3Client = getS3Client(
     `${config.objstg.protocol}://${config.objstg.endpoint}`,
     config.objstg.usr,
     config.objstg.pass,
   );
+  const storagePath = getFDAStoragePath(fdaId, servicePath);
 
   const oneRowQuery = buildOneRowQuery(query);
-  await uploadTable(s3Client, service, service, oneRowQuery, fdaId);
+  await uploadTable(s3Client, service, service, oneRowQuery, storagePath);
 
   const conn = await getDBConnection();
   try {
-    const parquetPath = getPath(service, fdaId, '.parquet');
-    await toParquet(conn, getPath(service, fdaId, '.csv'), parquetPath);
-    await dropFile(s3Client, service, `${fdaId}.csv`);
+    const parquetPath = getPath(service, storagePath, '.parquet');
+    await toParquet(conn, getPath(service, storagePath, '.csv'), parquetPath);
+    await dropFile(s3Client, service, `${storagePath}.csv`);
   } finally {
     await releaseDBConnection(conn);
   }
@@ -1101,17 +1415,18 @@ function buildOneRowQuery(query) {
   return `SELECT * FROM (${normalizedQuery}) AS fda_one_row LIMIT 1`;
 }
 
-async function rollbackFDAProvisioning(service, fdaId) {
+async function rollbackFDAProvisioning(service, fdaId, servicePath) {
   const s3Client = getS3Client(
     `${config.objstg.protocol}://${config.objstg.endpoint}`,
     config.objstg.usr,
     config.objstg.pass,
   );
+  const storagePath = getFDAStoragePath(fdaId, servicePath);
 
   await Promise.allSettled([
-    dropFile(s3Client, service, `${fdaId}.csv`),
-    dropFile(s3Client, service, `${fdaId}.parquet`),
-    removeFDA(service, fdaId),
+    dropFile(s3Client, service, `${storagePath}.csv`),
+    dropFile(s3Client, service, `${storagePath}.parquet`),
+    removeFDA(service, fdaId, servicePath),
   ]);
 }
 

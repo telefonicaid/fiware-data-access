@@ -150,7 +150,7 @@ describe('db utils', () => {
     });
 
     await expect(
-      runPreparedStatement(runtimeConn, 'svc', 'fdaA', 'missing', {}),
+      runPreparedStatement(runtimeConn, 'svc', 'fdaA', 'missing', {}, '/sp'),
     ).rejects.toMatchObject({
       status: 404,
       type: 'DaNotFound',
@@ -180,6 +180,7 @@ describe('db utils', () => {
       'fdaA',
       'daA',
       { id: 7 },
+      '/sp',
     );
 
     expect(result.stream).toBe('stream-ref');
@@ -204,7 +205,14 @@ describe('db utils', () => {
     runtimeConn.prepare.mockResolvedValueOnce(stmt);
 
     await expect(
-      runPreparedStatementStream(runtimeConn, 'svc', 'fdaA', 'daA', { id: 2 }),
+      runPreparedStatementStream(
+        runtimeConn,
+        'svc',
+        'fdaA',
+        'daA',
+        { id: 2 },
+        '/sp',
+      ),
     ).rejects.toMatchObject({
       status: 500,
       type: 'DuckDBServerError',
@@ -229,9 +237,16 @@ describe('db utils', () => {
     runtimeConn.prepare.mockResolvedValueOnce(stmt);
 
     await expect(
-      runPreparedStatement(runtimeConn, 'svc', 'fdaA', 'daA', {
-        id: 'not-a-number',
-      }),
+      runPreparedStatement(
+        runtimeConn,
+        'svc',
+        'fdaA',
+        'daA',
+        {
+          id: 'not-a-number',
+        },
+        '/sp',
+      ),
     ).rejects.toMatchObject({
       status: 400,
       type: 'InvalidQueryParam',
@@ -246,7 +261,7 @@ describe('db utils', () => {
     runtimeConn.prepare.mockRejectedValueOnce(new Error('syntax error'));
 
     await expect(
-      validateDAQuery(runtimeConn, 'svc', 'fdaA', 'SELECT invalid'),
+      validateDAQuery(runtimeConn, 'svc', 'fdaA', 'SELECT invalid', '/sp'),
     ).rejects.toMatchObject({
       status: 400,
       type: 'InvalidDAQuery',
@@ -261,7 +276,7 @@ describe('db utils', () => {
     };
     runtimeConn.prepare.mockResolvedValueOnce(stmt);
 
-    await validateDAQuery(runtimeConn, 'svc', 'fdaA', 'SELECT id');
+    await validateDAQuery(runtimeConn, 'svc', 'fdaA', 'SELECT id', '/sp');
 
     expect(stmt.close).toHaveBeenCalledTimes(1);
   });
@@ -292,10 +307,11 @@ describe('db utils', () => {
       'fdaA',
       'SELECT * WHERE id = $1',
       false,
+      '/servicepath',
     );
 
     expect(result).toBe(
-      "FROM read_parquet('s3://my-service/fdaA.parquet') SELECT * WHERE id = $1",
+      "FROM read_parquet('s3://my-service/servicepath/fdaA.parquet') SELECT * WHERE id = $1",
     );
   });
 
@@ -307,10 +323,11 @@ describe('db utils', () => {
       'fdaA',
       'SELECT * WHERE id = $1',
       true,
+      '/servicepath',
     );
 
     expect(result).toBe(
-      "FROM read_parquet('s3://my-service/fdaA.parquet/**/*.parquet') SELECT * WHERE id = $1",
+      "FROM read_parquet('s3://my-service/servicepath/fdaA.parquet/**/*.parquet') SELECT * WHERE id = $1",
     );
   });
 
@@ -407,7 +424,7 @@ describe('db utils', () => {
     };
     runtimeConn.prepare.mockResolvedValueOnce(stmt);
 
-    await runPreparedStatement(runtimeConn, 'svc', 'fdaA', 'daA', {});
+    await runPreparedStatement(runtimeConn, 'svc', 'fdaA', 'daA', {}, '/sp');
 
     expect(stmt.bind).toHaveBeenCalledWith({
       authorized: 1,
@@ -421,7 +438,7 @@ describe('db utils', () => {
     runtimeConn.prepare.mockRejectedValueOnce('parse failed');
 
     await expect(
-      validateDAQuery(runtimeConn, 'svc', 'fdaA', 'SELECT invalid'),
+      validateDAQuery(runtimeConn, 'svc', 'fdaA', 'SELECT invalid', '/sp'),
     ).rejects.toMatchObject({
       status: 400,
       type: 'InvalidDAQuery',

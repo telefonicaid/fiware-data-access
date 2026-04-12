@@ -27,6 +27,7 @@ import { FDAError } from '../fdaError.js';
 import { getBasicLogger } from './logger.js';
 import { config } from '../fdaConfig.js';
 import { convertRefreshIntervalToMs } from './utils.js';
+import { getFDAStoragePath } from './fdaScope.js';
 
 let instance = null;
 
@@ -101,6 +102,7 @@ export async function runPreparedStatement(
   fdaId,
   daId,
   paramValues,
+  servicePath,
   streaming = false,
 ) {
   const method = streaming
@@ -113,7 +115,7 @@ export async function runPreparedStatement(
     `[DEBUG]: ${method}`,
   );
 
-  const da = await retrieveDA(service, fdaId, daId);
+  const da = await retrieveDA(service, fdaId, daId, servicePath);
   if (!da?.query) {
     throw new FDAError(
       404,
@@ -122,8 +124,18 @@ export async function runPreparedStatement(
     );
   }
 
-  const { objStgConf } = await retrieveFDA(service, fdaId);
-  const query = buildDAQuery(service, fdaId, da.query, objStgConf?.partition);
+  const { objStgConf, servicePath: storedServicePath } = await retrieveFDA(
+    service,
+    fdaId,
+    servicePath,
+  );
+  const query = buildDAQuery(
+    service,
+    fdaId,
+    da.query,
+    objStgConf?.partition,
+    storedServicePath ?? servicePath,
+  );
 
   const stmt = await conn.prepare(query);
 
@@ -172,6 +184,7 @@ export async function runPreparedStatementStream(
   fdaId,
   daId,
   paramValues,
+  servicePath,
 ) {
   return await runPreparedStatement(
     conn,
@@ -179,6 +192,7 @@ export async function runPreparedStatementStream(
     fdaId,
     daId,
     paramValues,
+    servicePath,
     true,
   );
 }
@@ -550,7 +564,13 @@ function getPartitionConf(partitionType = 'none', timeColumn) {
   return { cols, partitionBy };
 }
 
-export function buildDAQuery(service, fdaId, userQuery, partition) {
+export function buildDAQuery(
+  service,
+  fdaId,
+  userQuery,
+  partition,
+  servicePath,
+) {
   logger.debug(
     { service, fdaId, userQuery, partition },
     '[DEBUG]: buildDAQuery',
@@ -569,7 +589,8 @@ export function buildDAQuery(service, fdaId, userQuery, partition) {
 
   const trimmed = userQuery.trim();
 
-  const parquetPath = `s3://${service}/${fdaId}.parquet`;
+  const objectKey = getFDAStoragePath(fdaId, servicePath);
+  const parquetPath = `s3://${service}/${objectKey}.parquet`;
 
   if (partition) {
     return `FROM read_parquet('${parquetPath}/**/*.parquet') ${trimmed}`;
@@ -604,9 +625,21 @@ export function extractDate(path) {
   return null;
 }
 
-export async function validateDAQuery(conn, service, fdaId, userQuery) {
+export async function validateDAQuery(
+  conn,
+  service,
+  fdaId,
+  userQuery,
+  servicePath,
+) {
   const { objStgConf } = await retrieveFDA(service, fdaId);
-  const query = buildDAQuery(service, fdaId, userQuery, objStgConf?.partition);
+  const query = buildDAQuery(
+    service,
+    fdaId,
+    userQuery,
+    objStgConf?.partition,
+    servicePath,
+  );
 
   let stmt;
   try {
