@@ -511,6 +511,7 @@ export async function fetchFDA(
     query: timeQuery,
     service,
     timeColumn,
+    refreshPolicy,
     objStgConf,
   });
 
@@ -522,7 +523,14 @@ export async function fetchFDA(
     await agenda.every(
       refreshInterval,
       'refresh-fda',
-      { fdaId, query: timeQuery, service, timeColumn, objStgConf },
+      {
+        fdaId,
+        query: timeQuery,
+        service,
+        timeColumn,
+        refreshPolicy,
+        objStgConf,
+      },
       {
         skipImmediate: true,
         unique: {

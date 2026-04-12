@@ -501,29 +501,29 @@ function getPartitionConf(partitionType = 'none', timeColumn) {
   const PARTITIONS = {
     day: {
       columns: `
-      year(${timeColumn}) as year,
-      month(${timeColumn}) as month,
-      day(${timeColumn}) as day
+      year(${timeColumn}::TIMESTAMP) as year,
+      month(${timeColumn}::TIMESTAMP) as month,
+      day(${timeColumn}::TIMESTAMP) as day
     `,
       partitionBy: 'year, month, day',
     },
     week: {
       columns: `
-      year(${timeColumn}) as year,
-      strftime(${timeColumn}, '%Y-%W') as week
+      year(${timeColumn}::TIMESTAMP) as year,
+      strftime(${timeColumn}::TIMESTAMP, '%Y-%W') as week
       `,
       partitionBy: 'year, week',
     },
     month: {
       columns: `
-      year(${timeColumn}) as year,
-      month(${timeColumn}) as month
+      year(${timeColumn}::TIMESTAMP) as year,
+      month(${timeColumn}::TIMESTAMP) as month
     `,
       partitionBy: 'year, month',
     },
     year: {
       columns: `
-      year(${timeColumn}) as year
+      year(${timeColumn}::TIMESTAMP) as year
     `,
       partitionBy: 'year',
     },

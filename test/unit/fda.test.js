@@ -513,6 +513,9 @@ describe('fetchFDA', () => {
       query: 'SELECT id FROM users;',
       service: 'svc',
       timeColumn: 'timeinstant',
+      refreshPolicy: {
+        type: 'none',
+      },
       objStgConf: undefined,
     });
     expect(agenda.every).not.toHaveBeenCalled();
@@ -541,6 +544,10 @@ describe('fetchFDA', () => {
         query: 'SELECT timeinstant, 1',
         service: 'svc',
         timeColumn: 'timeinstant',
+        refreshPolicy: {
+          type: 'interval',
+          params: { refreshInterval: '10 minutes' },
+        },
         objStgConf: undefined,
       },
       {
