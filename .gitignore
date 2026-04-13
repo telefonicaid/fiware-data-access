@@ -41,3 +41,6 @@ build/
 # Cache
 .eslintcache
 .prettierrc.cache
+
+# DuckDb extensions custom path
+duckdb_extensions/
