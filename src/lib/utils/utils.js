@@ -23,6 +23,7 @@
 // criminal actions it may exercise to protect its rights.
 
 import { FDAError } from '../fdaError.js';
+import { CronExpressionParser } from 'cron-parser';
 
 let activeFreshQueries = 0;
 
@@ -193,4 +194,91 @@ export function getWindowDate(windowSize) {
 
   map[windowSize]?.();
   return map[windowSize] ? now : undefined;
+}
+
+export function convertRefreshIntervalToMs(interval) {
+  if (!interval || typeof interval !== 'string' || !interval.trim()) {
+    return null;
+  }
+
+  const normalized = interval.trim().toLowerCase();
+
+  // Parse human-readable Agenda format: "number unit"
+  const match = normalized.match(
+    /^(\d+)\s*(second|minute|hour|day|week|month|year)s?$/,
+  );
+  if (match) {
+    const [, quantity, unit] = match;
+    const num = parseInt(quantity, 10);
+    const unitMs = {
+      second: 1000,
+      minute: 60 * 1000,
+      hour: 60 * 60 * 1000,
+      day: 24 * 60 * 60 * 1000,
+      week: 7 * 24 * 60 * 60 * 1000,
+      month: 30 * 24 * 60 * 60 * 1000,
+      year: 365 * 24 * 60 * 60 * 1000,
+    };
+    return num * (unitMs[unit] || 0);
+  }
+
+  // Cron intervals
+  const cronMs = cronToIntervalMs(interval);
+  if (cronMs !== null) {
+    return cronMs;
+  }
+
+  return null;
+}
+
+function cronToIntervalMs(cron) {
+  const interval = CronExpressionParser.parse(cron);
+  if (!interval) {
+    return null;
+  }
+
+  // We need to get the difference between two consecutive runs to know the actual interval
+  const next = interval.next().getTime();
+  const next2 = interval.next().getTime();
+
+  return next2 - next;
+}
+
+export function getTimeColumnQuery(query, timeColumn) {
+  if (typeof timeColumn !== 'string' || !/^[a-zA-Z0-9_]+$/.test(timeColumn)) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Invalid time column name "${timeColumn}".`,
+    );
+  }
+
+  const upper = query.toUpperCase();
+  const start = upper.indexOf('SELECT');
+
+  if (start === -1) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Invalid query format. Missing SELECT statement.`,
+    );
+  }
+
+  // Search for the position to insert the time column, which is right after the SELECT keyword and any following whitespace
+  let insertPos = start + 6;
+  while (query[insertPos] === ' ') {
+    insertPos++;
+  }
+
+  // find end of SELECT clause (before FROM)
+  const fromIndex = upper.indexOf('FROM');
+  const selectClause = query.slice(insertPos, fromIndex).trim();
+  const columns = selectClause.split(',').map((c) => c.trim());
+
+  // Check if SELECT already has the timecolumn
+  if (selectClause.startsWith('*') || columns.includes(timeColumn)) {
+    return query;
+  }
+
+  return query.slice(0, insertPos) + timeColumn + ', ' + query.slice(insertPos);
 }

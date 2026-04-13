@@ -486,28 +486,26 @@ A FDA is represented by a JSON object with the following fields:
 
 Defines how and when the FDA should be automatically refreshed.
 
-| Field            | Optional | Type   | Description                                                                                                                                                                                                                                     |
-| ---------------- | -------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `type`           |          | string | Refresh strategy. One of: `none`, `interval`, `cron`, `window`.                                                                                                                                                                                 |
-| `value`          | ✓        | string | Required if `type` is `interval`, `cron` or `window`. With type `interval` and `cron` it represents a human interval (e.g. `1 hour`) or a cron expression. With type `window` it can take the values `hourly`, `daily`, `weekly` and `monthly`. |
-| `deleteInterval` | ✓        | string | Represents a human interval (e.g. `1 hour`) or a cron expression.                                                                                                                                                                               |
-| `windowSize`     | ✓        | string | Required with `deleteInterval`. Temporal interval of data we are gonna keep in storage (e.g. only the data of the last month). Possible values: `day`, `week`, `month` and `year`                                                               |
+| Field               | Optional | Type   | Description                                                     |
+| ------------------- | -------- | ------ | --------------------------------------------------------------- |
+| `type`              |          | string | Refresh strategy. One of: `none`, `interval`, `cron`, `window`. |
+| [`params`](#params) |    (*)      | object | Object with the parameters for the refresh policy type.         |
 
-##### Semantics
-
--   `none` (default): No automatic refresh is scheduled.
--   `interval`: Uses Agenda [human interval](https://github.com/agenda/human-interval) format (e.g. `5 minutes`,
-    `1 hour`).
--   `cron`: Uses a cron expression (e.g. `0 * * * *`).
--   `window`: Uses the values `hourly`, `daily`, `weekly` and `monthly`. When refreshing the `FDA` it retrieves only the
-    data of the interval indicated in the value (e.g. with the value `weekly` it retrieves each week the data of the
-    last week).
+(*) Not used when `type` is `none`, mandatory otherwise
 
 If omitted, the default policy is:
 
 ```json
 { "type": "none" }
 ```
+
+##### Params
+
+| Field             | Optional | Type   | Description                                                                                                                                                                                    |
+| ----------------- | -------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `refreshInterval` |          | string | It represents a human interval (e.g. `1 hour`) or a cron expression. The frequency for the scheduled refresh and clean jobs. Must be minor or equal to partition size (if existing) (value of the field [`objstgconf.partition`](#object-storage-configuration-objstgconf)).           |
+| `fetchSize`       |          | string | **Only for type `window`**, it can take the values `hour`, `day`, `week` and `month`. Represents the time range of data to fetch (e.g. last hour/month data). Must be equal to partition size (value of the field [`objstgconf.partition`](#object-storage-configuration-objstgconf)). |
+| `windowSize`      | ✓        | string | Temporal interval of data we are gonna keep in storage (e.g. only the data of the last month). Possible values: `day`, `week`, `month` and `year`. If omitted, then all data is kept forever, no clean partition is done (i.e. an "infinite" window).                                              |
 
 ##### Object storage configuration (objstgconf)
 

@@ -93,6 +93,7 @@ describe('fetcher', () => {
           service: 'svcA',
           servicePath: '/public',
           timeColumn: 'timeinstant',
+          refreshPolicy: {},
           objStgConf: {},
         },
       },
@@ -104,6 +105,7 @@ describe('fetcher', () => {
       'svcA',
       '/public',
       'timeinstant',
+      {},
       {},
       false,
     );

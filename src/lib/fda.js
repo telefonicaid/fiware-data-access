@@ -33,6 +33,8 @@ import {
   resolveDAParams,
   validateDAQuery,
   extractDate,
+  PARTITION_TYPES,
+  refreshIntervalPartitionCheck,
 } from './utils/db.js';
 import { uploadTable, runPgQuery, createPgCursorReader } from './utils/pg.js';
 import {
@@ -60,6 +62,7 @@ import {
   getWindowDate,
   assertFreshQueriesEnabled,
   acquireFreshQuerySlot,
+  getTimeColumnQuery,
 } from './utils/utils.js';
 import {
   buildFDAJobFilter,
@@ -573,12 +576,17 @@ export async function fetchFDA(
   timeColumn,
   objStgConf,
 ) {
+  validateScheduledOptions(refreshPolicy, objStgConf);
+  const timeQuery =
+    refreshPolicy?.type !== 'none' || objStgConf?.partition
+      ? getTimeColumnQuery(query, timeColumn)
+      : query;
   const normalizedVisibility = normalizeVisibility(visibility);
   const normalizedServicePath = normalizeServicePath(servicePath);
 
   await createFDAMongo(
     fdaId,
-    query,
+    timeQuery,
     service,
     normalizedVisibility,
     normalizedServicePath,
@@ -589,7 +597,12 @@ export async function fetchFDA(
   );
 
   try {
-    await createOneRowParquetSync(service, fdaId, query, normalizedServicePath);
+    await createOneRowParquetSync(
+      service,
+      fdaId,
+      timeQuery,
+      normalizedServicePath,
+    );
   } catch (err) {
     await rollbackFDAProvisioning(service, fdaId, normalizedServicePath);
     throw err;
@@ -600,25 +613,29 @@ export async function fetchFDA(
   // Execute first fetch immediately (when a fetcher is free)
   await agenda.now('refresh-fda', {
     fdaId,
-    query,
+    query: timeQuery,
     service,
     servicePath: normalizedServicePath,
     timeColumn,
+    refreshPolicy,
     objStgConf,
   });
 
   // Schedule refreshes according to policy
   if (refreshPolicy?.type === 'interval' || refreshPolicy?.type === 'cron') {
+    const { refreshInterval, windowSize } = refreshPolicy.params || {};
+
     // unique is not really needed since we check existence before, but it adds an extra layer of safety in case of duplicate calls
     await agenda.every(
-      refreshPolicy.value,
+      refreshInterval,
       'refresh-fda',
       {
         fdaId,
-        query,
+        query: timeQuery,
         service,
         servicePath: normalizedServicePath,
         timeColumn,
+        refreshPolicy,
         objStgConf,
       },
       {
@@ -632,10 +649,9 @@ export async function fetchFDA(
       },
     );
 
-    const { deleteInterval, windowSize } = refreshPolicy;
-    if (deleteInterval && windowSize) {
+    if (windowSize) {
       await agenda.every(
-        deleteInterval,
+        refreshInterval,
         'clean-partition',
         {
           fdaId,
@@ -655,32 +671,22 @@ export async function fetchFDA(
         },
       );
     }
-    if (deleteInterval && !windowSize) {
-      throw new FDAError(
-        400,
-        'InvalidParam',
-        `Window size is required with a delete interval.`,
-      );
-    }
   }
 
   if (refreshPolicy?.type === 'window') {
-    const { interval, windowQuery } = getUpdateWindow(
-      refreshPolicy.value,
-      query,
-      timeColumn,
-    );
+    const { refreshInterval, windowSize } = refreshPolicy.params || {};
 
     // partitionFlag lets us know we are refreshing already existing partitioned files for performance purposes
     await agenda.every(
-      interval,
+      refreshInterval,
       'refresh-fda',
       {
         fdaId,
-        query: windowQuery,
+        query: timeQuery,
         service,
         servicePath: normalizedServicePath,
         timeColumn,
+        refreshPolicy,
         objStgConf,
         partitionFlag: true,
       },
@@ -695,10 +701,9 @@ export async function fetchFDA(
       },
     );
 
-    const { deleteInterval, windowSize } = refreshPolicy;
-    if (deleteInterval && windowSize) {
+    if (windowSize) {
       await agenda.every(
-        deleteInterval,
+        refreshInterval,
         'clean-partition',
         {
           fdaId,
@@ -718,45 +723,50 @@ export async function fetchFDA(
         },
       );
     }
-    if (deleteInterval && !windowSize) {
-      throw new FDAError(
-        400,
-        'InvalidParam',
-        `Window size is required with a delete interval.`,
-      );
-    }
   }
 }
 
-function getUpdateWindow(windowType, query, timeColumn) {
-  const slidingWindow = {
-    hourly: {
-      interval: '0 * * * *',
-      windowQuery: `SELECT * FROM (${query}) q WHERE ${timeColumn} >= NOW() - INTERVAL '1 hour'`,
-    },
-    daily: {
-      interval: '0 0 * * *',
-      windowQuery: `SELECT * FROM (${query}) q WHERE ${timeColumn} >= NOW() - INTERVAL '1 day'`,
-    },
-    weekly: {
-      interval: '0 0 * * 0',
-      windowQuery: `SELECT * FROM (${query}) q WHERE ${timeColumn} >= NOW() - INTERVAL '1 week'`,
-    },
-    monthly: {
-      interval: '0 0 1 * *',
-      windowQuery: `SELECT * FROM (${query}) q WHERE ${timeColumn} >= NOW() - INTERVAL '1 month'`,
-    },
-  };
-
-  const window = slidingWindow[windowType];
-  if (!window) {
+function validateScheduledOptions(refreshPolicy, objStgConf) {
+  if (!refreshPolicy || refreshPolicy.type === 'none') {
+    return;
+  }
+  const { refreshInterval, fetchSize } = refreshPolicy.params || {};
+  if (!refreshInterval) {
     throw new FDAError(
       400,
       'InvalidParam',
-      `Invalid window type: ${windowType}.`,
+      `Missing required refresh policy parameter: refreshInterval.`,
     );
   }
-  return window;
+
+  if (
+    objStgConf?.partition &&
+    !PARTITION_TYPES.includes(objStgConf.partition)
+  ) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Invalid partition type "${objStgConf.partition}".`,
+    );
+  }
+
+  // RefreshInterval must be smaller or equal than partition size
+  if (!refreshIntervalPartitionCheck(refreshInterval, objStgConf?.partition)) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Refresh interval "${refreshInterval}" must be smaller or equal than partition size "${objStgConf?.partition}".`,
+    );
+  }
+
+  // fetched data size must be equal than partition size (if both presents).
+  if (objStgConf?.partition && fetchSize !== objStgConf?.partition) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Fetch size "${fetchSize}" must be equal to partition size "${objStgConf?.partition}".`,
+    );
+  }
 }
 
 export async function updateFDA(service, fdaId, visibility, servicePath) {
@@ -777,9 +787,19 @@ export async function updateFDA(service, fdaId, visibility, servicePath) {
     service,
     servicePath: previous.servicePath ?? normalizedServicePath,
     timeColumn: previous.timeColumn,
+    refreshPolicy: previous.refreshPolicy,
     objStgConf: previous.objStgConf,
     partitionFlag: true,
   });
+
+  if (previous.refreshPolicy?.params?.windowSize) {
+    await agenda.now('clean-partition', {
+      fdaId,
+      service,
+      windowSize: previous.refreshPolicy.params.windowSize,
+      objStgConf: previous.objStgConf,
+    });
+  }
 }
 
 export async function processFDAAsync(
@@ -788,6 +808,7 @@ export async function processFDAAsync(
   service,
   servicePath,
   timeColumn,
+  refreshPolicy,
   objStgConf,
   partitionFlag,
 ) {
@@ -796,10 +817,17 @@ export async function processFDAAsync(
   try {
     await updateFDAStatus(service, fdaId, servicePath, 'fetching', 10);
 
+    let finalQuery = query;
+    if (refreshPolicy?.type === 'window') {
+      const { params = {} } = refreshPolicy;
+      const prevWindowStartDate = getPreviousWindowStartDate(params.fetchSize);
+      finalQuery = getUpdateWindowQuery(query, timeColumn, prevWindowStartDate);
+    }
+
     await uploadTableToObjStg(
       service,
       service,
-      query,
+      finalQuery,
       service,
       storagePath,
       fdaId,
@@ -821,6 +849,47 @@ export async function processFDAAsync(
     );
     throw err;
   }
+}
+
+function getPreviousWindowStartDate(fetchSize) {
+  const now = new Date();
+
+  switch (fetchSize) {
+    case 'day': {
+      const d = new Date(now);
+      d.setUTCDate(d.getUTCDate() - 1);
+      d.setUTCHours(0, 0, 0, 0);
+      return d.toISOString();
+    }
+
+    case 'week': {
+      const d = new Date(now);
+      d.setUTCDate(d.getUTCDate() - 7);
+      d.setUTCHours(0, 0, 0, 0);
+      return d.toISOString();
+    }
+
+    case 'month': {
+      const d = new Date(now);
+      d.setUTCMonth(d.getUTCMonth() - 1);
+      d.setUTCHours(0, 0, 0, 0);
+      return d.toISOString();
+    }
+
+    case 'year': {
+      const d = new Date(now);
+      d.setUTCFullYear(d.getUTCFullYear() - 1);
+      d.setUTCHours(0, 0, 0, 0);
+      return d.toISOString();
+    }
+
+    default:
+      throw new FDAError(400, 'InvalidParam', `Missing param fetchSize.`);
+  }
+}
+
+function getUpdateWindowQuery(query, timeColumn, latestFetchStartDate) {
+  return `SELECT * FROM (${query}) q WHERE ${timeColumn} >= TIMESTAMP '${latestFetchStartDate}' AND ${timeColumn} < NOW()`;
 }
 
 export async function deleteFDA(service, fdaId, visibility, servicePath) {
