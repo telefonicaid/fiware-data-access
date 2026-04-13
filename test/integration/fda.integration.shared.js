@@ -747,7 +747,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       if (res3.status >= 400) {
         console.error(
-          'POST /fdas failedas expected:',
+          'POST /fdas failed as expected:',
           res3.status,
           res3.json ?? res3.text,
         );
