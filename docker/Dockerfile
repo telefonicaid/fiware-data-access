@@ -44,6 +44,10 @@ RUN \
         apt-get remove -y git && \
         apt-get -y autoremove
 
+# DuckDb extensions dir 
+#RUN mkdir -p /duckdb_extensions \
+#        && chown -R node:node /duckdb_extensions
+
 USER node
 ENV NODE_ENV=production
 ENV FDA_LOG_LEVEL=INFO
