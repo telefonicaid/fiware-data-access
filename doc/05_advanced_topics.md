@@ -18,10 +18,19 @@ topics related to this system.
 ### Bucket name convention
 
 When creating a _FDA_ we fetch the data from `PostgreSQL` and store inside a _bucket_ in our storage system. The name of
-this _bucket_ is fixed and is the **same** as the `fiware-service` of the _FDA_. \
+this _bucket_ is fixed and derived from the `fiware-service` of the _FDA_, replacing `_` with `-`. \
 The `FDA` app **does not** create the bucket when uploading a _FDA_ to the object bucket-based storage system, it instead
 rises an error. This is because we want to manage the bucket permissions so we prefer to create the bucket previously by
 hand.
+
+Current naming convention:
+
+| service        | bucket name    |
+| -------------- | -------------- |
+| `service_name` | `service-name` |
+
+Known restriction: bucket name normalization can generate collisions (for example `service_name` and `service-name` map
+to the same bucket). This restriction is currently accepted.
 
 ### File name convention
 

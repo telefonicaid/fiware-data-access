@@ -24,6 +24,7 @@
 
 import { describe, expect, test } from '@jest/globals';
 import {
+  getBucketNameFromService,
   normalizeScopedServicePath,
   getFDAStoragePath,
 } from '../../src/lib/utils/fdaScope.js';
@@ -47,5 +48,15 @@ describe('fdaScope utils', () => {
 
   test('getFDAStoragePath builds scoped path for non-root servicePath', () => {
     expect(getFDAStoragePath('fdaA', '/public')).toBe('public/fdaA');
+  });
+
+  test('getBucketNameFromService replaces underscores with hyphens', () => {
+    expect(getBucketNameFromService('service_name')).toBe('service-name');
+  });
+
+  test('getBucketNameFromService allows collisions as documented restriction', () => {
+    expect(getBucketNameFromService('service_name')).toBe(
+      getBucketNameFromService('service-name'),
+    );
   });
 });

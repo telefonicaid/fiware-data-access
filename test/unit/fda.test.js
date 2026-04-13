@@ -1120,6 +1120,18 @@ describe('processFDAAsync', () => {
     );
   });
 
+  test('uses normalized bucket name while preserving original database name', async () => {
+    await processFDAAsync('fda1', 'SELECT 1', 'service_name', '/servicepath');
+
+    expect(pgMocks.uploadTable).toHaveBeenCalledWith(
+      {},
+      'service-name',
+      'service_name',
+      'SELECT 1',
+      'servicepath/fda1',
+    );
+  });
+
   test('marks FDA as failed and rethrows when upload fails', async () => {
     pgMocks.uploadTable.mockRejectedValue(new Error('upload failed'));
 
@@ -1176,6 +1188,26 @@ describe('deleteFDA', () => {
       'data.fdaId': 'fdaA',
       'data.servicePath': '/servicepath',
     });
+  });
+
+  test('deleteFDA uses normalized bucket name for object storage deletion', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      _id: 'mongo-id',
+      visibility: 'private',
+      servicePath: '/servicepath',
+    });
+    awsMocks.listObjects.mockResolvedValue(['routeTo/fdaA.parquet']);
+
+    await deleteFDA('service_name', 'fdaA', 'private', '/servicepath');
+
+    expect(awsMocks.listObjects).toHaveBeenCalledWith(
+      {},
+      'service-name',
+      'servicepath/fdaA',
+    );
+    expect(awsMocks.dropFiles).toHaveBeenCalledWith({}, 'service-name', [
+      'routeTo/fdaA.parquet',
+    ]);
   });
 
   test('throws FDANotFound when FDA does not exist', async () => {
@@ -1597,6 +1629,25 @@ describe('cleanPartition', () => {
     expect(awsMocks.dropFiles).toHaveBeenCalledWith({}, 'svc', [
       'svc/fdaA/2020-01-01.parquet',
     ]);
+  });
+
+  test('cleanPartition uses normalized bucket name in object storage calls', async () => {
+    dbMocks.extractDate.mockReturnValue(new Date('2099-01-01'));
+
+    await cleanPartition(
+      'service_name',
+      'fdaA',
+      'month',
+      { partition: true },
+      '/public',
+    );
+
+    expect(awsMocks.listObjects).toHaveBeenCalledWith(
+      {},
+      'service-name',
+      'public/fdaA',
+    );
+    expect(awsMocks.dropFiles).toHaveBeenCalledWith({}, 'service-name', []);
   });
 
   test('calls dropFiles with empty array when no partitions are older than cutoff', async () => {

@@ -26,8 +26,8 @@ import { retrieveDA, retrieveFDA } from './mongo.js';
 import { FDAError } from '../fdaError.js';
 import { getBasicLogger } from './logger.js';
 import { config } from '../fdaConfig.js';
+import { getBucketNameFromService, getFDAStoragePath } from './fdaScope.js';
 import { convertRefreshIntervalToMs } from './utils.js';
-import { getFDAStoragePath } from './fdaScope.js';
 
 let instance = null;
 
@@ -590,7 +590,8 @@ export function buildDAQuery(
   const trimmed = userQuery.trim();
 
   const objectKey = getFDAStoragePath(fdaId, servicePath);
-  const parquetPath = `s3://${service}/${objectKey}.parquet`;
+  const bucketName = getBucketNameFromService(service);
+  const parquetPath = `s3://${bucketName}/${objectKey}.parquet`;
 
   if (partition) {
     return `FROM read_parquet('${parquetPath}/**/*.parquet') ${trimmed}`;
