@@ -46,7 +46,6 @@ const fdaMocks = {
   fetchFDA: jest.fn(),
   executeQuery: jest.fn(),
   executeQueryStream: jest.fn(),
-  executeQueryCsvStream: jest.fn(),
   createDA: jest.fn(),
   getFDA: jest.fn(),
   updateFDA: jest.fn(),
@@ -103,12 +102,11 @@ function resetModuleMocks() {
   fdaMocks.getFDAs.mockReset().mockResolvedValue([]);
   fdaMocks.fetchFDA.mockReset().mockResolvedValue(undefined);
   fdaMocks.executeQuery.mockReset().mockResolvedValue([{ ok: true }]);
-  fdaMocks.executeQueryStream.mockReset().mockImplementation(({ res }) => {
-    res.status(200).send('streamed');
-  });
-  fdaMocks.executeQueryCsvStream.mockReset().mockImplementation(({ res }) => {
-    res.status(200).send('streamed-csv');
-  });
+  fdaMocks.executeQueryStream
+    .mockReset()
+    .mockImplementation(({ res, format }) => {
+      res.status(200).send(format === 'csv' ? 'streamed-csv' : 'streamed');
+    });
   fdaMocks.createDA.mockReset().mockResolvedValue(undefined);
   fdaMocks.getFDA.mockReset().mockResolvedValue({ fdaId: 'fda1' });
   fdaMocks.updateFDA.mockReset().mockResolvedValue(undefined);
@@ -257,7 +255,6 @@ async function loadIndexModule({
     fetchFDA: fdaMocks.fetchFDA,
     executeQuery: fdaMocks.executeQuery,
     executeQueryStream: fdaMocks.executeQueryStream,
-    executeQueryCsvStream: fdaMocks.executeQueryCsvStream,
     assertFDAAccess: jest.fn(),
     createDA: fdaMocks.createDA,
     getFDA: fdaMocks.getFDA,
@@ -883,7 +880,6 @@ describe('index routes - validation and middleware branches', () => {
     });
     expect(fdaMocks.executeQuery).not.toHaveBeenCalled();
     expect(fdaMocks.executeQueryStream).not.toHaveBeenCalled();
-    expect(fdaMocks.executeQueryCsvStream).not.toHaveBeenCalled();
   });
 
   test('defaults to JSON when no Accept header is sent', async () => {
@@ -898,7 +894,6 @@ describe('index routes - validation and middleware branches', () => {
     expect(res.body).toEqual([{ col: 1 }]);
     expect(fdaMocks.executeQuery).toHaveBeenCalled();
     expect(fdaMocks.executeQueryStream).not.toHaveBeenCalled();
-    expect(fdaMocks.executeQueryCsvStream).not.toHaveBeenCalled();
   });
 
   test('defaults to JSON when Accept is */*', async () => {
@@ -914,7 +909,6 @@ describe('index routes - validation and middleware branches', () => {
     expect(res.body).toEqual([{ col: 2 }]);
     expect(fdaMocks.executeQuery).toHaveBeenCalled();
     expect(fdaMocks.executeQueryStream).not.toHaveBeenCalled();
-    expect(fdaMocks.executeQueryCsvStream).not.toHaveBeenCalled();
   });
 
   test('routes to CSV streaming when Accept is text/*', async () => {
@@ -925,9 +919,10 @@ describe('index routes - validation and middleware branches', () => {
       .set('Accept', 'text/*')
       .expect(200);
 
-    expect(fdaMocks.executeQueryCsvStream).toHaveBeenCalled();
+    expect(fdaMocks.executeQueryStream).toHaveBeenCalledWith(
+      expect.objectContaining({ format: 'csv' }),
+    );
     expect(fdaMocks.executeQuery).not.toHaveBeenCalled();
-    expect(fdaMocks.executeQueryStream).not.toHaveBeenCalled();
   });
 
   test('uses q-value priority: skips unsupported type and picks ndjson over json', async () => {
@@ -940,7 +935,9 @@ describe('index routes - validation and middleware branches', () => {
 
     expect(fdaMocks.executeQueryStream).toHaveBeenCalled();
     expect(fdaMocks.executeQuery).not.toHaveBeenCalled();
-    expect(fdaMocks.executeQueryCsvStream).not.toHaveBeenCalled();
+    expect(fdaMocks.executeQueryStream).toHaveBeenCalledWith(
+      expect.not.objectContaining({ format: 'csv' }),
+    );
   });
 
   test('routes to xls when Accept is application/vnd.ms-excel', async () => {
@@ -969,12 +966,13 @@ describe('index routes - validation and middleware branches', () => {
       .expect(200);
 
     expect(res.text).toBe('streamed-csv');
-    expect(fdaMocks.executeQueryCsvStream).toHaveBeenCalledWith(
+    expect(fdaMocks.executeQueryStream).toHaveBeenCalledWith(
       expect.objectContaining({
         service: 'svc',
         visibility: 'public',
         servicePath: '/servicepath',
         fresh: false,
+        format: 'csv',
       }),
     );
     expect(fdaMocks.executeQuery).not.toHaveBeenCalled();
