@@ -486,10 +486,10 @@ A FDA is represented by a JSON object with the following fields:
 
 Defines how and when the FDA should be automatically refreshed.
 
-| Field               | Optional | Type   | Description                                                     |
-| ------------------- | -------- | ------ | --------------------------------------------------------------- |
-| `type`              |          | string | Refresh strategy. One of: `none`, `interval`, `cron`, `window`. |
-| [`params`](#params) | (\*)     | object | Object with the parameters for the refresh policy type.         |
+| Field               | Optional | Type   | Description                                             |
+| ------------------- | -------- | ------ | ------------------------------------------------------- |
+| `type`              |          | string | Refresh strategy. One of: `none`, `interval`, `window`. |
+| [`params`](#params) | (\*)     | object | Object with the parameters for the refresh policy type. |
 
 (\*) Not used when `type` is `none`, mandatory otherwise
 
