@@ -63,6 +63,7 @@ import {
 } from './utils/utils.js';
 import {
   buildFDAJobFilter,
+  getBucketNameFromService,
   getFDAStoragePath,
   normalizeScopedServicePath,
 } from './utils/fdaScope.js';
@@ -792,6 +793,7 @@ export async function processFDAAsync(
   partitionFlag,
 ) {
   const storagePath = getFDAStoragePath(fdaId, servicePath);
+  const bucketName = getBucketNameFromService(service);
 
   try {
     await updateFDAStatus(service, fdaId, servicePath, 'fetching', 10);
@@ -800,7 +802,7 @@ export async function processFDAAsync(
       service,
       service,
       query,
-      service,
+      bucketName,
       storagePath,
       fdaId,
       servicePath,
@@ -840,6 +842,7 @@ export async function deleteFDA(service, fdaId, visibility, servicePath) {
       `FDA ${fdaId} of the service ${service} not found.`,
     );
   }
+  const bucketName = getBucketNameFromService(service);
   const s3Client = await getS3Client(
     `${config.objstg.protocol}://${config.objstg.endpoint}`,
     config.objstg.usr,
@@ -848,10 +851,10 @@ export async function deleteFDA(service, fdaId, visibility, servicePath) {
   // This way we remove FDAs independently of if theyre partitioned or not
   const objPaths = await listObjects(
     s3Client,
-    service,
+    bucketName,
     getFDAStoragePath(fdaId, targetServicePath),
   );
-  await dropFiles(s3Client, service, objPaths);
+  await dropFiles(s3Client, bucketName, objPaths);
 
   await removeFDA(service, fdaId, targetServicePath);
 
@@ -964,11 +967,12 @@ export async function cleanPartition(
     config.objstg.usr,
     config.objstg.pass,
   );
+  const bucketName = getBucketNameFromService(service);
 
   /* c8 ignore next 6 */
   const objPaths = await listObjects(
     s3Client,
-    service,
+    bucketName,
     getFDAStoragePath(fdaId, servicePath),
   );
 
@@ -980,7 +984,7 @@ export async function cleanPartition(
       partitionsToRemove.push(path);
     }
   }
-  await dropFiles(s3Client, service, partitionsToRemove);
+  await dropFiles(s3Client, bucketName, partitionsToRemove);
 }
 
 async function uploadTableToObjStg(
@@ -1199,15 +1203,20 @@ async function createOneRowParquetSync(service, fdaId, query, servicePath) {
     config.objstg.pass,
   );
   const storagePath = getFDAStoragePath(fdaId, servicePath);
+  const bucketName = getBucketNameFromService(service);
 
   const oneRowQuery = buildOneRowQuery(query);
-  await uploadTable(s3Client, service, service, oneRowQuery, storagePath);
+  await uploadTable(s3Client, bucketName, service, oneRowQuery, storagePath);
 
   const conn = await getDBConnection();
   try {
-    const parquetPath = getPath(service, storagePath, '.parquet');
-    await toParquet(conn, getPath(service, storagePath, '.csv'), parquetPath);
-    await dropFile(s3Client, service, `${storagePath}.csv`);
+    const parquetPath = getPath(bucketName, storagePath, '.parquet');
+    await toParquet(
+      conn,
+      getPath(bucketName, storagePath, '.csv'),
+      parquetPath,
+    );
+    await dropFile(s3Client, bucketName, `${storagePath}.csv`);
   } finally {
     await releaseDBConnection(conn);
   }
@@ -1225,10 +1234,11 @@ async function rollbackFDAProvisioning(service, fdaId, servicePath) {
     config.objstg.pass,
   );
   const storagePath = getFDAStoragePath(fdaId, servicePath);
+  const bucketName = getBucketNameFromService(service);
 
   await Promise.allSettled([
-    dropFile(s3Client, service, `${storagePath}.csv`),
-    dropFile(s3Client, service, `${storagePath}.parquet`),
+    dropFile(s3Client, bucketName, `${storagePath}.csv`),
+    dropFile(s3Client, bucketName, `${storagePath}.parquet`),
     removeFDA(service, fdaId, servicePath),
   ]);
 }
