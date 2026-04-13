@@ -90,9 +90,13 @@ const envVarsSchema = {
       type: 'string',
       default: null,
     },
-    FDA_OBJSTG_MAX_POOL_SIXE: {
+    FDA_OBJSTG_MAX_POOL_SIZE: {
       type: 'number',
       default: 10,
+    },
+    FDA_OBJSTG_EXTENSIONS_DIR: {
+      type: 'string',
+      default: './duckdb_extensions',
     },
     FDA_MONGO_URI: {
       type: 'string',
@@ -160,6 +164,7 @@ export const config = {
     protocol: envVars.FDA_OBJSTG_PROTOCOL,
     endpoint: envVars.FDA_OBJSTG_ENDPOINT,
     maxPoolSize: envVars.FDA_OBJSTG_MAX_POOL_SIZE,
+    extensionsDir: envVars.FDA_OBJSTG_EXTENSIONS_DIR,
   },
   mongo: {
     uri: envVars.FDA_MONGO_URI,
