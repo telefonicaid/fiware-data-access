@@ -680,7 +680,7 @@ describe('db utils', () => {
     );
 
     const sql = conn.run.mock.calls[0][0];
-    expect(sql).toContain('year(timestamp) as year');
+    expect(sql).toContain('year(timestamp::TIMESTAMP) as year');
     expect(sql).toContain('PARTITION_BY (year, month, day)');
     expect(sql).toContain('COMPRESSION ZSTD');
   });

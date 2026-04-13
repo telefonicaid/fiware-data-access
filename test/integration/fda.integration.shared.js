@@ -298,33 +298,6 @@ async function waitUntilFDACompleted({
   );
 }
 
-async function waitUntilFDAFailed({
-  baseUrl,
-  service,
-  fdaId,
-  visibility = 'public',
-  timeout = 10000,
-  interval = 300,
-}) {
-  const start = Date.now();
-
-  while (Date.now() - start < timeout) {
-    const res = await httpReq({
-      method: 'GET',
-      url: `${baseUrl}/${visibility}/fdas/${encodeURIComponent(fdaId)}`,
-      headers: { 'Fiware-Service': service },
-    });
-
-    if (res.status === 200 && res.json?.status === 'failed') {
-      return res.json;
-    }
-
-    await new Promise((r) => setTimeout(r, interval));
-  }
-
-  throw new Error(`Timeout waiting for FDA ${fdaId} to reach completed state`);
-}
-
 export const EXECUTION_MODES = Object.freeze({
   COMBINED: 'combined',
   SEPARATED: 'separated',
@@ -626,7 +599,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
     });
 
     test('POST /fdas creates an FDA with various refresh policies', async () => {
-      // Test with a window refresh policy (weekly) and partitioned by day, without compression, with a window size of 1 day
+      // Test with a window refresh policy (week) and partitioned by day, without compression, with a window size of 1 day
       const res = await httpReq({
         method: 'POST',
         url: `${baseUrl}/${visibility}/fdas`,
@@ -642,13 +615,15 @@ export function runFDAIntegrationSuite({ mode, label }) {
           description: 'users dataset',
           refreshPolicy: {
             type: 'window',
-            value: 'weekly',
-            deleteInterval: '0 0 * * *',
-            windowSize: 'day',
+            params: {
+              refreshInterval: '0 0 * * 0',
+              fetchSize: 'week',
+              windowSize: 'day',
+            },
           },
           timeColumn: 'timeinstant',
           objStgConf: {
-            partition: 'day',
+            partition: 'week',
             compression: false,
           },
         },
@@ -660,7 +635,88 @@ export function runFDAIntegrationSuite({ mode, label }) {
       expect(res.status).toBe(202);
       await waitUntilFDACompleted({ baseUrl, service, fdaId: 'fda_refresh' });
 
-      // Test with a window refresh policy (weekly) and partitioned by day, without compression, with a window size of 1 day
+      // Test with a window refresh policy (week) and partitioned by day, without objStgConf
+      const yearfetchSize = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: 'fda_refresh_noobjStgConf',
+          // query base to extract from PG to CSV
+          query:
+            'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+          description: 'users dataset',
+          refreshPolicy: {
+            type: 'window',
+            params: {
+              refreshInterval: '0 0 * * 0',
+              fetchSize: 'year',
+              windowSize: 'day',
+            },
+          },
+          timeColumn: 'timeinstant',
+        },
+      });
+
+      if (yearfetchSize.status >= 400) {
+        console.error(
+          'POST /fdas failed:',
+          yearfetchSize.status,
+          yearfetchSize.json ?? yearfetchSize.text,
+        );
+      }
+      expect(yearfetchSize.status).toBe(202);
+      await waitUntilFDACompleted({
+        baseUrl,
+        service,
+        fdaId: 'fda_refresh_noobjStgConf',
+      });
+
+      // Test with a fetchSize different from partition
+      const diffFetchPartition = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: 'fda_refresh',
+          // query base to extract from PG to CSV
+          query:
+            'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+          description: 'users dataset',
+          refreshPolicy: {
+            type: 'window',
+            params: {
+              refreshInterval: '0 0 * * 0',
+              fetchSize: 'week',
+              windowSize: 'day',
+            },
+          },
+          timeColumn: 'timeinstant',
+          objStgConf: {
+            partition: 'month',
+            compression: false,
+          },
+        },
+      });
+
+      if (diffFetchPartition.status >= 400) {
+        console.error(
+          'POST /fdas failed as expected:',
+          diffFetchPartition.status,
+          diffFetchPartition.json ?? diffFetchPartition.text,
+        );
+      }
+      //
+      expect(diffFetchPartition.status).toBe(400);
+      await waitUntilFDACompleted({ baseUrl, service, fdaId: 'fda_refresh' });
+
+      // Test with a window refresh policy (week) and partitioned by day, without compression, with a window size of 1 day
       const res2 = await httpReq({
         method: 'POST',
         url: `${baseUrl}/${visibility}/fdas`,
@@ -676,9 +732,11 @@ export function runFDAIntegrationSuite({ mode, label }) {
           description: 'users dataset',
           refreshPolicy: {
             type: 'window',
-            value: 'weekly',
-            deleteInterval: '0 0 * * *',
-            windowSize: 'week',
+            params: {
+              refreshInterval: '0 0 * * 0',
+              fetchSize: 'week',
+              windowSize: 'week',
+            },
           },
           timeColumn: 'timeinstant',
           objStgConf: {
@@ -714,9 +772,11 @@ export function runFDAIntegrationSuite({ mode, label }) {
           description: 'users dataset',
           refreshPolicy: {
             type: 'window',
-            value: 'monthly',
-            deleteInterval: '0 0 * * *',
-            windowSize: 'month',
+            params: {
+              refreshInterval: '0 0 1 * *',
+              fetchSize: 'month',
+              windowSize: 'month',
+            },
           },
           objStgConf: {
             partition: 'month',
@@ -727,19 +787,12 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       if (res3.status >= 400) {
         console.error(
-          'POST /fdas failed:',
+          'POST /fdas failed as expected:',
           res3.status,
           res3.json ?? res3.text,
         );
       }
-      expect(res3.status).toBe(202);
-      const fdaResult = await waitUntilFDAFailed({
-        baseUrl,
-        service,
-        fdaId: 'fda_refresh3',
-      });
-      expect(fdaResult.status).toBe('failed');
-      expect(fdaResult.error).toBe('Missing timeColumn value.');
+      expect(res3.status).toBe(400);
 
       // Test with invalid partition type
       const res4 = await httpReq({
@@ -757,9 +810,11 @@ export function runFDAIntegrationSuite({ mode, label }) {
           description: 'users dataset',
           refreshPolicy: {
             type: 'window',
-            value: 'yearly',
-            deleteInterval: '0 0 * * *',
-            windowSize: 'year',
+            params: {
+              refreshInterval: '0 0 1 * *',
+              fetchSize: 'month',
+              windowSize: 'year',
+            },
           },
           timeColumn: 'timeinstant',
           objStgConf: {
@@ -3249,9 +3304,12 @@ export function runFDAIntegrationSuite({ mode, label }) {
           // query base to extract from PG to CSV
           query: 'SELECT id, name, age FROM public.users ORDER BY id',
           description: 'users dataset',
+          timeColumn: 'timeinstant',
           refreshPolicy: {
             type: 'interval',
-            value: '1 hour',
+            params: {
+              refreshInterval: '1 hour',
+            },
           },
         },
       });
@@ -3272,13 +3330,16 @@ export function runFDAIntegrationSuite({ mode, label }) {
       });
 
       expect(completedFDA).toMatchObject({
-        query: 'SELECT id, name, age FROM public.users ORDER BY id',
+        query:
+          'SELECT timeinstant, id, name, age FROM public.users ORDER BY id',
         description: 'users dataset',
         status: 'completed',
         progress: 100,
         refreshPolicy: {
           type: 'interval',
-          value: '1 hour',
+          params: {
+            refreshInterval: '1 hour',
+          },
         },
       });
       expect(completedFDA.fdaId).toBeUndefined();
