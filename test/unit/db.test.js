@@ -331,6 +331,22 @@ describe('db utils', () => {
     );
   });
 
+  test('buildDAQuery normalizes bucket name from service with underscores', async () => {
+    const { buildDAQuery } = await loadDbModule();
+
+    const result = buildDAQuery(
+      'service_name',
+      'fdaA',
+      'SELECT * WHERE id = $1',
+      false,
+      '/servicepath',
+    );
+
+    expect(result).toBe(
+      "FROM read_parquet('s3://service-name/servicepath/fdaA.parquet') SELECT * WHERE id = $1",
+    );
+  });
+
   test('resolveDAParams coerces boolean string values', async () => {
     const { resolveDAParams } = await loadDbModule();
 
