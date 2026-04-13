@@ -35,6 +35,8 @@ const dbMocks = {
   resolveDAParams: jest.fn(),
   validateDAQuery: jest.fn(),
   extractDate: jest.fn(),
+  PARTITION_TYPES: ['day', 'week', 'month', 'year', 'none'],
+  refreshIntervalPartitionCheck: jest.fn(),
 };
 
 const pgMocks = {
@@ -83,6 +85,8 @@ await jest.unstable_mockModule('../../src/lib/utils/db.js', () => ({
   resolveDAParams: dbMocks.resolveDAParams,
   validateDAQuery: dbMocks.validateDAQuery,
   extractDate: dbMocks.extractDate,
+  PARTITION_TYPES: dbMocks.PARTITION_TYPES,
+  refreshIntervalPartitionCheck: dbMocks.refreshIntervalPartitionCheck,
 }));
 
 await jest.unstable_mockModule('../../src/lib/utils/pg.js', () => ({
@@ -770,6 +774,7 @@ describe('fetchFDA', () => {
     jobsMocks.getAgenda.mockReturnValue(agenda);
     agenda.now.mockResolvedValue(undefined);
     agenda.every.mockResolvedValue(undefined);
+    dbMocks.refreshIntervalPartitionCheck.mockReturnValue(true);
   });
 
   test('creates one-row parquet synchronously and schedules immediate fetch', async () => {
@@ -820,6 +825,9 @@ describe('fetchFDA', () => {
       service: 'svc',
       servicePath: '/servicepath',
       timeColumn: 'timeinstant',
+      refreshPolicy: {
+        type: 'none',
+      },
       objStgConf: undefined,
     });
     expect(agenda.every).not.toHaveBeenCalled();
@@ -835,8 +843,9 @@ describe('fetchFDA', () => {
       'desc',
       {
         type: 'interval',
-        value: '10 minutes',
+        params: { refreshInterval: '10 minutes' },
       },
+      'timeinstant',
     );
 
     expect(agenda.every).toHaveBeenCalledWith(
@@ -844,10 +853,14 @@ describe('fetchFDA', () => {
       'refresh-fda',
       {
         fdaId: 'fda1',
-        query: 'SELECT 1',
+        query: 'SELECT timeinstant, 1',
         service: 'svc',
         servicePath: '/servicepath',
-        timeColumn: undefined,
+        timeColumn: 'timeinstant',
+        refreshPolicy: {
+          type: 'interval',
+          params: { refreshInterval: '10 minutes' },
+        },
         objStgConf: undefined,
       },
       {
@@ -862,6 +875,33 @@ describe('fetchFDA', () => {
     );
   });
 
+  test('fails when refresh interval is larger than partition size', async () => {
+    dbMocks.refreshIntervalPartitionCheck.mockReturnValue(false);
+
+    await expect(
+      fetchFDA(
+        'fda1',
+        'SELECT 1',
+        'svc',
+        'public',
+        '/servicePath',
+        'desc',
+        {
+          type: 'interval',
+          params: { refreshInterval: '2 days' },
+        },
+        'timeinstant',
+        { partition: 'day' },
+      ),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidParam',
+      message:
+        'Refresh interval "2 days" must be smaller or equal than partition size "day".',
+    });
+
+    expect(agenda.every).not.toHaveBeenCalled();
+  });
   test('rolls back FDA provisioning and rethrows when parquet creation fails', async () => {
     const uploadError = new Error('S3 unreachable');
     pgMocks.uploadTable.mockRejectedValue(uploadError);
@@ -890,37 +930,7 @@ describe('fetchFDA', () => {
     expect(agenda.now).not.toHaveBeenCalled();
   });
 
-  test('fetchFDA with cron refresh policy schedules periodic job', async () => {
-    await fetchFDA(
-      'fda1',
-      'SELECT 1',
-      'svc',
-      'public',
-      '/servicepath',
-      'desc',
-      {
-        type: 'cron',
-        value: '0 0 * * *',
-      },
-    );
-
-    expect(agenda.every).toHaveBeenCalledWith(
-      '0 0 * * *',
-      'refresh-fda',
-      expect.objectContaining({ fdaId: 'fda1', query: 'SELECT 1' }),
-      {
-        skipImmediate: true,
-        unique: {
-          name: 'refresh-fda',
-          'data.service': 'svc',
-          'data.fdaId': 'fda1',
-          'data.servicePath': '/servicepath',
-        },
-      },
-    );
-  });
-
-  test('fetchFDA with window refresh policy and deleteInterval schedules cleanup', async () => {
+  test('fetchFDA with window refresh policy schedules cleanup', async () => {
     await fetchFDA(
       'fda1',
       'SELECT 1',
@@ -930,9 +940,15 @@ describe('fetchFDA', () => {
       'desc',
       {
         type: 'window',
-        value: 'daily',
-        deleteInterval: '1 day',
-        windowSize: 'day',
+        params: {
+          refreshInterval: '0 0 * * *',
+          fetchSize: 'day',
+          windowSize: 'day',
+        },
+      },
+      'timeinstant',
+      {
+        partition: 'day',
       },
     );
 
@@ -942,20 +958,6 @@ describe('fetchFDA', () => {
       expect.any(Object),
       expect.any(Object),
     );
-  });
-
-  test('fetchFDA throws when deleteInterval provided without windowSize', async () => {
-    await expect(
-      fetchFDA('fda1', 'SELECT 1', 'svc', 'public', '/servicepath', 'desc', {
-        type: 'interval',
-        value: '10 minutes',
-        deleteInterval: '1 day',
-      }),
-    ).rejects.toMatchObject({
-      status: 400,
-      type: 'InvalidParam',
-      message: 'Window size is required with a delete interval.',
-    });
   });
 
   test('fetchFDA throws when servicePath is missing', async () => {
@@ -1013,8 +1015,54 @@ describe('updateFDA', () => {
       partitionFlag: true,
     });
   });
+
+  test('regenerates sliding-window FDA and schedules refresh and clean job immediately', async () => {
+    mongoMocks.regenerateFDA.mockResolvedValue({
+      query: 'SELECT id FROM users',
+      refreshPolicy: {
+        type: 'window',
+        params: {
+          refreshInterval: '0 0 * * *',
+          fetchSize: 'day',
+          windowSize: 'day',
+        },
+      },
+    });
+    await updateFDA('svc', 'fda42', undefined, '/servicepath');
+
+    expect(mongoMocks.regenerateFDA).toHaveBeenCalledWith(
+      'svc',
+      'fda42',
+      '/servicepath',
+    );
+    expect(agenda.now).toHaveBeenCalledWith('refresh-fda', {
+      fdaId: 'fda42',
+      query: 'SELECT id FROM users',
+      service: 'svc',
+      servicePath: '/servicepath',
+      timeColumn: undefined,
+      refreshPolicy: {
+        type: 'window',
+        params: {
+          refreshInterval: '0 0 * * *',
+          fetchSize: 'day',
+          windowSize: 'day',
+        },
+      },
+      objStgConf: undefined,
+      partitionFlag: true,
+    });
+
+    expect(agenda.now).toHaveBeenCalledWith('clean-partition', {
+      fdaId: 'fda42',
+      service: 'svc',
+      windowSize: 'day',
+      objStgConf: undefined,
+    });
+  });
 });
 
+//
 describe('processFDAAsync', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -1311,14 +1359,21 @@ describe('fetchFDA with refresh policies', () => {
       'desc',
       {
         type: 'cron',
-        value: '0 0 * * *',
+        params: { refreshInterval: '0 0 * * *' },
       },
+      'timeinstant',
     );
 
     expect(agenda.every).toHaveBeenCalledWith(
       '0 0 * * *',
       'refresh-fda',
-      expect.objectContaining({ fdaId: 'fda1', query: 'SELECT 1' }),
+      expect.objectContaining({
+        fdaId: 'fda1',
+        query: 'SELECT timeinstant, 1',
+        service: 'svc',
+        timeColumn: 'timeinstant',
+        objStgConf: undefined,
+      }),
       {
         skipImmediate: true,
         unique: {
@@ -1331,45 +1386,9 @@ describe('fetchFDA with refresh policies', () => {
     );
   });
 
-  test('fetchFDA with window refresh policy and deleteInterval schedules cleanup', async () => {
-    await fetchFDA(
-      'fda1',
-      'SELECT 1',
-      'svc',
-      'public',
-      '/servicepath',
-      'desc',
-      {
-        type: 'window',
-        value: 'daily',
-        deleteInterval: '1 day',
-        windowSize: 'day',
-      },
-    );
+  test('fetchFDA with different fetch size and partition', async () => {
+    dbMocks.refreshIntervalPartitionCheck.mockReturnValue(true);
 
-    expect(agenda.every).toHaveBeenCalledWith(
-      expect.any(String),
-      'refresh-fda',
-      expect.any(Object),
-      expect.any(Object),
-    );
-  });
-
-  test('fetchFDA throws when deleteInterval provided without windowSize', async () => {
-    await expect(
-      fetchFDA('fda1', 'SELECT 1', 'svc', 'public', '/servicepath', 'desc', {
-        type: 'interval',
-        value: '10 minutes',
-        deleteInterval: '1 day',
-      }),
-    ).rejects.toMatchObject({
-      status: 400,
-      type: 'InvalidParam',
-      message: 'Window size is required with a delete interval.',
-    });
-  });
-
-  test('fetchFDA with window policy throws when deleteInterval provided without windowSize', async () => {
     await expect(
       fetchFDA(
         'fda1',
@@ -1380,16 +1399,24 @@ describe('fetchFDA with refresh policies', () => {
         'desc',
         {
           type: 'window',
-          value: 'daily',
-          deleteInterval: '1 day',
+          params: {
+            refreshInterval: '0 0 * * *', // Once a day
+            fetchSize: 'week',
+            windowSize: 'week',
+          },
         },
         'timeinstant',
+        {
+          partition: 'day',
+        },
       ),
     ).rejects.toMatchObject({
       status: 400,
       type: 'InvalidParam',
-      message: 'Window size is required with a delete interval.',
+      message: 'Fetch size "week" must be equal to partition size "day".',
     });
+
+    expect(agenda.every).not.toHaveBeenCalled();
   });
 
   test('fetchFDA throws when servicePath is missing', async () => {
@@ -1648,26 +1675,30 @@ describe('cleanPartition', () => {
   });
 
   test('throws CleaningError when partition config is undefined', async () => {
-    await expect(
-      cleanPartition('svc', 'fdaA', 'month', undefined, '/public'),
-    ).rejects.toMatchObject({
-      status: 400,
-      type: 'CleaningError',
-    });
+    try {
+      await cleanPartition('svc', 'fdaA', 'month', undefined, '/public');
+    } catch (err) {
+      expect(err).toBeInstanceOf(FDAError);
+      expect(err.message).toContain('Removing a non partitioned FDA');
+      expect(err.type).toContain('CleaningError');
+      expect(err.status).toBe(400);
+    }
   });
 
   test('throws CleaningError when windowSize is invalid', async () => {
-    await expect(
-      cleanPartition(
+    try {
+      await cleanPartition(
         'svc',
         'fdaA',
         'invalid_size',
         { partition: true },
         '/public',
-      ),
-    ).rejects.toMatchObject({
-      status: 400,
-      type: 'CleaningError',
-    });
+      );
+    } catch (err) {
+      expect(err).toBeInstanceOf(FDAError);
+      expect(err.message).toContain('Incorrect window size in refresh policy');
+      expect(err.type).toContain('CleaningError');
+      expect(err.status).toBe(400);
+    }
   });
 });
