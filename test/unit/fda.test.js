@@ -1494,26 +1494,30 @@ describe('cleanPartition', () => {
   });
 
   test('throws CleaningError when partition config is undefined', async () => {
-    await expect(
-      cleanPartition('svc', 'fdaA', 'month', undefined, '/public'),
-    ).rejects.toMatchObject({
-      status: 400,
-      type: 'CleaningError',
-    });
+    try {
+      await cleanPartition('svc', 'fdaA', 'month', undefined, '/public');
+    } catch (err) {
+      expect(err).toBeInstanceOf(FDAError);
+      expect(err.message).toContain('Removing a non partitioned FDA');
+      expect(err.type).toContain('CleaningError');
+      expect(err.status).toBe(400);
+    }
   });
 
   test('throws CleaningError when windowSize is invalid', async () => {
-    await expect(
-      cleanPartition(
+    try {
+      await cleanPartition(
         'svc',
         'fdaA',
         'invalid_size',
         { partition: true },
         '/public',
-      ),
-    ).rejects.toMatchObject({
-      status: 400,
-      type: 'CleaningError',
-    });
+      );
+    } catch (err) {
+      expect(err).toBeInstanceOf(FDAError);
+      expect(err.message).toContain('Incorrect window size in refresh policy');
+      expect(err.type).toContain('CleaningError');
+      expect(err.status).toBe(400);
+    }
   });
 });
