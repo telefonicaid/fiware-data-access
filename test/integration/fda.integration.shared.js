@@ -635,6 +635,46 @@ export function runFDAIntegrationSuite({ mode, label }) {
       expect(res.status).toBe(202);
       await waitUntilFDACompleted({ baseUrl, service, fdaId: 'fda_refresh' });
 
+      // Test with a window refresh policy (week) and partitioned by day, without objStgConf
+      const yearfetchSize = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: 'fda_refresh_noobjStgConf',
+          // query base to extract from PG to CSV
+          query:
+            'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+          description: 'users dataset',
+          refreshPolicy: {
+            type: 'window',
+            params: {
+              refreshInterval: '0 0 * * 0',
+              fetchSize: 'year',
+              windowSize: 'day',
+            },
+          },
+          timeColumn: 'timeinstant',
+        },
+      });
+
+      if (yearfetchSize.status >= 400) {
+        console.error(
+          'POST /fdas failed:',
+          yearfetchSize.status,
+          yearfetchSize.json ?? yearfetchSize.text,
+        );
+      }
+      expect(yearfetchSize.status).toBe(202);
+      await waitUntilFDACompleted({
+        baseUrl,
+        service,
+        fdaId: 'fda_refresh_noobjStgConf',
+      });
+
       // Test with a fetchSize different from partition
       const diffFetchPartition = await httpReq({
         method: 'POST',

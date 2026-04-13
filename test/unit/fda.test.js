@@ -885,8 +885,54 @@ describe('updateFDA', () => {
       partitionFlag: true,
     });
   });
+
+  test('regenerates sliding-window FDA and schedules refresh and clean job immediately', async () => {
+    mongoMocks.regenerateFDA.mockResolvedValue({
+      query: 'SELECT id FROM users',
+      refreshPolicy: {
+        type: 'window',
+        params: {
+          refreshInterval: '0 0 * * *',
+          fetchSize: 'day',
+          windowSize: 'day',
+        },
+      },
+    });
+    await updateFDA('svc', 'fda42', undefined, '/servicepath');
+
+    expect(mongoMocks.regenerateFDA).toHaveBeenCalledWith(
+      'svc',
+      'fda42',
+      '/servicepath',
+    );
+    expect(agenda.now).toHaveBeenCalledWith('refresh-fda', {
+      fdaId: 'fda42',
+      query: 'SELECT id FROM users',
+      service: 'svc',
+      servicePath: '/servicepath',
+      timeColumn: undefined,
+      refreshPolicy: {
+        type: 'window',
+        params: {
+          refreshInterval: '0 0 * * *',
+          fetchSize: 'day',
+          windowSize: 'day',
+        },
+      },
+      objStgConf: undefined,
+      partitionFlag: true,
+    });
+
+    expect(agenda.now).toHaveBeenCalledWith('clean-partition', {
+      fdaId: 'fda42',
+      service: 'svc',
+      windowSize: 'day',
+      objStgConf: undefined,
+    });
+  });
 });
 
+//
 describe('processFDAAsync', () => {
   beforeEach(() => {
     jest.clearAllMocks();
