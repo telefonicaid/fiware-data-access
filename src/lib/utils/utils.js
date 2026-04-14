@@ -89,7 +89,8 @@ export function normalizeForSerialization(obj) {
 
 // Validate that the request body only contains allowed fields
 export function validateAllowedFieldsBody(body, allowedFields) {
-  const keys = Object.keys(body);
+  const safeBody = body ?? {};
+  const keys = Object.keys(safeBody);
   const invalid = keys.filter((k) => !allowedFields.includes(k));
   if (invalid.length > 0) {
     const err = new Error(`Invalid fields in request body, check your request`);
