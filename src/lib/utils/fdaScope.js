@@ -47,6 +47,14 @@ export function getFDAStoragePath(fdaId, servicePath) {
   return `${servicePathScope}/${fdaId}`;
 }
 
+export function getBucketNameFromService(service) {
+  if (!service || typeof service !== 'string') {
+    throw new Error('service is required');
+  }
+
+  return service.replace(/_/g, '-');
+}
+
 export function buildFDAJobFilter(name, service, fdaId, servicePath) {
   return {
     name,

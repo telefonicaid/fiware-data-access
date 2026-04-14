@@ -486,12 +486,12 @@ A FDA is represented by a JSON object with the following fields:
 
 Defines how and when the FDA should be automatically refreshed.
 
-| Field               | Optional | Type   | Description                                                     |
-| ------------------- | -------- | ------ | --------------------------------------------------------------- |
-| `type`              |          | string | Refresh strategy. One of: `none`, `interval`, `cron`, `window`. |
-| [`params`](#params) |    (*)      | object | Object with the parameters for the refresh policy type.         |
+| Field               | Optional | Type   | Description                                             |
+| ------------------- | -------- | ------ | ------------------------------------------------------- |
+| `type`              |          | string | Refresh strategy. One of: `none`, `interval`, `window`. |
+| [`params`](#params) | (\*)     | object | Object with the parameters for the refresh policy type. |
 
-(*) Not used when `type` is `none`, mandatory otherwise
+(\*) Not used when `type` is `none`, mandatory otherwise
 
 If omitted, the default policy is:
 
@@ -501,11 +501,11 @@ If omitted, the default policy is:
 
 ##### Params
 
-| Field             | Optional | Type   | Description                                                                                                                                                                                    |
-| ----------------- | -------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Field             | Optional | Type   | Description                                                                                                                                                                                                                                                                            |
+| ----------------- | -------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `refreshInterval` |          | string | It represents a human interval (e.g. `1 hour`) or a cron expression. The frequency for the scheduled refresh and clean jobs. Must be minor or equal to partition size (if existing) (value of the field [`objstgconf.partition`](#object-storage-configuration-objstgconf)).           |
 | `fetchSize`       |          | string | **Only for type `window`**, it can take the values `hour`, `day`, `week` and `month`. Represents the time range of data to fetch (e.g. last hour/month data). Must be equal to partition size (value of the field [`objstgconf.partition`](#object-storage-configuration-objstgconf)). |
-| `windowSize`      | ✓        | string | Temporal interval of data we are gonna keep in storage (e.g. only the data of the last month). Possible values: `day`, `week`, `month` and `year`. If omitted, then all data is kept forever, no clean partition is done (i.e. an "infinite" window).                                              |
+| `windowSize`      | ✓        | string | Temporal interval of data we are gonna keep in storage (e.g. only the data of the last month). Possible values: `day`, `week`, `month` and `year`. If omitted, then all data is kept forever, no clean partition is done (i.e. an "infinite" window).                                  |
 
 ##### Object storage configuration (objstgconf)
 
