@@ -1,3 +1,4 @@
+- Add: DuckDb now installs extension httpfs in a custom path defined by the new envVar FDA_OBJSTG_EXTENSIONS_DIR (#141)
 - Remove: refreshPolicy type cron removed in favor of using only refreshPolicy type onterval (#143)
 - Add: observability in health endpoint and Prometheus/OpenMetrics metrics endpoint `GET /metrics` (#90)
 - Add: postgres db connection pool and env vars (`FDA_PG_POOL_MAX`, `FDA_PG_POOL_IDLE_TIMEOUT_MS`, `FDA_PG_POOL_CONN_TIMEOUT_MS`, `FDA_PG_POOL_DB_IDLE_TIMEOUT_MS`) (#28)

@@ -76,6 +76,10 @@ async function initDuckDB() {
 
     // Init connection for config
     const configConn = await instance.connect();
+    await configConn.run(`
+      SET extension_directory = '${config.objstg.extensionsDir}';
+    `);
+
     await configConn.run('INSTALL httpfs;');
     await configConn.run('LOAD httpfs;');
 
