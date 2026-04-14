@@ -859,6 +859,24 @@ export function runFDAIntegrationSuite({ mode, label }) {
       }
       expect(res.status).toBe(400);
     });
+    test('POST /fdas try creates an FDA without body', async () => {
+      const res = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+      });
+      if (res.status >= 400) {
+        console.error(
+          'POST /fdas failed as expected:',
+          res.status,
+          res.json ?? res.text,
+        );
+      }
+      expect(res.status).toBe(400);
+    });
     test('POST /fdas with duplicate id returns error', async () => {
       await httpReq({
         method: 'POST',
