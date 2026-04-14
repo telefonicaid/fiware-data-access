@@ -1,0 +1,1 @@
+- Fix POST api (FDA, DA) without body to avoid internal server error

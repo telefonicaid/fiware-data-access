@@ -859,6 +859,24 @@ export function runFDAIntegrationSuite({ mode, label }) {
       }
       expect(res.status).toBe(400);
     });
+    test('POST /fdas try creates an FDA without body', async () => {
+      const res = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+      });
+      if (res.status >= 400) {
+        console.error(
+          'POST /fdas failed as expected:',
+          res.status,
+          res.json ?? res.text,
+        );
+      }
+      expect(res.status).toBe(400);
+    });
     test('POST /fdas with duplicate id returns error', async () => {
       await httpReq({
         method: 'POST',
@@ -1592,6 +1610,40 @@ export function runFDAIntegrationSuite({ mode, label }) {
       expect(createDa.json.description).toContain(
         'Default value for param "authorized" not of valid type (Boolean).',
       );
+    });
+
+    test('POST /fdas/:fdaId/das rejects empty body', async () => {
+      const fdaBadDefaultId = 'fda_bad_body';
+
+      const createFda = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: fdaBadDefaultId,
+          description: 'invalid default test fda',
+          query:
+            'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+        },
+      });
+
+      expect(createFda.status).toBe(202);
+      await waitUntilFDACompleted({
+        baseUrl,
+        service,
+        fdaId: fdaBadDefaultId,
+      });
+
+      const createDa = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas/${fdaBadDefaultId}/das`,
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect(createDa.status).toBe(400);
     });
 
     test('GET /{visibility}/fdas/{fdaId}/das/{daId}/data with fresh=true returns 429 when max concurrent fresh queries is reached', async () => {
