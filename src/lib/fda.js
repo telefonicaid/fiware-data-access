@@ -623,7 +623,7 @@ export async function fetchFDA(
   });
 
   // Schedule refreshes according to policy
-  if (refreshPolicy?.type === 'interval' || refreshPolicy?.type === 'cron') {
+  if (refreshPolicy?.type === 'interval') {
     const { refreshInterval, windowSize } = refreshPolicy.params || {};
 
     // unique is not really needed since we check existence before, but it adds an extra layer of safety in case of duplicate calls

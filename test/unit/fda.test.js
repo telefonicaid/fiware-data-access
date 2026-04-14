@@ -1349,7 +1349,7 @@ describe('fetchFDA with refresh policies', () => {
     agenda.every.mockResolvedValue(undefined);
   });
 
-  test('fetchFDA with cron refresh policy schedules periodic job', async () => {
+  test('fetchFDA with interval refresh policy schedules periodic job', async () => {
     await fetchFDA(
       'fda1',
       'SELECT 1',
@@ -1358,7 +1358,7 @@ describe('fetchFDA with refresh policies', () => {
       '/servicepath',
       'desc',
       {
-        type: 'cron',
+        type: 'interval',
         params: { refreshInterval: '0 0 * * *' },
       },
       'timeinstant',

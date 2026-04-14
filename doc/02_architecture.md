@@ -17,7 +17,7 @@ An **FDA** represents a **materialized dataset** in the system. It:
 -   Stores the result as a **Parquet file**
 -   Saves the file in a **bucket-based object storage system**
 -   Acts as the **base dataset** for one or more DAs
--   Supports an optional `refreshPolicy` that defines how the FDA is automatically refreshed (none, interval, or cron)
+-   Supports an optional `refreshPolicy` that defines how the FDA is automatically refreshed (none, interval or window)
 
 In simple terms:
 
@@ -48,7 +48,7 @@ Content-Type: application/json
     "description": "All animal activity records",
     "query": "SELECT * FROM animal_activity",
     "refreshPolicy": {
-        "type": "cron",
+        "type": "interval",
         "value": "0 * * * *"
     }
 }
@@ -142,7 +142,7 @@ Each document corresponds to one FDA:
 -   **description**: FDA description
 -   **query**: SQL query used to generate the Parquet file
 -   **das**: keymap of DAs associated with the FDA
--   **refreshPolicy**: object defining automatic refresh behaviour (`none`, `interval`, or `cron`)
+-   **refreshPolicy**: object defining automatic refresh behaviour (`none`, `interval`, or `window`)
 -   **status**: current execution status (`fetching`, `transforming`, `uploading`, `completed`, `failed`)
 -   **progress**: execution progress percentage (0–100)
 -   **lastFetch**: timestamp of the last fetch (ISO date)
