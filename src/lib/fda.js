@@ -612,13 +612,19 @@ export async function fetchFDA(
 
   if (defaultDataAccessEnabled) {
     try {
+      const defaultDA = await buildDefaultDataAccessDefinition(
+        service,
+        fdaId,
+        normalizedServicePath,
+      );
+
       await createDA(
         service,
         fdaId,
         'defaultDataAccess',
-        'Default Data Access providing access to the whole table',
-        'SELECT *',
-        undefined,
+        'Default Data Access providing access to whole FDA data. It has parameters for all columns in the FDA.',
+        defaultDA.query,
+        defaultDA.params,
         normalizedVisibility,
         normalizedServicePath,
       );
@@ -1318,6 +1324,99 @@ async function createOneRowParquetSync(service, fdaId, query, servicePath) {
 function buildOneRowQuery(query) {
   const normalizedQuery = query.trim().replace(/;+\s*$/, '');
   return `SELECT * FROM (${normalizedQuery}) AS fda_one_row LIMIT 1`;
+}
+
+async function buildDefaultDataAccessDefinition(service, fdaId, servicePath) {
+  const columns = await getFDAColumnNamesFromParquet(
+    service,
+    fdaId,
+    servicePath,
+  );
+
+  if (columns.length === 0) {
+    return { query: 'SELECT *', params: [] };
+  }
+
+  const usedParamNames = new Set();
+  const params = [];
+  const filters = [];
+
+  for (const columnName of columns) {
+    const baseName = sanitizeDefaultDAParamBaseName(columnName);
+    const paramName = getUniqueDefaultDAParamName(baseName, usedParamNames);
+    const quotedColumnName = quoteDuckDBIdentifier(columnName);
+
+    params.push({ name: paramName, default: null });
+    filters.push(
+      `($${paramName} IS NULL OR ${quotedColumnName} = $${paramName})`,
+    );
+  }
+
+  return {
+    query: `SELECT * WHERE ${filters.join(' AND ')}`,
+    params,
+  };
+}
+
+async function getFDAColumnNamesFromParquet(service, fdaId, servicePath) {
+  const conn = await getDBConnection();
+  try {
+    const storagePath = getFDAStoragePath(fdaId, servicePath);
+    const bucketName = getBucketNameFromService(service);
+    const parquetPath = `s3://${bucketName}/${storagePath}.parquet`;
+    const safeParquetPath = parquetPath.replace(/'/g, "''");
+
+    const describeResult = await conn.run(
+      `DESCRIBE SELECT * FROM read_parquet('${safeParquetPath}')`,
+    );
+    const describeRows = await Promise.resolve(
+      describeResult.getRowObjectsJson(),
+    );
+
+    return describeRows
+      .map(
+        (row) =>
+          row?.column_name ?? row?.columnName ?? row?.name ?? row?.column,
+      )
+      .filter((name) => typeof name === 'string' && name.length > 0);
+  } finally {
+    await releaseDBConnection(conn);
+  }
+}
+
+function quoteDuckDBIdentifier(identifier) {
+  return `"${String(identifier).replace(/"/g, '""')}"`;
+}
+
+function sanitizeDefaultDAParamBaseName(columnName) {
+  const normalized = String(columnName)
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+  if (!normalized) {
+    return 'col';
+  }
+
+  if (/^[0-9]/.test(normalized)) {
+    return `col_${normalized}`;
+  }
+
+  return normalized;
+}
+
+function getUniqueDefaultDAParamName(baseName, usedParamNames) {
+  let candidate = baseName;
+  let suffix = 2;
+
+  while (usedParamNames.has(candidate)) {
+    candidate = `${baseName}_${suffix}`;
+    suffix += 1;
+  }
+
+  usedParamNames.add(candidate);
+  return candidate;
 }
 
 async function rollbackFDAProvisioning(service, fdaId, servicePath) {
