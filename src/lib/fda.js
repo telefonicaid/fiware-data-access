@@ -1328,11 +1328,16 @@ async function rollbackFDAProvisioning(service, fdaId, servicePath) {
   const storagePath = getFDAStoragePath(fdaId, servicePath);
   const bucketName = getBucketNameFromService(service);
 
-  await Promise.allSettled([
+  const rollbackResults = await Promise.allSettled([
     dropFile(s3Client, bucketName, `${storagePath}.csv`),
     dropFile(s3Client, bucketName, `${storagePath}.parquet`),
     removeFDA(service, fdaId, servicePath),
   ]);
+
+  const mongoRollbackResult = rollbackResults[2];
+  if (mongoRollbackResult.status === 'rejected') {
+    throw mongoRollbackResult.reason;
+  }
 }
 
 const getPath = (bucket, path, extension) => {
