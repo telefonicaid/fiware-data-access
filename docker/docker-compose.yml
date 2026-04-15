@@ -121,6 +121,7 @@ services:
       - FDA_MONGO_URI=mongodb://mongo:27017/fiware-data-access
       - FDA_ROLE_APISERVER=true
       - FDA_ROLE_FETCHER=true
+      - FDA_CREATE_DEFAULT_DATA_ACCESS=true
     command: ['npm', 'start']
     logging:
       driver: "json-file"
