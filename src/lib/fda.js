@@ -609,6 +609,29 @@ export async function fetchFDA(
     throw err;
   }
 
+  if (config.defaultDataAccess.enabled) {
+    try {
+      await createDA(
+        service,
+        fdaId,
+        'defaultDataAccess',
+        'Default Data Access providing access to the whole table',
+        'SELECT *',
+        undefined,
+        normalizedVisibility,
+        normalizedServicePath,
+      );
+    } catch (err) {
+      // If default DA creation fails, rollback the entire FDA
+      await rollbackFDAProvisioning(service, fdaId, normalizedServicePath);
+      throw new FDAError(
+        500,
+        'DefaultDataAccessCreationError',
+        `Failed to create default Data Access for FDA ${fdaId}: ${err.message}`,
+      );
+    }
+  }
+
   const agenda = getAgenda();
 
   // Execute first fetch immediately (when a fetcher is free)
