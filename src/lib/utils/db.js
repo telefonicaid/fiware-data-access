@@ -207,15 +207,7 @@ export function checkParams(params) {
   }
 
   return params.map((param) => {
-    if (!param.type) {
-      throw new FDAError(
-        400,
-        'InvalidParam',
-        `Type is a mandatory key in every param.`,
-      );
-    }
-
-    if (!Object.keys(TYPE_COERCERS).includes(param.type)) {
+    if (param.type && !Object.keys(TYPE_COERCERS).includes(param.type)) {
       throw new FDAError(400, 'InvalidParam', `Invalid value in type key.`);
     }
 
@@ -260,17 +252,23 @@ export function checkParams(params) {
     const normalizedParam = { ...param };
 
     if (Object.prototype.hasOwnProperty.call(param, 'default')) {
-      const coercedDefault = isTypeOf(param.default, param.type);
+      let normalizedDefault = param.default;
 
-      if (coercedDefault === undefined) {
-        throw new FDAError(
-          400,
-          'InvalidParam',
-          `Default value for param "${param.name}" not of valid type (${param.type}).`,
-        );
+      if (param.type) {
+        const coercedDefault = isTypeOf(param.default, param.type);
+
+        if (coercedDefault === undefined) {
+          throw new FDAError(
+            400,
+            'InvalidParam',
+            `Default value for param "${param.name}" not of valid type (${param.type}).`,
+          );
+        }
+
+        normalizedDefault = coercedDefault;
       }
 
-      if (param.range && !isInRange(coercedDefault, param.range)) {
+      if (param.range && !isInRange(normalizedDefault, param.range)) {
         throw new FDAError(
           400,
           'InvalidParam',
@@ -278,7 +276,7 @@ export function checkParams(params) {
         );
       }
 
-      if (param.enum && !isInEnum(coercedDefault, param.enum)) {
+      if (param.enum && !isInEnum(normalizedDefault, param.enum)) {
         throw new FDAError(
           400,
           'InvalidParam',
@@ -286,7 +284,8 @@ export function checkParams(params) {
         );
       }
 
-      normalizedParam.default = normalizeParamDefaultForStorage(coercedDefault);
+      normalizedParam.default =
+        normalizeParamDefaultForStorage(normalizedDefault);
     }
 
     return normalizedParam;
