@@ -230,7 +230,7 @@ app.post('/:visibility/fdas', async (req, res) => {
       : parseBooleanQueryParam(
           req.query.defaultDataAccess,
           'defaultDataAccess',
-          (defaultValue = true),
+          true,
         );
 
   if (!id || !query || !service || !servicePath || !visibility) {
