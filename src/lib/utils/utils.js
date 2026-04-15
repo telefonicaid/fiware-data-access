@@ -113,9 +113,9 @@ export function validateForbiddenFieldsQuery(query, forbiddenFields) {
   }
 }
 
-export function parseBooleanQueryParam(value, name) {
+export function parseBooleanQueryParam(value, name, defaultValue = false) {
   if (value === undefined) {
-    return false;
+    return defaultValue;
   }
 
   if (value === true || value === false) {

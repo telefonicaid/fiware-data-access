@@ -576,6 +576,7 @@ export async function fetchFDA(
   refreshPolicy,
   timeColumn,
   objStgConf,
+  defaultDataAccessEnabled,
 ) {
   validateScheduledOptions(refreshPolicy, objStgConf);
   const timeQuery =
@@ -609,7 +610,7 @@ export async function fetchFDA(
     throw err;
   }
 
-  if (config.defaultDataAccess.enabled) {
+  if (defaultDataAccessEnabled) {
     try {
       await createDA(
         service,

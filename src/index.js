@@ -223,6 +223,15 @@ app.post('/:visibility/fdas', async (req, res) => {
   const service = req.get('Fiware-Service');
   const servicePath = req.get('Fiware-ServicePath');
   const { visibility } = req.params;
+  const defaultDataAccessByConfig = config.defaultDataAccess?.enabled ?? true;
+  const defaultDataAccessEnabled =
+    req.query.defaultDataAccess === undefined
+      ? defaultDataAccessByConfig
+      : parseBooleanQueryParam(
+          req.query.defaultDataAccess,
+          'defaultDataAccess',
+          (defaultValue = true),
+        );
 
   if (!id || !query || !service || !servicePath || !visibility) {
     return res.status(400).json({
@@ -244,6 +253,7 @@ app.post('/:visibility/fdas', async (req, res) => {
     finalRefreshPolicy,
     timeColumn,
     finalObjStgConf,
+    defaultDataAccessEnabled,
   );
 
   return res.status(202).json({
