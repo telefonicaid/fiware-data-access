@@ -616,6 +616,7 @@ export async function fetchFDA(
         service,
         fdaId,
         normalizedServicePath,
+        timeColumn,
       );
 
       await createDA(
@@ -1326,18 +1327,41 @@ function buildOneRowQuery(query) {
   return `SELECT * FROM (${normalizedQuery}) AS fda_one_row LIMIT 1`;
 }
 
-async function buildDefaultDataAccessDefinition(service, fdaId, servicePath) {
+async function buildDefaultDataAccessDefinition(
+  service,
+  fdaId,
+  servicePath,
+  timeColumn,
+) {
   const columns = await getFDAColumnNamesFromParquet(
     service,
     fdaId,
     servicePath,
   );
 
-  if (columns.length === 0) {
-    return { query: 'SELECT *', params: [] };
+  const resolvedTimeColumn = resolveDefaultDATimeColumnName(
+    timeColumn,
+    columns,
+  );
+  const reservedParamNames = ['limit', 'offset'];
+  if (resolvedTimeColumn) {
+    reservedParamNames.push('start', 'finish');
   }
 
-  const usedParamNames = new Set();
+  if (columns.length === 0) {
+    const params = reservedParamNames.map((name) => ({
+      name,
+      default: null,
+    }));
+
+    return {
+      query:
+        'SELECT * LIMIT CAST(COALESCE($limit, 9223372036854775807) AS BIGINT) OFFSET CAST(COALESCE($offset, 0) AS BIGINT)',
+      params,
+    };
+  }
+
+  const usedParamNames = new Set(reservedParamNames);
   const params = [];
   const filters = [];
 
@@ -1352,10 +1376,47 @@ async function buildDefaultDataAccessDefinition(service, fdaId, servicePath) {
     );
   }
 
+  if (resolvedTimeColumn) {
+    const quotedTimeColumn = quoteDuckDBIdentifier(resolvedTimeColumn);
+    params.push({ name: 'start', default: null });
+    params.push({ name: 'finish', default: null });
+    filters.push(
+      `($start IS NULL OR CAST(${quotedTimeColumn} AS TIMESTAMP) >= CAST($start AS TIMESTAMP))`,
+    );
+    filters.push(
+      `($finish IS NULL OR CAST(${quotedTimeColumn} AS TIMESTAMP) <= CAST($finish AS TIMESTAMP))`,
+    );
+  }
+
+  params.push({ name: 'limit', default: null });
+  params.push({ name: 'offset', default: null });
+
+  const whereClause =
+    filters.length > 0 ? ` WHERE ${filters.join(' AND ')}` : '';
+
   return {
-    query: `SELECT * WHERE ${filters.join(' AND ')}`,
+    query: `SELECT *${whereClause} LIMIT CAST(COALESCE($limit, 9223372036854775807) AS BIGINT) OFFSET CAST(COALESCE($offset, 0) AS BIGINT)`,
     params,
   };
+}
+
+function resolveDefaultDATimeColumnName(timeColumn, columns) {
+  if (typeof timeColumn !== 'string' || timeColumn.length === 0) {
+    return null;
+  }
+
+  const exactMatch = columns.find((column) => column === timeColumn);
+  if (exactMatch) {
+    return exactMatch;
+  }
+
+  const lowerTimeColumn = timeColumn.toLowerCase();
+  return (
+    columns.find(
+      (column) =>
+        typeof column === 'string' && column.toLowerCase() === lowerTimeColumn,
+    ) || null
+  );
 }
 
 async function getFDAColumnNamesFromParquet(service, fdaId, servicePath) {

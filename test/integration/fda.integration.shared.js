@@ -1095,6 +1095,128 @@ export function runFDAIntegrationSuite({ mode, label }) {
       expect(res.json.some((x) => x.id === fdaId)).toBe(true);
     });
 
+    test('defaultDataAccess includes start/finish and limit/offset when FDA has timeColumn', async () => {
+      const timedFdaId = 'fda_default_da_timed';
+
+      try {
+        const createFda = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: timedFdaId,
+            query:
+              'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+            description: 'default DA timed test',
+            timeColumn: 'timeinstant',
+          },
+        });
+
+        expect(createFda.status).toBe(202);
+        const completedFDA = await waitUntilFDACompleted({
+          baseUrl,
+          service,
+          fdaId: timedFdaId,
+        });
+
+        const defaultDa = completedFDA?.das?.defaultDataAccess;
+        expect(defaultDa).toBeDefined();
+        expect(defaultDa.query).toContain(
+          '($start IS NULL OR CAST("timeinstant" AS TIMESTAMP) >= CAST($start AS TIMESTAMP))',
+        );
+        expect(defaultDa.query).toContain(
+          '($finish IS NULL OR CAST("timeinstant" AS TIMESTAMP) <= CAST($finish AS TIMESTAMP))',
+        );
+        expect(defaultDa.query).toContain(
+          'LIMIT CAST(COALESCE($limit, 9223372036854775807) AS BIGINT) OFFSET CAST(COALESCE($offset, 0) AS BIGINT)',
+        );
+        expect(defaultDa.params.some((p) => p.name === 'start')).toBe(true);
+        expect(defaultDa.params.some((p) => p.name === 'finish')).toBe(true);
+        expect(defaultDa.params.some((p) => p.name === 'limit')).toBe(true);
+        expect(defaultDa.params.some((p) => p.name === 'offset')).toBe(true);
+      } finally {
+        await httpReq({
+          method: 'DELETE',
+          url: `${baseUrl}/${visibility}/fdas/${timedFdaId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+      }
+    });
+
+    test('defaultDataAccess supports start/finish and limit/offset in cached mode', async () => {
+      const timedFdaId = 'fda_default_da_timed_data';
+
+      try {
+        const createFda = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: timedFdaId,
+            query:
+              'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+            description: 'default DA timed data test',
+            timeColumn: 'timeinstant',
+          },
+        });
+
+        expect(createFda.status).toBe(202);
+        await waitUntilFDACompleted({
+          baseUrl,
+          service,
+          fdaId: timedFdaId,
+        });
+
+        const rangeAndPagingRes = await httpReq({
+          method: 'GET',
+          url: buildDaDataUrl(
+            baseUrl,
+            servicePath,
+            timedFdaId,
+            'defaultDataAccess',
+            {
+              start: '2020-01-01T00:00:00.000Z',
+              finish: '2020-12-31T23:59:59.000Z',
+              limit: 1,
+              offset: 1,
+            },
+          ),
+          headers: { 'Fiware-Service': service },
+        });
+
+        if (rangeAndPagingRes.status >= 400) {
+          console.error(
+            'GET defaultDataAccess with start/finish/limit/offset failed:',
+            rangeAndPagingRes.status,
+            rangeAndPagingRes.json ?? rangeAndPagingRes.text,
+          );
+        }
+
+        expect(rangeAndPagingRes.status).toBe(200);
+        expect(Array.isArray(rangeAndPagingRes.json)).toBe(true);
+        expect(rangeAndPagingRes.json).toHaveLength(1);
+        expect(rangeAndPagingRes.json[0].id).toBe('2');
+      } finally {
+        await httpReq({
+          method: 'DELETE',
+          url: `${baseUrl}/${visibility}/fdas/${timedFdaId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+      }
+    });
+
     test('POST /fdas/:fdaId/das + GET /{visibility}/fdas/{fdaId}/das/{daId}/data executes DuckDB against Parquet', async () => {
       // DuckDB reads parquet generated in  s3://<bucket>/<fdaID>.parquet
       const daQuery = `
