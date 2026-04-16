@@ -256,10 +256,6 @@ export async function removeFDA(service, fdaId, servicePath) {
       );
     }
   } catch (e) {
-    if (e instanceof FDAError) {
-      throw e;
-    }
-
     throw new FDAError(
       500,
       'MongoDBServerError',
