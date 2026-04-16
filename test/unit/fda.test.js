@@ -833,6 +833,193 @@ describe('fetchFDA', () => {
     expect(agenda.every).not.toHaveBeenCalled();
   });
 
+  test('creates default DA with optional filters, time range and pagination params', async () => {
+    const describeRun = jest.fn().mockResolvedValue({
+      getRowObjectsJson: () => [
+        { column_name: 'entity-id' },
+        { column_name: 'limit' },
+        { column_name: 'timeinstant' },
+      ],
+    });
+
+    dbMocks.getDBConnection
+      .mockReset()
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ run: describeRun })
+      .mockResolvedValueOnce({});
+    dbMocks.releaseDBConnection.mockReset().mockResolvedValue(undefined);
+    dbMocks.validateDAQuery.mockReset().mockResolvedValue(undefined);
+    dbMocks.checkParams.mockImplementation((params) => params);
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      visibility: 'public',
+      servicePath: '/servicepath',
+    });
+    mongoMocks.retrieveDA.mockResolvedValue(null);
+
+    await fetchFDA(
+      'fda1',
+      'SELECT id FROM users;',
+      'svc',
+      'public',
+      '/servicepath',
+      'test FDA',
+      {
+        type: 'none',
+      },
+      'timeinstant',
+      undefined,
+      true,
+    );
+
+    expect(describeRun).toHaveBeenCalledWith(
+      "DESCRIBE SELECT * FROM read_parquet('s3://svc/servicepath/fda1.parquet')",
+    );
+    expect(mongoMocks.storeDA).toHaveBeenCalledWith(
+      'svc',
+      'fda1',
+      '/servicepath',
+      'defaultDataAccess',
+      'Default Data Access providing access to whole FDA data. It has parameters for all columns in the FDA.',
+      'SELECT * WHERE ($entity_id IS NULL OR "entity-id" = $entity_id) AND ($limit_2 IS NULL OR "limit" = $limit_2) AND ($timeinstant IS NULL OR "timeinstant" = $timeinstant) AND ($start IS NULL OR CAST("timeinstant" AS TIMESTAMP) >= CAST($start AS TIMESTAMP)) AND ($finish IS NULL OR CAST("timeinstant" AS TIMESTAMP) <= CAST($finish AS TIMESTAMP)) LIMIT CAST(COALESCE($limit, 9223372036854775807) AS BIGINT) OFFSET CAST(COALESCE($offset, 0) AS BIGINT)',
+      [
+        { name: 'entity_id', default: null },
+        { name: 'limit_2', default: null },
+        { name: 'timeinstant', default: null },
+        { name: 'start', default: null },
+        { name: 'finish', default: null },
+        { name: 'limit', default: null },
+        { name: 'offset', default: null },
+      ],
+    );
+  });
+
+  test('creates default DA without time filters when FDA has no timeColumn', async () => {
+    const describeRun = jest.fn().mockResolvedValue({
+      getRowObjectsJson: () => [{ column_name: 'name' }],
+    });
+
+    dbMocks.getDBConnection
+      .mockReset()
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ run: describeRun })
+      .mockResolvedValueOnce({});
+    dbMocks.releaseDBConnection.mockReset().mockResolvedValue(undefined);
+    dbMocks.validateDAQuery.mockReset().mockResolvedValue(undefined);
+    dbMocks.checkParams.mockImplementation((params) => params);
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      visibility: 'public',
+      servicePath: '/servicepath',
+    });
+    mongoMocks.retrieveDA.mockResolvedValue(null);
+
+    await fetchFDA(
+      'fda1',
+      'SELECT id FROM users;',
+      'svc',
+      'public',
+      '/servicepath',
+      'test FDA',
+      {
+        type: 'none',
+      },
+      undefined,
+      undefined,
+      true,
+    );
+
+    expect(mongoMocks.storeDA).toHaveBeenCalledWith(
+      'svc',
+      'fda1',
+      '/servicepath',
+      'defaultDataAccess',
+      'Default Data Access providing access to whole FDA data. It has parameters for all columns in the FDA.',
+      'SELECT * WHERE ($name IS NULL OR "name" = $name) LIMIT CAST(COALESCE($limit, 9223372036854775807) AS BIGINT) OFFSET CAST(COALESCE($offset, 0) AS BIGINT)',
+      [
+        { name: 'name', default: null },
+        { name: 'limit', default: null },
+        { name: 'offset', default: null },
+      ],
+    );
+  });
+
+  test('does not create default DA when disabled', async () => {
+    await fetchFDA(
+      'fda1',
+      'SELECT id FROM users;',
+      'svc',
+      'public',
+      '/servicepath',
+      'test FDA',
+      {
+        type: 'none',
+      },
+      'timeinstant',
+      undefined,
+      false,
+    );
+
+    expect(mongoMocks.storeDA).not.toHaveBeenCalled();
+  });
+
+  test('rolls back FDA provisioning when default DA creation fails', async () => {
+    const describeRun = jest.fn().mockResolvedValue({
+      getRowObjectsJson: () => [{ column_name: 'name' }],
+    });
+
+    dbMocks.getDBConnection
+      .mockReset()
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ run: describeRun })
+      .mockResolvedValueOnce({});
+    dbMocks.releaseDBConnection.mockReset().mockResolvedValue(undefined);
+    dbMocks.checkParams.mockImplementation((params) => params);
+    dbMocks.validateDAQuery.mockRejectedValueOnce(
+      new Error('invalid default DA'),
+    );
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      visibility: 'public',
+      servicePath: '/servicepath',
+    });
+    mongoMocks.retrieveDA.mockResolvedValue(null);
+
+    await expect(
+      fetchFDA(
+        'fda1',
+        'SELECT id FROM users;',
+        'svc',
+        'public',
+        '/servicepath',
+        'test FDA',
+        {
+          type: 'none',
+        },
+        'timeinstant',
+        undefined,
+        true,
+      ),
+    ).rejects.toMatchObject({
+      status: 500,
+      type: 'DefaultDataAccessCreationError',
+    });
+
+    expect(mongoMocks.removeFDA).toHaveBeenCalledWith(
+      'svc',
+      'fda1',
+      '/servicepath',
+    );
+    expect(awsMocks.dropFile).toHaveBeenCalledWith(
+      {},
+      'svc',
+      'servicepath/fda1.csv',
+    );
+    expect(awsMocks.dropFile).toHaveBeenCalledWith(
+      {},
+      'svc',
+      'servicepath/fda1.parquet',
+    );
+    expect(agenda.now).not.toHaveBeenCalled();
+  });
+
   test('schedules periodic refresh for interval policy', async () => {
     await fetchFDA(
       'fda1',

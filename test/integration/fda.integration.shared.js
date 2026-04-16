@@ -1095,6 +1095,110 @@ export function runFDAIntegrationSuite({ mode, label }) {
       expect(res.json.some((x) => x.id === fdaId)).toBe(true);
     });
 
+    test('POST /fdas?defaultDataAccess=false creates FDA without default DA', async () => {
+      const disabledFdaId = 'fda_default_da_disabled';
+
+      try {
+        const createFda = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas?defaultDataAccess=false`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: disabledFdaId,
+            query:
+              'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+            description: 'default DA disabled test',
+          },
+        });
+
+        expect(createFda.status).toBe(202);
+        const completedFDA = await waitUntilFDACompleted({
+          baseUrl,
+          service,
+          fdaId: disabledFdaId,
+        });
+
+        expect(completedFDA?.das || {}).toEqual({});
+      } finally {
+        await httpReq({
+          method: 'DELETE',
+          url: `${baseUrl}/${visibility}/fdas/${disabledFdaId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+      }
+    });
+
+    test('defaultDataAccess without timeColumn includes limit/offset but not start/finish', async () => {
+      const untimedFdaId = 'fda_default_da_untimed';
+
+      try {
+        const createFda = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: untimedFdaId,
+            query:
+              'SELECT id, name, age, authorized FROM public.users ORDER BY id',
+            description: 'default DA untimed test',
+          },
+        });
+
+        expect(createFda.status).toBe(202);
+        const completedFDA = await waitUntilFDACompleted({
+          baseUrl,
+          service,
+          fdaId: untimedFdaId,
+        });
+
+        const defaultDa = completedFDA?.das?.defaultDataAccess;
+        expect(defaultDa).toBeDefined();
+        expect(defaultDa.query).toContain(
+          'LIMIT CAST(COALESCE($limit, 9223372036854775807) AS BIGINT) OFFSET CAST(COALESCE($offset, 0) AS BIGINT)',
+        );
+        expect(defaultDa.query).not.toContain('$start');
+        expect(defaultDa.query).not.toContain('$finish');
+        expect(defaultDa.params.some((p) => p.name === 'limit')).toBe(true);
+        expect(defaultDa.params.some((p) => p.name === 'offset')).toBe(true);
+        expect(defaultDa.params.some((p) => p.name === 'start')).toBe(false);
+        expect(defaultDa.params.some((p) => p.name === 'finish')).toBe(false);
+
+        const pagingRes = await httpReq({
+          method: 'GET',
+          url: buildDaDataUrl(
+            baseUrl,
+            servicePath,
+            untimedFdaId,
+            'defaultDataAccess',
+            { limit: 1, offset: 2 },
+          ),
+          headers: { 'Fiware-Service': service },
+        });
+
+        expect(pagingRes.status).toBe(200);
+        expect(pagingRes.json).toHaveLength(1);
+        expect(pagingRes.json[0].id).toBe('3');
+      } finally {
+        await httpReq({
+          method: 'DELETE',
+          url: `${baseUrl}/${visibility}/fdas/${untimedFdaId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+      }
+    });
+
     test('defaultDataAccess includes start/finish and limit/offset when FDA has timeColumn', async () => {
       const timedFdaId = 'fda_default_da_timed';
 
