@@ -543,7 +543,9 @@ _**Request path parameters**_
 
 _**Request query parameters**_
 
-None so far
+| Parameter           | Optional | Description                                                                                                 | Example |
+| ------------------- | -------- | ----------------------------------------------------------------------------------------------------------- | ------- |
+| `defaultDataAccess` | ✓        | Overrides the instance default and enables or disables automatic `defaultDataAccess` creation for this FDA. | `false` |
 
 _**Request headers**_
 
@@ -639,6 +641,20 @@ curl -i -X POST http://localhost:8080/public/fdas \
     "description": "FDA de alarmas del sistema",
     "refreshPolicy": { "type": "interval", "value": "1 hour" }
   }'
+```
+
+_**Example Request disabling default DA:**_
+
+```bash
+curl -i -X POST "http://localhost:8080/public/fdas?defaultDataAccess=false" \
+    -H "Content-Type: application/json" \
+    -H "Fiware-Service: my-bucket" \
+    -H "Fiware-ServicePath: /servicePath" \
+    -d '{
+        "id": "fda_alarms_no_default",
+        "query": "SELECT * FROM public.alarms",
+        "description": "FDA without default DA"
+    }'
 ```
 
 _**Response code**_

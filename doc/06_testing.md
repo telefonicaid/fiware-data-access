@@ -2,19 +2,25 @@
 
 ## Test Strategy
 
-This project relies on **end-to-end integration tests** rather than unit tests or mocks.
+This project uses a **mixed testing strategy**:
 
-The goal is to validate the full data flow across all external dependencies exactly as it runs in production.
+-   unit tests for isolated query-building, validation and error-path logic
+-   end-to-end integration tests for real cross-system behavior
+
+The goal is to validate both:
+
+-   deterministic internal logic close to the source of change
+-   the full data flow across external dependencies as it runs in production
 
 ---
 
 ### Approach
 
 -   Tests are written using **Jest**
--   The API is exercised using **real HTTP requests** (`supertest`)
--   No external services are mocked
+-   Unit tests use targeted mocks for isolated modules and edge cases
+-   Integration tests exercise the API using **real HTTP requests**
 
-Instead, tests start **real service instances** using Docker.
+Integration tests start **real service instances** using Docker.
 
 ---
 
@@ -63,33 +69,36 @@ The test flow is:
 
 ### What Is Tested
 
+Unit tests validate, among others:
+
+-   parameter validation and coercion
+-   DA/FDA query composition
+-   error propagation and cleanup behavior
+-   API route wiring and request validation
+
 Integration tests validate:
 
 -   FDA creation (PostgreSQL → CSV → Parquet → MinIO)
 -   Metadata persistence in MongoDB
 -   DuckDB query execution over Parquet files
 -   End-to-end API behavior using real data
-
----
-
-### Why No Unit Tests
-
-Unit tests and mocks are intentionally avoided because:
-
--   The core complexity lies in **integration between systems**
--   Mocking databases, S3, or DuckDB would not validate real behavior
--   The cost of integration testing is acceptable for this service
+-   `fresh=true` execution over PostgreSQL
+-   default DA behavior including automatic creation and optional filters
 
 ---
 
 ### Coverage Considerations
 
-Because the application runs as a **separate process**, standard Jest coverage:
+Because the application runs as a **separate process** in integration mode, standard Jest coverage:
 
 -   Does not instrument the application process
--   Only measures the test runner itself
+-   Under-reports integration-executed application code unless extra instrumentation is used
 
-Coverage can be collected using additional tooling (e.g. `c8`) if required, but is not enforced by default.
+Coverage can be collected using additional tooling (e.g. `c8`). In practice, meaningful coverage in this repository
+comes from combining:
+
+-   unit test execution inside the Jest process
+-   integration execution instrumented with external tooling
 
 ---
 
