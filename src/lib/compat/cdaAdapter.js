@@ -56,7 +56,9 @@ function adaptCdaParams(body) {
   const service = pathParts.length <= 1 ? pathParts[0] : pathParts[1];
   const servicePath = `/${visibility}`;
 
-  const fdaId = body.cda || dataAccessId;
+  // fdaId comes at the end of the path
+  const fdaId =
+    pathParts.length > 2 ? pathParts[pathParts.length - 1] : dataAccessId;
   const daId = dataAccessId;
 
   // --------- BUILD QUERY PARAMS ----------
