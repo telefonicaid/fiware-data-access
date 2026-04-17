@@ -7,6 +7,8 @@ When an FDA is created, the API can also create a built-in DA named `defaultData
 This DA is intended to provide an immediate, generic query surface for the whole FDA without requiring the client to
 manually define a first DA.
 
+Note that once created this DA is like anything other (i.e. any other created by the user using the proper API operation). Thus, it can be deleted, etc. using API operations related with DA management.
+
 ## Creation rules
 
 Default DA creation is enabled by default and can be controlled in two ways:
