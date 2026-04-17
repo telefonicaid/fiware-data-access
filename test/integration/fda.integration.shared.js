@@ -1321,6 +1321,70 @@ export function runFDAIntegrationSuite({ mode, label }) {
       }
     });
 
+    test('defaultDataAccess matches exact equality on declared timeColumn in cached mode', async () => {
+      const timedFdaId = 'fda_default_da_timed_equality';
+
+      try {
+        const createFda = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: timedFdaId,
+            query:
+              'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+            description: 'default DA timed equality test',
+            timeColumn: 'timeinstant',
+          },
+        });
+
+        expect(createFda.status).toBe(202);
+        await waitUntilFDACompleted({
+          baseUrl,
+          service,
+          fdaId: timedFdaId,
+        });
+
+        const equalityRes = await httpReq({
+          method: 'GET',
+          url: buildDaDataUrl(
+            baseUrl,
+            servicePath,
+            timedFdaId,
+            'defaultDataAccess',
+            {
+              timeinstant: '2020-08-17T18:25:28.332Z',
+            },
+          ),
+          headers: { 'Fiware-Service': service },
+        });
+
+        if (equalityRes.status >= 400) {
+          console.error(
+            'GET defaultDataAccess with exact timeColumn equality failed:',
+            equalityRes.status,
+            equalityRes.json ?? equalityRes.text,
+          );
+        }
+
+        expect(equalityRes.status).toBe(200);
+        expect(Array.isArray(equalityRes.json)).toBe(true);
+        expect(equalityRes.json.map((row) => row.id)).toEqual(['1', '2', '3']);
+      } finally {
+        await httpReq({
+          method: 'DELETE',
+          url: `${baseUrl}/${visibility}/fdas/${timedFdaId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+      }
+    });
+
     test('POST /fdas/:fdaId/das + GET /{visibility}/fdas/{fdaId}/das/{daId}/data executes DuckDB against Parquet', async () => {
       // DuckDB reads parquet generated in  s3://<bucket>/<fdaID>.parquet
       const daQuery = `
