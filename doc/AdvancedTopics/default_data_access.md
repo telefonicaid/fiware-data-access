@@ -7,14 +7,17 @@ When an FDA is created, the API can also create a built-in DA named `defaultData
 This DA is intended to provide an immediate, generic query surface for the whole FDA without requiring the client to
 manually define a first DA.
 
-Note that once created this DA is like anything other (i.e. any other created by the user using the proper API operation). Thus, it can be deleted, etc. using API operations related with DA management.
+Note that once created this DA is like anything other (i.e. any other created by the user using the proper API
+operation). Thus, it can be deleted, etc. using API operations related with DA management.
 
 ## Creation rules
 
 Default DA creation is enabled by default and can be controlled in two ways:
 
--   `FDA_CREATE_DEFAULT_DATA_ACCESS` environment variable defines the instance default behavior.
--   `POST /{visibility}/fdas?defaultDataAccess=false` disables it for a specific FDA creation request.
+-   `FDA_CREATE_DEFAULT_DATA_ACCESS` environment variable defines the instance default behavior. Its default value is
+    `true`.
+-   `POST /{visibility}/fdas?defaultDataAccess=false` disables it for a specific FDA creation request, overriding the
+    instance default for that request only.
 
 If enabled, the DA is created automatically after the one-row bootstrap parquet is generated and before the async fetch
 job is scheduled.
@@ -100,4 +103,5 @@ particularly with predicates shaped as:
 ($p IS NULL OR col = $p)
 ```
 
-This limitation is currently accepted and pending design discussion.
+This limitation is currently accepted and pending design discussion in
+[#153](https://github.com/telefonicaid/fiware-data-access/issues/153).

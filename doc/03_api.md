@@ -543,9 +543,7 @@ _**Request path parameters**_
 
 _**Request query parameters**_
 
-| Parameter           | Optional | Description                                                                                                 | Example |
-| ------------------- | -------- | ----------------------------------------------------------------------------------------------------------- | ------- |
-| `defaultDataAccess` | ✓        | Overrides the instance default and enables or disables automatic `defaultDataAccess` creation for this FDA. | `false` |
+None so far
 
 _**Request headers**_
 
@@ -613,7 +611,9 @@ _**Request path parameters**_
 
 _**Request query parameters**_
 
-None so far
+| Parameter           | Optional | Description                                                                                                                                                                                                                      | Example |
+| ------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| `defaultDataAccess` | ✓        | Overrides the instance default and enables or disables automatic `defaultDataAccess` creation for this FDA. The default value is taken from `FDA_CREATE_DEFAULT_DATA_ACCESS`; if that env var is not set, the default is `true`. | `false` |
 
 _**Request headers**_
 
