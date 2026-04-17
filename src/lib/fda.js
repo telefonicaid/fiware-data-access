@@ -1369,11 +1369,19 @@ async function buildDefaultDataAccessDefinition(
     const baseName = sanitizeDefaultDAParamBaseName(columnName);
     const paramName = getUniqueDefaultDAParamName(baseName, usedParamNames);
     const quotedColumnName = quoteDuckDBIdentifier(columnName);
+    const isResolvedTimeColumn =
+      resolvedTimeColumn && columnName === resolvedTimeColumn;
 
     params.push({ name: paramName, default: null });
-    filters.push(
-      `($${paramName} IS NULL OR ${quotedColumnName} = $${paramName})`,
-    );
+    if (isResolvedTimeColumn) {
+      filters.push(
+        `($${paramName} IS NULL OR DATE_TRUNC('millisecond', CAST(${quotedColumnName} AS TIMESTAMP)) = DATE_TRUNC('millisecond', CAST($${paramName} AS TIMESTAMP)))`,
+      );
+    } else {
+      filters.push(
+        `($${paramName} IS NULL OR ${quotedColumnName} = $${paramName})`,
+      );
+    }
   }
 
   if (resolvedTimeColumn) {

@@ -68,6 +68,16 @@ Current generated predicate shape:
 ($finish IS NULL OR CAST(timeColumn AS TIMESTAMP) <= CAST($finish AS TIMESTAMP))
 ```
 
+Important note about temporal columns:
+
+-   If an FDA includes a temporal column that is not declared as timeColumn, that column is treated as a regular
+    optional equality filter.
+-   In that case, exact equality comparisons may be unreliable because of timestamp precision and representation
+    differences.
+-   For reliable temporal filtering, declare the FDA timeColumn and use start and finish parameters.
+-   If a column is declared as `timeColumn`, the equality filter shape is:
+    `($${paramName} IS NULL OR DATE_TRUNC('millisecond', CAST(${quotedColumnName} AS TIMESTAMP)) = DATE_TRUNC('millisecond', CAST($${paramName} AS TIMESTAMP)))`.
+
 ## Pagination support
 
 Default DA also includes two optional pagination parameters:

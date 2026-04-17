@@ -880,7 +880,7 @@ describe('fetchFDA', () => {
       '/servicepath',
       'defaultDataAccess',
       'Default Data Access providing access to whole FDA data. It has parameters for all columns in the FDA.',
-      'SELECT * WHERE ($entity_id IS NULL OR "entity-id" = $entity_id) AND ($limit_2 IS NULL OR "limit" = $limit_2) AND ($timeinstant IS NULL OR "timeinstant" = $timeinstant) AND ($start IS NULL OR CAST("timeinstant" AS TIMESTAMP) >= CAST($start AS TIMESTAMP)) AND ($finish IS NULL OR CAST("timeinstant" AS TIMESTAMP) <= CAST($finish AS TIMESTAMP)) LIMIT CAST(COALESCE($limit, 9223372036854775807) AS BIGINT) OFFSET CAST(COALESCE($offset, 0) AS BIGINT)',
+      'SELECT * WHERE ($entity_id IS NULL OR "entity-id" = $entity_id) AND ($limit_2 IS NULL OR "limit" = $limit_2) AND ($timeinstant IS NULL OR DATE_TRUNC(\'millisecond\', CAST("timeinstant" AS TIMESTAMP)) = DATE_TRUNC(\'millisecond\', CAST($timeinstant AS TIMESTAMP))) AND ($start IS NULL OR CAST("timeinstant" AS TIMESTAMP) >= CAST($start AS TIMESTAMP)) AND ($finish IS NULL OR CAST("timeinstant" AS TIMESTAMP) <= CAST($finish AS TIMESTAMP)) LIMIT CAST(COALESCE($limit, 9223372036854775807) AS BIGINT) OFFSET CAST(COALESCE($offset, 0) AS BIGINT)',
       [
         { name: 'entity_id', default: null },
         { name: 'limit_2', default: null },
