@@ -131,7 +131,7 @@ This layer:
 -   Translates CDA-style requests into FDA execution calls
 -   Resolves `service` from `path` if not explicitly provided
 -   Resolves `fdaId` from the end of `path` field if it includes more than `service` and `visibility`, otherwise
-    defaults to `dataAccessId`
+    defaults to `dataAccessId`. It strips the `fdaId` at the end of the path of the `.cda` extension if present
 -   Uses `dataAccessId` as DA identifier
 -   Extracts parameters prefixed with `param`
 -   Forwards pagination parameters (`pageSize`, `pageStart`) without transformation
