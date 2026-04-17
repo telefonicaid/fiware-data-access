@@ -102,7 +102,7 @@ describe('cda adapter', () => {
 
     const result = await handleCdaQuery({
       body: {
-        path: '/public/svc',
+        path: '/public/svc/fdaID',
         dataAccessId: 'daA',
       },
       outputType: 'csv',
@@ -114,6 +114,10 @@ describe('cda adapter', () => {
         service: 'svc',
         visibility: 'public',
         servicePath: '/public',
+        params: expect.objectContaining({
+          fdaId: 'fdaID',
+          daId: 'daA',
+        }),
       }),
     );
   });
