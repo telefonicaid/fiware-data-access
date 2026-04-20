@@ -576,6 +576,13 @@ async function buildFreshQueryStatement(
 
 async function buildFreshFDAQuery(service, visibility, servicePath, fdaId) {
   const fda = await getAccessibleFDA(service, fdaId, visibility, servicePath);
+  if (fda.cached !== false) {
+    throw new FDAError(
+      409,
+      'FDANotOnlyFresh',
+      `FDA ${fdaId} is a cached FDA and cannot be queried directly. Use a Data Access instead.`,
+    );
+  }
   return removeTrailingSemicolon(fda.query?.trim() || '');
 }
 
@@ -674,7 +681,7 @@ export async function createDA(
     let fda;
     if (visibility !== undefined || servicePath !== undefined) {
       fda = await getAccessibleFDA(service, fdaId, visibility, servicePath);
-      assertFDAAllowsDAs(fda, fdaId);
+      assertFDAIsCached(fda, fdaId);
     }
 
     const existing = await retrieveDA(service, fdaId, daId, servicePath);
@@ -779,6 +786,10 @@ export async function fetchFDA(
         `Failed to create default Data Access for FDA ${fdaId}: ${err.message}`,
       );
     }
+  }
+
+  if (!cached) {
+    return;
   }
 
   const agenda = getAgenda();
@@ -1299,7 +1310,7 @@ async function uploadTableToObjStg(
 
 async function ensureFDAReadyForQuery(service, fdaId, visibility, servicePath) {
   const fda = await getAccessibleFDA(service, fdaId, visibility, servicePath);
-  assertFDACachedForDAQueries(fda, fdaId);
+  assertFDAIsCached(fda, fdaId);
 
   // Queries are blocked only before the first successful fetch.
   if (!fda.lastFetch) {
@@ -1651,22 +1662,12 @@ async function rollbackFDAProvisioning(service, fdaId, servicePath) {
   }
 }
 
-function assertFDAAllowsDAs(fda, fdaId) {
+function assertFDAIsCached(fda, fdaId) {
   if (fda?.cached === false) {
     throw new FDAError(
       409,
       'FDAOnlyFresh',
-      `FDA ${fdaId} is configured as only-fresh and does not allow Data Access creation.`,
-    );
-  }
-}
-
-function assertFDACachedForDAQueries(fda, fdaId) {
-  if (fda?.cached === false) {
-    throw new FDAError(
-      409,
-      'FDAOnlyFresh',
-      `FDA ${fdaId} is configured as only-fresh and does not allow DA cached queries.`,
+      `FDA ${fdaId} is configured as only-fresh and does not support this operation.`,
     );
   }
 }
