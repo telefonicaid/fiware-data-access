@@ -768,7 +768,7 @@ describe('index routes - validation and middleware branches', () => {
 
     expect(res.body).toEqual({
       error: 'BadRequest',
-      description: 'FDA direct query does not accept query parameters',
+      description: 'FDA fresh query does not accept query parameters',
     });
     expect(fdaMocks.executeFDAQuery).not.toHaveBeenCalled();
     expect(fdaMocks.executeFDAQueryStream).not.toHaveBeenCalled();
