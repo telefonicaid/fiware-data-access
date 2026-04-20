@@ -30,7 +30,9 @@ import {
   getFDAs,
   fetchFDA,
   executeQuery,
+  executeFDAQuery,
   executeQueryStream,
+  executeFDAQueryStream,
   createDA,
   getFDA,
   updateFDA,
@@ -217,9 +219,17 @@ app.post('/:visibility/fdas', async (req, res) => {
     'refreshPolicy',
     'timeColumn',
     'objStgConf',
+    'cached',
   ]);
-  const { id, query, description, refreshPolicy, timeColumn, objStgConf } =
-    body;
+  const {
+    id,
+    query,
+    description,
+    refreshPolicy,
+    timeColumn,
+    objStgConf,
+    cached,
+  } = body;
   const service = req.get('Fiware-Service');
   const servicePath = req.get('Fiware-ServicePath');
   const { visibility } = req.params;
@@ -232,6 +242,10 @@ app.post('/:visibility/fdas', async (req, res) => {
           'defaultDataAccess',
           true,
         );
+  const cachedEnabled =
+    cached === undefined
+      ? true
+      : parseBooleanQueryParam(cached, 'cached', true);
 
   if (!id || !query || !service || !servicePath || !visibility) {
     return res.status(400).json({
@@ -254,6 +268,7 @@ app.post('/:visibility/fdas', async (req, res) => {
     timeColumn,
     finalObjStgConf,
     defaultDataAccessEnabled,
+    cachedEnabled,
   );
 
   return res.status(202).json({
@@ -431,8 +446,7 @@ app.get('/:visibility/fdas/:fdaId/das/:daId/data', async (req, res) => {
   const service = req.get('Fiware-Service');
   const servicePath = req.get('Fiware-ServicePath');
 
-  validateForbiddenFieldsQuery(req.query, ['outputType']);
-  const fresh = parseBooleanQueryParam(req.query.fresh, 'fresh');
+  validateForbiddenFieldsQuery(req.query, ['outputType', 'fresh']);
 
   const matched = req.accepts(DATA_CONTENT_TYPES);
   if (!matched) {
@@ -446,7 +460,6 @@ app.get('/:visibility/fdas/:fdaId/das/:daId/data', async (req, res) => {
   const outputType = DATA_ACCEPT_CONTENT_TYPE_TO_OUTPUT[matched];
 
   const queryParams = { ...req.query };
-  delete queryParams.fresh;
   delete queryParams.outputType;
 
   if (!fdaId || !daId || !service || !servicePath || !visibility) {
@@ -470,7 +483,6 @@ app.get('/:visibility/fdas/:fdaId/das/:daId/data', async (req, res) => {
       params,
       req,
       res,
-      fresh,
       format: outputType,
     });
   }
@@ -480,7 +492,58 @@ app.get('/:visibility/fdas/:fdaId/das/:daId/data', async (req, res) => {
     visibility,
     servicePath,
     params,
-    fresh,
+  });
+
+  return sendRowsByOutputType(res, rows, outputType);
+});
+
+app.get('/:visibility/fdas/:fdaId/data', async (req, res) => {
+  const { visibility, fdaId } = req.params;
+  const service = req.get('Fiware-Service');
+  const servicePath = req.get('Fiware-ServicePath');
+
+  if (Object.keys(req.query).length > 0) {
+    return res.status(400).json({
+      error: 'BadRequest',
+      description: 'FDA fresh query does not accept query parameters',
+    });
+  }
+
+  const matched = req.accepts(DATA_CONTENT_TYPES);
+  if (!matched) {
+    return res.status(406).json({
+      error: 'NotAcceptable',
+      description:
+        'Accept header must allow application/json, application/x-ndjson, text/csv, or application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+  }
+
+  const outputType = DATA_ACCEPT_CONTENT_TYPE_TO_OUTPUT[matched];
+
+  if (!fdaId || !service || !servicePath || !visibility) {
+    return res.status(400).json({
+      error: 'BadRequest',
+      description: 'Missing params in the request',
+    });
+  }
+
+  if (outputType === 'ndjson' || outputType === 'csv') {
+    return executeFDAQueryStream({
+      service,
+      visibility,
+      servicePath,
+      fdaId,
+      req,
+      res,
+      format: outputType,
+    });
+  }
+
+  const rows = await executeFDAQuery({
+    service,
+    visibility,
+    servicePath,
+    fdaId,
   });
 
   return sendRowsByOutputType(res, rows, outputType);

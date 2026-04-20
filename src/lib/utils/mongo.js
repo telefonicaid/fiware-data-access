@@ -79,6 +79,7 @@ export async function createFDAMongo(
   refreshPolicy,
   timeColumn,
   objStgConf,
+  cached = true,
 ) {
   logger.debug({ fdaId, query, service, description }, '[DEBUG]: createFDA');
   const collection = await getCollection();
@@ -98,6 +99,7 @@ export async function createFDAMongo(
       ...(description && { description }),
       timeColumn,
       objStgConf,
+      cached,
     });
   } catch (e) {
     if (e.code === 11000) {
