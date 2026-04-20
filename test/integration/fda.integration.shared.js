@@ -3118,7 +3118,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
     });
 
     test('POST /plugin/cda/api/doQuery behaves as CDA compatibility layer', async () => {
-      const cdaFdaId = 'fda_da_cda';
+      const cdaFdaId = 'fdaID_da_cda';
       const cdaDaId = 'fda_da_cda';
 
       const createFda = await httpReq({
@@ -3166,7 +3166,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
         url: `${baseUrl}/plugin/cda/api/doQuery`,
         headers: { 'Fiware-Service': service },
         form: {
-          path: `/public/${service}/verticals/sql/${cdaDaId}`,
+          path: `/public/${service}/verticals/sql/${cdaFdaId}`,
           dataAccessId: cdaDaId,
           paramminAge: '0',
           pageSize: '2',
@@ -3204,7 +3204,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
           Accept: 'application/x-ndjson',
         },
         form: {
-          path: `/public/${service}/verticals/sql/${cdaDaId}`,
+          path: `/public/${service}/verticals/sql/${cdaFdaId}`,
           dataAccessId: cdaDaId,
           pageSize: '2',
           pageStart: '0',
@@ -3262,8 +3262,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
         url: `${baseUrl}/plugin/cda/api/doQuery`,
         headers: { 'Fiware-Service': service },
         form: {
-          path: `/public/${service}/verticals/sql/${privateDaId}`,
-          cda: privateFdaId,
+          path: `/public/${service}/verticals/sql/${privateFdaId}`,
           dataAccessId: privateDaId,
           paramminAge: '0',
         },
@@ -3279,8 +3278,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
         url: `${baseUrl}/plugin/cda/api/doQuery`,
         headers: { 'Fiware-Service': service },
         form: {
-          path: `/public/${service}/verticals/sql/${daId}`,
-          cda: fdaId,
+          path: `/public/${service}/verticals/sql/${fdaId}`,
           dataAccessId: daId,
           paramminAge: '25',
           outputType: 'csv',
@@ -3314,8 +3312,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
         url: `${baseUrl}/plugin/cda/api/doQuery`,
         headers: { 'Fiware-Service': service },
         form: {
-          path: `/public/${service}/verticals/sql/${daId}`,
-          cda: fdaId,
+          path: `/public/${service}/verticals/sql/${fdaId}`,
           dataAccessId: daId,
           paramminAge: '25',
           outputType: 'xls',
@@ -3430,8 +3427,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
           url: `${baseUrl}/plugin/cda/api/doQuery`,
           headers: { 'Fiware-Service': service },
           form: {
-            path: `/public/${service}/verticals/sql/${cdaDaId}`,
-            cda: cdaFdaId,
+            path: `/public/${service}/verticals/sql/${cdaFdaId}`,
             dataAccessId: cdaDaId,
             pageSize: '10',
             pageStart: '0',
@@ -3465,8 +3461,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
           url: `${baseUrl}/plugin/cda/api/doQuery`,
           headers: { 'Fiware-Service': service },
           form: {
-            path: `/public/${service}/verticals/sql/${cdaDaId}`,
-            cda: cdaFdaId,
+            path: `/public/${service}/verticals/sql/${cdaFdaId}`,
             dataAccessId: cdaDaId,
             outputType: 'csv',
           },
@@ -3483,8 +3478,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
           url: `${baseUrl}/plugin/cda/api/doQuery`,
           headers: { 'Fiware-Service': service },
           form: {
-            path: `/public/${service}/verticals/sql/${cdaDaId}`,
-            cda: cdaFdaId,
+            path: `/public/${service}/verticals/sql/${cdaFdaId}`,
             dataAccessId: cdaDaId,
             outputType: 'xls',
           },
@@ -3510,8 +3504,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
         url: `${baseUrl}/plugin/cda/api/doQuery`,
         headers: { 'Fiware-Service': service },
         form: {
-          path: `/public/${service}/verticals/sql/${daId}`,
-          cda: fdaId,
+          path: `/public/${service}/verticals/sql/${fdaId}`,
           dataAccessId: daId,
           outputType: 'xml',
         },

@@ -1391,15 +1391,14 @@ _**Request body (form-urlencoded)**_
 
 The request body must be sent as `application/x-www-form-urlencoded`.
 
-| Field          | Optional | Description                                                                                             | Example                             |
-| -------------- | -------- | ------------------------------------------------------------------------------------------------------- | ----------------------------------- |
-| `path`         |          | Path used to resolve service. FDA identifier defaults to `dataAccessId` unless `cda` field is provided. | `/public/service/verticals/sql/da1` |
-| `dataAccessId` |          | Identifier of the Data Access (DA) inside the FDA                                                       | `da1`                               |
-| `cda`          | ✓        | Explicit FDA identifier. If not provided, `dataAccessId` is used as FDA identifier                      | `fda1`                              |
-| `outputType`   | ✓        | Format of the returned results. **Default:** `json`. Allowed values: `json`, `csv`, `xls`.              | `csv`                               |
-| `param*`       | ✓        | Query parameters prefixed with `param`                                                                  | `parammunicipality=NA`              |
-| `pageSize`     | ✓        | Pagination size (must be handled explicitly by the DA)                                                  | `10`                                |
-| `pageStart`    | ✓        | Pagination offset (must be handled explicitly by the DA)                                                | `0`                                 |
+| Field          | Optional | Description                                                                                                      | Example                              |
+| -------------- | -------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `path`         |          | Path used to resolve service. FDA identifier defaults to `dataAccessId` if path only has visibility and service. | `/public/service/verticals/sql/fda1` |
+| `dataAccessId` |          | Identifier of the Data Access (DA) inside the FDA                                                                | `da1`                                |
+| `outputType`   | ✓        | Format of the returned results. **Default:** `json`. Allowed values: `json`, `csv`, `xls`.                       | `csv`                                |
+| `param*`       | ✓        | Query parameters prefixed with `param`                                                                           | `parammunicipality=NA`               |
+| `pageSize`     | ✓        | Pagination size (must be handled explicitly by the DA)                                                           | `10`                                 |
+| `pageStart`    | ✓        | Pagination offset (must be handled explicitly by the DA)                                                         | `0`                                  |
 
 ---
 
@@ -1469,7 +1468,7 @@ _**Example Request (CSV output):**_
 curl -i -X POST "http://localhost:8085/plugin/cda/api/doQuery" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -H "Fiware-Service: my-bucket" \
-  -d "path=/public/my-bucket/verticals/sql/da1" \
+  -d "path=/public/my-bucket/verticals/sql/fda1" \
   -d "dataAccessId=da1" \
   -d "outputType=csv" \
   --output results.csv
@@ -1481,7 +1480,7 @@ _**Example Request (Excel output):**_
 curl -i -X POST "http://localhost:8085/plugin/cda/api/doQuery" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -H "Fiware-Service: my-bucket" \
-  -d "path=/public/my-bucket/verticals/sql/da1" \
+  -d "path=/public/my-bucket/verticals/sql/fda1" \
   -d "dataAccessId=da1" \
   -d "outputType=xls" \
   --output results.xlsx
