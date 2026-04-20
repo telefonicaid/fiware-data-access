@@ -1,2 +1,2 @@
-- Fix fdaId in Pentaho compatibility requests now taken from the end of path attribute (#152) 
+- Fix fdaId in Pentaho compatibility requests now taken from the end of path attribute (cda field is removed) #152) 
 - Fix POST api (FDA, DA) without body to avoid internal server error
