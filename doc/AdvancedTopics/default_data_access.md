@@ -48,6 +48,13 @@ LIMIT CAST(COALESCE($limit, 9223372036854775807) AS BIGINT)
 OFFSET CAST(COALESCE($offset, 0) AS BIGINT)
 ```
 
+About `9223372036854775807` in `LIMIT`:
+
+-   This value is the maximum signed 64-bit integer (`BIGINT`), i.e. `2^63 - 1`.
+-   It is used as an "effectively unbounded" limit when `limit` is not provided.
+-   The generated query uses `COALESCE($limit, ...)` because SQL does not support expressing `LIMIT` with an
+    `($limit IS NULL OR ...)` pattern.
+
 Each FDA column gets one optional equality filter parameter with:
 
 -   `required: false` implicitly
