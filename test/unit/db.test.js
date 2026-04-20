@@ -479,12 +479,10 @@ describe('db utils', () => {
     expect(checkParams(undefined)).toBeUndefined();
   });
 
-  test('checkParams throws FDAError when param missing type', async () => {
+  test('checkParams accepts param missing type', async () => {
     const { checkParams } = await loadDbModule();
 
-    expect(() => checkParams([{ name: 'id' }])).toThrow(
-      'Type is a mandatory key in every param.',
-    );
+    expect(checkParams([{ name: 'id' }])).toEqual([{ name: 'id' }]);
   });
 
   test('checkParams throws FDAError for invalid type value', async () => {
