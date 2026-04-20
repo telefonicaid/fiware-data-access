@@ -136,7 +136,10 @@ await jest.unstable_mockModule('../../src/lib/fdaConfig.js', () => ({
 
 const {
   executeQuery,
+  executeFDAQuery,
+  executeFDAQueryStream,
   executeQueryStream,
+  createDA,
   fetchFDA,
   getFDA,
   updateFDA,
@@ -237,6 +240,69 @@ describe('fda fresh query execution', () => {
     });
 
     expect(rows).toEqual([{ date: '2026-04-08T10:11:12.000Z', count: 1 }]);
+  });
+
+  test('executes FDA direct fresh query against PostgreSQL source', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      query: 'SELECT 7::bigint AS id;',
+      visibility: 'private',
+      servicePath: '/servicepath',
+    });
+    pgMocks.runPgQuery.mockResolvedValue([{ id: 7n }]);
+
+    const rows = await executeFDAQuery({
+      service: 'svc',
+      visibility: 'private',
+      servicePath: '/servicepath',
+      fdaId: 'fdaA',
+    });
+
+    expect(pgMocks.runPgQuery).toHaveBeenCalledWith(
+      'svc',
+      'SELECT 7::bigint AS id',
+      [],
+    );
+    expect(rows).toEqual([{ id: 7 }]);
+  });
+
+  test('streams FDA direct fresh query rows and handles backpressure', async () => {
+    const { req, res } = createReqRes();
+    const cursorReader = {
+      readNextChunk: jest
+        .fn()
+        .mockResolvedValueOnce([{ total: 12n }])
+        .mockResolvedValueOnce([]),
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      query: 'SELECT 12::bigint AS total;',
+      visibility: 'private',
+      servicePath: '/servicepath',
+    });
+    pgMocks.createPgCursorReader.mockResolvedValue(cursorReader);
+
+    res.write.mockReturnValueOnce(false).mockReturnValueOnce(true);
+
+    await executeFDAQueryStream({
+      service: 'svc',
+      visibility: 'private',
+      servicePath: '/servicepath',
+      fdaId: 'fdaA',
+      req,
+      res,
+      format: 'ndjson',
+    });
+
+    expect(pgMocks.createPgCursorReader).toHaveBeenCalledWith(
+      'svc',
+      'SELECT 12::bigint AS total',
+      [],
+      250,
+    );
+    expect(res.setHeader).toHaveBeenCalledWith(
+      'Content-Type',
+      'application/x-ndjson',
+    );
   });
 
   test('throws DaNotFound when DA does not exist', async () => {
@@ -801,6 +867,7 @@ describe('fetchFDA', () => {
       { type: 'none' },
       'timeinstant',
       undefined,
+      true,
     );
     expect(pgMocks.uploadTable).toHaveBeenCalledWith(
       {},
@@ -1171,6 +1238,66 @@ describe('fetchFDA', () => {
       false,
     );
 
+    expect(mongoMocks.storeDA).not.toHaveBeenCalled();
+  });
+
+  test('does not create parquet snippet or default DA when FDA is only-fresh', async () => {
+    await fetchFDA(
+      'fda1',
+      'SELECT id FROM users;',
+      'svc',
+      'public',
+      '/servicepath',
+      'test FDA',
+      {
+        type: 'none',
+      },
+      'timeinstant',
+      undefined,
+      true,
+      false,
+    );
+
+    expect(pgMocks.uploadTable).not.toHaveBeenCalled();
+    expect(dbMocks.toParquet).not.toHaveBeenCalled();
+    expect(mongoMocks.storeDA).not.toHaveBeenCalled();
+    expect(agenda.now).toHaveBeenCalledWith('refresh-fda', {
+      fdaId: 'fda1',
+      query: 'SELECT id FROM users;',
+      service: 'svc',
+      servicePath: '/servicepath',
+      timeColumn: 'timeinstant',
+      refreshPolicy: {
+        type: 'none',
+      },
+      objStgConf: undefined,
+    });
+  });
+
+  test('rejects DA creation for only-fresh FDAs', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      visibility: 'public',
+      servicePath: '/servicepath',
+      cached: false,
+    });
+
+    await expect(
+      createDA(
+        'svc',
+        'fda1',
+        'da1',
+        'desc',
+        'SELECT id',
+        [],
+        'public',
+        '/servicepath',
+      ),
+    ).rejects.toMatchObject({
+      status: 409,
+      type: 'FDAOnlyFresh',
+    });
+
+    expect(dbMocks.validateDAQuery).not.toHaveBeenCalled();
     expect(mongoMocks.storeDA).not.toHaveBeenCalled();
   });
 
