@@ -209,7 +209,8 @@ app.get('/:visibility/fdas', async (req, res) => {
 });
 
 app.post('/:visibility/fdas', async (req, res) => {
-  validateAllowedFieldsBody(req.body, [
+  const body = req.body ?? {};
+  validateAllowedFieldsBody(body, [
     'id',
     'query',
     'description',
@@ -218,10 +219,19 @@ app.post('/:visibility/fdas', async (req, res) => {
     'objStgConf',
   ]);
   const { id, query, description, refreshPolicy, timeColumn, objStgConf } =
-    req.body;
+    body;
   const service = req.get('Fiware-Service');
   const servicePath = req.get('Fiware-ServicePath');
   const { visibility } = req.params;
+  const defaultDataAccessByConfig = config.defaultDataAccess?.enabled ?? true;
+  const defaultDataAccessEnabled =
+    req.query.defaultDataAccess === undefined
+      ? defaultDataAccessByConfig
+      : parseBooleanQueryParam(
+          req.query.defaultDataAccess,
+          'defaultDataAccess',
+          true,
+        );
 
   if (!id || !query || !service || !servicePath || !visibility) {
     return res.status(400).json({
@@ -243,6 +253,7 @@ app.post('/:visibility/fdas', async (req, res) => {
     finalRefreshPolicy,
     timeColumn,
     finalObjStgConf,
+    defaultDataAccessEnabled,
   );
 
   return res.status(202).json({
@@ -330,9 +341,9 @@ app.post('/:visibility/fdas/:fdaId/das', async (req, res) => {
   const service = req.get('Fiware-Service');
   const servicePath = req.get('Fiware-ServicePath');
   const { visibility, fdaId } = req.params;
-
-  validateAllowedFieldsBody(req.body, ['id', 'query', 'description', 'params']);
-  const { id, description, query, params } = req.body;
+  const body = req.body ?? {};
+  validateAllowedFieldsBody(body, ['id', 'query', 'description', 'params']);
+  const { id, description, query, params } = body;
 
   if (!fdaId || !id || !query || !service || !servicePath || !visibility) {
     return res.status(400).json({
@@ -374,9 +385,9 @@ app.put('/:visibility/fdas/:fdaId/das/:daId', async (req, res) => {
   const service = req.get('Fiware-Service');
   const servicePath = req.get('Fiware-ServicePath');
   const { visibility, fdaId, daId } = req.params;
-
-  validateAllowedFieldsBody(req.body, ['query', 'description', 'params']);
-  const { description, query, params } = req.body;
+  const body = req.body ?? {};
+  validateAllowedFieldsBody(body, ['query', 'description', 'params']);
+  const { description, query, params } = body;
 
   if (!service || !fdaId || !daId || !query || !servicePath || !visibility) {
     return res.status(400).json({

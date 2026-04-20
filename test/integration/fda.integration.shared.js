@@ -859,6 +859,24 @@ export function runFDAIntegrationSuite({ mode, label }) {
       }
       expect(res.status).toBe(400);
     });
+    test('POST /fdas try creates an FDA without body', async () => {
+      const res = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+      });
+      if (res.status >= 400) {
+        console.error(
+          'POST /fdas failed as expected:',
+          res.status,
+          res.json ?? res.text,
+        );
+      }
+      expect(res.status).toBe(400);
+    });
     test('POST /fdas with duplicate id returns error', async () => {
       await httpReq({
         method: 'POST',
@@ -1075,6 +1093,296 @@ export function runFDAIntegrationSuite({ mode, label }) {
       expect(res.status).toBe(200);
       expect(Array.isArray(res.json)).toBe(true);
       expect(res.json.some((x) => x.id === fdaId)).toBe(true);
+    });
+
+    test('POST /fdas?defaultDataAccess=false creates FDA without default DA', async () => {
+      const disabledFdaId = 'fda_default_da_disabled';
+
+      try {
+        const createFda = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas?defaultDataAccess=false`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: disabledFdaId,
+            query:
+              'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+            description: 'default DA disabled test',
+          },
+        });
+
+        expect(createFda.status).toBe(202);
+        const completedFDA = await waitUntilFDACompleted({
+          baseUrl,
+          service,
+          fdaId: disabledFdaId,
+        });
+
+        expect(completedFDA?.das || {}).toEqual({});
+      } finally {
+        await httpReq({
+          method: 'DELETE',
+          url: `${baseUrl}/${visibility}/fdas/${disabledFdaId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+      }
+    });
+
+    test('defaultDataAccess without timeColumn includes limit/offset but not start/finish', async () => {
+      const untimedFdaId = 'fda_default_da_untimed';
+
+      try {
+        const createFda = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: untimedFdaId,
+            query:
+              'SELECT id, name, age, authorized FROM public.users ORDER BY id',
+            description: 'default DA untimed test',
+          },
+        });
+
+        expect(createFda.status).toBe(202);
+        const completedFDA = await waitUntilFDACompleted({
+          baseUrl,
+          service,
+          fdaId: untimedFdaId,
+        });
+
+        const defaultDa = completedFDA?.das?.defaultDataAccess;
+        expect(defaultDa).toBeDefined();
+        expect(defaultDa.query).toContain(
+          'LIMIT CAST(COALESCE($limit, 9223372036854775807) AS BIGINT) OFFSET CAST(COALESCE($offset, 0) AS BIGINT)',
+        );
+        expect(defaultDa.query).not.toContain('$start');
+        expect(defaultDa.query).not.toContain('$finish');
+        expect(defaultDa.params.some((p) => p.name === 'limit')).toBe(true);
+        expect(defaultDa.params.some((p) => p.name === 'offset')).toBe(true);
+        expect(defaultDa.params.some((p) => p.name === 'start')).toBe(false);
+        expect(defaultDa.params.some((p) => p.name === 'finish')).toBe(false);
+
+        const pagingRes = await httpReq({
+          method: 'GET',
+          url: buildDaDataUrl(
+            baseUrl,
+            servicePath,
+            untimedFdaId,
+            'defaultDataAccess',
+            { limit: 1, offset: 2 },
+          ),
+          headers: { 'Fiware-Service': service },
+        });
+
+        expect(pagingRes.status).toBe(200);
+        expect(pagingRes.json).toHaveLength(1);
+        expect(pagingRes.json[0].id).toBe('3');
+      } finally {
+        await httpReq({
+          method: 'DELETE',
+          url: `${baseUrl}/${visibility}/fdas/${untimedFdaId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+      }
+    });
+
+    test('defaultDataAccess includes start/finish and limit/offset when FDA has timeColumn', async () => {
+      const timedFdaId = 'fda_default_da_timed';
+
+      try {
+        const createFda = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: timedFdaId,
+            query:
+              'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+            description: 'default DA timed test',
+            timeColumn: 'timeinstant',
+          },
+        });
+
+        expect(createFda.status).toBe(202);
+        const completedFDA = await waitUntilFDACompleted({
+          baseUrl,
+          service,
+          fdaId: timedFdaId,
+        });
+
+        const defaultDa = completedFDA?.das?.defaultDataAccess;
+        expect(defaultDa).toBeDefined();
+        expect(defaultDa.query).toContain(
+          '($start IS NULL OR CAST("timeinstant" AS TIMESTAMP) >= CAST($start AS TIMESTAMP))',
+        );
+        expect(defaultDa.query).toContain(
+          '($finish IS NULL OR CAST("timeinstant" AS TIMESTAMP) <= CAST($finish AS TIMESTAMP))',
+        );
+        expect(defaultDa.query).toContain(
+          'LIMIT CAST(COALESCE($limit, 9223372036854775807) AS BIGINT) OFFSET CAST(COALESCE($offset, 0) AS BIGINT)',
+        );
+        expect(defaultDa.params.some((p) => p.name === 'start')).toBe(true);
+        expect(defaultDa.params.some((p) => p.name === 'finish')).toBe(true);
+        expect(defaultDa.params.some((p) => p.name === 'limit')).toBe(true);
+        expect(defaultDa.params.some((p) => p.name === 'offset')).toBe(true);
+      } finally {
+        await httpReq({
+          method: 'DELETE',
+          url: `${baseUrl}/${visibility}/fdas/${timedFdaId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+      }
+    });
+
+    test('defaultDataAccess supports start/finish and limit/offset in cached mode', async () => {
+      const timedFdaId = 'fda_default_da_timed_data';
+
+      try {
+        const createFda = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: timedFdaId,
+            query:
+              'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+            description: 'default DA timed data test',
+            timeColumn: 'timeinstant',
+          },
+        });
+
+        expect(createFda.status).toBe(202);
+        await waitUntilFDACompleted({
+          baseUrl,
+          service,
+          fdaId: timedFdaId,
+        });
+
+        const rangeAndPagingRes = await httpReq({
+          method: 'GET',
+          url: buildDaDataUrl(
+            baseUrl,
+            servicePath,
+            timedFdaId,
+            'defaultDataAccess',
+            {
+              start: '2020-01-01T00:00:00.000Z',
+              finish: '2020-12-31T23:59:59.000Z',
+              limit: 1,
+              offset: 1,
+            },
+          ),
+          headers: { 'Fiware-Service': service },
+        });
+
+        if (rangeAndPagingRes.status >= 400) {
+          console.error(
+            'GET defaultDataAccess with start/finish/limit/offset failed:',
+            rangeAndPagingRes.status,
+            rangeAndPagingRes.json ?? rangeAndPagingRes.text,
+          );
+        }
+
+        expect(rangeAndPagingRes.status).toBe(200);
+        expect(Array.isArray(rangeAndPagingRes.json)).toBe(true);
+        expect(rangeAndPagingRes.json).toHaveLength(1);
+        expect(rangeAndPagingRes.json[0].id).toBe('2');
+      } finally {
+        await httpReq({
+          method: 'DELETE',
+          url: `${baseUrl}/${visibility}/fdas/${timedFdaId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+      }
+    });
+
+    test('defaultDataAccess matches exact equality on declared timeColumn in cached mode', async () => {
+      const timedFdaId = 'fda_default_da_timed_equality';
+
+      try {
+        const createFda = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: timedFdaId,
+            query:
+              'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+            description: 'default DA timed equality test',
+            timeColumn: 'timeinstant',
+          },
+        });
+
+        expect(createFda.status).toBe(202);
+        await waitUntilFDACompleted({
+          baseUrl,
+          service,
+          fdaId: timedFdaId,
+        });
+
+        const equalityRes = await httpReq({
+          method: 'GET',
+          url: buildDaDataUrl(
+            baseUrl,
+            servicePath,
+            timedFdaId,
+            'defaultDataAccess',
+            {
+              timeinstant: '2020-08-17T18:25:28.332Z',
+            },
+          ),
+          headers: { 'Fiware-Service': service },
+        });
+
+        if (equalityRes.status >= 400) {
+          console.error(
+            'GET defaultDataAccess with exact timeColumn equality failed:',
+            equalityRes.status,
+            equalityRes.json ?? equalityRes.text,
+          );
+        }
+
+        expect(equalityRes.status).toBe(200);
+        expect(Array.isArray(equalityRes.json)).toBe(true);
+        expect(equalityRes.json.map((row) => row.id)).toEqual(['1', '2', '3']);
+      } finally {
+        await httpReq({
+          method: 'DELETE',
+          url: `${baseUrl}/${visibility}/fdas/${timedFdaId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+      }
     });
 
     test('POST /fdas/:fdaId/das + GET /{visibility}/fdas/{fdaId}/das/{daId}/data executes DuckDB against Parquet', async () => {
@@ -1592,6 +1900,40 @@ export function runFDAIntegrationSuite({ mode, label }) {
       expect(createDa.json.description).toContain(
         'Default value for param "authorized" not of valid type (Boolean).',
       );
+    });
+
+    test('POST /fdas/:fdaId/das rejects empty body', async () => {
+      const fdaBadDefaultId = 'fda_bad_body';
+
+      const createFda = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: fdaBadDefaultId,
+          description: 'invalid default test fda',
+          query:
+            'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+        },
+      });
+
+      expect(createFda.status).toBe(202);
+      await waitUntilFDACompleted({
+        baseUrl,
+        service,
+        fdaId: fdaBadDefaultId,
+      });
+
+      const createDa = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas/${fdaBadDefaultId}/das`,
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect(createDa.status).toBe(400);
     });
 
     test('GET /{visibility}/fdas/{fdaId}/das/{daId}/data with fresh=true returns 429 when max concurrent fresh queries is reached', async () => {
@@ -2776,7 +3118,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
     });
 
     test('POST /plugin/cda/api/doQuery behaves as CDA compatibility layer', async () => {
-      const cdaFdaId = 'fda_da_cda';
+      const cdaFdaId = 'fdaID_da_cda';
       const cdaDaId = 'fda_da_cda';
 
       const createFda = await httpReq({
@@ -2824,7 +3166,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
         url: `${baseUrl}/plugin/cda/api/doQuery`,
         headers: { 'Fiware-Service': service },
         form: {
-          path: `/public/${service}/verticals/sql/${cdaDaId}`,
+          path: `/public/${service}/verticals/sql/${cdaFdaId}`,
           dataAccessId: cdaDaId,
           paramminAge: '0',
           pageSize: '2',
@@ -2862,7 +3204,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
           Accept: 'application/x-ndjson',
         },
         form: {
-          path: `/public/${service}/verticals/sql/${cdaDaId}`,
+          path: `/public/${service}/verticals/sql/${cdaFdaId}`,
           dataAccessId: cdaDaId,
           pageSize: '2',
           pageStart: '0',
@@ -2920,8 +3262,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
         url: `${baseUrl}/plugin/cda/api/doQuery`,
         headers: { 'Fiware-Service': service },
         form: {
-          path: `/public/${service}/verticals/sql/${privateDaId}`,
-          cda: privateFdaId,
+          path: `/public/${service}/verticals/sql/${privateFdaId}`,
           dataAccessId: privateDaId,
           paramminAge: '0',
         },
@@ -2937,8 +3278,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
         url: `${baseUrl}/plugin/cda/api/doQuery`,
         headers: { 'Fiware-Service': service },
         form: {
-          path: `/public/${service}/verticals/sql/${daId}`,
-          cda: fdaId,
+          path: `/public/${service}/verticals/sql/${fdaId}`,
           dataAccessId: daId,
           paramminAge: '25',
           outputType: 'csv',
@@ -2972,8 +3312,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
         url: `${baseUrl}/plugin/cda/api/doQuery`,
         headers: { 'Fiware-Service': service },
         form: {
-          path: `/public/${service}/verticals/sql/${daId}`,
-          cda: fdaId,
+          path: `/public/${service}/verticals/sql/${fdaId}`,
           dataAccessId: daId,
           paramminAge: '25',
           outputType: 'xls',
@@ -3088,8 +3427,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
           url: `${baseUrl}/plugin/cda/api/doQuery`,
           headers: { 'Fiware-Service': service },
           form: {
-            path: `/public/${service}/verticals/sql/${cdaDaId}`,
-            cda: cdaFdaId,
+            path: `/public/${service}/verticals/sql/${cdaFdaId}`,
             dataAccessId: cdaDaId,
             pageSize: '10',
             pageStart: '0',
@@ -3123,8 +3461,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
           url: `${baseUrl}/plugin/cda/api/doQuery`,
           headers: { 'Fiware-Service': service },
           form: {
-            path: `/public/${service}/verticals/sql/${cdaDaId}`,
-            cda: cdaFdaId,
+            path: `/public/${service}/verticals/sql/${cdaFdaId}`,
             dataAccessId: cdaDaId,
             outputType: 'csv',
           },
@@ -3141,8 +3478,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
           url: `${baseUrl}/plugin/cda/api/doQuery`,
           headers: { 'Fiware-Service': service },
           form: {
-            path: `/public/${service}/verticals/sql/${cdaDaId}`,
-            cda: cdaFdaId,
+            path: `/public/${service}/verticals/sql/${cdaFdaId}`,
             dataAccessId: cdaDaId,
             outputType: 'xls',
           },
@@ -3168,8 +3504,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
         url: `${baseUrl}/plugin/cda/api/doQuery`,
         headers: { 'Fiware-Service': service },
         form: {
-          path: `/public/${service}/verticals/sql/${daId}`,
-          cda: fdaId,
+          path: `/public/${service}/verticals/sql/${fdaId}`,
           dataAccessId: daId,
           outputType: 'xml',
         },

@@ -102,7 +102,7 @@ describe('cda adapter', () => {
 
     const result = await handleCdaQuery({
       body: {
-        path: '/public/svc',
+        path: '/public/svc/fdaID',
         dataAccessId: 'daA',
       },
       outputType: 'csv',
@@ -114,7 +114,38 @@ describe('cda adapter', () => {
         service: 'svc',
         visibility: 'public',
         servicePath: '/public',
+        params: expect.objectContaining({
+          fdaId: 'fdaID',
+          daId: 'daA',
+        }),
       }),
     );
+  });
+
+  test('returns json with default outputType and path ends in .cda', async () => {
+    const { handleCdaQuery } = await loadCdaAdapterModule();
+
+    const rows = [{ col1: 'a', col2: 'b' }];
+    executeQueryMock.mockResolvedValueOnce(rows);
+
+    const result = await handleCdaQuery({
+      body: {
+        path: '/public/svc/fdaID.cda',
+        dataAccessId: 'daA',
+      },
+    });
+
+    expect(result).toEqual({
+      metadata: [
+        { colIndex: 0, colName: 'col1' },
+        { colIndex: 1, colName: 'col2' },
+      ],
+      resultset: [['a', 'b']],
+      queryInfo: {
+        pageStart: 0,
+        pageSize: 0,
+        totalRows: 1,
+      },
+    });
   });
 });

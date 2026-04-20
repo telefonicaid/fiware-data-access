@@ -576,6 +576,7 @@ export async function fetchFDA(
   refreshPolicy,
   timeColumn,
   objStgConf,
+  defaultDataAccessEnabled,
 ) {
   validateScheduledOptions(refreshPolicy, objStgConf);
   const timeQuery =
@@ -607,6 +608,36 @@ export async function fetchFDA(
   } catch (err) {
     await rollbackFDAProvisioning(service, fdaId, normalizedServicePath);
     throw err;
+  }
+
+  if (defaultDataAccessEnabled) {
+    try {
+      const defaultDA = await buildDefaultDataAccessDefinition(
+        service,
+        fdaId,
+        normalizedServicePath,
+        timeColumn,
+      );
+
+      await createDA(
+        service,
+        fdaId,
+        'defaultDataAccess',
+        'Default Data Access providing access to whole FDA data. It has parameters for all columns in the FDA.',
+        defaultDA.query,
+        defaultDA.params,
+        normalizedVisibility,
+        normalizedServicePath,
+      );
+    } catch (err) {
+      // If default DA creation fails, rollback the entire FDA
+      await rollbackFDAProvisioning(service, fdaId, normalizedServicePath);
+      throw new FDAError(
+        500,
+        'DefaultDataAccessCreationError',
+        `Failed to create default Data Access for FDA ${fdaId}: ${err.message}`,
+      );
+    }
   }
 
   const agenda = getAgenda();
@@ -1296,6 +1327,167 @@ function buildOneRowQuery(query) {
   return `SELECT * FROM (${normalizedQuery}) AS fda_one_row LIMIT 1`;
 }
 
+async function buildDefaultDataAccessDefinition(
+  service,
+  fdaId,
+  servicePath,
+  timeColumn,
+) {
+  const columns = await getFDAColumnNamesFromParquet(
+    service,
+    fdaId,
+    servicePath,
+  );
+
+  const resolvedTimeColumn = resolveDefaultDATimeColumnName(
+    timeColumn,
+    columns,
+  );
+  const reservedParamNames = ['limit', 'offset'];
+  if (resolvedTimeColumn) {
+    reservedParamNames.push('start', 'finish');
+  }
+
+  if (columns.length === 0) {
+    const params = reservedParamNames.map((name) => ({
+      name,
+      default: null,
+    }));
+
+    return {
+      query:
+        'SELECT * LIMIT CAST(COALESCE($limit, 9223372036854775807) AS BIGINT) OFFSET CAST(COALESCE($offset, 0) AS BIGINT)',
+      params,
+    };
+  }
+
+  const usedParamNames = new Set(reservedParamNames);
+  const params = [];
+  const filters = [];
+
+  for (const columnName of columns) {
+    const baseName = sanitizeDefaultDAParamBaseName(columnName);
+    const paramName = getUniqueDefaultDAParamName(baseName, usedParamNames);
+    const quotedColumnName = quoteDuckDBIdentifier(columnName);
+    const isResolvedTimeColumn =
+      resolvedTimeColumn && columnName === resolvedTimeColumn;
+
+    params.push({ name: paramName, default: null });
+    if (isResolvedTimeColumn) {
+      filters.push(
+        `($${paramName} IS NULL OR DATE_TRUNC('millisecond', CAST(${quotedColumnName} AS TIMESTAMP)) = DATE_TRUNC('millisecond', CAST($${paramName} AS TIMESTAMP)))`,
+      );
+    } else {
+      filters.push(
+        `($${paramName} IS NULL OR ${quotedColumnName} = $${paramName})`,
+      );
+    }
+  }
+
+  if (resolvedTimeColumn) {
+    const quotedTimeColumn = quoteDuckDBIdentifier(resolvedTimeColumn);
+    params.push({ name: 'start', default: null });
+    params.push({ name: 'finish', default: null });
+    filters.push(
+      `($start IS NULL OR CAST(${quotedTimeColumn} AS TIMESTAMP) >= CAST($start AS TIMESTAMP))`,
+    );
+    filters.push(
+      `($finish IS NULL OR CAST(${quotedTimeColumn} AS TIMESTAMP) <= CAST($finish AS TIMESTAMP))`,
+    );
+  }
+
+  params.push({ name: 'limit', default: null });
+  params.push({ name: 'offset', default: null });
+
+  const whereClause =
+    filters.length > 0 ? ` WHERE ${filters.join(' AND ')}` : '';
+
+  return {
+    query: `SELECT *${whereClause} LIMIT CAST(COALESCE($limit, 9223372036854775807) AS BIGINT) OFFSET CAST(COALESCE($offset, 0) AS BIGINT)`,
+    params,
+  };
+}
+
+function resolveDefaultDATimeColumnName(timeColumn, columns) {
+  if (typeof timeColumn !== 'string' || timeColumn.length === 0) {
+    return null;
+  }
+
+  const exactMatch = columns.find((column) => column === timeColumn);
+  if (exactMatch) {
+    return exactMatch;
+  }
+
+  const lowerTimeColumn = timeColumn.toLowerCase();
+  return (
+    columns.find(
+      (column) =>
+        typeof column === 'string' && column.toLowerCase() === lowerTimeColumn,
+    ) || null
+  );
+}
+
+async function getFDAColumnNamesFromParquet(service, fdaId, servicePath) {
+  const conn = await getDBConnection();
+  try {
+    const storagePath = getFDAStoragePath(fdaId, servicePath);
+    const bucketName = getBucketNameFromService(service);
+    const parquetPath = `s3://${bucketName}/${storagePath}.parquet`;
+    const safeParquetPath = parquetPath.replace(/'/g, "''");
+
+    const describeResult = await conn.run(
+      `DESCRIBE SELECT * FROM read_parquet('${safeParquetPath}')`,
+    );
+    const describeRows = await Promise.resolve(
+      describeResult.getRowObjectsJson(),
+    );
+
+    return describeRows
+      .map(
+        (row) =>
+          row?.column_name ?? row?.columnName ?? row?.name ?? row?.column,
+      )
+      .filter((name) => typeof name === 'string' && name.length > 0);
+  } finally {
+    await releaseDBConnection(conn);
+  }
+}
+
+function quoteDuckDBIdentifier(identifier) {
+  return `"${String(identifier).replace(/"/g, '""')}"`;
+}
+
+function sanitizeDefaultDAParamBaseName(columnName) {
+  const normalized = String(columnName)
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+  if (!normalized) {
+    return 'col';
+  }
+
+  if (/^[0-9]/.test(normalized)) {
+    return `col_${normalized}`;
+  }
+
+  return normalized;
+}
+
+function getUniqueDefaultDAParamName(baseName, usedParamNames) {
+  let candidate = baseName;
+  let suffix = 2;
+
+  while (usedParamNames.has(candidate)) {
+    candidate = `${baseName}_${suffix}`;
+    suffix += 1;
+  }
+
+  usedParamNames.add(candidate);
+  return candidate;
+}
+
 async function rollbackFDAProvisioning(service, fdaId, servicePath) {
   const s3Client = getS3Client(
     `${config.objstg.protocol}://${config.objstg.endpoint}`,
@@ -1305,11 +1497,16 @@ async function rollbackFDAProvisioning(service, fdaId, servicePath) {
   const storagePath = getFDAStoragePath(fdaId, servicePath);
   const bucketName = getBucketNameFromService(service);
 
-  await Promise.allSettled([
+  const rollbackResults = await Promise.allSettled([
     dropFile(s3Client, bucketName, `${storagePath}.csv`),
     dropFile(s3Client, bucketName, `${storagePath}.parquet`),
     removeFDA(service, fdaId, servicePath),
   ]);
+
+  const mongoRollbackResult = rollbackResults[2];
+  if (mongoRollbackResult.status === 'rejected') {
+    throw mongoRollbackResult.reason;
+  }
 }
 
 const getPath = (bucket, path, extension) => {

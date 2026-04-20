@@ -131,6 +131,10 @@ const envVarsSchema = {
       type: 'number',
       default: 5,
     },
+    FDA_CREATE_DEFAULT_DATA_ACCESS: {
+      type: 'boolean',
+      default: true,
+    },
   },
 };
 
@@ -181,5 +185,8 @@ export const config = {
   },
   freshQueries: {
     maxConcurrent: envVars.FDA_MAX_CONCURRENT_FRESH_QUERIES,
+  },
+  defaultDataAccess: {
+    enabled: envVars.FDA_CREATE_DEFAULT_DATA_ACCESS,
   },
 };

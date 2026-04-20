@@ -14,6 +14,7 @@ topics related to this system.
 -   [Bucket name convention](#bucket-name-convention)
 -   [File name convention](#file-name-convention)
 -   [Data origin](#data-origin)
+-   [Default Data Access](#default-data-access)
 
 ### Bucket name convention
 
@@ -48,6 +49,20 @@ This object key is updated and removed in sync with the _fda_ information in `Mo
 
 When creating a _FDA_ we cannot specify the database from where we want to fetch the data. In _FDA_ we are always gonna
 use the `fiware-service` value as the _database_ name.
+
+### Default Data Access
+
+FDA can automatically create a built-in DA named `defaultDataAccess` when a new FDA is created.
+
+This topic covers:
+
+-   creation rules
+-   automatic optional filters
+-   `timeColumn` range support through `start` / `finish`
+-   pagination through `limit` / `offset`
+-   current `fresh=true` limitation for typeless optional filters
+
+Full documentation available at: [`Default Data Access`](/doc/AdvancedTopics/default_data_access.md)
 
 ---
 
@@ -130,7 +145,8 @@ This layer:
 
 -   Translates CDA-style requests into FDA execution calls
 -   Resolves `service` from `path` if not explicitly provided
--   Resolves `fdaId` from `cda` field if provided, otherwise defaults to `dataAccessId`
+-   Resolves `fdaId` from the end of `path` field if it includes more than `service` and `visibility`, otherwise
+    defaults to `dataAccessId`. It strips the `fdaId` at the end of the path of the `.cda` extension if present
 -   Uses `dataAccessId` as DA identifier
 -   Extracts parameters prefixed with `param`
 -   Forwards pagination parameters (`pageSize`, `pageStart`) without transformation
