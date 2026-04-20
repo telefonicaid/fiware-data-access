@@ -1,2 +1,5 @@
 - Fix fdaId in Pentaho compatibility requests now taken from the end of path attribute (cda field is removed) #152) 
 - Fix POST api (FDA, DA) without body to avoid internal server error
+- Fix: POST api (FDA, DA) without body to avoid internal server error
+- Add: automatic `defaultDataAccess` creation on FDA creation, with optional column filters, `start`/`finish`, and `limit`/`offset` support in cached mode (#133)
+- Add: `FDA_CREATE_DEFAULT_DATA_ACCESS` env var to configure the instance default for automatic `defaultDataAccess` creation (#133)
