@@ -758,6 +758,23 @@ describe('index routes - validation and middleware branches', () => {
     expect(fdaMocks.executeFDAQuery).not.toHaveBeenCalled();
   });
 
+  test('returns 406 on FDA direct data endpoint when Accept header is not supported', async () => {
+    const res = await request(app)
+      .get('/public/fdas/fda1/data')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .set('Accept', 'text/html')
+      .expect(406);
+
+    expect(res.body).toEqual({
+      error: 'NotAcceptable',
+      description:
+        'Accept header must allow application/json, application/x-ndjson, text/csv, or application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    expect(fdaMocks.executeFDAQuery).not.toHaveBeenCalled();
+    expect(fdaMocks.executeFDAQueryStream).not.toHaveBeenCalled();
+  });
+
   test('rejects query params on FDA direct data endpoint', async () => {
     const res = await request(app)
       .get('/public/fdas/fda1/data')

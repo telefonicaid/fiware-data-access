@@ -325,6 +325,32 @@ describe('fda fresh query execution', () => {
     );
   });
 
+  test('releases fresh slot when createFreshFDARowSource fails to create cursor', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      query: 'SELECT 1',
+      visibility: 'private',
+      servicePath: '/servicepath',
+      cached: false,
+    });
+    pgMocks.createPgCursorReader.mockRejectedValueOnce(
+      new Error('pg connection refused'),
+    );
+
+    const { req, res } = createReqRes();
+
+    await expect(
+      executeFDAQueryStream({
+        service: 'svc',
+        visibility: 'private',
+        servicePath: '/servicepath',
+        fdaId: 'fdaA',
+        req,
+        res,
+        format: 'ndjson',
+      }),
+    ).rejects.toThrow('pg connection refused');
+  });
+
   test('throws DaNotFound when DA does not exist', async () => {
     mongoMocks.retrieveDA.mockResolvedValue(undefined);
 
@@ -1467,6 +1493,50 @@ describe('fetchFDA', () => {
     expect(agenda.now).not.toHaveBeenCalled();
   });
 
+  test('fetchFDA with interval policy and windowSize schedules clean-partition job', async () => {
+    await fetchFDA(
+      'fda1',
+      'SELECT 1',
+      'svc',
+      'public',
+      '/servicepath',
+      'desc',
+      {
+        type: 'interval',
+        params: {
+          refreshInterval: '1 hour',
+          fetchSize: 'week',
+          windowSize: 'week',
+        },
+      },
+      'timeinstant',
+      { partition: 'week' },
+      false,
+      true,
+    );
+
+    expect(agenda.every).toHaveBeenCalledWith(
+      '1 hour',
+      'clean-partition',
+      {
+        fdaId: 'fda1',
+        service: 'svc',
+        servicePath: '/servicepath',
+        windowSize: 'week',
+        objStgConf: { partition: 'week' },
+      },
+      {
+        skipImmediate: true,
+        unique: {
+          name: 'clean-partition',
+          'data.service': 'svc',
+          'data.fdaId': 'fda1',
+          'data.servicePath': '/servicepath',
+        },
+      },
+    );
+  });
+
   test('fetchFDA with window refresh policy schedules cleanup', async () => {
     await fetchFDA(
       'fda1',
@@ -2200,6 +2270,26 @@ describe('cleanPartition', () => {
     );
 
     expect(awsMocks.dropFiles).toHaveBeenCalledWith({}, 'svc', []);
+  });
+
+  test('drops partitions older than one month when windowSize is month', async () => {
+    const oldDate = new Date('2020-01-01');
+    const futureDate = new Date('2099-01-01');
+    dbMocks.extractDate
+      .mockReturnValueOnce(oldDate)
+      .mockReturnValueOnce(futureDate);
+
+    await cleanPartition(
+      'svc',
+      'fdaA',
+      'month',
+      { partition: true },
+      '/public',
+    );
+
+    expect(awsMocks.dropFiles).toHaveBeenCalledWith({}, 'svc', [
+      'svc/fdaA/2020-01-01.parquet',
+    ]);
   });
 
   test('throws CleaningError when FDA is not partitioned', async () => {
