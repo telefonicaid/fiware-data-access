@@ -1795,7 +1795,8 @@ export function runFDAIntegrationSuite({ mode, label }) {
         body: {
           id: freshFdaId,
           description: 'direct fresh query test fda',
-          query: 'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+          query:
+            'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
           cached: false,
         },
       });
