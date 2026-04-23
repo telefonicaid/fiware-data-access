@@ -1,4 +1,5 @@
 - Fix: split cached and fresh FDA query model. DAs are cached-only, `GET /{visibility}/fdas/{fdaId}/data` executes only-fresh FDAs directly on PostgreSQL, and FDA creation supports `cached: false` without parquet or default DA (#153)
+- Remove: `fresh` query param (no longer used as cached and fresh queries are separated at URL level) (#153)
 - Fix: fdaId in Pentaho compatibility requests now taken from the end of path attribute (cda field is removed) (#152) 
 - Fix: POST api (FDA, DA) without body to avoid internal server error
 - Add: automatic `defaultDataAccess` creation on FDA creation, with optional column filters, `start`/`finish`, and `limit`/`offset` support in cached mode (#133)
