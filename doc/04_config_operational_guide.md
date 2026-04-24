@@ -41,19 +41,19 @@ Variables related to the environment of the application:
 
 Variables that define which components of the application are executed by this instance:
 
-| Variable                           | Optional | Type    | Description                                                                                                                                        |
-| ---------------------------------- | -------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `FDA_ROLE_APISERVER`               | ✓        | boolean | If `true`, the instance runs the API server to handle HTTP requests. Default `true`.                                                               |
-| `FDA_ROLE_FETCHER`                 | ✓        | boolean | If `true`, the instance runs the fetcher responsible for regenerating and updating FDAs. Default `true`.                                           |
-| `FDA_ROLE_SYNCQUERIES`             | ✓        | boolean | If `true`, the API instance accepts `fresh=true` queries and executes them directly against PostgreSQL. Default `false`.                           |
-| `FDA_MAX_CONCURRENT_FRESH_QUERIES` | ✓        | number  | Maximum number of concurrent `fresh=true` queries accepted by the API instance. Additional requests return `429 TooManyFreshQueries`. Default `5`. |
-| `FDA_CREATE_DEFAULT_DATA_ACCESS`   | ✓        | boolean | If `true`, FDA creation also creates a built-in `defaultDataAccess` DA unless the request overrides it. Default `true`.                            |
+| Variable                           | Optional | Type    | Description                                                                                                                                                          |
+| ---------------------------------- | -------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FDA_ROLE_APISERVER`               | ✓        | boolean | If `true`, the instance runs the API server to handle HTTP requests. Default `true`.                                                                                 |
+| `FDA_ROLE_FETCHER`                 | ✓        | boolean | If `true`, the instance runs the fetcher responsible for regenerating and updating FDAs. Default `true`.                                                             |
+| `FDA_ROLE_SYNCQUERIES`             | ✓        | boolean | If `true`, the API instance accepts creation of fresh queries, `GET /{visibility}/fdas/{fdaId}/data` and executes FDAs directly against PostgreSQL. Default `false`. |
+| `FDA_MAX_CONCURRENT_FRESH_QUERIES` | ✓        | number  | Maximum number of concurrent direct fresh FDA queries accepted by the API instance. Additional requests return `429 TooManyFreshQueries`. Default `5`.               |
+| `FDA_CREATE_DEFAULT_DATA_ACCESS`   | ✓        | boolean | If `true`, FDA creation also creates a built-in `defaultDataAccess` DA unless the request overrides it. Default `true`.                                              |
 
 > Note: By default, an instance runs both roles (API server and Fetcher). You can disable one to separate
 > responsibilities.
 
 > Note: `FDA_ROLE_SYNCQUERIES` is only used by the API server role. It is recommended to enable it only in API instances
-> that should allow fresh (non-cached) queries.
+> that should allow direct fresh FDA queries.
 
 ### PostgreSQL
 

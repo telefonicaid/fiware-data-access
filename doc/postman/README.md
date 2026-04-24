@@ -37,7 +37,7 @@ Before sending requests, create or update a Postman environment and define the f
 
 ---
 
-### 3. Content negotiation for DA data endpoint
+### 3. Content negotiation for data endpoints
 
 For `GET /{visibility}/fdas/{fdaId}/das/{daId}/data`, response format is selected only through the `Accept` header:
 
@@ -45,3 +45,6 @@ For `GET /{visibility}/fdas/{fdaId}/das/{daId}/data`, response format is selecte
 -   `application/x-ndjson` returns NDJSON stream.
 -   `text/csv` returns CSV stream.
 -   `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` returns XLSX.
+
+The same content negotiation rules apply to `GET /{visibility}/fdas/{fdaId}/data`, which is the direct fresh FDA query
+endpoint.

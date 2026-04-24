@@ -27,7 +27,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"id\": \"{{fdaId}}\",\n    \"query\": \"SELECT * FROM alcobendas.widgetsvalidation_lifestockmonitoring_animal\",\n    \"description\": \"FDA 1 para la bd alcobendas\",\n    \"refreshPolicy\": { \"type\": \"interval\", \"value\": \"1 hour\" }\n}",
+							"raw": "{\n    \"id\": \"{{fdaId}}\",\n    \"query\": \"SELECT * FROM alcobendas.widgetsvalidation_lifestockmonitoring_animal\",\n    \"description\": \"FDA 1 para la bd alcobendas\",\n    \"refreshPolicy\": { \"type\": \"interval\", \"value\": \"1 hour\" },\n    \"cached\": true\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -352,6 +352,78 @@
 		{
 			"name": "Query",
 			"item": [
+				{
+					"name": "Execute FDA query",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Fiware-Service",
+								"value": "{{Fiware-Service}}",
+								"type": "text"
+							},
+							{
+								"key": "Fiware-ServicePath",
+								"value": "{{Fiware-ServicePath}}",
+								"type": "text"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{url}}/{{visibility}}/fdas/{{fdaId}}/data",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"{{visibility}}",
+								"fdas",
+								"{{fdaId}}",
+								"data"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Execute FDA query (NDJSON stream)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Fiware-Service",
+								"value": "{{Fiware-Service}}",
+								"type": "text"
+							},
+							{
+								"key": "Fiware-ServicePath",
+								"value": "{{Fiware-ServicePath}}",
+								"type": "text"
+							},
+							{
+								"key": "Accept",
+								"value": "application/x-ndjson",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{url}}/{{visibility}}/fdas/{{fdaId}}/data",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"{{visibility}}",
+								"fdas",
+								"{{fdaId}}",
+								"data"
+							]
+						}
+					},
+					"response": []
+				},
 				{
 					"name": "Execute DA query",
 					"request": {

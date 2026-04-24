@@ -79,9 +79,12 @@ export async function createFDAMongo(
   refreshPolicy,
   timeColumn,
   objStgConf,
+  cached = true,
 ) {
   logger.debug({ fdaId, query, service, description }, '[DEBUG]: createFDA');
   const collection = await getCollection();
+  const initialStatus = cached ? 'fetching' : 'completed';
+  const initialProgress = cached ? 0 : 100;
   try {
     // As there is a unique index on (service, servicePath, fdaId), this throws an error when the same scoped FDA already exists.
     await collection.insertOne({
@@ -90,14 +93,15 @@ export async function createFDAMongo(
       das: {},
       service,
       visibility,
-      status: 'fetching',
-      progress: 0,
+      status: initialStatus,
+      progress: initialProgress,
       lastFetch: null,
       refreshPolicy: refreshPolicy ?? { type: 'none' },
       ...(servicePath && { servicePath }),
       ...(description && { description }),
       timeColumn,
       objStgConf,
+      cached,
     });
   } catch (e) {
     if (e.code === 11000) {

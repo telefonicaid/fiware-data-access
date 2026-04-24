@@ -70,28 +70,30 @@ All error responses follow this structure:
 
 ### HTTP status codes
 
-| Code | Status                | Error Code             | Cause                                                                                                                                                                                       |
-| ---- | --------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 400  | Bad Request           | `BadRequest`           | Missing or invalid values in request body, headers, or query parameters. `Fiware-Service`, `Fiware-ServicePath`, and `visibility` (path segment) are required for all operations.           |
-| 400  | Bad Request           | `BadRequest`           | Invalid or unsupported query fields were provided (for example, using `outputType` in `GET /{visibility}/fdas/{fdaId}/das/{daId}/data`).                                                    |
-| 400  | Bad Request           | `InvalidVisibility`    | The `visibility` path segment is not one of the allowed values (`public`, `private`).                                                                                                       |
-| 400  | Bad Request           | `InvalidServicePath`   | The `Fiware-ServicePath` header value is not a valid non-root absolute path (e.g. `/servicePath/site`). The root path `/` is not allowed.                                                   |
-| 400  | Bad Request           | `InvalidQueryParam`    | Some of the params in the request don't comply with the [params](#params) array restrictions.                                                                                               |
-| 400  | Bad Request           | `PartitionError`       | Some of the params related to the creation of the parquet partition don't comply with the [object storage configuration](#object-storage-configuration-objstgconf) requirements.            |
-| 400  | Bad Request           | `CleaningError`        | Trying to remove a non partitioned FDA or incorrect value in the [delete interval key](#refresh-policy-object).                                                                             |
-| 403  | Forbidden             | `VisibilityMismatch`   | The FDA exists but was created under a different `visibility`. Cannot access a private FDA through a public route and vice-versa.                                                           |
-| 404  | Not Found             | `FDANotFound`          | The requested FDA was not found.                                                                                                                                                            |
-| 404  | Not Found             | `DaNotFound`           | The requested Data Access (DA) was not found.                                                                                                                                               |
-| 406  | Not Acceptable        | `NotAcceptable`        | `Accept` header does not allow any supported response format (`application/json`, `application/x-ndjson`, `text/csv`, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`). |
-| 409  | Conflict              | `DuplicatedKey`        | The resource already exists in the database. Attempting to create a duplicate resource.                                                                                                     |
-| 409  | Conflict              | `FDAUnavailable`       | FDA `exampleId` is not queryable yet because the first fetch has not completed.                                                                                                             |
-| 429  | Too Many Requests     | `TooManyFreshQueries`  | The number of concurrent `fresh=true` queries exceeded `FDA_MAX_CONCURRENT_FRESH_QUERIES`.                                                                                                  |
-| 500  | Internal Server Error | `S3ServerError`        | An error occurred in the S3 object storage component.                                                                                                                                       |
-| 500  | Internal Server Error | `DuckDBServerError`    | An error occurred in the DuckDB component.                                                                                                                                                  |
-| 500  | Internal Server Error | `MongoDBServerError`   | An error occurred in the MongoDB component.                                                                                                                                                 |
-| 503  | Service Unavailable   | `UploadError`          | Connection error with the PostgreSQL database component.                                                                                                                                    |
-| 503  | Service Unavailable   | `SyncQueriesDisabled`  | A request was sent with `fresh=true` but the API instance is running with `FDA_ROLE_SYNCQUERIES=false`.                                                                                     |
-| 503  | Service Unavailable   | `MongoConnectionError` | Connection error with the MongoDB component.                                                                                                                                                |
+| Code | Status                | Error Code             | Cause                                                                                                                                                                                            |
+| ---- | --------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 400  | Bad Request           | `BadRequest`           | Missing or invalid values in request body, headers, or query parameters. `Fiware-Service`, `Fiware-ServicePath`, and `visibility` (path segment) are required for all operations.                |
+| 400  | Bad Request           | `BadRequest`           | Invalid or unsupported query fields were provided (for example, using `fresh` in `GET /{visibility}/fdas/{fdaId}/das/{daId}/data` or any query string in `GET /{visibility}/fdas/{fdaId}/data`). |
+| 400  | Bad Request           | `InvalidVisibility`    | The `visibility` path segment is not one of the allowed values (`public`, `private`).                                                                                                            |
+| 400  | Bad Request           | `InvalidServicePath`   | The `Fiware-ServicePath` header value is not a valid non-root absolute path (e.g. `/servicePath/site`). The root path `/` is not allowed.                                                        |
+| 400  | Bad Request           | `InvalidQueryParam`    | Some of the params in the request don't comply with the [params](#params) array restrictions.                                                                                                    |
+| 400  | Bad Request           | `PartitionError`       | Some of the params related to the creation of the parquet partition don't comply with the [object storage configuration](#object-storage-configuration-objstgconf) requirements.                 |
+| 400  | Bad Request           | `CleaningError`        | Trying to remove a non partitioned FDA or incorrect value in the [delete interval key](#refresh-policy-object).                                                                                  |
+| 403  | Forbidden             | `VisibilityMismatch`   | The FDA exists but was created under a different `visibility`. Cannot access a private FDA through a public route and vice-versa.                                                                |
+| 404  | Not Found             | `FDANotFound`          | The requested FDA was not found.                                                                                                                                                                 |
+| 404  | Not Found             | `DaNotFound`           | The requested Data Access (DA) was not found.                                                                                                                                                    |
+| 406  | Not Acceptable        | `NotAcceptable`        | `Accept` header does not allow any supported response format (`application/json`, `application/x-ndjson`, `text/csv`, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`).      |
+| 409  | Conflict              | `DuplicatedKey`        | The resource already exists in the database. Attempting to create a duplicate resource.                                                                                                          |
+| 409  | Conflict              | `FDAUnavailable`       | FDA `exampleId` is not queryable yet because the first fetch has not completed.                                                                                                                  |
+| 409  | Conflict              | `FDANotOnlyFresh`      | The FDA is cached (`cached=true`) and cannot be queried through `GET /{visibility}/fdas/{fdaId}/data`; use a DA instead.                                                                         |
+| 409  | Conflict              | `FDAOnlyFresh`         | The FDA was created with `cached=false`, so it does not allow DAs nor cached DA queries.                                                                                                         |
+| 429  | Too Many Requests     | `TooManyFreshQueries`  | The number of concurrent direct fresh FDA queries exceeded `FDA_MAX_CONCURRENT_FRESH_QUERIES`.                                                                                                   |
+| 500  | Internal Server Error | `S3ServerError`        | An error occurred in the S3 object storage component.                                                                                                                                            |
+| 500  | Internal Server Error | `DuckDBServerError`    | An error occurred in the DuckDB component.                                                                                                                                                       |
+| 500  | Internal Server Error | `MongoDBServerError`   | An error occurred in the MongoDB component.                                                                                                                                                      |
+| 503  | Service Unavailable   | `UploadError`          | Connection error with the PostgreSQL database component.                                                                                                                                         |
+| 503  | Service Unavailable   | `SyncQueriesDisabled`  | A direct FDA query was sent but the API instance is running with `FDA_ROLE_SYNCQUERIES=false`.                                                                                                   |
+| 503  | Service Unavailable   | `MongoConnectionError` | Connection error with the MongoDB component.                                                                                                                                                     |
 
 ### Common error scenarios
 
@@ -473,14 +475,15 @@ fda_jobs_agenda_total 7
 
 A FDA is represented by a JSON object with the following fields:
 
-| Parameter                                                | Optional | Type   | Description                                                                                                                       |
-| -------------------------------------------------------- | -------- | ------ | --------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                                                     |          | string | FDA unique identifier                                                                                                             |
-| `description`                                            | ✓        | string | A free text used by the client to describe the FDA                                                                                |
-| `query`                                                  |          | string | Base `postgreSQL` query to create the file in the bucket-based storage system                                                     |
-| `refreshPolicy`                                          | ✓        | object | Optional policy for automatic refresh.                                                                                            |
-| [`objStgConf`](#object-storage-configuration-objstgconf) | ✓        | object | Various options to configure the FDA uploaded in the object storage app.                                                          |
-| `timeColumn`                                             | ✓        | string | Required with `refreshPolicy` of type `window` and `partition`. Column in the table indicating when the data was received (date). |
+| Parameter                                                | Optional | Type    | Description                                                                                                                                                                                |
+| -------------------------------------------------------- | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`                                                     |          | string  | FDA unique identifier                                                                                                                                                                      |
+| `description`                                            | ✓        | string  | A free text used by the client to describe the FDA                                                                                                                                         |
+| `query`                                                  |          | string  | Base `postgreSQL` query to create the file in the bucket-based storage system                                                                                                              |
+| `refreshPolicy`                                          | ✓        | object  | Optional policy for automatic refresh.                                                                                                                                                     |
+| [`objStgConf`](#object-storage-configuration-objstgconf) | ✓        | object  | Various options to configure the FDA uploaded in the object storage app.                                                                                                                   |
+| `timeColumn`                                             | ✓        | string  | Required with `refreshPolicy` of type `window` and `partition`. Column in the table indicating when the data was received (date).                                                          |
+| `cached`                                                 | ✓        | boolean | If `false`, the FDA is created as only-fresh: no parquet snapshot is maintained, no DAs are allowed, and the FDA is queried through `GET /{visibility}/fdas/{fdaId}/data`. Default `true`. |
 
 #### Refresh Policy object
 
@@ -639,7 +642,8 @@ curl -i -X POST http://localhost:8080/public/fdas \
     "id": "fda_alarms",
     "query": "SELECT * FROM public.alarms",
     "description": "FDA de alarmas del sistema",
-    "refreshPolicy": { "type": "interval", "value": "1 hour" }
+    "refreshPolicy": { "type": "interval", "value": "1 hour" },
+    "cached": true
   }'
 ```
 
@@ -654,6 +658,21 @@ curl -i -X POST "http://localhost:8080/public/fdas?defaultDataAccess=false" \
         "id": "fda_alarms_no_default",
         "query": "SELECT * FROM public.alarms",
         "description": "FDA without default DA"
+    }'
+```
+
+_**Example Request for an only-fresh FDA:**_
+
+```bash
+curl -i -X POST http://localhost:8080/public/fdas \
+    -H "Content-Type: application/json" \
+    -H "Fiware-Service: my-bucket" \
+    -H "Fiware-ServicePath: /servicePath" \
+    -d '{
+        "id": "fda_live_alarms",
+        "query": "SELECT * FROM public.alarms",
+        "description": "Only-fresh FDA",
+        "cached": false
     }'
 ```
 
@@ -1190,7 +1209,50 @@ None
 
 ### Data operations
 
-#### Data query `GET /{visibility}/fdas/{fdaId}/das/{daId}/data`
+#### FDA data query `GET /{visibility}/fdas/{fdaId}/data`
+
+Runs the FDA base query directly against PostgreSQL. This endpoint is always fresh and does not use the parquet cache.
+
+_**Request path parameters**_
+
+| Parameter    | Optional | Description                                                          | Example  |
+| ------------ | -------- | -------------------------------------------------------------------- | -------- |
+| `visibility` |          | FDA access visibility. Allowed values: `public`, `private`           | `public` |
+| `fdaId`      |          | Id of the `fda`. Must be unique in combination with `Fiware-Service` | `fda1`   |
+
+_**Request query parameters**_
+
+None. Any query string parameter is rejected with `400 BadRequest`.
+
+_**Request headers**_
+
+| Header               | Optional | Description                                                          | Example        |
+| -------------------- | -------- | -------------------------------------------------------------------- | -------------- |
+| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket`    |
+| `Fiware-ServicePath` |          | NGSI hierarchical service path. Must match the FDA's stored path.    | `/servicePath` |
+
+_**Response code**_
+
+-   Successful operation uses 200 OK
+-   Errors use a non-2xx and (optionally) an error payload. See subsection on [Error Responses](#error-responses) for
+    more details.
+
+_**Content negotiation and serialization notes**_
+
+-   Response format is negotiated only through the `Accept` header.
+-   This endpoint requires `FDA_ROLE_SYNCQUERIES=true` in the API instance.
+-   With `Accept: application/x-ndjson` and `Accept: text/csv`, results are streamed incrementally from PostgreSQL using
+    a cursor.
+
+_**Example Request:**_
+
+```bash
+curl -i -X GET "http://localhost:8080/public/fdas/fda_live_alarms/data" \
+    -H "Fiware-Service: my-bucket" \
+    -H "Fiware-ServicePath: /servicePath"
+```
+
+#### Data Access query `GET /{visibility}/fdas/{fdaId}/das/{daId}/data`
 
 Runs a stored parameterized query for the selected DA. The request path declares the access visibility and the query
 string carries DA parameters.
@@ -1205,11 +1267,7 @@ _**Request path parameters**_
 
 _**Request query parameters**_
 
-| Parameter | Optional | Description                                                                                                                                              | Example |
-| --------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| `fresh`   | ✓        | If `true`, executes the DA directly against PostgreSQL instead of the cached Parquet snapshot. Requires `FDA_ROLE_SYNCQUERIES=true` in the API instance. | `true`  |
-
-Additionally, the DA-specific parameters must be included in the query string together with the previous ones.
+The DA-specific parameters could be included in the query string.
 
 _**Request headers**_
 
@@ -1265,10 +1323,7 @@ _**Content negotiation and serialization notes**_
 -   Unsupported query fields are rejected with `400 BadRequest`.
 -   Date values are normalized to strings (ISO 8601) before JSON/NDJSON/CSV serialization.
 -   Integer database values are normalized to numeric JSON values.
--   The `fresh` parameter can be combined with all output modes.
--   With `fresh=true` and `Accept: application/x-ndjson`, results are streamed incrementally from PostgreSQL using a
-    cursor to avoid loading full result sets in memory.
--   With `Accept: text/csv`, responses are streamed in both cached and fresh modes.
+-   With `Accept: text/csv` and `Accept: application/x-ndjson`, responses are streamed.
 
 _**Example Request (without DA parameters):**_
 
@@ -1358,14 +1413,6 @@ curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_all_alarms/d
   -H "Fiware-Service: my-bucket" \
   -H "Fiware-ServicePath: /servicePath" \
   -H "Accept: application/x-ndjson"
-```
-
-_**Example Request (fresh query on PostgreSQL):**_
-
-```bash
-curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_filter_by_name/data?pattern=%25nosignal%25&fresh=true" \
-  -H "Fiware-Service: my-bucket" \
-  -H "Fiware-ServicePath: /servicePath"
 ```
 
 #### Query `POST /plugin/cda/api/doQuery` (Pentaho CDA legacy support)

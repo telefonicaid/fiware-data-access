@@ -19,6 +19,9 @@ Default DA creation is enabled by default and can be controlled in two ways:
 -   `POST /{visibility}/fdas?defaultDataAccess=false` disables it for a specific FDA creation request, overriding the
     instance default for that request only.
 
+Default DA creation only applies to cached FDAs. If an FDA is created with `cached=false`, no parquet bootstrap is
+generated and no DAs are created for that FDA.
+
 If enabled, the DA is created automatically after the one-row bootstrap parquet is generated and before the async fetch
 job is scheduled.
 
@@ -98,17 +101,3 @@ Default DA also includes two optional pagination parameters:
 -   `offset`
 
 They are always present.
-
-## Current limitation in fresh mode
-
-The optional-filter pattern works correctly in cached mode over DuckDB/Parquet.
-
-However, it is currently not guaranteed to work in `fresh=true` mode over PostgreSQL for typeless optional parameters,
-particularly with predicates shaped as:
-
-```sql
-($p IS NULL OR col = $p)
-```
-
-This limitation is currently accepted and pending design discussion in
-[#153](https://github.com/telefonicaid/fiware-data-access/issues/153).
