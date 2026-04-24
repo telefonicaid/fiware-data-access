@@ -1209,7 +1209,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       }
     });
 
-    test('defaultDataAccess without timeColumn includes limit/offset but not start/finish', async () => {
+    test('defaultDataAccess without timeColumn includes pageSize/pageStart but not start/finish', async () => {
       const untimedFdaId = 'fda_default_da_untimed';
 
       try {
@@ -1237,13 +1237,14 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
         const defaultDa = completedFDA?.das?.defaultDataAccess;
         expect(defaultDa).toBeDefined();
+        expect(defaultDa.query).toContain('COUNT(*) OVER() as __total');
         expect(defaultDa.query).toContain(
-          'LIMIT CAST(COALESCE($limit, 9223372036854775807) AS BIGINT) OFFSET CAST(COALESCE($offset, 0) AS BIGINT)',
+          'LIMIT CAST($pageSize AS BIGINT) OFFSET CAST($pageStart AS BIGINT)',
         );
         expect(defaultDa.query).not.toContain('$start');
         expect(defaultDa.query).not.toContain('$finish');
-        expect(defaultDa.params.some((p) => p.name === 'limit')).toBe(true);
-        expect(defaultDa.params.some((p) => p.name === 'offset')).toBe(true);
+        expect(defaultDa.params.some((p) => p.name === 'pageSize')).toBe(true);
+        expect(defaultDa.params.some((p) => p.name === 'pageStart')).toBe(true);
         expect(defaultDa.params.some((p) => p.name === 'start')).toBe(false);
         expect(defaultDa.params.some((p) => p.name === 'finish')).toBe(false);
 
@@ -1254,7 +1255,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
             servicePath,
             untimedFdaId,
             'defaultDataAccess',
-            { limit: 1, offset: 2 },
+            { pageSize: 1, pageStart: 2 },
           ),
           headers: { 'Fiware-Service': service },
         });
@@ -1274,7 +1275,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       }
     });
 
-    test('defaultDataAccess includes start/finish and limit/offset when FDA has timeColumn', async () => {
+    test('defaultDataAccess includes start/finish and pageSize/pageStart when FDA has timeColumn', async () => {
       const timedFdaId = 'fda_default_da_timed';
 
       try {
@@ -1309,13 +1310,14 @@ export function runFDAIntegrationSuite({ mode, label }) {
         expect(defaultDa.query).toContain(
           '($finish IS NULL OR CAST("timeinstant" AS TIMESTAMP) <= CAST($finish AS TIMESTAMP))',
         );
+        expect(defaultDa.query).toContain('COUNT(*) OVER() as __total');
         expect(defaultDa.query).toContain(
-          'LIMIT CAST(COALESCE($limit, 9223372036854775807) AS BIGINT) OFFSET CAST(COALESCE($offset, 0) AS BIGINT)',
+          'LIMIT CAST($pageSize AS BIGINT) OFFSET CAST($pageStart AS BIGINT)',
         );
         expect(defaultDa.params.some((p) => p.name === 'start')).toBe(true);
         expect(defaultDa.params.some((p) => p.name === 'finish')).toBe(true);
-        expect(defaultDa.params.some((p) => p.name === 'limit')).toBe(true);
-        expect(defaultDa.params.some((p) => p.name === 'offset')).toBe(true);
+        expect(defaultDa.params.some((p) => p.name === 'pageSize')).toBe(true);
+        expect(defaultDa.params.some((p) => p.name === 'pageStart')).toBe(true);
       } finally {
         await httpReq({
           method: 'DELETE',
@@ -1328,7 +1330,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       }
     });
 
-    test('defaultDataAccess supports start/finish and limit/offset in cached mode', async () => {
+    test('defaultDataAccess supports start/finish and pageSize/pageStart in cached mode', async () => {
       const timedFdaId = 'fda_default_da_timed_data';
 
       try {
@@ -1365,8 +1367,8 @@ export function runFDAIntegrationSuite({ mode, label }) {
             {
               start: '2020-01-01T00:00:00.000Z',
               finish: '2020-12-31T23:59:59.000Z',
-              limit: 1,
-              offset: 1,
+              pageSize: 1,
+              pageStart: 1,
             },
           ),
           headers: { 'Fiware-Service': service },
@@ -1374,7 +1376,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
         if (rangeAndPagingRes.status >= 400) {
           console.error(
-            'GET defaultDataAccess with start/finish/limit/offset failed:',
+            'GET defaultDataAccess with start/finish/pageSize/pageStart failed:',
             rangeAndPagingRes.status,
             rangeAndPagingRes.json ?? rangeAndPagingRes.text,
           );
