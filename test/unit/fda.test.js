@@ -993,15 +993,15 @@ describe('fetchFDA', () => {
       '/servicepath',
       'defaultDataAccess',
       'Default Data Access providing access to whole FDA data. It has parameters for all columns in the FDA.',
-      'SELECT * WHERE ($entity_id IS NULL OR "entity-id" = $entity_id) AND ($limit_2 IS NULL OR "limit" = $limit_2) AND ($timeinstant IS NULL OR DATE_TRUNC(\'millisecond\', CAST("timeinstant" AS TIMESTAMP)) = DATE_TRUNC(\'millisecond\', CAST($timeinstant AS TIMESTAMP))) AND ($start IS NULL OR CAST("timeinstant" AS TIMESTAMP) >= CAST($start AS TIMESTAMP)) AND ($finish IS NULL OR CAST("timeinstant" AS TIMESTAMP) <= CAST($finish AS TIMESTAMP)) LIMIT CAST(COALESCE($limit, 9223372036854775807) AS BIGINT) OFFSET CAST(COALESCE($offset, 0) AS BIGINT)',
+      'SELECT *, COUNT(*) OVER() as __total WHERE ($entity_id IS NULL OR "entity-id" = $entity_id) AND ($limit IS NULL OR "limit" = $limit) AND ($timeinstant IS NULL OR DATE_TRUNC(\'millisecond\', CAST("timeinstant" AS TIMESTAMP)) = DATE_TRUNC(\'millisecond\', CAST($timeinstant AS TIMESTAMP))) AND ($start IS NULL OR CAST("timeinstant" AS TIMESTAMP) >= CAST($start AS TIMESTAMP)) AND ($finish IS NULL OR CAST("timeinstant" AS TIMESTAMP) <= CAST($finish AS TIMESTAMP)) LIMIT CAST($pageSize AS BIGINT) OFFSET CAST($pageStart AS BIGINT)',
       [
         { name: 'entity_id', default: null },
-        { name: 'limit_2', default: null },
+        { name: 'limit', default: null },
         { name: 'timeinstant', default: null },
         { name: 'start', default: null },
         { name: 'finish', default: null },
-        { name: 'limit', default: null },
-        { name: 'offset', default: null },
+        { name: 'pageSize', default: '9223372036854775807' },
+        { name: 'pageStart', default: 0 },
       ],
     );
   });
@@ -1046,11 +1046,11 @@ describe('fetchFDA', () => {
       '/servicepath',
       'defaultDataAccess',
       'Default Data Access providing access to whole FDA data. It has parameters for all columns in the FDA.',
-      'SELECT * WHERE ($name IS NULL OR "name" = $name) LIMIT CAST(COALESCE($limit, 9223372036854775807) AS BIGINT) OFFSET CAST(COALESCE($offset, 0) AS BIGINT)',
+      'SELECT *, COUNT(*) OVER() as __total WHERE ($name IS NULL OR "name" = $name) LIMIT CAST($pageSize AS BIGINT) OFFSET CAST($pageStart AS BIGINT)',
       [
         { name: 'name', default: null },
-        { name: 'limit', default: null },
-        { name: 'offset', default: null },
+        { name: 'pageSize', default: '9223372036854775807' },
+        { name: 'pageStart', default: 0 },
       ],
     );
   });
@@ -1098,14 +1098,14 @@ describe('fetchFDA', () => {
       '/servicepath',
       'defaultDataAccess',
       'Default Data Access providing access to whole FDA data. It has parameters for all columns in the FDA.',
-      'SELECT * WHERE ($timeinstant IS NULL OR DATE_TRUNC(\'millisecond\', CAST("TimeInstant" AS TIMESTAMP)) = DATE_TRUNC(\'millisecond\', CAST($timeinstant AS TIMESTAMP))) AND ($name IS NULL OR "name" = $name) AND ($start IS NULL OR CAST("TimeInstant" AS TIMESTAMP) >= CAST($start AS TIMESTAMP)) AND ($finish IS NULL OR CAST("TimeInstant" AS TIMESTAMP) <= CAST($finish AS TIMESTAMP)) LIMIT CAST(COALESCE($limit, 9223372036854775807) AS BIGINT) OFFSET CAST(COALESCE($offset, 0) AS BIGINT)',
+      'SELECT *, COUNT(*) OVER() as __total WHERE ($timeinstant IS NULL OR DATE_TRUNC(\'millisecond\', CAST("TimeInstant" AS TIMESTAMP)) = DATE_TRUNC(\'millisecond\', CAST($timeinstant AS TIMESTAMP))) AND ($name IS NULL OR "name" = $name) AND ($start IS NULL OR CAST("TimeInstant" AS TIMESTAMP) >= CAST($start AS TIMESTAMP)) AND ($finish IS NULL OR CAST("TimeInstant" AS TIMESTAMP) <= CAST($finish AS TIMESTAMP)) LIMIT CAST($pageSize AS BIGINT) OFFSET CAST($pageStart AS BIGINT)',
       [
         { name: 'timeinstant', default: null },
         { name: 'name', default: null },
         { name: 'start', default: null },
         { name: 'finish', default: null },
-        { name: 'limit', default: null },
-        { name: 'offset', default: null },
+        { name: 'pageSize', default: '9223372036854775807' },
+        { name: 'pageStart', default: 0 },
       ],
     );
   });
@@ -1153,12 +1153,12 @@ describe('fetchFDA', () => {
       '/servicepath',
       'defaultDataAccess',
       'Default Data Access providing access to whole FDA data. It has parameters for all columns in the FDA.',
-      'SELECT * WHERE ($timeinstant IS NULL OR "timeinstant" = $timeinstant) AND ($name IS NULL OR "name" = $name) LIMIT CAST(COALESCE($limit, 9223372036854775807) AS BIGINT) OFFSET CAST(COALESCE($offset, 0) AS BIGINT)',
+      'SELECT *, COUNT(*) OVER() as __total WHERE ($timeinstant IS NULL OR "timeinstant" = $timeinstant) AND ($name IS NULL OR "name" = $name) LIMIT CAST($pageSize AS BIGINT) OFFSET CAST($pageStart AS BIGINT)',
       [
         { name: 'timeinstant', default: null },
         { name: 'name', default: null },
-        { name: 'limit', default: null },
-        { name: 'offset', default: null },
+        { name: 'pageSize', default: '9223372036854775807' },
+        { name: 'pageStart', default: 0 },
       ],
     );
   });
@@ -1203,10 +1203,10 @@ describe('fetchFDA', () => {
       '/servicepath',
       'defaultDataAccess',
       'Default Data Access providing access to whole FDA data. It has parameters for all columns in the FDA.',
-      'SELECT * LIMIT CAST(COALESCE($limit, 9223372036854775807) AS BIGINT) OFFSET CAST(COALESCE($offset, 0) AS BIGINT)',
+      'SELECT *, COUNT(*) OVER() as __total LIMIT CAST($pageSize AS BIGINT) OFFSET CAST($pageStart AS BIGINT)',
       [
-        { name: 'limit', default: null },
-        { name: 'offset', default: null },
+        { name: 'pageSize', default: '9223372036854775807' },
+        { name: 'pageStart', default: 0 },
       ],
     );
   });
@@ -1256,14 +1256,14 @@ describe('fetchFDA', () => {
       '/servicepath',
       'defaultDataAccess',
       'Default Data Access providing access to whole FDA data. It has parameters for all columns in the FDA.',
-      'SELECT * WHERE ($col_123value IS NULL OR "123value" = $col_123value) AND ($col IS NULL OR "!!!" = $col) AND ($offset_2 IS NULL OR "offset" = $offset_2) AND ($my_col IS NULL OR "my""col" = $my_col) LIMIT CAST(COALESCE($limit, 9223372036854775807) AS BIGINT) OFFSET CAST(COALESCE($offset, 0) AS BIGINT)',
+      'SELECT *, COUNT(*) OVER() as __total WHERE ($col_123value IS NULL OR "123value" = $col_123value) AND ($col IS NULL OR "!!!" = $col) AND ($offset IS NULL OR "offset" = $offset) AND ($my_col IS NULL OR "my""col" = $my_col) LIMIT CAST($pageSize AS BIGINT) OFFSET CAST($pageStart AS BIGINT)',
       [
         { name: 'col_123value', default: null },
         { name: 'col', default: null },
-        { name: 'offset_2', default: null },
-        { name: 'my_col', default: null },
-        { name: 'limit', default: null },
         { name: 'offset', default: null },
+        { name: 'my_col', default: null },
+        { name: 'pageSize', default: '9223372036854775807' },
+        { name: 'pageStart', default: 0 },
       ],
     );
   });
