@@ -1496,20 +1496,27 @@ async function buildDefaultDataAccessDefinition(
     timeColumn,
     columns,
   );
-  const reservedParamNames = ['limit', 'offset'];
+  const reservedParamNames = ['pageSize', 'pageStart'];
   if (resolvedTimeColumn) {
     reservedParamNames.push('start', 'finish');
   }
 
   if (columns.length === 0) {
-    const params = reservedParamNames.map((name) => ({
-      name,
-      default: null,
-    }));
+    const params = reservedParamNames.map((name) => {
+      if (name === 'pageSize') {
+        return { name, default: '9223372036854775807' };
+      }
+
+      if (name === 'pageStart') {
+        return { name, default: 0 };
+      }
+
+      return { name, default: null };
+    });
 
     return {
       query:
-        'SELECT * LIMIT CAST(COALESCE($limit, 9223372036854775807) AS BIGINT) OFFSET CAST(COALESCE($offset, 0) AS BIGINT)',
+        'SELECT *, COUNT(*) OVER() as __total LIMIT CAST($pageSize AS BIGINT) OFFSET CAST($pageStart AS BIGINT)',
       params,
     };
   }
@@ -1549,14 +1556,14 @@ async function buildDefaultDataAccessDefinition(
     );
   }
 
-  params.push({ name: 'limit', default: null });
-  params.push({ name: 'offset', default: null });
+  params.push({ name: 'pageSize', default: '9223372036854775807' });
+  params.push({ name: 'pageStart', default: 0 });
 
   const whereClause =
     filters.length > 0 ? ` WHERE ${filters.join(' AND ')}` : '';
 
   return {
-    query: `SELECT *${whereClause} LIMIT CAST(COALESCE($limit, 9223372036854775807) AS BIGINT) OFFSET CAST(COALESCE($offset, 0) AS BIGINT)`,
+    query: `SELECT *, COUNT(*) OVER() as __total${whereClause} LIMIT CAST($pageSize AS BIGINT) OFFSET CAST($pageStart AS BIGINT)`,
     params,
   };
 }
