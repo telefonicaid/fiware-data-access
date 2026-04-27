@@ -44,19 +44,14 @@ The generated DA is persisted like any other DA. It can later be queried, update
 The query follows this pattern:
 
 ```sql
-SELECT *
+SELECT *, COUNT(*) OVER() as __total
 WHERE ($col1 IS NULL OR col1 = $col1)
   AND ($col2 IS NULL OR col2 = $col2)
-LIMIT CAST(COALESCE($limit, 9223372036854775807) AS BIGINT)
-OFFSET CAST(COALESCE($offset, 0) AS BIGINT)
+LIMIT CAST($pageSize AS BIGINT)
+OFFSET CAST($pageStart AS BIGINT)
 ```
 
-About `9223372036854775807` in `LIMIT`:
-
--   This value is the maximum signed 64-bit integer (`BIGINT`), i.e. `2^63 - 1`.
--   It is used as an "effectively unbounded" limit when `limit` is not provided.
--   The generated query uses `COALESCE($limit, ...)` because SQL does not support expressing `LIMIT` with an
-    `($limit IS NULL OR ...)` pattern.
+The generated DA includes `__total` via `COUNT(*) OVER()` so clients can read total row count for pagination flows.
 
 Each FDA column gets one optional equality filter parameter with:
 
@@ -97,7 +92,12 @@ Important note about temporal columns:
 
 Default DA also includes two optional pagination parameters:
 
--   `limit`
--   `offset`
+-   `pageSize` (default `9223372036854775807`)
+-   `pageStart` (default `0`)
 
 They are always present.
+
+About `9223372036854775807` in `LIMIT`:
+
+-   This value is the maximum signed 64-bit integer (`BIGINT`), i.e. `2^63 - 1`.
+-   It is used as an "effectively unbounded" default value for `pageSize`.
