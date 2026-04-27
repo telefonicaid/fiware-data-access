@@ -82,7 +82,7 @@ Integration tests validate:
 -   Metadata persistence in MongoDB
 -   DuckDB query execution over Parquet files
 -   End-to-end API behavior using real data
--   `fresh=true` execution over PostgreSQL
+-   direct FDA fresh execution over PostgreSQL
 -   default DA behavior including automatic creation and optional filters
 
 ---

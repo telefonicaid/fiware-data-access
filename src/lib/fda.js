@@ -213,6 +213,31 @@ export async function executeQuery({
   }
 }
 
+export async function executeFDAQuery({
+  service,
+  visibility,
+  servicePath,
+  fdaId,
+}) {
+  assertFreshQueriesEnabled(config.roles.syncQueries);
+
+  const releaseFreshSlot = acquireFreshQuerySlot(
+    config.freshQueries.maxConcurrent,
+  );
+  try {
+    const query = await buildFreshFDAQuery(
+      service,
+      visibility,
+      servicePath,
+      fdaId,
+    );
+    const rows = await runPgQuery(service, query, []);
+    return normalizeForSerialization(rows);
+  } finally {
+    releaseFreshSlot();
+  }
+}
+
 export async function executeQueryStream({
   service,
   visibility,
@@ -274,6 +299,64 @@ export async function executeQueryStream({
           ? row.map((cell) => escapeCsvValue(cell)).join(',') + '\n'
           : csvColumns.map((column) => escapeCsvValue(row[column])).join(',') +
             '\n';
+        await writeCsvLine(res, csvLine);
+      }
+    }
+  } finally {
+    await source.close();
+  }
+
+  return res.end();
+}
+
+export async function executeFDAQueryStream({
+  service,
+  visibility,
+  servicePath,
+  fdaId,
+  req,
+  res,
+  format = 'ndjson',
+}) {
+  const source = await createFreshFDARowSource({
+    service,
+    visibility,
+    servicePath,
+    fdaId,
+    req,
+  });
+
+  if (format === 'ndjson') {
+    res.setHeader('Content-Type', 'application/x-ndjson');
+  } else {
+    res.setHeader('Content-Type', CSV_CONTENT_TYPE);
+    res.setHeader('Content-Disposition', 'attachment; filename="results.csv"');
+  }
+
+  let csvColumns;
+
+  try {
+    for (
+      let rows = await source.readNextRows();
+      rows.length > 0;
+      rows = await source.readNextRows()
+    ) {
+      if (format === 'ndjson') {
+        for (const row of rows) {
+          await writeNdjsonLine(res, row);
+        }
+        continue;
+      }
+
+      if (!csvColumns) {
+        csvColumns = Object.keys(rows[0] ?? {});
+        await writeCsvHeader(res, csvColumns);
+      }
+
+      for (const row of rows) {
+        const csvLine =
+          csvColumns.map((column) => escapeCsvValue(row[column])).join(',') +
+          '\n';
         await writeCsvLine(res, csvLine);
       }
     }
@@ -392,6 +475,53 @@ async function createFreshRowSource({
   }
 }
 
+async function createFreshFDARowSource({
+  service,
+  visibility,
+  servicePath,
+  fdaId,
+  req,
+}) {
+  assertFreshQueriesEnabled(config.roles.syncQueries);
+
+  const releaseFreshSlot = acquireFreshQuerySlot(
+    config.freshQueries.maxConcurrent,
+  );
+  let cursorReader;
+
+  try {
+    const query = await buildFreshFDAQuery(
+      service,
+      visibility,
+      servicePath,
+      fdaId,
+    );
+
+    cursorReader = await createPgCursorReader(
+      service,
+      query,
+      [],
+      FRESH_CURSOR_BATCH_SIZE,
+    );
+
+    req.on('close', () => {
+      cursorReader?.close().catch(() => {});
+    });
+
+    return {
+      columnNames: null,
+      readNextRows: () => cursorReader.readNextChunk(),
+      close: async () => {
+        await cursorReader?.close();
+        releaseFreshSlot();
+      },
+    };
+  } catch (e) {
+    releaseFreshSlot();
+    throw e;
+  }
+}
+
 async function executeFreshQuery({ service, visibility, servicePath, params }) {
   assertFreshQueriesEnabled(config.roles.syncQueries);
 
@@ -442,6 +572,18 @@ async function buildFreshQueryStatement(
   const freshBaseQuery = buildFreshDAQuery(fda.query, da.query);
 
   return replaceNamedParamsWithPositional(freshBaseQuery, validatedParams);
+}
+
+async function buildFreshFDAQuery(service, visibility, servicePath, fdaId) {
+  const fda = await getAccessibleFDA(service, fdaId, visibility, servicePath);
+  if (fda.cached !== false) {
+    throw new FDAError(
+      409,
+      'FDANotOnlyFresh',
+      `FDA ${fdaId} is a cached FDA and cannot be queried directly. Use a Data Access instead.`,
+    );
+  }
+  return removeTrailingSemicolon(fda.query?.trim() || '');
 }
 
 function buildFreshDAQuery(fdaQuery, daQuery) {
@@ -536,8 +678,10 @@ export async function createDA(
   const conn = await getDBConnection();
 
   try {
+    let fda;
     if (visibility !== undefined || servicePath !== undefined) {
-      await getAccessibleFDA(service, fdaId, visibility, servicePath);
+      fda = await getAccessibleFDA(service, fdaId, visibility, servicePath);
+      assertFDAIsCached(fda, fdaId);
     }
 
     const existing = await retrieveDA(service, fdaId, daId, servicePath);
@@ -577,6 +721,7 @@ export async function fetchFDA(
   timeColumn,
   objStgConf,
   defaultDataAccessEnabled,
+  cached = true,
 ) {
   validateScheduledOptions(refreshPolicy, objStgConf);
   const timeQuery =
@@ -596,21 +741,24 @@ export async function fetchFDA(
     refreshPolicy,
     timeColumn,
     objStgConf,
+    cached,
   );
 
-  try {
-    await createOneRowParquetSync(
-      service,
-      fdaId,
-      timeQuery,
-      normalizedServicePath,
-    );
-  } catch (err) {
-    await rollbackFDAProvisioning(service, fdaId, normalizedServicePath);
-    throw err;
+  if (cached) {
+    try {
+      await createOneRowParquetSync(
+        service,
+        fdaId,
+        timeQuery,
+        normalizedServicePath,
+      );
+    } catch (err) {
+      await rollbackFDAProvisioning(service, fdaId, normalizedServicePath);
+      throw err;
+    }
   }
 
-  if (defaultDataAccessEnabled) {
+  if (cached && defaultDataAccessEnabled) {
     try {
       const defaultDA = await buildDefaultDataAccessDefinition(
         service,
@@ -638,6 +786,10 @@ export async function fetchFDA(
         `Failed to create default Data Access for FDA ${fdaId}: ${err.message}`,
       );
     }
+  }
+
+  if (!cached) {
+    return;
   }
 
   const agenda = getAgenda();
@@ -1158,6 +1310,7 @@ async function uploadTableToObjStg(
 
 async function ensureFDAReadyForQuery(service, fdaId, visibility, servicePath) {
   const fda = await getAccessibleFDA(service, fdaId, visibility, servicePath);
+  assertFDAIsCached(fda, fdaId);
 
   // Queries are blocked only before the first successful fetch.
   if (!fda.lastFetch) {
@@ -1343,20 +1496,27 @@ async function buildDefaultDataAccessDefinition(
     timeColumn,
     columns,
   );
-  const reservedParamNames = ['limit', 'offset'];
+  const reservedParamNames = ['pageSize', 'pageStart'];
   if (resolvedTimeColumn) {
     reservedParamNames.push('start', 'finish');
   }
 
   if (columns.length === 0) {
-    const params = reservedParamNames.map((name) => ({
-      name,
-      default: null,
-    }));
+    const params = reservedParamNames.map((name) => {
+      if (name === 'pageSize') {
+        return { name, default: '9223372036854775807' };
+      }
+
+      if (name === 'pageStart') {
+        return { name, default: 0 };
+      }
+
+      return { name, default: null };
+    });
 
     return {
       query:
-        'SELECT * LIMIT CAST(COALESCE($limit, 9223372036854775807) AS BIGINT) OFFSET CAST(COALESCE($offset, 0) AS BIGINT)',
+        'SELECT *, COUNT(*) OVER() as __total LIMIT CAST($pageSize AS BIGINT) OFFSET CAST($pageStart AS BIGINT)',
       params,
     };
   }
@@ -1396,14 +1556,14 @@ async function buildDefaultDataAccessDefinition(
     );
   }
 
-  params.push({ name: 'limit', default: null });
-  params.push({ name: 'offset', default: null });
+  params.push({ name: 'pageSize', default: '9223372036854775807' });
+  params.push({ name: 'pageStart', default: 0 });
 
   const whereClause =
     filters.length > 0 ? ` WHERE ${filters.join(' AND ')}` : '';
 
   return {
-    query: `SELECT *${whereClause} LIMIT CAST(COALESCE($limit, 9223372036854775807) AS BIGINT) OFFSET CAST(COALESCE($offset, 0) AS BIGINT)`,
+    query: `SELECT *, COUNT(*) OVER() as __total${whereClause} LIMIT CAST($pageSize AS BIGINT) OFFSET CAST($pageStart AS BIGINT)`,
     params,
   };
 }
@@ -1506,6 +1666,16 @@ async function rollbackFDAProvisioning(service, fdaId, servicePath) {
   const mongoRollbackResult = rollbackResults[2];
   if (mongoRollbackResult.status === 'rejected') {
     throw mongoRollbackResult.reason;
+  }
+}
+
+function assertFDAIsCached(fda, fdaId) {
+  if (fda?.cached === false) {
+    throw new FDAError(
+      409,
+      'FDAOnlyFresh',
+      `FDA ${fdaId} is configured as only-fresh and does not support this operation.`,
+    );
   }
 }
 

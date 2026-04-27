@@ -122,6 +122,33 @@ describe('mongo utils', () => {
     });
   });
 
+  test('createFDAMongo marks only-fresh FDAs as completed immediately', async () => {
+    const { createFDAMongo, collectionMock } = await loadMongoModule();
+
+    await createFDAMongo(
+      'fdaA',
+      'SELECT 1',
+      'svc',
+      'public',
+      '/sp',
+      'desc',
+      { type: 'none' },
+      undefined,
+      undefined,
+      false,
+    );
+
+    expect(collectionMock.insertOne).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fdaId: 'fdaA',
+        cached: false,
+        status: 'completed',
+        progress: 100,
+        lastFetch: null,
+      }),
+    );
+  });
+
   test('updateFDAStatus includes optional error in update payload', async () => {
     const { updateFDAStatus, collectionMock } = await loadMongoModule();
 

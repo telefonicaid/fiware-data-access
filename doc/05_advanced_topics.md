@@ -59,8 +59,8 @@ This topic covers:
 -   creation rules
 -   automatic optional filters
 -   `timeColumn` range support through `start` / `finish`
--   pagination through `limit` / `offset`
--   current `fresh=true` limitation for typeless optional filters
+-   pagination through `pageSize` / `pageStart`
+-   scope limited to cached DAs after the fresh-query split
 
 Full documentation available at: [`Default Data Access`](/doc/AdvancedTopics/default_data_access.md)
 
