@@ -51,11 +51,6 @@ LIMIT CAST($pageSize AS BIGINT)
 OFFSET CAST($pageStart AS BIGINT)
 ```
 
-About `9223372036854775807` in `LIMIT`:
-
--   This value is the maximum signed 64-bit integer (`BIGINT`), i.e. `2^63 - 1`.
--   It is used as an "effectively unbounded" default value for `pageSize`.
-
 The generated DA includes `__total` via `COUNT(*) OVER()` so clients can read total row count for pagination flows.
 
 Each FDA column gets one optional equality filter parameter with:
@@ -101,3 +96,8 @@ Default DA also includes two optional pagination parameters:
 -   `pageStart` (default `0`)
 
 They are always present.
+
+About `9223372036854775807` in `LIMIT`:
+
+-   This value is the maximum signed 64-bit integer (`BIGINT`), i.e. `2^63 - 1`.
+-   It is used as an "effectively unbounded" default value for `pageSize`.
