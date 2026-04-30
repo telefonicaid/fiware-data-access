@@ -514,10 +514,10 @@ If omitted, the default policy is:
 
 This object configures certain aspects of the object storage app when uploading an FDA. The possible keys are:
 
-| Parameter     | Optional | Type    | Description                                                                                                               |
-| ------------- | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `partition`   | ✓        | string  | Tells how the FDA data should be partitioned in the object storage app. Possibe values `day`, `week`, `month` and `year`. |
-| `compression` | ✓        | boolean | Tells if the FDA parquet file should be compressed (using `ZSTD` compression) or not.                                     |
+| Parameter     | Optional | Type    | Description                                                                                                                                           |
+| ------------- | -------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `partition`   | ✓        | string  | Tells how the FDA data should be partitioned in the object storage app. Possible values: `day`, `week`, `month` and `year`. Default: no partitioning. |
+| `compression` | ✓        | boolean | Tells if the FDA parquet file should be compressed (using `ZSTD` compression) or not. Default: `false` (no compression).                              |
 
 #### Operational fields (read-only)
 
