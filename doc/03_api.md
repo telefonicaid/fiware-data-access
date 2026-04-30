@@ -478,7 +478,7 @@ A FDA is represented by a JSON object with the following fields:
 | Parameter                                                | Optional | Type    | Description                                                                                                                                                                                |
 | -------------------------------------------------------- | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `id`                                                     |          | string  | FDA unique identifier                                                                                                                                                                      |
-| `description`                                            | ✓        | string  | A free text used by the client to describe the FDA                                                                                                                                         |
+| `description`                                            | ✓        | string  | A free text used by the client to describe the FDA. If omitted, no description is stored.                                                                                                  |
 | `query`                                                  |          | string  | Base `postgreSQL` query to create the file in the bucket-based storage system                                                                                                              |
 | `refreshPolicy`                                          | ✓        | object  | Optional policy for automatic refresh.                                                                                                                                                     |
 | [`objStgConf`](#object-storage-configuration-objstgconf) | ✓        | object  | Various options to configure the FDA uploaded in the object storage app.                                                                                                                   |
@@ -514,10 +514,10 @@ If omitted, the default policy is:
 
 This object configures certain aspects of the object storage app when uploading an FDA. The possible keys are:
 
-| Parameter     | Optional | Type    | Description                                                                                                               |
-| ------------- | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `partition`   | ✓        | string  | Tells how the FDA data should be partitioned in the object storage app. Possibe values `day`, `week`, `month` and `year`. |
-| `compression` | ✓        | boolean | Tells if the FDA parquet file should be compressed (using `ZSTD` compression) or not.                                     |
+| Parameter     | Optional | Type    | Description                                                                                                                                           |
+| ------------- | -------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `partition`   | ✓        | string  | Tells how the FDA data should be partitioned in the object storage app. Possible values: `day`, `week`, `month` and `year`. Default: no partitioning. |
+| `compression` | ✓        | boolean | Tells if the FDA parquet file should be compressed (using `ZSTD` compression) or not. Default: `false` (no compression).                              |
 
 #### Operational fields (read-only)
 
@@ -864,12 +864,12 @@ None
 
 A DA is represented by a JSON object with the following fields:
 
-| Parameter     | Optional | Type   | Description                                                                     |
-| ------------- | -------- | ------ | ------------------------------------------------------------------------------- |
-| `id`          | (\*)     | string | DA identifier, unique within the associated FDA.                                |
-| `description` | ✓        | string | A free text used by the client to describe the DA                               |
-| `query`       |          | string | Query string, without **FROM**, clause to run over the FDA when invoking the DA |
-| `params`      | ✓        | array  | Array of [param objects](#params) to control param values.                      |
+| Parameter     | Optional | Type   | Description                                                                                            |
+| ------------- | -------- | ------ | ------------------------------------------------------------------------------------------------------ |
+| `id`          | (\*)     | string | DA identifier, unique within the associated FDA.                                                       |
+| `description` | ✓        | string | A free text used by the client to describe the DA. If omitted, no description is stored.               |
+| `query`       |          | string | Query string, without **FROM**, clause to run over the FDA when invoking the DA                        |
+| `params`      | ✓        | array  | Array of [param objects](#params) to control param values. If omitted, the DA has no query parameters. |
 
 (\*) The `id` field is mandatory when creating a DA (`POST`) and must not be included when updating a DA (`PUT`).
 
@@ -877,14 +877,14 @@ A DA is represented by a JSON object with the following fields:
 
 Each object in the array `params` can have the following keys:
 
-| Parameter  | Optional | Type    | Description                                                                                                                                                                                              |
-| ---------- | -------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`     |          | string  | Name of the param to control.                                                                                                                                                                            |
-| `type`     |          | string  | Type of the param to enforce. Possible values: _Number_, _Boolean_, _Text_ and _DateTime_.                                                                                                               |
-| `required` | ✓        | boolean | Tell if the param must be provided by the user. Default value _false_.                                                                                                                                   |
-| `default`  | ✓        | string  | Provide a default value for the param in case it isn't provided.                                                                                                                                         |
-| `range`    | ✓        | array   | Array with the minimun and maximun value (`Number`) a param can take. The array should be consistent (only two elements and the first one lesser than the second), otherwise an error will be responsed. |
-| `enum`     | ✓        | array   | Array with all the possible values (`Number` or `Text`) a param can take.                                                                                                                                |
+| Parameter  | Optional | Type    | Description                                                                                                                                                                                                                                          |
+| ---------- | -------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`     |          | string  | Name of the param to control.                                                                                                                                                                                                                        |
+| `type`     |          | string  | Type of the param to enforce. Possible values: _Number_, _Boolean_, _Text_ and _DateTime_.                                                                                                                                                           |
+| `required` | ✓        | boolean | Tell if the param must be provided by the user. Default value _false_. If `true` and the value is missing, request fails even when `default` is defined.                                                                                             |
+| `default`  | ✓        | string  | Provide a default value for the param in case it isn't provided. It is applied only when the value is missing and `required` is `false`. If omitted, no default is applied.                                                                          |
+| `range`    | ✓        | array   | Array with the minimun and maximun value (`Number`) a param can take. The array should be consistent (only two elements and the first one lesser than the second), otherwise an error will be responsed. If omitted, no range validation is applied. |
+| `enum`     | ✓        | array   | Array with all the possible values (`Number` or `Text`) a param can take. If omitted, no enum validation is applied.                                                                                                                                 |
 
 Example array:
 
@@ -1438,14 +1438,14 @@ _**Request body (form-urlencoded)**_
 
 The request body must be sent as `application/x-www-form-urlencoded`.
 
-| Field          | Optional | Description                                                                                                      | Example                              |
-| -------------- | -------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| `path`         |          | Path used to resolve service. FDA identifier defaults to `dataAccessId` if path only has visibility and service. | `/public/service/verticals/sql/fda1` |
-| `dataAccessId` |          | Identifier of the Data Access (DA) inside the FDA                                                                | `da1`                                |
-| `outputType`   | ✓        | Format of the returned results. **Default:** `json`. Allowed values: `json`, `csv`, `xls`.                       | `csv`                                |
-| `param*`       | ✓        | Query parameters prefixed with `param`                                                                           | `parammunicipality=NA`               |
-| `pageSize`     | ✓        | Pagination size (must be handled explicitly by the DA)                                                           | `10`                                 |
-| `pageStart`    | ✓        | Pagination offset (must be handled explicitly by the DA)                                                         | `0`                                  |
+| Field          | Optional | Description                                                                                                           | Example                              |
+| -------------- | -------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `path`         |          | Path used to resolve service. FDA identifier defaults to `dataAccessId` if path only has visibility and service.      | `/public/service/verticals/sql/fda1` |
+| `dataAccessId` |          | Identifier of the Data Access (DA) inside the FDA                                                                     | `da1`                                |
+| `outputType`   | ✓        | Format of the returned results. **Default:** `json`. Allowed values: `json`, `csv`, `xls`.                            | `csv`                                |
+| `param*`       | ✓        | Query parameters prefixed with `param`. If omitted, no DA query parameters are passed.                                | `parammunicipality=NA`               |
+| `pageSize`     | ✓        | Pagination size (must be handled explicitly by the DA). If omitted, this field is not passed and DA defaults apply.   | `10`                                 |
+| `pageStart`    | ✓        | Pagination offset (must be handled explicitly by the DA). If omitted, this field is not passed and DA defaults apply. | `0`                                  |
 
 ---
 
