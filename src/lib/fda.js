@@ -955,10 +955,12 @@ function validateScheduledOptions(refreshPolicy, objStgConf) {
 
 export async function updateFDA(service, fdaId, visibility, servicePath) {
   const normalizedServicePath = normalizeServicePath(servicePath);
+  const fda =
+    visibility !== undefined
+      ? await getAccessibleFDA(service, fdaId, visibility, servicePath)
+      : await getStoredFDA(service, fdaId, normalizedServicePath);
 
-  if (visibility !== undefined) {
-    await getAccessibleFDA(service, fdaId, visibility, servicePath);
-  }
+  assertFDAIsCached(fda, fdaId);
 
   const previous = await regenerateFDA(service, fdaId, normalizedServicePath);
 
