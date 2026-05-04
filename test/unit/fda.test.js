@@ -1599,6 +1599,11 @@ describe('updateFDA', () => {
     jest.clearAllMocks();
     jobsMocks.getAgenda.mockReturnValue(agenda);
     agenda.now.mockResolvedValue(undefined);
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      fdaId: 'fda42',
+      cached: true,
+      servicePath: '/servicepath',
+    });
     mongoMocks.regenerateFDA.mockResolvedValue({
       query: 'SELECT id FROM users',
     });
@@ -1666,6 +1671,24 @@ describe('updateFDA', () => {
       windowSize: 'day',
       objStgConf: undefined,
     });
+  });
+
+  test('throws when trying to manually refresh a fresh-only FDA', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      fdaId: 'fda42',
+      cached: false,
+      servicePath: '/servicepath',
+    });
+
+    await expect(
+      updateFDA('svc', 'fda42', undefined, '/servicepath'),
+    ).rejects.toMatchObject({
+      status: 409,
+      type: 'FDAOnlyFresh',
+    });
+
+    expect(mongoMocks.regenerateFDA).not.toHaveBeenCalled();
+    expect(agenda.now).not.toHaveBeenCalled();
   });
 });
 
