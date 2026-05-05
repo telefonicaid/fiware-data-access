@@ -92,7 +92,6 @@ export function runFDAIntegrationSuite({ mode, label }) {
     const fdaId2 = 'fda2';
     const fdaId3 = 'fda3';
     const daId = 'da1';
-    const daId2 = 'da2';
 
     beforeAll(async () => {
       // Containers
@@ -355,27 +354,23 @@ export function runFDAIntegrationSuite({ mode, label }) {
       buildDaDataUrl,
     });
 
-    registerDaDataQueriesIntegrationTests({
-      getBaseUrl: () => baseUrl,
-      service,
-      servicePath,
-      visibility,
-      fdaId,
-      daId,
-      httpReq,
-      httpReqRaw,
-      waitUntilFDACompleted,
-      buildDaDataUrl,
-    });
-
     registerDaParamsIntegrationTests({
       getBaseUrl: () => baseUrl,
       service,
       servicePath,
       visibility,
-      fdaId,
-      daId2,
       httpReq,
+      waitUntilFDACompleted,
+      buildDaDataUrl,
+    });
+
+    registerDaDataQueriesIntegrationTests({
+      getBaseUrl: () => baseUrl,
+      service,
+      servicePath,
+      visibility,
+      httpReq,
+      httpReqRaw,
       waitUntilFDACompleted,
       buildDaDataUrl,
     });
