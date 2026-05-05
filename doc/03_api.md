@@ -771,8 +771,11 @@ _**Example Response:**_
 
 #### Regenerate FDA `PUT /{visibility}/fdas/{fdaId}`
 
-Regenerate the FDA, fetching again the source table from DB. If the FDA is currently being processed, the operation
-returns `409 Conflict`.
+Regenerate the FDA, fetching again the source table from DB.
+
+The operation may return `409 Conflict` in the following cases:
+- If the FDA is currently being processed.
+- If the FDA is configured as *fresh-only* (non-cached) and does not support manual regeneration.
 
 _**Request path parameters**_
 

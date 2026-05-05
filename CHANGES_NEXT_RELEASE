@@ -1,0 +1,1 @@
+Fix: reject manual refresh (`PUT /{visibility}/fdas/{fdaId}`) for fresh-only FDAs (#163)

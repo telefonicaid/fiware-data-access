@@ -31,6 +31,7 @@ import {
   test,
 } from '@jest/globals';
 import request from 'supertest';
+import { FDAError } from '../../src/lib/fdaError.js';
 
 const fetcherMocks = {
   startFetcher: jest.fn(),
@@ -631,6 +632,28 @@ describe('index routes - validation and middleware branches', () => {
     expect(res.body).toEqual({
       error: 'BadRequest',
       description: 'PUT /fdas does not accept a request body',
+    });
+  });
+
+  test('returns 409 when PUT /fdas targets a fresh-only FDA', async () => {
+    fdaMocks.updateFDA.mockRejectedValueOnce(
+      new FDAError(
+        409,
+        'FDAOnlyFresh',
+        'FDA fda1 is configured as only-fresh and does not support this operation.',
+      ),
+    );
+
+    const res = await request(app)
+      .put('/public/fdas/fda1')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .expect(409);
+
+    expect(res.body).toEqual({
+      error: 'FDAOnlyFresh',
+      description:
+        'FDA fda1 is configured as only-fresh and does not support this operation.',
     });
   });
 
