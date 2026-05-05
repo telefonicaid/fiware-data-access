@@ -93,3 +93,20 @@ By combining sliding window ingestion with partition-aware storage, the system a
 -   scalable long-term data management
 
 ---
+
+## Integration Test Scenarios
+
+The integration suite includes real PostgreSQL-based scenarios to validate sliding-window behavior end-to-end:
+
+-   Sliding window with daily partitioning (`fetchSize=day`, `partition=day`)
+-   Sliding window with refresh intervals smaller than the partition (`refreshInterval=12 hours`, `partition=week`)
+-   Manual FDA update (`PUT /fdas/:fdaId`) after creation, validating that rows outside the configured window are
+    excluded after refresh
+-   Validation errors for common misconfigurations:
+-   `fetchSize` different from `partition`
+-   partition configured without `timeColumn`
+-   invalid partition type
+
+These checks are implemented in:
+
+-   `test/integration/suites/slidingWindows.integration.tests.js`

@@ -583,6 +583,10 @@ export function runFDAIntegrationSuite({ mode, label }) {
       visibility,
       httpReq,
       waitUntilFDACompleted,
+      buildDaDataUrl,
+      getPgHost: () => pgHost,
+      getPgPort: () => pgPort,
+      connectWithRetry,
     });
 
     test('POST /fdas?defaultDataAccess=false creates FDA without default DA', async () => {
