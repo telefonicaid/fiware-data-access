@@ -14,12 +14,12 @@ reprocessing the entire dataset, only the most recent slice of data is fetched a
 Each configuration parameter is described in detail in the [API documentation](../03_api.md/#refresh-policy-object), but
 the key fields are summarized below:
 
-| Field            | Description                                                                                                                                                     |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `type`           | Must be set to `window` to enable sliding window behavior.                                                                                                      |
-| `value`          | Defines both the **time range** of data to fetch and the **execution frequency**. For example, `weekly` fetches data from the last week and runs once per week. |
-| `deleteInterval` | Determines how frequently outdated data is removed.                                                                                                             |
-| `windowSize`     | Specifies the total retention window (e.g., data from last month), defining which data should be preserved and which should be discarded.                       |
+| Field             | Description                                                                                                                               |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`            | Must be set to `window` to enable sliding window behavior.                                                                                |
+| `refreshInterval` | Defines how often the window refresh runs. It accepts either a human interval such as `1 hour` or a cron expression.                      |
+| `fetchSize`       | Defines the **time range** of data to fetch on each refresh. For example, `week` fetches data from the last week.                         |
+| `windowSize`      | Specifies the total retention window (e.g., data from last month), defining which data should be preserved and which should be discarded. |
 
 ---
 
@@ -65,7 +65,8 @@ This separation provides flexibility, but also introduces potential misconfigura
     -   deleting entire partitions
     -   re-fetching overlapping data This reduces efficiency and increases processing cost.
 
--   **Mismatched refresh and deletion intervals** If `deleteInterval` differs significantly from the refresh frequency:
+-   **Mismatched refresh and cleanup cadence** If the cleanup cadence implied by `refreshInterval` differs significantly
+    from the intended retention behavior:
 
     -   shorter intervals may prematurely shrink the dataset
     -   longer intervals may allow unnecessary data accumulation
@@ -80,7 +81,7 @@ For optimal performance and predictability:
 
 -   Align **partition granularity** with **refresh frequency** (e.g., daily refresh → daily partitions)
 
--   Keep **deletion intervals consistent** with refresh cycles
+-   Keep the **refresh cadence** consistent with the intended cleanup cycle
 
 -   Define a **clear retention window** (`windowSize`) to maintain a stable dataset size
 
@@ -93,3 +94,20 @@ By combining sliding window ingestion with partition-aware storage, the system a
 -   scalable long-term data management
 
 ---
+
+## Integration Test Scenarios
+
+The integration suite includes real PostgreSQL-based scenarios to validate sliding-window behavior end-to-end:
+
+-   Sliding window with daily partitioning (`fetchSize=day`, `partition=day`)
+-   Sliding window with refresh intervals smaller than the partition (`refreshInterval=12 hours`, `partition=week`)
+-   Manual FDA update (`PUT /fdas/:fdaId`) after creation, validating that rows outside the configured window are
+    excluded after refresh
+-   Validation errors for common misconfigurations:
+-   `fetchSize` different from `partition`
+-   partition configured without `timeColumn`
+-   invalid partition type
+
+These checks are implemented in:
+
+-   `test/integration/suites/slidingWindows.integration.tests.js`
