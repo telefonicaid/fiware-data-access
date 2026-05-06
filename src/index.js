@@ -552,8 +552,36 @@ app.get('/:visibility/fdas/:fdaId/data', async (req, res) => {
 app.post('/plugin/cda/api/doQuery', async (req, res) => {
   const startTime = Date.now();
 
-  const { path, dataAccessId, ...rest } = req.body;
+  const requestId = Math.random().toString(36).substring(7);
+
+  logger.info('[CDA REQUEST]', {
+    requestId,
+    method: req.method,
+    url: req.originalUrl,
+    headers: {
+      contentType: req.get('Content-Type'),
+      accept: req.get('Accept'),
+      fiwareService: req.get('Fiware-Service'),
+    },
+    query: req.query,
+    bodyKeys: Object.keys(req.body || {}),
+    paramKeys: Object.keys(req.body || {}).filter((k) => k.startsWith('param')),
+    timestamp: new Date().toISOString(),
+  });
+
+  logger.debug('[CDA REQUEST BODY STRINGIFIED]', {
+    requestId,
+    body: JSON.stringify(req.body),
+  });
+
+  const { path, dataAccessId } = req.body;
+
   if (!path || !dataAccessId) {
+    logger.warn('[CDA BAD REQUEST]', {
+      requestId,
+      reason: 'Missing path or dataAccessId',
+    });
+
     return res.status(400).json({
       error: 'BadRequest',
       description: 'Missing params in the request',
@@ -573,6 +601,21 @@ app.post('/plugin/cda/api/doQuery', async (req, res) => {
     const result = await handleCdaQuery({
       body: req.body,
       outputType: rawOutputType,
+    });
+
+    logger.info('[CDA RESPONSE]', {
+      requestId,
+      status: 200,
+      durationMs: Date.now() - startTime,
+      rows: result?.resultset?.length,
+      totalRows: result?.queryInfo?.totalRows,
+    });
+
+    logger.debug('[CDA RESPONSE DETAIL]', {
+      requestId,
+      metadata: result?.metadata,
+      queryInfo: result?.queryInfo,
+      sampleRows: result?.resultset?.slice(0, 2),
     });
 
     return sendRowsByOutputType(res, result, rawOutputType);
