@@ -38,6 +38,17 @@ export function registerSlidingWindowsIntegrationTests({
   getPgHost,
   getPgPort,
 }) {
+  function createPgClient() {
+    return new Client({
+      host: getPgHost(),
+      port: getPgPort(),
+      user: 'postgres',
+      password: 'postgres',
+      database: service,
+      connectionTimeoutMillis: 10_000,
+    });
+  }
+
   test('POST /fdas creates an FDA with various refresh policies', async () => {
     const baseUrl = getBaseUrl();
 
@@ -77,7 +88,7 @@ export function registerSlidingWindowsIntegrationTests({
     expect(res.status).toBe(202);
     await waitUntilFDACompleted({ baseUrl, service, fdaId: 'fda_refresh' });
 
-    // Test with a window refresh policy (week) and partitioned by day, without objStgConf
+    // Test with a window refresh policy without partitioning
     const yearfetchSize = await httpReq({
       method: 'POST',
       url: `${baseUrl}/${visibility}/fdas`,
@@ -96,7 +107,6 @@ export function registerSlidingWindowsIntegrationTests({
           params: {
             refreshInterval: '0 0 * * 0',
             fetchSize: 'year',
-            windowSize: 'day',
           },
         },
         timeColumn: 'timeinstant',
@@ -348,20 +358,324 @@ export function registerSlidingWindowsIntegrationTests({
     await waitUntilFDACompleted({ baseUrl, service, fdaId });
   });
 
+  test('POST /fdas rejects refresh intervals larger than partition size', async () => {
+    const baseUrl = getBaseUrl();
+
+    const res = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/${visibility}/fdas`,
+      headers: {
+        'Fiware-Service': service,
+        'Fiware-ServicePath': servicePath,
+      },
+      body: {
+        id: 'fda_sw_large_interval_day_partition',
+        query:
+          'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+        description: 'invalid interval vs partition test',
+        refreshPolicy: {
+          type: 'window',
+          params: {
+            refreshInterval: '2 days',
+            fetchSize: 'day',
+            windowSize: 'week',
+          },
+        },
+        timeColumn: 'timeinstant',
+        objStgConf: {
+          partition: 'day',
+          compression: false,
+        },
+      },
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.json.error).toBe('InvalidParam');
+    expect(res.json.description).toContain('Refresh interval');
+  });
+
+  test('POST /fdas rejects window refresh policy without fetchSize', async () => {
+    const baseUrl = getBaseUrl();
+
+    const res = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/${visibility}/fdas`,
+      headers: {
+        'Fiware-Service': service,
+        'Fiware-ServicePath': servicePath,
+      },
+      body: {
+        id: 'fda_sw_missing_fetch_size',
+        query:
+          'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+        description: 'missing fetchSize test',
+        refreshPolicy: {
+          type: 'window',
+          params: {
+            refreshInterval: '1 day',
+            windowSize: 'week',
+          },
+        },
+        timeColumn: 'timeinstant',
+        objStgConf: {
+          partition: 'day',
+          compression: false,
+        },
+      },
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.json.error).toBe('InvalidParam');
+    expect(res.json.description).toContain('fetchSize');
+  });
+
+  test('POST /fdas rejects invalid refresh policy types', async () => {
+    const baseUrl = getBaseUrl();
+
+    const res = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/${visibility}/fdas`,
+      headers: {
+        'Fiware-Service': service,
+        'Fiware-ServicePath': servicePath,
+      },
+      body: {
+        id: 'fda_sw_invalid_type',
+        query:
+          'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+        description: 'invalid refresh policy type test',
+        refreshPolicy: {
+          type: 'unsupported',
+          params: {
+            refreshInterval: '1 day',
+          },
+        },
+      },
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.json.error).toBe('InvalidParam');
+    expect(res.json.description).toContain('Invalid refresh policy type');
+  });
+
+  test('POST /fdas rejects invalid refresh interval formats', async () => {
+    const baseUrl = getBaseUrl();
+
+    const res = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/${visibility}/fdas`,
+      headers: {
+        'Fiware-Service': service,
+        'Fiware-ServicePath': servicePath,
+      },
+      body: {
+        id: 'fda_sw_invalid_interval',
+        query:
+          'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+        description: 'invalid refresh interval format test',
+        refreshPolicy: {
+          type: 'interval',
+          params: {
+            refreshInterval: 'not_an_interval',
+          },
+        },
+      },
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.json.error).toBe('InvalidParam');
+    expect(res.json.description).toContain('Invalid refresh interval');
+  });
+
+  test('POST /fdas rejects windowSize without partition', async () => {
+    const baseUrl = getBaseUrl();
+
+    const res = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/${visibility}/fdas`,
+      headers: {
+        'Fiware-Service': service,
+        'Fiware-ServicePath': servicePath,
+      },
+      body: {
+        id: 'fda_sw_window_size_without_partition',
+        query:
+          'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+        description: 'windowSize without partition test',
+        refreshPolicy: {
+          type: 'window',
+          params: {
+            refreshInterval: '1 day',
+            fetchSize: 'day',
+            windowSize: 'week',
+          },
+        },
+        timeColumn: 'timeinstant',
+      },
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.json.error).toBe('InvalidParam');
+    expect(res.json.description).toContain('windowSize');
+  });
+
+  test('POST /fdas accepts hourly sliding window without partition', async () => {
+    const baseUrl = getBaseUrl();
+    const suffix = `${Date.now()}`;
+    const fixtureTable = `sw_hour_fixture_${suffix}`;
+    const fdaId = `fda_sw_hour_${suffix}`;
+
+    const pgClient = createPgClient();
+    await pgClient.connect();
+
+    try {
+      await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
+      await pgClient.query(`
+        CREATE TABLE public.${fixtureTable} (
+          id INT PRIMARY KEY,
+          label TEXT NOT NULL,
+          observed_at TIMESTAMPTZ NOT NULL
+        )
+      `);
+
+      await pgClient.query(`
+        INSERT INTO public.${fixtureTable} (id, label, observed_at)
+        VALUES
+          (1, 'outside_hour_window', date_trunc('hour', NOW()) - INTERVAL '2 hours'),
+          (2, 'inside_hour_window', date_trunc('hour', NOW()) - INTERVAL '15 minutes')
+      `);
+
+      const createFda = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: fdaId,
+          query: `
+            SELECT id, label, observed_at
+            FROM public.${fixtureTable}
+            ORDER BY id
+          `,
+          description: 'hourly sliding window test',
+          refreshPolicy: {
+            type: 'window',
+            params: {
+              refreshInterval: '1 hour',
+              fetchSize: 'hour',
+            },
+          },
+          timeColumn: 'observed_at',
+        },
+      });
+
+      expect(createFda.status).toBe(202);
+      await waitUntilFDACompleted({ baseUrl, service, fdaId });
+
+      const readRes = await httpReq({
+        method: 'GET',
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, 'defaultDataAccess', {
+          pageSize: 100,
+          pageStart: 0,
+        }),
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect(readRes.status).toBe(200);
+      expect(readRes.json.map((row) => row.label)).toEqual([
+        'inside_hour_window',
+      ]);
+    } finally {
+      await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
+      await pgClient.end();
+    }
+  });
+
+  test('POST /fdas hourly sliding window keeps recent rows and excludes older rows', async () => {
+    const baseUrl = getBaseUrl();
+    const suffix = `${Date.now()}`;
+    const fixtureTable = `sw_hour_boundary_${suffix}`;
+    const fdaId = `fda_sw_hour_boundary_${suffix}`;
+
+    const pgClient = createPgClient();
+    await pgClient.connect();
+
+    try {
+      await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
+      await pgClient.query(`
+        CREATE TABLE public.${fixtureTable} (
+          id INT PRIMARY KEY,
+          label TEXT NOT NULL,
+          observed_at TIMESTAMPTZ NOT NULL
+        )
+      `);
+
+      await pgClient.query(`
+        INSERT INTO public.${fixtureTable} (id, label, observed_at)
+        VALUES
+          (1, 'outside_window_old', date_trunc('hour', NOW()) - INTERVAL '2 hours'),
+          (2, 'inside_window_50m', NOW() - INTERVAL '50 minutes'),
+          (3, 'inside_window_5m', NOW() - INTERVAL '5 minutes')
+      `);
+
+      const createFda = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: fdaId,
+          query: `
+            SELECT id, label, observed_at
+            FROM public.${fixtureTable}
+            ORDER BY id
+          `,
+          description: 'hourly boundary sliding window test',
+          refreshPolicy: {
+            type: 'window',
+            params: {
+              refreshInterval: '1 hour',
+              fetchSize: 'hour',
+            },
+          },
+          timeColumn: 'observed_at',
+        },
+      });
+
+      expect(createFda.status).toBe(202);
+      await waitUntilFDACompleted({ baseUrl, service, fdaId });
+
+      const readRes = await httpReq({
+        method: 'GET',
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, 'defaultDataAccess', {
+          pageSize: 100,
+          pageStart: 0,
+        }),
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect(readRes.status).toBe(200);
+      expect(readRes.json.map((row) => row.label)).toEqual([
+        'inside_window_50m',
+        'inside_window_5m',
+      ]);
+    } finally {
+      await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
+      await pgClient.end();
+    }
+  });
+
   test('PUT /fdas/:fdaId keeps only current window rows after manual update', async () => {
     const baseUrl = getBaseUrl();
     const suffix = `${Date.now()}`;
     const fixtureTable = `sw_update_fixture_${suffix}`;
     const fdaId = `fda_sw_update_${suffix}`;
 
-    const pgClient = new Client({
-      host: getPgHost(),
-      port: getPgPort(),
-      user: 'postgres',
-      password: 'postgres',
-      database: service,
-      connectionTimeoutMillis: 10_000,
-    });
+    const pgClient = createPgClient();
 
     await pgClient.connect();
 
