@@ -504,11 +504,11 @@ If omitted, the default policy is:
 
 ##### Params
 
-| Field             | Optional | Type   | Description                                                                                                                                                                                                                                                                            |
-| ----------------- | -------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `refreshInterval` |          | string | It represents a human interval (e.g. `1 hour`) or a cron expression. The frequency for the scheduled refresh and clean jobs. Must be minor or equal to partition size (if existing) (value of the field [`objstgconf.partition`](#object-storage-configuration-objstgconf)).           |
-| `fetchSize`       |          | string | **Only for type `window`**, it can take the values `hour`, `day`, `week` and `month`. Represents the time range of data to fetch (e.g. last hour/month data). Must be equal to partition size (value of the field [`objstgconf.partition`](#object-storage-configuration-objstgconf)). |
-| `windowSize`      | ✓        | string | Temporal interval of data we are gonna keep in storage (e.g. only the data of the last month). Possible values: `day`, `week`, `month` and `year`. If omitted, then all data is kept forever, no clean partition is done (i.e. an "infinite" window).                                  |
+| Field             | Optional | Type   | Description                                                                                                                                                                                                                                                                                                                                                       |
+| ----------------- | -------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `refreshInterval` |          | string | It represents a human interval (e.g. `1 hour`) or a cron expression. The frequency for the scheduled refresh and clean jobs. Must be minor or equal to partition size (if existing) (value of the field [`objstgconf.partition`](#object-storage-configuration-objstgconf)).                                                                                      |
+| `fetchSize`       |          | string | **Only for type `window`**, it can take the values `hour`, `day`, `week`, `month` and `year`. Represents the time range of data to fetch (e.g. last hour/month data). If [`objStgConf.partition`](#object-storage-configuration-objstgconf) is set, it must be equal to that partition size; in practice `hour` is only valid when no partitioning is configured. |
+| `windowSize`      | ✓        | string | Temporal interval of data we are gonna keep in storage (e.g. only the data of the last month). Possible values: `day`, `week`, `month` and `year`. If omitted, then all data is kept forever, no clean partition is done (i.e. an "infinite" window).                                                                                                             |
 
 ##### Object storage configuration (objstgconf)
 
@@ -596,7 +596,10 @@ _**Example Response:**_
         "status": "completed",
         "progress": 100,
         "lastFetch": "2026-02-19T07:38:21.263Z",
-        "refreshPolicy": { "type": "interval", "value": "1 hour" },
+        "refreshPolicy": {
+            "type": "interval",
+            "params": { "refreshInterval": "1 hour" }
+        },
         "description": "FDA de alarmas del sistema"
     }
 ]
@@ -642,7 +645,10 @@ curl -i -X POST http://localhost:8080/public/fdas \
     "id": "fda_alarms",
     "query": "SELECT * FROM public.alarms",
     "description": "FDA de alarmas del sistema",
-    "refreshPolicy": { "type": "interval", "value": "1 hour" },
+    "refreshPolicy": {
+        "type": "interval",
+        "params": { "refreshInterval": "1 hour" }
+    },
     "cached": true
   }'
 ```
@@ -764,7 +770,10 @@ _**Example Response:**_
     "status": "completed",
     "progress": 100,
     "lastFetch": "2026-02-19T07:38:21.263Z",
-    "refreshPolicy": { "type": "interval", "value": "1 hour" },
+    "refreshPolicy": {
+        "type": "interval",
+        "params": { "refreshInterval": "1 hour" }
+    },
     "description": "FDA de alarmas del sistema"
 }
 ```
