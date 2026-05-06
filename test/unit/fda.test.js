@@ -1739,6 +1739,36 @@ describe('processFDAAsync', () => {
     );
   });
 
+  test('builds hourly sliding-window query when fetchSize is hour', async () => {
+    await processFDAAsync(
+      'fda1',
+      'SELECT id, observed_at FROM public.events',
+      'svc',
+      '/servicepath',
+      'observed_at',
+      {
+        type: 'window',
+        params: {
+          refreshInterval: '1 hour',
+          fetchSize: 'hour',
+        },
+      },
+    );
+
+    expect(pgMocks.uploadTable).toHaveBeenCalledWith(
+      {},
+      'svc',
+      'svc',
+      expect.stringContaining(
+        "SELECT * FROM (SELECT id, observed_at FROM public.events) q WHERE observed_at >= TIMESTAMP '",
+      ),
+      'servicepath/fda1',
+    );
+    expect(pgMocks.uploadTable.mock.calls[0][3]).toContain(
+      'AND observed_at < NOW()',
+    );
+  });
+
   test('marks FDA as failed and rethrows when upload fails', async () => {
     pgMocks.uploadTable.mockRejectedValue(new Error('upload failed'));
 
@@ -2021,6 +2051,30 @@ describe('fetchFDA with refresh policies', () => {
       status: 400,
       type: 'InvalidParam',
       message: 'Fetch size "week" must be equal to partition size "day".',
+    });
+
+    expect(agenda.every).not.toHaveBeenCalled();
+  });
+
+  test('fetchFDA rejects invalid refresh policy types', async () => {
+    await expect(
+      fetchFDA(
+        'fda1',
+        'SELECT 1',
+        'svc',
+        'public',
+        '/servicepath',
+        'desc',
+        {
+          type: 'invalid-type',
+          params: { refreshInterval: '1 hour' },
+        },
+        'timeinstant',
+      ),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidParam',
+      message: 'Invalid refresh policy type "invalid-type".',
     });
 
     expect(agenda.every).not.toHaveBeenCalled();
