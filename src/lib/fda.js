@@ -62,6 +62,7 @@ import {
   getWindowDate,
   assertFreshQueriesEnabled,
   acquireFreshQuerySlot,
+  convertRefreshIntervalToMs,
   getTimeColumnQuery,
 } from './utils/utils.js';
 import {
@@ -76,6 +77,8 @@ import { FDAError } from './fdaError.js';
 const FRESH_CURSOR_BATCH_SIZE = 250;
 export const VALID_VISIBILITIES = ['public', 'private'];
 const VALID_VISIBILITIES_SET = new Set(VALID_VISIBILITIES);
+const VALID_REFRESH_POLICY_TYPES = ['none', 'interval', 'window'];
+const VALID_WINDOW_FETCH_SIZES = ['hour', 'day', 'week', 'month', 'year'];
 const CSV_CONTENT_TYPE = 'text/csv; charset=utf-8';
 
 function stringifyCsvValue(value) {
@@ -911,15 +914,79 @@ export async function fetchFDA(
 }
 
 function validateScheduledOptions(refreshPolicy, objStgConf) {
-  if (!refreshPolicy || refreshPolicy.type === 'none') {
+  if (!refreshPolicy) {
     return;
   }
+
+  if (!VALID_REFRESH_POLICY_TYPES.includes(refreshPolicy.type)) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Invalid refresh policy type "${refreshPolicy.type}".`,
+    );
+  }
+
+  if (refreshPolicy.type === 'none') {
+    return;
+  }
+
   const { refreshInterval, fetchSize } = refreshPolicy.params || {};
   if (!refreshInterval) {
     throw new FDAError(
       400,
       'InvalidParam',
       `Missing required refresh policy parameter: refreshInterval.`,
+    );
+  }
+
+  if (convertRefreshIntervalToMs(refreshInterval) === null) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Invalid refresh interval "${refreshInterval}".`,
+    );
+  }
+
+  if (refreshPolicy.type === 'window' && !fetchSize) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Missing required refresh policy parameter: fetchSize.`,
+    );
+  }
+
+  if (
+    refreshPolicy.type === 'window' &&
+    fetchSize &&
+    !VALID_WINDOW_FETCH_SIZES.includes(fetchSize)
+  ) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Invalid fetchSize "${fetchSize}".`,
+    );
+  }
+
+  if (
+    refreshPolicy.type === 'window' &&
+    refreshPolicy.params?.windowSize &&
+    !objStgConf?.partition
+  ) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      'windowSize requires objStgConf.partition.',
+    );
+  }
+
+  if (
+    refreshPolicy.params?.windowSize &&
+    !getWindowDate(refreshPolicy.params.windowSize)
+  ) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Invalid windowSize "${refreshPolicy.params.windowSize}".`,
     );
   }
 
@@ -1040,6 +1107,12 @@ function getPreviousWindowStartDate(fetchSize) {
   const now = new Date();
 
   switch (fetchSize) {
+    case 'hour': {
+      const d = new Date(now);
+      d.setUTCHours(d.getUTCHours() - 1, 0, 0, 0);
+      return d.toISOString();
+    }
+
     case 'day': {
       const d = new Date(now);
       d.setUTCDate(d.getUTCDate() - 1);
