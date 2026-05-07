@@ -42,22 +42,6 @@ const envVarsSchema = {
       type: 'number',
       default: 8080,
     },
-    FDA_PG_USER: {
-      type: 'string',
-      default: null,
-    },
-    FDA_PG_PASSWORD: {
-      type: 'string',
-      default: null,
-    },
-    FDA_PG_HOST: {
-      type: 'string',
-      default: null,
-    },
-    FDA_PG_PORT: {
-      type: 'number',
-      default: 5432,
-    },
     FDA_PG_POOL_MAX: {
       type: 'number',
       default: 10,
@@ -151,10 +135,6 @@ export const config = {
   env: envVars.FDA_NODE_ENV,
   port: envVars.FDA_SERVER_PORT,
   pg: {
-    usr: envVars.FDA_PG_USER,
-    pass: envVars.FDA_PG_PASSWORD,
-    host: envVars.FDA_PG_HOST,
-    port: envVars.FDA_PG_PORT,
     pool: {
       max: envVars.FDA_PG_POOL_MAX,
       idleTimeoutMillis: envVars.FDA_PG_POOL_IDLE_TIMEOUT_MS,
