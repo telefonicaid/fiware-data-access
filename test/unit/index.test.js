@@ -57,6 +57,11 @@ const fdaMocks = {
   getDA: jest.fn(),
   putDA: jest.fn(),
   deleteDA: jest.fn(),
+  createDatasourceForService: jest.fn(),
+  getDatasourcesForService: jest.fn(),
+  getDatasourceForService: jest.fn(),
+  updateDatasourceForService: jest.fn(),
+  deleteDatasourceForService: jest.fn(),
 };
 
 const mongoMocks = {
@@ -126,6 +131,17 @@ function resetModuleMocks() {
   fdaMocks.getDA.mockReset().mockResolvedValue({ id: 'da1' });
   fdaMocks.putDA.mockReset().mockResolvedValue(undefined);
   fdaMocks.deleteDA.mockReset().mockResolvedValue(undefined);
+  fdaMocks.createDatasourceForService.mockReset().mockResolvedValue(undefined);
+  fdaMocks.getDatasourcesForService.mockReset().mockResolvedValue([]);
+  fdaMocks.getDatasourceForService
+    .mockReset()
+    .mockResolvedValue({
+      datasourceId: 'default',
+      type: 'postgres',
+      config: {},
+    });
+  fdaMocks.updateDatasourceForService.mockReset().mockResolvedValue(undefined);
+  fdaMocks.deleteDatasourceForService.mockReset().mockResolvedValue(undefined);
 
   mongoMocks.createIndex.mockReset().mockResolvedValue(undefined);
   mongoMocks.disconnectClient.mockReset().mockResolvedValue(undefined);
@@ -277,6 +293,11 @@ async function loadIndexModule({
     getDA: fdaMocks.getDA,
     putDA: fdaMocks.putDA,
     deleteDA: fdaMocks.deleteDA,
+    createDatasourceForService: fdaMocks.createDatasourceForService,
+    getDatasourcesForService: fdaMocks.getDatasourcesForService,
+    getDatasourceForService: fdaMocks.getDatasourceForService,
+    updateDatasourceForService: fdaMocks.updateDatasourceForService,
+    deleteDatasourceForService: fdaMocks.deleteDatasourceForService,
   }));
 
   await jest.unstable_mockModule('../../src/lib/utils/mongo.js', () => ({
@@ -585,6 +606,7 @@ describe('index routes - validation and middleware branches', () => {
       {},
       true,
       true,
+      undefined,
     );
     expect(fdaMocks.updateFDA).toHaveBeenCalledWith(
       'svc',

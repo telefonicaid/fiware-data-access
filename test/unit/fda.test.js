@@ -65,6 +65,11 @@ const mongoMocks = {
   updateDA: jest.fn(),
   removeDA: jest.fn(),
   updateFDAStatus: jest.fn(),
+  createDatasource: jest.fn(),
+  retrieveDatasources: jest.fn(),
+  retrieveDatasource: jest.fn(),
+  updateDatasource: jest.fn(),
+  removeDatasource: jest.fn(),
 };
 
 const jobsMocks = {
@@ -115,6 +120,11 @@ await jest.unstable_mockModule('../../src/lib/utils/mongo.js', () => ({
   updateDA: mongoMocks.updateDA,
   removeDA: mongoMocks.removeDA,
   updateFDAStatus: mongoMocks.updateFDAStatus,
+  createDatasource: mongoMocks.createDatasource,
+  retrieveDatasources: mongoMocks.retrieveDatasources,
+  retrieveDatasource: mongoMocks.retrieveDatasource,
+  updateDatasource: mongoMocks.updateDatasource,
+  removeDatasource: mongoMocks.removeDatasource,
 }));
 
 await jest.unstable_mockModule('../../src/lib/fdaConfig.js', () => ({
@@ -186,6 +196,18 @@ describe('fda fresh query execution', () => {
       query: 'SELECT 1 AS id;',
       visibility: 'private',
       servicePath: '/servicepath',
+      datasourceId: 'default',
+    });
+    mongoMocks.retrieveDatasource.mockResolvedValue({
+      datasourceId: 'default',
+      type: 'postgres',
+      config: {
+        user: 'u',
+        password: 'p',
+        host: 'h',
+        port: 5432,
+        database: 'svc',
+      },
     });
 
     dbMocks.resolveDAParams.mockImplementation((params) => params);
@@ -201,6 +223,7 @@ describe('fda fresh query execution', () => {
       query: 'SELECT 7::bigint AS id;',
       visibility: 'private',
       servicePath: '/servicepath',
+      datasourceId: 'default',
     });
     dbMocks.resolveDAParams.mockReturnValue({ id: 7 });
     pgMocks.runPgQuery.mockResolvedValue([{ id: 7n }]);
@@ -214,7 +237,13 @@ describe('fda fresh query execution', () => {
     });
 
     expect(pgMocks.runPgQuery).toHaveBeenCalledWith(
-      'svc',
+      {
+        user: 'u',
+        password: 'p',
+        host: 'h',
+        port: 5432,
+        database: 'svc',
+      },
       'SELECT id FROM (SELECT 7::bigint AS id) AS fda_source WHERE id = $1 OR id > $1 ORDER BY id',
       [7],
     );
@@ -248,6 +277,7 @@ describe('fda fresh query execution', () => {
       visibility: 'private',
       servicePath: '/servicepath',
       cached: false,
+      datasourceId: 'default',
     });
     pgMocks.runPgQuery.mockResolvedValue([{ id: 7n }]);
 
@@ -259,7 +289,13 @@ describe('fda fresh query execution', () => {
     });
 
     expect(pgMocks.runPgQuery).toHaveBeenCalledWith(
-      'svc',
+      {
+        user: 'u',
+        password: 'p',
+        host: 'h',
+        port: 5432,
+        database: 'svc',
+      },
       'SELECT 7::bigint AS id',
       [],
     );
@@ -272,6 +308,7 @@ describe('fda fresh query execution', () => {
       visibility: 'public',
       servicePath: '/servicepath',
       cached: true,
+      datasourceId: 'default',
     });
 
     await expect(
@@ -298,6 +335,7 @@ describe('fda fresh query execution', () => {
       visibility: 'private',
       servicePath: '/servicepath',
       cached: false,
+      datasourceId: 'default',
     });
     pgMocks.createPgCursorReader.mockResolvedValue(cursorReader);
 
@@ -314,7 +352,13 @@ describe('fda fresh query execution', () => {
     });
 
     expect(pgMocks.createPgCursorReader).toHaveBeenCalledWith(
-      'svc',
+      {
+        user: 'u',
+        password: 'p',
+        host: 'h',
+        port: 5432,
+        database: 'svc',
+      },
       'SELECT 12::bigint AS total',
       [],
       250,
@@ -914,11 +958,18 @@ describe('fetchFDA', () => {
       'timeinstant',
       undefined,
       true,
+      'default',
     );
     expect(pgMocks.uploadTable).toHaveBeenCalledWith(
       {},
       'svc',
-      'svc',
+      {
+        user: 'u',
+        password: 'p',
+        host: 'h',
+        port: 5432,
+        database: 'svc',
+      },
       'SELECT * FROM (SELECT id FROM users) AS fda_one_row LIMIT 1',
       'servicepath/fda1',
     );
@@ -933,6 +984,7 @@ describe('fetchFDA', () => {
       'servicepath/fda1.csv',
     );
     expect(agenda.now).toHaveBeenCalledWith('refresh-fda', {
+      datasourceId: 'default',
       fdaId: 'fda1',
       query: 'SELECT id FROM users;',
       service: 'svc',
@@ -1415,6 +1467,7 @@ describe('fetchFDA', () => {
       '10 minutes',
       'refresh-fda',
       {
+        datasourceId: 'default',
         fdaId: 'fda1',
         query: 'SELECT timeinstant, 1',
         service: 'svc',
@@ -1619,11 +1672,13 @@ describe('updateFDA', () => {
       '/servicepath',
     );
     expect(agenda.now).toHaveBeenCalledWith('refresh-fda', {
+      datasourceId: 'default',
       fdaId: 'fda42',
       query: 'SELECT id FROM users',
       service: 'svc',
       servicePath: '/servicepath',
       timeColumn: undefined,
+      refreshPolicy: undefined,
       objStgConf: undefined,
       partitionFlag: true,
     });
@@ -1649,6 +1704,7 @@ describe('updateFDA', () => {
       '/servicepath',
     );
     expect(agenda.now).toHaveBeenCalledWith('refresh-fda', {
+      datasourceId: 'default',
       fdaId: 'fda42',
       query: 'SELECT id FROM users',
       service: 'svc',
@@ -1780,7 +1836,13 @@ describe('processFDAAsync', () => {
     expect(pgMocks.uploadTable).toHaveBeenCalledWith(
       {},
       'service-name',
-      'service_name',
+      {
+        user: 'u',
+        password: 'p',
+        host: 'h',
+        port: 5432,
+        database: 'svc',
+      },
       'SELECT 1',
       'servicepath/fda1',
     );
