@@ -56,12 +56,146 @@ async function getCollection() {
   return db.collection('fdas');
 }
 
+async function getDatasourcesCollection() {
+  const db = await getDb();
+  return db.collection('datasources');
+}
+
 export async function createIndex() {
-  const collection = await getCollection();
-  await collection.createIndex(
+  const fdasCollection = await getCollection();
+  await fdasCollection.createIndex(
     { service: 1, servicePath: 1, fdaId: 1 },
     { unique: true },
   );
+
+  const datasourcesCollection = await getDatasourcesCollection();
+  await datasourcesCollection.createIndex(
+    { service: 1, datasourceId: 1 },
+    { unique: true },
+  );
+}
+
+export async function createDatasource(service, datasourceId, type, dsConfig) {
+  logger.debug({ service, datasourceId, type }, '[DEBUG]: createDatasource');
+  const collection = await getDatasourcesCollection();
+  try {
+    await collection.insertOne({
+      service,
+      datasourceId,
+      type,
+      config: dsConfig,
+    });
+  } catch (e) {
+    if (e.code === 11000) {
+      throw new FDAError(
+        409,
+        'DuplicatedKey',
+        `Datasource ${datasourceId} already exists for service ${service}`,
+      );
+    }
+    throw new FDAError(
+      500,
+      'MongoDBServerError',
+      `Error creating datasource ${datasourceId} for service ${service}: ${e}`,
+    );
+  }
+}
+
+export async function retrieveDatasources(service) {
+  logger.debug({ service }, '[DEBUG]: retrieveDatasources');
+  const collection = await getDatasourcesCollection();
+  try {
+    return collection
+      .find({ service }, { projection: { _id: 0, service: 0 } })
+      .toArray();
+  } catch (e) {
+    throw new FDAError(
+      500,
+      'MongoDBServerError',
+      `Error retrieving datasources for service ${service}: ${e.message}`,
+    );
+  }
+}
+
+export async function retrieveDatasource(service, datasourceId) {
+  logger.debug({ service, datasourceId }, '[DEBUG]: retrieveDatasource');
+  const collection = await getDatasourcesCollection();
+  try {
+    return await collection.findOne(
+      { service, datasourceId },
+      { projection: { _id: 0, service: 0 } },
+    );
+  } catch (e) {
+    throw new FDAError(
+      500,
+      'MongoDBServerError',
+      `Error retrieving datasource ${datasourceId} for service ${service}: ${e}`,
+    );
+  }
+}
+
+export async function updateDatasource(service, datasourceId, type, dsConfig) {
+  logger.debug({ service, datasourceId, type }, '[DEBUG]: updateDatasource');
+  const collection = await getDatasourcesCollection();
+  try {
+    const setFields = {};
+    if (type !== undefined) {
+      setFields.type = type;
+    }
+    if (dsConfig !== undefined) {
+      setFields.config = dsConfig;
+    }
+
+    if (Object.keys(setFields).length === 0) {
+      return;
+    }
+
+    const result = await collection.updateOne(
+      { service, datasourceId },
+      { $set: setFields },
+    );
+
+    if (result.matchedCount === 0) {
+      throw new FDAError(
+        404,
+        'DatasourceNotFound',
+        `Datasource ${datasourceId} not found for service ${service}`,
+      );
+    }
+  } catch (e) {
+    if (e instanceof FDAError) {
+      throw e;
+    }
+    throw new FDAError(
+      500,
+      'MongoDBServerError',
+      `Error updating datasource ${datasourceId} for service ${service}: ${e}`,
+    );
+  }
+}
+
+export async function removeDatasource(service, datasourceId) {
+  logger.debug({ service, datasourceId }, '[DEBUG]: removeDatasource');
+  const collection = await getDatasourcesCollection();
+  try {
+    const result = await collection.deleteOne({ service, datasourceId });
+    if (result.deletedCount === 0) {
+      throw new FDAError(
+        404,
+        'DatasourceNotFound',
+        `Datasource ${datasourceId} not found for service ${service}`,
+      );
+    }
+  } catch (e) {
+    if (e instanceof FDAError) {
+      throw e;
+    }
+    throw new FDAError(
+      500,
+      'MongoDBServerError',
+      `Error removing datasource ${datasourceId} for service ${service}: ${e}`,
+    );
+  }
 }
 
 export async function disconnectClient() {
@@ -80,6 +214,7 @@ export async function createFDAMongo(
   timeColumn,
   objStgConf,
   cached = true,
+  datasourceId = 'default',
 ) {
   logger.debug({ fdaId, query, service, description }, '[DEBUG]: createFDA');
   const collection = await getCollection();
@@ -102,6 +237,7 @@ export async function createFDAMongo(
       timeColumn,
       objStgConf,
       cached,
+      datasourceId,
     });
   } catch (e) {
     if (e.code === 11000) {
