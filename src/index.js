@@ -41,6 +41,11 @@ import {
   getDA,
   putDA,
   deleteDA,
+  createDatasourceForService,
+  getDatasourcesForService,
+  getDatasourceForService,
+  updateDatasourceForService,
+  deleteDatasourceForService,
 } from './lib/fda.js';
 import { createIndex, disconnectClient } from './lib/utils/mongo.js';
 import { destroyS3Client } from './lib/utils/aws.js';
@@ -220,6 +225,7 @@ app.post('/:visibility/fdas', async (req, res) => {
     'timeColumn',
     'objStgConf',
     'cached',
+    'datasourceId',
   ]);
   const {
     id,
@@ -229,6 +235,7 @@ app.post('/:visibility/fdas', async (req, res) => {
     timeColumn,
     objStgConf,
     cached,
+    datasourceId,
   } = body;
   const service = req.get('Fiware-Service');
   const servicePath = req.get('Fiware-ServicePath');
@@ -269,6 +276,7 @@ app.post('/:visibility/fdas', async (req, res) => {
     finalObjStgConf,
     defaultDataAccessEnabled,
     cachedEnabled,
+    datasourceId,
   );
 
   return res.status(202).json({
@@ -547,6 +555,85 @@ app.get('/:visibility/fdas/:fdaId/data', async (req, res) => {
   });
 
   return sendRowsByOutputType(res, rows, outputType);
+});
+
+app.post('/datasources', async (req, res) => {
+  const service = req.get('Fiware-Service');
+  const body = req.body ?? {};
+  validateAllowedFieldsBody(body, ['datasourceId', 'type', 'config']);
+  const { datasourceId, type, config: dsConfig } = body;
+
+  if (!service || !datasourceId || !type || !dsConfig) {
+    return res.status(400).json({
+      error: 'BadRequest',
+      description: 'Missing required fields: datasourceId, type, config',
+    });
+  }
+
+  await createDatasourceForService(service, datasourceId, type, dsConfig);
+  return res.status(201).json({ datasourceId });
+});
+
+app.get('/datasources', async (req, res) => {
+  const service = req.get('Fiware-Service');
+
+  if (!service) {
+    return res.status(400).json({
+      error: 'BadRequest',
+      description: 'Missing Fiware-Service header',
+    });
+  }
+
+  const datasources = await getDatasourcesForService(service);
+  return res.status(200).json(datasources);
+});
+
+app.get('/datasources/:datasourceId', async (req, res) => {
+  const service = req.get('Fiware-Service');
+  const { datasourceId } = req.params;
+
+  if (!service || !datasourceId) {
+    return res.status(400).json({
+      error: 'BadRequest',
+      description: 'Missing params in the request',
+    });
+  }
+
+  const datasource = await getDatasourceForService(service, datasourceId);
+  return res.status(200).json(datasource);
+});
+
+app.put('/datasources/:datasourceId', async (req, res) => {
+  const service = req.get('Fiware-Service');
+  const { datasourceId } = req.params;
+  const body = req.body ?? {};
+  validateAllowedFieldsBody(body, ['type', 'config']);
+  const { type, config: dsConfig } = body;
+
+  if (!service || !datasourceId) {
+    return res.status(400).json({
+      error: 'BadRequest',
+      description: 'Missing params in the request',
+    });
+  }
+
+  await updateDatasourceForService(service, datasourceId, type, dsConfig);
+  return res.sendStatus(204);
+});
+
+app.delete('/datasources/:datasourceId', async (req, res) => {
+  const service = req.get('Fiware-Service');
+  const { datasourceId } = req.params;
+
+  if (!service || !datasourceId) {
+    return res.status(400).json({
+      error: 'BadRequest',
+      description: 'Missing params in the request',
+    });
+  }
+
+  await deleteDatasourceForService(service, datasourceId);
+  return res.sendStatus(204);
 });
 
 app.post('/plugin/cda/api/doQuery', async (req, res) => {
