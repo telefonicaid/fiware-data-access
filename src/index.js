@@ -385,7 +385,7 @@ app.post('/:visibility/fdas/:fdaId/das', async (req, res) => {
     visibility,
     servicePath,
   );
-  return res.sendStatus(201);
+  return res.sendStatus(200);
 });
 
 app.get('/:visibility/fdas/:fdaId/das/:daId', async (req, res) => {
@@ -571,7 +571,7 @@ app.post('/datasources', async (req, res) => {
   }
 
   await createDatasourceForService(service, datasourceId, type, dsConfig);
-  return res.status(200).json({ datasourceId });
+  return res.sendStatus(200);
 });
 
 app.get('/datasources', async (req, res) => {

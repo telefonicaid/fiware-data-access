@@ -133,13 +133,11 @@ function resetModuleMocks() {
   fdaMocks.deleteDA.mockReset().mockResolvedValue(undefined);
   fdaMocks.createDatasourceForService.mockReset().mockResolvedValue(undefined);
   fdaMocks.getDatasourcesForService.mockReset().mockResolvedValue([]);
-  fdaMocks.getDatasourceForService
-    .mockReset()
-    .mockResolvedValue({
-      datasourceId: 'default',
-      type: 'postgres',
-      config: {},
-    });
+  fdaMocks.getDatasourceForService.mockReset().mockResolvedValue({
+    datasourceId: 'default',
+    type: 'postgres',
+    config: {},
+  });
   fdaMocks.updateDatasourceForService.mockReset().mockResolvedValue(undefined);
   fdaMocks.deleteDatasourceForService.mockReset().mockResolvedValue(undefined);
 
@@ -563,7 +561,7 @@ describe('index routes - validation and middleware branches', () => {
       .set('Fiware-Service', 'svc')
       .set('Fiware-ServicePath', '/servicepath')
       .send({ id: 'da1', query: 'SELECT 2', description: 'da' })
-      .expect(201);
+      .expect(200);
 
     await request(app)
       .get('/public/fdas/fda1/das/da1')

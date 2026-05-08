@@ -586,15 +586,11 @@ _**Response code**_
 
 _**Response headers**_
 
-Successful operations return `Content-Type: application/json`.
+None.
 
 _**Response payload**_
 
-```json
-{
-    "datasourceId": "default"
-}
-```
+None.
 
 _**Example Request:**_
 
@@ -1326,7 +1322,7 @@ curl -i -X POST http://localhost:8080/public/fdas/fda_alarms/das \
 _**Example Response:**_
 
 ```
-HTTP/1.1 201 Created
+HTTP/1.1 200 OK
 X-Powered-By: Express
 Content-Type: text/plain; charset=utf-8
 Content-Length: 7
@@ -1336,14 +1332,13 @@ Created
 
 _**Response code**_
 
--   Successful operation uses 201 Created
+-   Successful operation uses 200 OK
 -   Errors use a non-2xx and (optionally) an error payload. See subsection on [Error Responses](#error-responses) for
     more details.
 
 _**Response headers**_
 
--   Return the header `Location` with the value of the path used to create the DA (I.E : `/public/fdas/fda01/das/da01`)
-    when the creation succeeds (Response code 201).
+None.
 
 _**Response payload**_
 
