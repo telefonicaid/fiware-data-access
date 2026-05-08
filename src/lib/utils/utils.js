@@ -233,7 +233,14 @@ export function convertRefreshIntervalToMs(interval) {
 }
 
 function cronToIntervalMs(cron) {
-  const interval = CronExpressionParser.parse(cron);
+  let interval;
+
+  try {
+    interval = CronExpressionParser.parse(cron);
+  } catch {
+    return null;
+  }
+
   if (!interval) {
     return null;
   }
