@@ -319,9 +319,12 @@ export function runFDAIntegrationSuite({ mode, label }) {
     registerDatasourcesIntegrationTests({
       getBaseUrl: () => baseUrl,
       service,
+      servicePath,
+      visibility,
       getPgHost: () => pgHost,
       getPgPort: () => pgPort,
       httpReq,
+      waitUntilFDACompleted,
     });
 
     registerPlatformIntegrationTests({
