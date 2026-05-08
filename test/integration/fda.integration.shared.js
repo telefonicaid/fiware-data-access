@@ -529,7 +529,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
           createDa.json ?? createDa.text,
         );
       }
-      expect(createDa.status).toBe(201);
+      expect(createDa.status).toBe(200);
 
       const queryRes = await httpReq({
         method: 'GET',
@@ -641,7 +641,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
         },
       });
 
-      expect(createRes.status).toBe(201);
+      expect(createRes.status).toBe(200);
 
       // Execute with minAge=25 (should return 2 rows)
       const firstQuery = await httpReq({
@@ -730,7 +730,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
         },
       });
 
-      expect(createDa.status).toBe(201);
+      expect(createDa.status).toBe(200);
 
       const createFreshFda = await httpReq({
         method: 'POST',
@@ -1101,7 +1101,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
           },
         });
 
-        expect(createDa.status).toBe(201);
+        expect(createDa.status).toBe(200);
 
         const cachedJson = await httpReq({
           method: 'GET',
@@ -1290,7 +1290,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
         },
       });
 
-      expect(createDa.status).toBe(201);
+      expect(createDa.status).toBe(200);
 
       const res = await httpFormReq({
         method: 'POST',
@@ -1386,7 +1386,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
         },
       });
 
-      expect(createDa.status).toBe(201);
+      expect(createDa.status).toBe(200);
 
       const mismatchRes = await httpFormReq({
         method: 'POST',
@@ -1551,7 +1551,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
           },
         });
 
-        expect(createDa.status).toBe(201);
+        expect(createDa.status).toBe(200);
 
         const jsonRes = await httpFormReq({
           method: 'POST',
