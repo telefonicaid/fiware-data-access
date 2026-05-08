@@ -571,7 +571,7 @@ app.post('/datasources', async (req, res) => {
   }
 
   await createDatasourceForService(service, datasourceId, type, dsConfig);
-  return res.status(201).json({ datasourceId });
+  return res.status(200).json({ datasourceId });
 });
 
 app.get('/datasources', async (req, res) => {
