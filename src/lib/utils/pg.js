@@ -38,8 +38,8 @@ pg.types.setTypeParser(pg.types.builtins.INT8, (value) =>
 const logger = getBasicLogger();
 const pools = new Map();
 
-function getPoolKey(user, host, port, database) {
-  return `${user}@${host}:${port}/${database}`;
+function getPoolKey(user, password, host, port, database) {
+  return JSON.stringify({ user, password, host, port, database });
 }
 
 function clearPoolIdleTimer(entry) {
@@ -87,7 +87,7 @@ function schedulePoolIdleClose(key) {
 }
 
 export function getPgPool(user, password, host, port, database) {
-  const key = getPoolKey(user, host, port, database);
+  const key = getPoolKey(user, password, host, port, database);
 
   if (pools.has(key)) {
     const existing = pools.get(key);
@@ -159,7 +159,7 @@ export async function uploadTable(
 ) {
   const { user, password, host, port, database } = pgCredentials;
   logger.debug({ bucket, database, query, path }, '[DEBUG]: uploadTable');
-  const key = getPoolKey(user, host, port, database);
+  const key = getPoolKey(user, password, host, port, database);
   const pgPool = getPgPool(user, password, host, port, database);
   const pgClient = await pgPool.connect();
 
@@ -197,7 +197,7 @@ export async function uploadTable(
 
 export async function runPgQuery(pgCredentials, text, values) {
   const { user, password, host, port, database } = pgCredentials;
-  const key = getPoolKey(user, host, port, database);
+  const key = getPoolKey(user, password, host, port, database);
   const pgPool = getPgPool(user, password, host, port, database);
 
   const pgClient = await pgPool.connect();
@@ -227,7 +227,7 @@ export async function createPgCursorReader(
   batchSize,
 ) {
   const { user, password, host, port, database } = pgCredentials;
-  const key = getPoolKey(user, host, port, database);
+  const key = getPoolKey(user, password, host, port, database);
   const pgPool = getPgPool(user, password, host, port, database);
 
   let pgClient;
