@@ -89,16 +89,28 @@ Integration tests validate:
 
 ### Coverage Considerations
 
-Because the application runs as a **separate process** in integration mode, standard Jest coverage:
+Coverage in this repository is collected with `c8` in two independent runs:
 
--   Does not instrument the application process
--   Under-reports integration-executed application code unless extra instrumentation is used
+-   unit suite (`coverage/unit/lcov.info`)
+-   integration suite (`coverage/integration/lcov.info`)
 
-Coverage can be collected using additional tooling (e.g. `c8`). In practice, meaningful coverage in this repository
-comes from combining:
+Then both reports are merged into `coverage/lcov.info`, which is the file uploaded to Coveralls in CI. This flow avoids
+ambiguity when reading coverage locally and matches exactly what CI publishes. The merge is additive for the same
+file/line in both reports.
 
--   unit test execution inside the Jest process
--   integration execution instrumented with external tooling
+-   If a line is covered only by unit tests, it remains covered in the merged report.
+-   If a line is covered only by integration tests, it remains covered in the merged report.
+-   A line is not covered in the final report only if it is uncovered in both reports.
+
+### Integration Suite Organization
+
+Current integration structure:
+
+-   `test/integration/fda.proc.int.test.js`: entrypoint that runs the same suite in both execution modes
+-   `test/integration/fda.integration.shared.js`: shared runtime/bootstrap and suite registration
+-   `test/integration/suites/platform.integration.tests.js`: platform endpoints (`/health`, `/metrics`)
+-   `test/integration/suites/fdaCreation.integration.tests.js`: FDA creation and basic lifecycle creation checks
+-   `test/integration/suites/slidingWindows.integration.tests.js`: sliding-window and partitioning checks
 
 ---
 
@@ -115,10 +127,16 @@ Run locally:
 npm test
 ```
 
-You can also run the coverage report this way:
+You can also run coverage this way:
 
 ```bash
 npm run test:coverage
+```
+
+To reproduce the CI coverage flow locally (unit + integration + merged lcov for Coveralls):
+
+```bash
+npm run test:coverage:ci
 ```
 
 The same tests are executed in CI using GitHub Actions

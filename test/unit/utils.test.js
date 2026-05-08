@@ -317,6 +317,7 @@ describe('utils', () => {
         expect(convertRefreshIntervalToMs('abc')).toBeNull();
         expect(convertRefreshIntervalToMs('10 lightyears')).toBeNull();
         expect(convertRefreshIntervalToMs('minutes 5')).toBeNull();
+        expect(convertRefreshIntervalToMs('not_an_interval')).toBeNull();
       });
     });
 
