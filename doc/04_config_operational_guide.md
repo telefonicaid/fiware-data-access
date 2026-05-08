@@ -22,7 +22,7 @@ and modify the variables in the `.env` file according to your environment.
 
 -   Or modify environment variables in `fda` service inside [`docker-compose.yml`](../docker/docker-compose.yml).
 
-The variables are grouped by category: **Environment**, **PostgreSQL**, and **MongoDB**.
+The variables are grouped by category: **Environment**, **PostgreSQL pool**, **Object Storage**, and **MongoDB**.
 
 ---
 
@@ -55,17 +55,37 @@ Variables that define which components of the application are executed by this i
 > Note: `FDA_ROLE_SYNCQUERIES` is only used by the API server role. It is recommended to enable it only in API instances
 > that should allow direct fresh FDA queries.
 
-### PostgreSQL
+### PostgreSQL pool and datasources
 
-Variables related to `PostgreSQL` client:
+PostgreSQL connections are resolved from provisioned **datasources** per `Fiware-Service` using API routes under
+`/datasources` (see API reference for CRUD operations).
+
+Datasource payload for `type=postgres`:
+
+```json
+{
+    "datasourceId": "default",
+    "type": "postgres",
+    "config": {
+        "user": "exampleUser",
+        "password": "examplePass",
+        "host": "exampleHost",
+        "port": 5432,
+        "database": "exampleDatabase"
+    }
+}
+```
+
+Important behavior:
+
+-   If a referenced datasource does not exist, FDA operations fail with `DatasourceNotFound`.
+-   `datasourceId` in FDA creation is optional; if omitted, FDA uses `default`.
+
+Environment variables control **pool behavior**:
 
 | Variable                         | Optional | Type   | Description                                                                                            |
 | -------------------------------- | -------- | ------ | ------------------------------------------------------------------------------------------------------ |
-| `FDA_PG_USER`                    |          | string | User to connect to `PostgreSQL` to fetch the data to create the `FDAs`.                                |
-| `FDA_PG_PASSWORD`                |          | string | Password to connect to `PostgreSQL` to fetch the data to create the `FDAs`.                            |
-| `FDA_PG_HOST`                    |          | string | Host to connect to `PostgreSQL` to fetch the data to create the `FDAs`.                                |
-| `FDA_PG_PORT`                    | ✓        | number | Port to connect to `PostgreSQL` to fetch the data to create the `FDAs`. Value by _default_ **5432**.   |
-| `FDA_PG_POOL_MAX`                | ✓        | number | Maximum number of PostgreSQL connections per process and per target database. Default `10`.            |
+| `FDA_PG_POOL_MAX`                | ✓        | number | Maximum number of PostgreSQL connections per process and per datasource target database. Default `10`. |
 | `FDA_PG_POOL_IDLE_TIMEOUT_MS`    | ✓        | number | Milliseconds before an idle PostgreSQL pooled connection is closed. Default `10000`.                   |
 | `FDA_PG_POOL_CONN_TIMEOUT_MS`    | ✓        | number | Milliseconds to wait when acquiring a PostgreSQL pooled connection before timing out. Default `5000`.  |
 | `FDA_PG_POOL_DB_IDLE_TIMEOUT_MS` | ✓        | number | Milliseconds of pool inactivity before closing the whole pool for a target database. Default `300000`. |
@@ -115,11 +135,7 @@ FDA_ROLE_SYNCQUERIES=true
 FDA_MAX_CONCURRENT_FRESH_QUERIES=5
 FDA_CREATE_DEFAULT_DATA_ACCESS=true
 
-# POSTGRESQL
-FDA_PG_USER=exampleUser
-FDA_PG_PASSWORD=examplePass
-FDA_PG_HOST=exampleHost
-FDA_PG_PORT=5432
+# POSTGRESQL POOL
 FDA_PG_POOL_MAX=10
 FDA_PG_POOL_IDLE_TIMEOUT_MS=10000
 FDA_PG_POOL_CONN_TIMEOUT_MS=5000
@@ -140,6 +156,8 @@ FDA_LOG_LEVEL=INFO
 FDA_LOG_COMP=FDA
 FDA_LOG_RES_SIZE=100
 ```
+
+After startup, provision datasources using the API (`POST /datasources`) before creating FDAs that depend on them.
 
 ---
 

@@ -144,10 +144,10 @@ At minimum, you will need:
 FDA_NODE_ENV=development
 FDA_SERVER_PORT=8080
 
-FDA_PG_USER=postgres
-FDA_PG_PASSWORD=postgres
-FDA_PG_HOST=localhost
-FDA_PG_PORT=5432
+FDA_PG_POOL_MAX=10
+FDA_PG_POOL_IDLE_TIMEOUT_MS=10000
+FDA_PG_POOL_CONN_TIMEOUT_MS=5000
+FDA_PG_POOL_DB_IDLE_TIMEOUT_MS=300000
 
 FDA_OBJSTG_PROTOCOL=http
 FDA_OBJSTG_ENDPOINT=localhost:9000
@@ -174,7 +174,30 @@ You should see the FDA service starting and listening on port `8080`.
 
 ---
 
-### 6. Verify the setup with tests
+### 6. Provision datasource(s)
+
+FDA resolves PostgreSQL connection credentials from datasource resources (no global PostgreSQL user fallback).
+
+Create at least one datasource for your `Fiware-Service` before creating FDAs:
+
+```bash
+curl -i -X POST http://localhost:8080/datasources \
+  -H "Content-Type: application/json" \
+  -H "Fiware-Service: my-bucket" \
+  -d '{
+    "datasourceId": "default",
+    "type": "postgres",
+    "config": {
+      "user": "postgres",
+      "password": "postgres",
+      "host": "localhost",
+      "port": 5432,
+      "database": "my-bucket"
+    }
+  }'
+```
+
+### 7. Verify the setup with tests
 
 To verify that everything is configured correctly, you can run the test suite:
 
@@ -550,8 +573,8 @@ Notes:
     automatically by the `mc` service. For local development, create the bucket manually (see
     [Complete Working Example](#complete-working-example-manual-verification)).
 
--   **PostgreSQL connection errors** Verify `FDA_PG_HOST`, `FDA_PG_PORT`, and credentials. Ensure the database with the
-    same name as the `fiware-service` exists.
+-   **PostgreSQL connection errors** Verify the datasource provisioning (`GET /datasources` with the same
+    `Fiware-Service`) and the datasource credentials (`host`, `port`, `database`, user, password).
 
 -   **Wrong Node.js version** Ensure Node.js 24 is being used when running locally.
 

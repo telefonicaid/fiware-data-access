@@ -9,6 +9,13 @@
         -   [Health Check `GET /health`](#health-check-get-health)
     -   [Metrics Endpoint](#metrics-endpoint)
         -   [Retrieve metrics `GET /metrics`](#retrieve-metrics-get-metrics)
+    -   [Datasource payload datamodel](#datasource-payload-datamodel)
+    -   [Datasources operations](#datasources-operations)
+        -   [List Datasources](#list-datasources-get-datasources)
+        -   [Create Datasource](#create-datasource-post-datasources)
+        -   [Get Datasource](#get-datasource-get-datasourcesdatasourceid)
+        -   [Update Datasource](#update-datasource-put-datasourcesdatasourceid)
+        -   [Delete Datasource](#delete-datasource-delete-datasourcesdatasourceid)
     -   [FDA payload datamodel](#fda-payload-datamodel)
     -   [FDAs operations](#fdas-operations)
         -   [List FDAs](#list-fdas-get-visibilityfdas)
@@ -70,30 +77,32 @@ All error responses follow this structure:
 
 ### HTTP status codes
 
-| Code | Status                | Error Code             | Cause                                                                                                                                                                                            |
-| ---- | --------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 400  | Bad Request           | `BadRequest`           | Missing or invalid values in request body, headers, or query parameters. `Fiware-Service`, `Fiware-ServicePath`, and `visibility` (path segment) are required for all operations.                |
-| 400  | Bad Request           | `BadRequest`           | Invalid or unsupported query fields were provided (for example, using `fresh` in `GET /{visibility}/fdas/{fdaId}/das/{daId}/data` or any query string in `GET /{visibility}/fdas/{fdaId}/data`). |
-| 400  | Bad Request           | `InvalidVisibility`    | The `visibility` path segment is not one of the allowed values (`public`, `private`).                                                                                                            |
-| 400  | Bad Request           | `InvalidServicePath`   | The `Fiware-ServicePath` header value is not a valid non-root absolute path (e.g. `/servicePath/site`). The root path `/` is not allowed.                                                        |
-| 400  | Bad Request           | `InvalidQueryParam`    | Some of the params in the request don't comply with the [params](#params) array restrictions.                                                                                                    |
-| 400  | Bad Request           | `PartitionError`       | Some of the params related to the creation of the parquet partition don't comply with the [object storage configuration](#object-storage-configuration-objstgconf) requirements.                 |
-| 400  | Bad Request           | `CleaningError`        | Trying to remove a non partitioned FDA or incorrect value in the [delete interval key](#refresh-policy-object).                                                                                  |
-| 403  | Forbidden             | `VisibilityMismatch`   | The FDA exists but was created under a different `visibility`. Cannot access a private FDA through a public route and vice-versa.                                                                |
-| 404  | Not Found             | `FDANotFound`          | The requested FDA was not found.                                                                                                                                                                 |
-| 404  | Not Found             | `DaNotFound`           | The requested Data Access (DA) was not found.                                                                                                                                                    |
-| 406  | Not Acceptable        | `NotAcceptable`        | `Accept` header does not allow any supported response format (`application/json`, `application/x-ndjson`, `text/csv`, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`).      |
-| 409  | Conflict              | `DuplicatedKey`        | The resource already exists in the database. Attempting to create a duplicate resource.                                                                                                          |
-| 409  | Conflict              | `FDAUnavailable`       | FDA `exampleId` is not queryable yet because the first fetch has not completed.                                                                                                                  |
-| 409  | Conflict              | `FDANotOnlyFresh`      | The FDA is cached (`cached=true`) and cannot be queried through `GET /{visibility}/fdas/{fdaId}/data`; use a DA instead.                                                                         |
-| 409  | Conflict              | `FDAOnlyFresh`         | The FDA was created with `cached=false`, so it does not allow DAs nor cached DA queries.                                                                                                         |
-| 429  | Too Many Requests     | `TooManyFreshQueries`  | The number of concurrent direct fresh FDA queries exceeded `FDA_MAX_CONCURRENT_FRESH_QUERIES`.                                                                                                   |
-| 500  | Internal Server Error | `S3ServerError`        | An error occurred in the S3 object storage component.                                                                                                                                            |
-| 500  | Internal Server Error | `DuckDBServerError`    | An error occurred in the DuckDB component.                                                                                                                                                       |
-| 500  | Internal Server Error | `MongoDBServerError`   | An error occurred in the MongoDB component.                                                                                                                                                      |
-| 503  | Service Unavailable   | `UploadError`          | Connection error with the PostgreSQL database component.                                                                                                                                         |
-| 503  | Service Unavailable   | `SyncQueriesDisabled`  | A direct FDA query was sent but the API instance is running with `FDA_ROLE_SYNCQUERIES=false`.                                                                                                   |
-| 503  | Service Unavailable   | `MongoConnectionError` | Connection error with the MongoDB component.                                                                                                                                                     |
+| Code | Status                | Error Code                  | Cause                                                                                                                                                                                            |
+| ---- | --------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 400  | Bad Request           | `BadRequest`                | Missing or invalid values in request body, headers, or query parameters. `Fiware-Service`, `Fiware-ServicePath`, and `visibility` (path segment) are required for all operations.                |
+| 400  | Bad Request           | `BadRequest`                | Invalid or unsupported query fields were provided (for example, using `fresh` in `GET /{visibility}/fdas/{fdaId}/das/{daId}/data` or any query string in `GET /{visibility}/fdas/{fdaId}/data`). |
+| 400  | Bad Request           | `InvalidVisibility`         | The `visibility` path segment is not one of the allowed values (`public`, `private`).                                                                                                            |
+| 400  | Bad Request           | `InvalidServicePath`        | The `Fiware-ServicePath` header value is not a valid non-root absolute path (e.g. `/servicePath/site`). The root path `/` is not allowed.                                                        |
+| 400  | Bad Request           | `InvalidQueryParam`         | Some of the params in the request don't comply with the [params](#params) array restrictions.                                                                                                    |
+| 400  | Bad Request           | `PartitionError`            | Some of the params related to the creation of the parquet partition don't comply with the [object storage configuration](#object-storage-configuration-objstgconf) requirements.                 |
+| 400  | Bad Request           | `CleaningError`             | Trying to remove a non partitioned FDA or incorrect value in the [delete interval key](#refresh-policy-object).                                                                                  |
+| 403  | Forbidden             | `VisibilityMismatch`        | The FDA exists but was created under a different `visibility`. Cannot access a private FDA through a public route and vice-versa.                                                                |
+| 404  | Not Found             | `FDANotFound`               | The requested FDA was not found.                                                                                                                                                                 |
+| 404  | Not Found             | `DaNotFound`                | The requested Data Access (DA) was not found.                                                                                                                                                    |
+| 404  | Not Found             | `DatasourceNotFound`        | The requested datasource does not exist for the provided `Fiware-Service`.                                                                                                                       |
+| 406  | Not Acceptable        | `NotAcceptable`             | `Accept` header does not allow any supported response format (`application/json`, `application/x-ndjson`, `text/csv`, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`).      |
+| 409  | Conflict              | `DuplicatedKey`             | The resource already exists in the database. Attempting to create a duplicate resource.                                                                                                          |
+| 409  | Conflict              | `FDAUnavailable`            | FDA `exampleId` is not queryable yet because the first fetch has not completed.                                                                                                                  |
+| 409  | Conflict              | `FDANotOnlyFresh`           | The FDA is cached (`cached=true`) and cannot be queried through `GET /{visibility}/fdas/{fdaId}/data`; use a DA instead.                                                                         |
+| 409  | Conflict              | `FDAOnlyFresh`              | The FDA was created with `cached=false`, so it does not allow DAs nor cached DA queries.                                                                                                         |
+| 429  | Too Many Requests     | `TooManyFreshQueries`       | The number of concurrent direct fresh FDA queries exceeded `FDA_MAX_CONCURRENT_FRESH_QUERIES`.                                                                                                   |
+| 500  | Internal Server Error | `S3ServerError`             | An error occurred in the S3 object storage component.                                                                                                                                            |
+| 500  | Internal Server Error | `DuckDBServerError`         | An error occurred in the DuckDB component.                                                                                                                                                       |
+| 500  | Internal Server Error | `MongoDBServerError`        | An error occurred in the MongoDB component.                                                                                                                                                      |
+| 400  | Bad Request           | `UnsupportedDatasourceType` | The referenced datasource type is not supported by the operation (currently only `postgres`).                                                                                                    |
+| 503  | Service Unavailable   | `UploadError`               | Connection error with the PostgreSQL database component.                                                                                                                                         |
+| 503  | Service Unavailable   | `SyncQueriesDisabled`       | A direct FDA query was sent but the API instance is running with `FDA_ROLE_SYNCQUERIES=false`.                                                                                                   |
+| 503  | Service Unavailable   | `MongoConnectionError`      | Connection error with the MongoDB component.                                                                                                                                                     |
 
 ### Common error scenarios
 
@@ -471,6 +480,288 @@ fda_jobs_agenda_total 7
 # EOF
 ```
 
+### Datasource payload datamodel
+
+A datasource is represented by a JSON object with the following fields:
+
+| Parameter      | Optional | Type   | Description                                                                                                      |
+| -------------- | -------- | ------ | ---------------------------------------------------------------------------------------------------------------- |
+| `datasourceId` |          | string | Datasource identifier, unique within a given `Fiware-Service`.                                                   |
+| `type`         |          | string | Datasource type. Currently supported: `postgres`.                                                                |
+| `config`       |          | object | Datasource connection configuration. For `postgres`, it includes `user`, `password`, `host`, `port`, `database`. |
+
+### Datasources operations
+
+Datasource operations are scoped by `Fiware-Service` header.
+
+#### List Datasources `GET /datasources`
+
+Returns all datasources for the provided `Fiware-Service`.
+
+_**Request path parameters**_
+
+None.
+
+_**Request query parameters**_
+
+None.
+
+_**Request headers**_
+
+| Header           | Optional | Description                                                          | Example     |
+| ---------------- | -------- | -------------------------------------------------------------------- | ----------- |
+| `Fiware-Service` |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket` |
+
+_**Request payload**_
+
+None.
+
+_**Response code**_
+
+-   Successful operation uses `200 OK`.
+-   Errors use a non-2xx and (optionally) an error payload. See subsection on [Error Responses](#error-responses).
+
+_**Response headers**_
+
+Successful operations return `Content-Type: application/json`.
+
+_**Response payload**_
+
+Array of datasource objects.
+
+_**Example Request:**_
+
+```bash
+curl -i -X GET http://localhost:8080/datasources \
+  -H "Fiware-Service: my-bucket"
+```
+
+_**Example Response:**_
+
+```json
+[
+    {
+        "datasourceId": "default",
+        "type": "postgres",
+        "config": {
+            "user": "postgres",
+            "password": "postgres",
+            "host": "localhost",
+            "port": 5432,
+            "database": "my-bucket"
+        }
+    }
+]
+```
+
+#### Create Datasource `POST /datasources`
+
+Creates a datasource for the provided `Fiware-Service`.
+
+_**Request path parameters**_
+
+None.
+
+_**Request query parameters**_
+
+None.
+
+_**Request headers**_
+
+| Header           | Optional | Description                                                          | Example            |
+| ---------------- | -------- | -------------------------------------------------------------------- | ------------------ |
+| `Content-Type`   |          | MIME type. Required to be `application/json`.                        | `application/json` |
+| `Fiware-Service` |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket`        |
+
+_**Request payload**_
+
+JSON object following [Datasource payload datamodel](#datasource-payload-datamodel).
+
+Required body fields: `datasourceId`, `type`, `config`.
+
+_**Response code**_
+
+-   Successful operation uses `200 OK`.
+-   Errors use a non-2xx and (optionally) an error payload. See subsection on [Error Responses](#error-responses).
+
+_**Response headers**_
+
+Successful operations return `Content-Type: application/json`.
+
+_**Response payload**_
+
+```json
+{
+    "datasourceId": "default"
+}
+```
+
+_**Example Request:**_
+
+```bash
+curl -i -X POST http://localhost:8080/datasources \
+    -H "Content-Type: application/json" \
+    -H "Fiware-Service: my-bucket" \
+    -d '{
+        "datasourceId": "default",
+        "type": "postgres",
+        "config": {
+            "user": "postgres",
+            "password": "postgres",
+            "host": "localhost",
+            "port": 5432,
+            "database": "my-bucket"
+        }
+    }'
+```
+
+#### Get Datasource `GET /datasources/{datasourceId}`
+
+Returns one datasource from the provided `Fiware-Service`.
+
+_**Request path parameters**_
+
+| Parameter      | Optional | Description                               | Example   |
+| -------------- | -------- | ----------------------------------------- | --------- |
+| `datasourceId` |          | Datasource identifier within the service. | `default` |
+
+_**Request query parameters**_
+
+None.
+
+_**Request headers**_
+
+| Header           | Optional | Description                                                          | Example     |
+| ---------------- | -------- | -------------------------------------------------------------------- | ----------- |
+| `Fiware-Service` |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket` |
+
+_**Request payload**_
+
+None.
+
+_**Response code**_
+
+-   Successful operation uses `200 OK`.
+-   Errors use a non-2xx and (optionally) an error payload. See subsection on [Error Responses](#error-responses).
+
+_**Response headers**_
+
+Successful operations return `Content-Type: application/json`.
+
+_**Response payload**_
+
+Datasource object.
+
+_**Example Request:**_
+
+```bash
+curl -i -X GET http://localhost:8080/datasources/default \
+    -H "Fiware-Service: my-bucket"
+```
+
+#### Update Datasource `PUT /datasources/{datasourceId}`
+
+Updates one datasource from the provided `Fiware-Service`.
+
+_**Request path parameters**_
+
+| Parameter      | Optional | Description                               | Example   |
+| -------------- | -------- | ----------------------------------------- | --------- |
+| `datasourceId` |          | Datasource identifier within the service. | `default` |
+
+_**Request query parameters**_
+
+None.
+
+_**Request headers**_
+
+| Header           | Optional | Description                                                          | Example            |
+| ---------------- | -------- | -------------------------------------------------------------------- | ------------------ |
+| `Content-Type`   |          | MIME type. Required to be `application/json`.                        | `application/json` |
+| `Fiware-Service` |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket`        |
+
+_**Request payload**_
+
+Allowed body fields: `type`, `config`.
+
+_**Response code**_
+
+-   Successful operation uses `204 No Content`.
+-   Errors use a non-2xx and (optionally) an error payload. See subsection on [Error Responses](#error-responses).
+
+_**Response headers**_
+
+None.
+
+_**Response payload**_
+
+None.
+
+_**Example Request:**_
+
+```bash
+curl -i -X PUT http://localhost:8080/datasources/default \
+    -H "Content-Type: application/json" \
+    -H "Fiware-Service: my-bucket" \
+    -d '{
+        "type": "postgres",
+        "config": {
+            "user": "postgres",
+            "password": "postgres",
+            "host": "localhost",
+            "port": 5432,
+            "database": "my-bucket"
+        }
+    }'
+```
+
+#### Delete Datasource `DELETE /datasources/{datasourceId}`
+
+Deletes one datasource from the provided `Fiware-Service`.
+
+_**Request path parameters**_
+
+| Parameter      | Optional | Description                               | Example   |
+| -------------- | -------- | ----------------------------------------- | --------- |
+| `datasourceId` |          | Datasource identifier within the service. | `default` |
+
+_**Request query parameters**_
+
+None.
+
+_**Request headers**_
+
+| Header           | Optional | Description                                                          | Example     |
+| ---------------- | -------- | -------------------------------------------------------------------- | ----------- |
+| `Fiware-Service` |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket` |
+
+_**Request payload**_
+
+None.
+
+_**Response code**_
+
+-   Successful operation uses `204 No Content`.
+-   Errors use a non-2xx and (optionally) an error payload. See subsection on [Error Responses](#error-responses).
+
+_**Response headers**_
+
+None.
+
+_**Response payload**_
+
+None.
+
+_**Example Request:**_
+
+```bash
+curl -i -X DELETE http://localhost:8080/datasources/default \
+    -H "Fiware-Service: my-bucket"
+```
+
+The delete operation does not validate whether existing FDAs reference the datasource. Any dependent FDA operation will
+fail later if datasource resolution is required.
+
 ### FDA payload datamodel
 
 A FDA is represented by a JSON object with the following fields:
@@ -484,6 +775,7 @@ A FDA is represented by a JSON object with the following fields:
 | [`objStgConf`](#object-storage-configuration-objstgconf) | ✓        | object  | Various options to configure the FDA uploaded in the object storage app.                                                                                                                   |
 | `timeColumn`                                             | ✓        | string  | Required with `refreshPolicy` of type `window` and `partition`. Column in the table indicating when the data was received (date).                                                          |
 | `cached`                                                 | ✓        | boolean | If `false`, the FDA is created as only-fresh: no parquet snapshot is maintained, no DAs are allowed, and the FDA is queried through `GET /{visibility}/fdas/{fdaId}/data`. Default `true`. |
+| `datasourceId`                                           | ✓        | string  | Datasource id used to resolve DB credentials for this FDA. If omitted, FDA uses `default`.                                                                                                 |
 
 #### Refresh Policy object
 
@@ -591,6 +883,7 @@ _**Example Response:**_
 [
     {
         "id": "fda_alarms",
+        "datasourceId": "default",
         "query": "SELECT * FROM public.alarms",
         "das": {},
         "status": "completed",
@@ -640,6 +933,7 @@ curl -i -X POST http://localhost:8080/public/fdas \
   -H "Fiware-ServicePath: /servicePath" \
   -d '{
     "id": "fda_alarms",
+        "datasourceId": "default",
     "query": "SELECT * FROM public.alarms",
     "description": "FDA de alarmas del sistema",
     "refreshPolicy": { "type": "interval", "value": "1 hour" },
@@ -759,6 +1053,7 @@ _**Example Response:**_
 
 ```json
 {
+    "datasourceId": "default",
     "query": "SELECT * FROM public.alarms",
     "das": {},
     "status": "completed",
@@ -774,8 +1069,9 @@ _**Example Response:**_
 Regenerate the FDA, fetching again the source table from DB.
 
 The operation may return `409 Conflict` in the following cases:
-- If the FDA is currently being processed.
-- If the FDA is configured as *fresh-only* (non-cached) and does not support manual regeneration.
+
+-   If the FDA is currently being processed.
+-   If the FDA is configured as _fresh-only_ (non-cached) and does not support manual regeneration.
 
 _**Request path parameters**_
 
