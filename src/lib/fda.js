@@ -113,7 +113,7 @@ export async function createDatasourceForService(
   await createDatasource(service, datasourceId, type, dsConfig);
 }
 
-export async function getDatasourcesForService(service) {
+export function getDatasourcesForService(service) {
   return retrieveDatasources(service);
 }
 
