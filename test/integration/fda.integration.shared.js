@@ -48,6 +48,7 @@ import { registerCdaCompatibilityIntegrationTests } from './suites/cdaCompatibil
 import { registerFdaLifecycleIntegrationTests } from './suites/fdaLifecycle.integration.tests.js';
 import {
   httpReq,
+  httpFormReq,
   httpReqRaw,
   buildDaDataUrl,
   buildFdaDataUrl,
@@ -400,8 +401,8 @@ export function runFDAIntegrationSuite({ mode, label }) {
       buildDaDataUrl,
       buildFdaDataUrl,
       fdaId,
-      pgHost,
-      pgPort,
+      getPgHost: () => pgHost,
+      getPgPort: () => pgPort,
     });
 
     registerVisibilityConstraintsIntegrationTests({
@@ -418,12 +419,13 @@ export function runFDAIntegrationSuite({ mode, label }) {
       servicePath,
       visibility,
       httpReq,
+      httpFormReq,
       httpReqRaw,
       waitUntilFDACompleted,
       fdaId,
       daId,
-      pgHost,
-      pgPort,
+      getPgHost: () => pgHost,
+      getPgPort: () => pgPort,
     });
 
     registerFdaLifecycleIntegrationTests({
@@ -436,7 +438,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       fdaId3,
       httpReq,
       waitUntilFDACompleted,
-      mongoUri,
+      getMongoUri: () => mongoUri,
     });
   });
 }

@@ -38,8 +38,8 @@ export function registerFreshQueriesIntegrationTests({
   buildDaDataUrl,
   buildFdaDataUrl,
   fdaId,
-  pgHost,
-  pgPort,
+  getPgHost,
+  getPgPort,
 }) {
   describe('Fresh FDA data queries', () => {
     test('GET /{visibility}/fdas/{fdaId}/data runs FDA query directly against PostgreSQL source', async () => {
@@ -91,8 +91,8 @@ export function registerFreshQueriesIntegrationTests({
 
       const insertedId = 1001;
       const pgClient = new Client({
-        host: pgHost,
-        port: pgPort,
+        host: getPgHost(),
+        port: getPgPort(),
         user: 'postgres',
         password: 'postgres',
         database: service,
@@ -242,8 +242,8 @@ export function registerFreshQueriesIntegrationTests({
       expect(createFda.status).toBe(202);
 
       const pgClient = new Client({
-        host: pgHost,
-        port: pgPort,
+        host: getPgHost(),
+        port: getPgPort(),
         user: 'postgres',
         password: 'postgres',
         database: service,
@@ -338,8 +338,8 @@ export function registerFreshQueriesIntegrationTests({
       ];
 
       const pgClient = new Client({
-        host: pgHost,
-        port: pgPort,
+        host: getPgHost(),
+        port: getPgPort(),
         user: 'postgres',
         password: 'postgres',
         database: service,

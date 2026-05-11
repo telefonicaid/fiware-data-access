@@ -32,12 +32,13 @@ export function registerCdaCompatibilityIntegrationTests({
   servicePath,
   visibility,
   httpReq,
+  httpFormReq,
   httpReqRaw,
   waitUntilFDACompleted,
   fdaId,
   daId,
-  pgHost,
-  pgPort,
+  getPgHost,
+  getPgPort,
 }) {
   describe('CDA compatibility', () => {
     test('POST /plugin/cda/api/doQuery behaves as CDA compatibility layer', async () => {
@@ -85,7 +86,7 @@ export function registerCdaCompatibilityIntegrationTests({
 
       expect(createDa.status).toBe(201);
 
-      const res = await httpReq({
+      const res = await httpFormReq({
         method: 'POST',
         url: `${baseUrl}/plugin/cda/api/doQuery`,
         headers: { 'Fiware-Service': service },
@@ -116,7 +117,7 @@ export function registerCdaCompatibilityIntegrationTests({
       expect(res.json.queryInfo.pageSize).toBe(2);
       expect(res.json.queryInfo.totalRows).toBe(3);
 
-      const ndjsonAttempt = await httpReq({
+      const ndjsonAttempt = await httpFormReq({
         method: 'POST',
         url: `${baseUrl}/plugin/cda/api/doQuery`,
         headers: {
@@ -178,7 +179,7 @@ export function registerCdaCompatibilityIntegrationTests({
 
       expect(createDa.status).toBe(201);
 
-      const mismatchRes = await httpReq({
+      const mismatchRes = await httpFormReq({
         method: 'POST',
         url: `${baseUrl}/plugin/cda/api/doQuery`,
         headers: { 'Fiware-Service': service },
@@ -271,8 +272,8 @@ export function registerCdaCompatibilityIntegrationTests({
       ];
 
       const pgClient = new Client({
-        host: pgHost,
-        port: pgPort,
+        host: getPgHost(),
+        port: getPgPort(),
         user: 'postgres',
         password: 'postgres',
         database: service,
@@ -346,7 +347,7 @@ export function registerCdaCompatibilityIntegrationTests({
 
         expect(createDa.status).toBe(201);
 
-        const jsonRes = await httpReq({
+        const jsonRes = await httpFormReq({
           method: 'POST',
           url: `${baseUrl}/plugin/cda/api/doQuery`,
           headers: { 'Fiware-Service': service },

@@ -35,7 +35,7 @@ export function registerFdaLifecycleIntegrationTests({
   fdaId3,
   httpReq,
   waitUntilFDACompleted,
-  mongoUri,
+  getMongoUri,
 }) {
   test('GET /fdas/:fdaId returns expected FDA', async () => {
     const baseUrl = getBaseUrl();
@@ -102,7 +102,7 @@ export function registerFdaLifecycleIntegrationTests({
 
   test('PUT /fdas/:fdaId throws InvalidState if FDA in unexpected status', async () => {
     const baseUrl = getBaseUrl();
-    const client = new MongoClient(mongoUri);
+    const client = new MongoClient(getMongoUri());
     await client.connect();
     const collection = client.db().collection('fdas');
 
