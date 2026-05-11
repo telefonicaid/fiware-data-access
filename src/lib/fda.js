@@ -104,15 +104,23 @@ async function resolveDatasourceCredentials(service, datasourceId) {
     );
   }
 
-  if (ds.type !== 'postgres') {
-    throw new FDAError(
-      400,
-      'UnsupportedDatasourceType',
-      `Datasource type ${ds.type} is not supported for this operation`,
-    );
-  }
+  assertSupportedDatasourceType(ds.type);
 
   return ds.config;
+}
+
+async function validateDatasourceConnection(type, dsConfig) {
+  assertSupportedDatasourceType(type);
+
+  try {
+    await runPgQuery(dsConfig, 'SELECT 1', []);
+  } catch (error) {
+    throw new FDAError(
+      400,
+      'InvalidDatasourceConnection',
+      `Could not connect to datasource: ${error.message}`,
+    );
+  }
 }
 
 export async function createDatasourceForService(
@@ -121,6 +129,7 @@ export async function createDatasourceForService(
   type,
   dsConfig,
 ) {
+  await validateDatasourceConnection(type, dsConfig);
   await createDatasource(service, datasourceId, type, dsConfig);
 }
 
@@ -146,6 +155,14 @@ export async function updateDatasourceForService(
   type,
   dsConfig,
 ) {
+  if (type !== undefined || dsConfig !== undefined) {
+    const current = await getDatasourceForService(service, datasourceId);
+    await validateDatasourceConnection(
+      type ?? current.type,
+      dsConfig ?? current.config,
+    );
+  }
+
   await updateDatasource(service, datasourceId, type, dsConfig);
 }
 
