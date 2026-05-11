@@ -1783,6 +1783,17 @@ describe('processFDAAsync', () => {
     dbMocks.toParquet.mockResolvedValue(undefined);
     pgMocks.uploadTable.mockResolvedValue(undefined);
     mongoMocks.updateFDAStatus.mockResolvedValue(undefined);
+    mongoMocks.retrieveDatasource.mockResolvedValue({
+      datasourceId: 'default',
+      type: 'postgres',
+      config: {
+        user: 'u',
+        password: 'p',
+        host: 'h',
+        port: 5432,
+        database: 'svc',
+      },
+    });
   });
 
   test('updates status through successful async FDA processing lifecycle', async () => {
@@ -1867,7 +1878,13 @@ describe('processFDAAsync', () => {
     expect(pgMocks.uploadTable).toHaveBeenCalledWith(
       {},
       'svc',
-      'svc',
+      {
+        user: 'u',
+        password: 'p',
+        host: 'h',
+        port: 5432,
+        database: 'svc',
+      },
       expect.stringContaining(
         "SELECT * FROM (SELECT id, observed_at FROM public.events) q WHERE observed_at >= TIMESTAMP '",
       ),
