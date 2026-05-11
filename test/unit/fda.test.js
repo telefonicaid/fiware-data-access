@@ -56,6 +56,7 @@ const awsMocks = {
 const mongoMocks = {
   createFDAMongo: jest.fn(),
   regenerateFDA: jest.fn(),
+  countFDAsUsingDatasource: jest.fn(),
   retrieveFDAs: jest.fn(),
   retrieveFDA: jest.fn(),
   storeDA: jest.fn(),
@@ -111,6 +112,7 @@ await jest.unstable_mockModule('../../src/lib/utils/aws.js', () => ({
 await jest.unstable_mockModule('../../src/lib/utils/mongo.js', () => ({
   createFDAMongo: mongoMocks.createFDAMongo,
   regenerateFDA: mongoMocks.regenerateFDA,
+  countFDAsUsingDatasource: mongoMocks.countFDAsUsingDatasource,
   retrieveFDAs: mongoMocks.retrieveFDAs,
   retrieveFDA: mongoMocks.retrieveFDA,
   storeDA: mongoMocks.storeDA,
@@ -150,6 +152,9 @@ const {
   executeFDAQueryStream,
   executeQueryStream,
   createDA,
+  createDatasourceForService,
+  updateDatasourceForService,
+  deleteDatasourceForService,
   fetchFDA,
   getFDA,
   updateFDA,
@@ -1855,6 +1860,97 @@ describe('updateFDA', () => {
   });
 });
 
+describe('datasource service helpers', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    pgMocks.runPgQuery.mockResolvedValue([{ ok: 1 }]);
+    mongoMocks.retrieveDatasource.mockResolvedValue({
+      datasourceId: 'default',
+      type: 'postgres',
+      config: {
+        user: 'u',
+        password: 'p',
+        host: 'h',
+        port: 5432,
+        database: 'svc',
+      },
+    });
+    mongoMocks.countFDAsUsingDatasource.mockResolvedValue(0);
+  });
+
+  test('validates datasource connection before creating datasource', async () => {
+    const dsConfig = {
+      user: 'u',
+      password: 'p',
+      host: 'h',
+      port: 5432,
+      database: 'svc',
+    };
+
+    await createDatasourceForService('svc', 'default', 'postgres', dsConfig);
+
+    expect(pgMocks.runPgQuery).toHaveBeenCalledWith(dsConfig, 'SELECT 1', []);
+    expect(mongoMocks.createDatasource).toHaveBeenCalledWith(
+      'svc',
+      'default',
+      'postgres',
+      dsConfig,
+    );
+  });
+
+  test('rejects datasource creation when connection validation fails', async () => {
+    pgMocks.runPgQuery.mockRejectedValueOnce(new Error('password auth failed'));
+
+    await expect(
+      createDatasourceForService('svc', 'default', 'postgres', {
+        user: 'u',
+        password: 'bad',
+        host: 'h',
+        port: 5432,
+        database: 'svc',
+      }),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidDatasourceConnection',
+    });
+
+    expect(mongoMocks.createDatasource).not.toHaveBeenCalled();
+  });
+
+  test('validates merged datasource config before updating datasource', async () => {
+    const nextConfig = {
+      user: 'u2',
+      password: 'p2',
+      host: 'h2',
+      port: 5432,
+      database: 'svc2',
+    };
+
+    await updateDatasourceForService('svc', 'default', undefined, nextConfig);
+
+    expect(pgMocks.runPgQuery).toHaveBeenCalledWith(nextConfig, 'SELECT 1', []);
+    expect(mongoMocks.updateDatasource).toHaveBeenCalledWith(
+      'svc',
+      'default',
+      undefined,
+      nextConfig,
+    );
+  });
+
+  test('blocks datasource deletion while any FDA uses it', async () => {
+    mongoMocks.countFDAsUsingDatasource.mockResolvedValueOnce(2);
+
+    await expect(
+      deleteDatasourceForService('svc', 'default'),
+    ).rejects.toMatchObject({
+      status: 409,
+      type: 'DatasourceInUse',
+    });
+
+    expect(mongoMocks.removeDatasource).not.toHaveBeenCalled();
+  });
+});
+
 //
 describe('processFDAAsync', () => {
   beforeEach(() => {
@@ -2405,7 +2501,12 @@ describe('getFDAs', () => {
 
     expect(mongoMocks.retrieveFDAs).toHaveBeenCalledWith('svc');
     expect(result).toEqual([
-      { id: 'fda1', query: 'SELECT 1', status: 'completed' },
+      {
+        id: 'fda1',
+        datasourceId: 'default',
+        query: 'SELECT 1',
+        status: 'completed',
+      },
     ]);
   });
 
@@ -2413,7 +2514,12 @@ describe('getFDAs', () => {
     const result = await getFDAs('svc', 'public', '/public');
 
     expect(result).toEqual([
-      { id: 'fda1', query: 'SELECT 1', status: 'completed' },
+      {
+        id: 'fda1',
+        datasourceId: 'default',
+        query: 'SELECT 1',
+        status: 'completed',
+      },
     ]);
   });
 });
@@ -2441,7 +2547,11 @@ describe('getFDA', () => {
       'fdaA',
       '/public',
     );
-    expect(result).toEqual({ query: 'SELECT 1', status: 'completed' });
+    expect(result).toEqual({
+      datasourceId: 'default',
+      query: 'SELECT 1',
+      status: 'completed',
+    });
   });
 
   test('throws FDANotFound when visibility is undefined and FDA does not exist', async () => {
@@ -2497,7 +2607,11 @@ describe('getFDA', () => {
       'fdaA',
       '/public',
     );
-    expect(result).toEqual({ query: 'SELECT 9', status: 'completed' });
+    expect(result).toEqual({
+      datasourceId: 'default',
+      query: 'SELECT 9',
+      status: 'completed',
+    });
   });
 });
 

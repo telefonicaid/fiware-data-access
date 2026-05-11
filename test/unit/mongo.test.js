@@ -43,6 +43,7 @@ async function loadMongoModule({ connectError } = {}) {
   collectionMock = {
     dropIndex: jest.fn().mockResolvedValue(undefined),
     createIndex: jest.fn(),
+    countDocuments: jest.fn().mockResolvedValue(0),
     insertOne: jest.fn().mockResolvedValue(undefined),
     updateOne: jest.fn().mockResolvedValue(undefined),
     findOneAndUpdate: jest.fn().mockResolvedValue({ id: 'prev' }),
@@ -146,6 +147,18 @@ describe('mongo utils', () => {
         progress: 100,
         lastFetch: null,
       }),
+    );
+  });
+
+  test('createFDAMongo stores datasourceId when it is the default datasource', async () => {
+    const { createFDAMongo, collectionMock } = await loadMongoModule();
+
+    await createFDAMongo('fdaA', 'SELECT 1', 'svc', 'public', '/sp', 'desc', {
+      type: 'none',
+    });
+
+    expect(collectionMock.insertOne).toHaveBeenCalledWith(
+      expect.objectContaining({ datasourceId: 'default' }),
     );
   });
 
@@ -316,6 +329,19 @@ describe('mongo utils', () => {
     await expect(regenerateFDA('svc', 'fdaA', '/sp')).rejects.toMatchObject({
       status: 409,
       type: 'InvalidState',
+    });
+  });
+
+  test('countFDAsUsingDatasource includes legacy FDAs without datasourceId for default', async () => {
+    const { countFDAsUsingDatasource, collectionMock } =
+      await loadMongoModule();
+
+    collectionMock.countDocuments.mockResolvedValueOnce(3);
+
+    await expect(countFDAsUsingDatasource('svc', 'default')).resolves.toBe(3);
+    expect(collectionMock.countDocuments).toHaveBeenCalledWith({
+      service: 'svc',
+      $or: [{ datasourceId: 'default' }, { datasourceId: { $exists: false } }],
     });
   });
 
