@@ -2474,6 +2474,7 @@ describe('getFDAs', () => {
     {
       _id: 'mongo1',
       fdaId: 'fda1',
+      datasourceId: 'default',
       service: 'svc',
       visibility: 'public',
       servicePath: '/public',
@@ -2533,6 +2534,7 @@ describe('getFDA', () => {
     mongoMocks.retrieveFDA.mockResolvedValue({
       _id: 'mongo1',
       fdaId: 'fdaA',
+      datasourceId: 'default',
       service: 'svc',
       servicePath: '/public',
       visibility: 'private',
@@ -2593,6 +2595,7 @@ describe('getFDA', () => {
     mongoMocks.retrieveFDA.mockResolvedValue({
       _id: 'mongo1',
       fdaId: 'fdaA',
+      datasourceId: 'default',
       service: 'svc',
       servicePath: '/public',
       visibility: 'public',
