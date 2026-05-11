@@ -579,6 +579,8 @@ JSON object following [Datasource payload datamodel](#datasource-payload-datamod
 
 Required body fields: `datasourceId`, `type`, `config`.
 
+Datasource creation validates the connection before persisting the datasource.
+
 _**Response code**_
 
 -   Successful operation uses `200 OK`.
@@ -680,6 +682,9 @@ _**Request payload**_
 
 Allowed body fields: `type`, `config`.
 
+When present, the resulting datasource configuration is validated by opening a PostgreSQL connection before the update
+is stored.
+
 _**Response code**_
 
 -   Successful operation uses `204 No Content`.
@@ -714,6 +719,9 @@ curl -i -X PUT http://localhost:8080/datasources/default \
 #### Delete Datasource `DELETE /datasources/{datasourceId}`
 
 Deletes one datasource from the provided `Fiware-Service`.
+
+Deletion is rejected with `409 Conflict` while any FDA in that service is still using the datasource. For datasource
+`default`, legacy FDAs without an explicit `datasourceId` are also considered users of that datasource.
 
 _**Request path parameters**_
 
@@ -993,13 +1001,15 @@ _**Response payload**_
 
 _**Example Response:**_
 
-```
-HTTP/1.1 201 Created
+```json
+HTTP/1.1 202 Accepted
 X-Powered-By: Express
-Content-Type: text/plain; charset=utf-8
-Content-Length: 7
+Content-Type: application/json; charset=utf-8
 
-Created
+{
+    "id": "fda_alarms",
+    "status": "pending"
+}
 ```
 
 #### Get FDA `GET /{visibility}/fdas/{fdaId}`
@@ -1088,6 +1098,10 @@ _**Request path parameters**_
 _**Request query parameters**_
 
 None so far
+
+_**Request payload**_
+
+None.
 
 _**Request headers**_
 
