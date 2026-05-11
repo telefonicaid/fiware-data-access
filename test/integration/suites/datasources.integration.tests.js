@@ -198,7 +198,7 @@ export function registerDatasourcesIntegrationTests({
     expect(missingRes.json.error).toBe('DatasourceNotFound');
   });
 
-  test('cached FDA fails without default datasource, fresh FDA fails on read, and both flows work after creating default', async () => {
+  test('cached and fresh FDAs fail without default datasource, and both flows work after creating default', async () => {
     const baseUrl = getBaseUrl();
     const cachedFdaId = 'fda_ds_requires_default_cached';
     const freshFdaId = 'fda_ds_requires_default_fresh';
@@ -258,19 +258,8 @@ export function registerDatasourcesIntegrationTests({
       },
     });
 
-    expect(createFreshWithoutDefault.status).toBe(202);
-
-    const freshReadWithoutDefault = await httpReq({
-      method: 'GET',
-      url: `${baseUrl}/${visibility}/fdas/${freshFdaId}/data`,
-      headers: {
-        'Fiware-Service': service,
-        'Fiware-ServicePath': servicePath,
-      },
-    });
-
-    expect(freshReadWithoutDefault.status).toBe(404);
-    expect(freshReadWithoutDefault.json.error).toBe('DatasourceNotFound');
+    expect(createFreshWithoutDefault.status).toBe(404);
+    expect(createFreshWithoutDefault.json.error).toBe('DatasourceNotFound');
 
     const createDefault = await httpReq({
       method: 'POST',
@@ -311,6 +300,24 @@ export function registerDatasourcesIntegrationTests({
     });
 
     expect(createCachedWithDefault.status).toBe(202);
+
+    const createFreshWithDefault = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/${visibility}/fdas`,
+      headers: {
+        'Content-Type': 'application/json',
+        'Fiware-Service': service,
+        'Fiware-ServicePath': servicePath,
+      },
+      body: {
+        id: freshFdaId,
+        query: 'SELECT id, name, age FROM public.users ORDER BY id',
+        description: 'fresh with default datasource',
+        cached: false,
+      },
+    });
+
+    expect(createFreshWithDefault.status).toBe(202);
 
     await waitUntilFDACompleted({
       baseUrl,
