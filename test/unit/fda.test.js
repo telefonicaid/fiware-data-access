@@ -155,6 +155,7 @@ const {
   updateFDA,
   processFDAAsync,
   deleteFDA,
+  deleteDA,
   getDA,
   putDA,
   getFDAs,
@@ -393,6 +394,66 @@ describe('fda fresh query execution', () => {
         format: 'ndjson',
       }),
     ).rejects.toThrow('pg connection refused');
+  });
+
+  test('rejects fresh FDA queries for unsupported datasource types', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      query: 'SELECT 1',
+      visibility: 'private',
+      servicePath: '/servicepath',
+      cached: false,
+      datasourceId: 'mongo-ds',
+    });
+    mongoMocks.retrieveDatasource.mockResolvedValue({
+      datasourceId: 'mongo-ds',
+      type: 'mongodb',
+      config: {},
+    });
+
+    await expect(
+      executeFDAQuery({
+        service: 'svc',
+        visibility: 'private',
+        servicePath: '/servicepath',
+        fdaId: 'fdaA',
+      }),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'UnsupportedDatasourceType',
+    });
+  });
+
+  test('closes direct FDA fresh cursor when request close event is triggered', async () => {
+    const { req, res, reqHandlers } = createReqRes();
+    const cursorReader = {
+      readNextChunk: jest
+        .fn()
+        .mockResolvedValueOnce([{ id: 1 }])
+        .mockResolvedValueOnce([]),
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      query: 'SELECT 1 AS id',
+      visibility: 'private',
+      servicePath: '/servicepath',
+      cached: false,
+      datasourceId: 'default',
+    });
+    pgMocks.createPgCursorReader.mockResolvedValue(cursorReader);
+
+    await executeFDAQueryStream({
+      service: 'svc',
+      visibility: 'private',
+      servicePath: '/servicepath',
+      fdaId: 'fdaA',
+      req,
+      res,
+      format: 'ndjson',
+    });
+
+    await reqHandlers.close?.();
+
+    expect(cursorReader.close).toHaveBeenCalled();
   });
 
   test('throws DaNotFound when DA does not exist', async () => {
@@ -1618,6 +1679,28 @@ describe('fetchFDA', () => {
       expect.any(Object),
       expect.any(Object),
     );
+    expect(agenda.every).toHaveBeenCalledWith(
+      '0 0 * * *',
+      'clean-partition',
+      {
+        fdaId: 'fda1',
+        service: 'svc',
+        servicePath: '/servicepath',
+        windowSize: 'day',
+        objStgConf: {
+          partition: 'day',
+        },
+      },
+      {
+        skipImmediate: true,
+        unique: {
+          name: 'clean-partition',
+          'data.service': 'svc',
+          'data.fdaId': 'fda1',
+          'data.servicePath': '/servicepath',
+        },
+      },
+    );
   });
 
   test('fetchFDA throws when servicePath is missing', async () => {
@@ -2002,6 +2085,39 @@ describe('deleteFDA', () => {
     });
 
     expect(awsMocks.getS3Client).not.toHaveBeenCalled();
+  });
+
+  test('deleteDA removes access without accessibility lookup when scope is omitted', async () => {
+    await deleteDA('svc', 'fdaA', 'daA');
+
+    expect(mongoMocks.retrieveFDA).not.toHaveBeenCalled();
+    expect(mongoMocks.removeDA).toHaveBeenCalledWith(
+      'svc',
+      'fdaA',
+      'daA',
+      undefined,
+    );
+  });
+
+  test('deleteDA validates accessibility when visibility and servicePath are provided', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      visibility: 'private',
+      servicePath: '/servicepath',
+    });
+
+    await deleteDA('svc', 'fdaA', 'daA', 'private', '/servicepath');
+
+    expect(mongoMocks.retrieveFDA).toHaveBeenCalledWith(
+      'svc',
+      'fdaA',
+      '/servicepath',
+    );
+    expect(mongoMocks.removeDA).toHaveBeenCalledWith(
+      'svc',
+      'fdaA',
+      'daA',
+      '/servicepath',
+    );
   });
 });
 

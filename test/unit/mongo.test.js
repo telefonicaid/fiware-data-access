@@ -149,6 +149,112 @@ describe('mongo utils', () => {
     );
   });
 
+  test('createDatasource maps duplicate keys to DuplicatedKey', async () => {
+    const { createDatasource, collectionMock } = await loadMongoModule();
+
+    collectionMock.insertOne.mockRejectedValueOnce({ code: 11000 });
+
+    await expect(
+      createDatasource('svc', 'default', 'postgres', { host: 'db' }),
+    ).rejects.toMatchObject({
+      status: 409,
+      type: 'DuplicatedKey',
+    });
+  });
+
+  test('createDatasource wraps unexpected insert errors', async () => {
+    const { createDatasource, collectionMock } = await loadMongoModule();
+
+    collectionMock.insertOne.mockRejectedValueOnce(new Error('insert ds fail'));
+
+    await expect(
+      createDatasource('svc', 'default', 'postgres', { host: 'db' }),
+    ).rejects.toMatchObject({
+      status: 500,
+      type: 'MongoDBServerError',
+    });
+  });
+
+  test('retrieveDatasources wraps datasource query errors', async () => {
+    const { retrieveDatasources, collectionMock } = await loadMongoModule();
+
+    collectionMock.find.mockImplementationOnce(() => {
+      throw new Error('find datasources fail');
+    });
+
+    await expect(retrieveDatasources('svc')).rejects.toMatchObject({
+      status: 500,
+      type: 'MongoDBServerError',
+    });
+  });
+
+  test('retrieveDatasource wraps datasource lookup errors', async () => {
+    const { retrieveDatasource, collectionMock } = await loadMongoModule();
+
+    collectionMock.findOne.mockRejectedValueOnce(new Error('lookup fail'));
+
+    await expect(retrieveDatasource('svc', 'default')).rejects.toMatchObject({
+      status: 500,
+      type: 'MongoDBServerError',
+    });
+  });
+
+  test('updateDatasource returns early when no fields are provided', async () => {
+    const { updateDatasource, collectionMock } = await loadMongoModule();
+
+    await updateDatasource('svc', 'default', undefined, undefined);
+
+    expect(collectionMock.updateOne).not.toHaveBeenCalled();
+  });
+
+  test('updateDatasource throws DatasourceNotFound when no datasource matches', async () => {
+    const { updateDatasource, collectionMock } = await loadMongoModule();
+
+    collectionMock.updateOne.mockResolvedValueOnce({ matchedCount: 0 });
+
+    await expect(
+      updateDatasource('svc', 'missing', 'postgres', { host: 'db' }),
+    ).rejects.toMatchObject({
+      status: 404,
+      type: 'DatasourceNotFound',
+    });
+  });
+
+  test('updateDatasource wraps unexpected update errors', async () => {
+    const { updateDatasource, collectionMock } = await loadMongoModule();
+
+    collectionMock.updateOne.mockRejectedValueOnce(new Error('update ds fail'));
+
+    await expect(
+      updateDatasource('svc', 'default', 'postgres', { host: 'db' }),
+    ).rejects.toMatchObject({
+      status: 500,
+      type: 'MongoDBServerError',
+    });
+  });
+
+  test('removeDatasource throws DatasourceNotFound when no datasource matches', async () => {
+    const { removeDatasource, collectionMock } = await loadMongoModule();
+
+    collectionMock.deleteOne.mockResolvedValueOnce({ deletedCount: 0 });
+
+    await expect(removeDatasource('svc', 'missing')).rejects.toMatchObject({
+      status: 404,
+      type: 'DatasourceNotFound',
+    });
+  });
+
+  test('removeDatasource wraps delete errors', async () => {
+    const { removeDatasource, collectionMock } = await loadMongoModule();
+
+    collectionMock.deleteOne.mockRejectedValueOnce(new Error('delete fail'));
+
+    await expect(removeDatasource('svc', 'default')).rejects.toMatchObject({
+      status: 500,
+      type: 'MongoDBServerError',
+    });
+  });
+
   test('updateFDAStatus includes optional error in update payload', async () => {
     const { updateFDAStatus, collectionMock } = await loadMongoModule();
 
@@ -186,6 +292,30 @@ describe('mongo utils', () => {
 
     await expect(regenerateFDA('svcA', 'fdaZ', '/sp')).rejects.toMatchObject({
       message: 'FDA fdaZ not found in service svcA and servicePath /sp',
+    });
+  });
+
+  test('regenerateFDA throws AlreadyFetching when FDA is already fetching', async () => {
+    const { regenerateFDA, collectionMock } = await loadMongoModule();
+
+    collectionMock.findOneAndUpdate.mockResolvedValueOnce(null);
+    collectionMock.findOne.mockResolvedValueOnce({ status: 'fetching' });
+
+    await expect(regenerateFDA('svc', 'fdaA', '/sp')).rejects.toMatchObject({
+      status: 409,
+      type: 'AlreadyFetching',
+    });
+  });
+
+  test('regenerateFDA throws InvalidState for non-regenerable statuses', async () => {
+    const { regenerateFDA, collectionMock } = await loadMongoModule();
+
+    collectionMock.findOneAndUpdate.mockResolvedValueOnce(null);
+    collectionMock.findOne.mockResolvedValueOnce({ status: 'transforming' });
+
+    await expect(regenerateFDA('svc', 'fdaA', '/sp')).rejects.toMatchObject({
+      status: 409,
+      type: 'InvalidState',
     });
   });
 
@@ -302,6 +432,74 @@ describe('mongo utils', () => {
     await expect(removeDA('svc', 'fdaA', 'daA', '/sp')).rejects.toMatchObject({
       status: 500,
       type: 'MongoDBServerError',
+    });
+  });
+
+  test('getOperationalCollectionsSnapshot summarizes collection counters', async () => {
+    const { getOperationalCollectionsSnapshot } = await loadMongoModule();
+
+    const fdasCollectionMock = {
+      countDocuments: jest.fn().mockResolvedValueOnce(3),
+      aggregate: jest
+        .fn()
+        .mockReturnValueOnce({
+          toArray: jest.fn().mockResolvedValue([
+            { _id: 'completed', count: 2 },
+            { _id: 'failed', count: 1 },
+          ]),
+        })
+        .mockReturnValueOnce({
+          toArray: jest.fn().mockResolvedValue([
+            {
+              _id: { service: 'svc', servicePath: '/sp' },
+              count: 3,
+            },
+          ]),
+        })
+        .mockReturnValueOnce({
+          toArray: jest.fn().mockResolvedValue([{ _id: null, total: 4 }]),
+        }),
+    };
+    const agendaCollectionMock = {
+      countDocuments: jest
+        .fn()
+        .mockResolvedValueOnce(7)
+        .mockResolvedValueOnce(2)
+        .mockResolvedValueOnce(1),
+      aggregate: jest.fn().mockReturnValue({
+        toArray: jest.fn().mockResolvedValue([
+          { _id: 'refresh-fda', count: 5 },
+          { _id: 'clean-partition', count: 2 },
+        ]),
+      }),
+    };
+    dbMock.collection.mockImplementation((name) => {
+      if (name === 'fdas') {
+        return fdasCollectionMock;
+      }
+      if (name === 'agendaJobs') {
+        return agendaCollectionMock;
+      }
+      return collectionMock;
+    });
+
+    await expect(getOperationalCollectionsSnapshot()).resolves.toEqual({
+      fdasTotal: 3,
+      dasTotal: 4,
+      fdasByStatus: [
+        { status: 'completed', count: 2 },
+        { status: 'failed', count: 1 },
+      ],
+      fdasByServiceAndPath: [{ service: 'svc', servicePath: '/sp', count: 3 }],
+      agenda: {
+        total: 7,
+        failed: 2,
+        locked: 1,
+        byName: [
+          { name: 'refresh-fda', count: 5 },
+          { name: 'clean-partition', count: 2 },
+        ],
+      },
     });
   });
 });
