@@ -31,6 +31,7 @@ const uri = config.mongo.uri;
 const client = new MongoClient(uri);
 const logger = getBasicLogger();
 let isConnected = false;
+const DEFAULT_DATASOURCE_ID = 'default';
 
 async function getDb() {
   if (!isConnected) {
@@ -198,6 +199,29 @@ export async function removeDatasource(service, datasourceId) {
   }
 }
 
+export async function countFDAsUsingDatasource(service, datasourceId) {
+  const collection = await getCollection();
+  const datasourceFilter =
+    datasourceId === DEFAULT_DATASOURCE_ID
+      ? {
+          $or: [
+            { datasourceId: DEFAULT_DATASOURCE_ID },
+            { datasourceId: { $exists: false } },
+          ],
+        }
+      : { datasourceId };
+
+  try {
+    return await collection.countDocuments({ service, ...datasourceFilter });
+  } catch (e) {
+    throw new FDAError(
+      500,
+      'MongoDBServerError',
+      `Error checking datasource usage for ${datasourceId} in service ${service}: ${e}`,
+    );
+  }
+}
+
 export async function disconnectClient() {
   await client.close();
   logger.debug('MongoDB connection closed');
@@ -214,7 +238,7 @@ export async function createFDAMongo(
   timeColumn,
   objStgConf,
   cached = true,
-  datasourceId = 'default',
+  datasourceId = DEFAULT_DATASOURCE_ID,
 ) {
   logger.debug({ fdaId, query, service, description }, '[DEBUG]: createFDA');
   const collection = await getCollection();

@@ -61,6 +61,7 @@ import {
   retrieveDatasource,
   updateDatasource,
   removeDatasource,
+  countFDAsUsingDatasource,
 } from './utils/mongo.js';
 import {
   normalizeForSerialization,
@@ -149,6 +150,15 @@ export async function updateDatasourceForService(
 }
 
 export async function deleteDatasourceForService(service, datasourceId) {
+  const usedBy = await countFDAsUsingDatasource(service, datasourceId);
+  if (usedBy > 0) {
+    throw new FDAError(
+      409,
+      'DatasourceInUse',
+      `Datasource ${datasourceId} is being used by ${usedBy} FDA(s) in service ${service}`,
+    );
+  }
+
   await removeDatasource(service, datasourceId);
 }
 export const VALID_VISIBILITIES = ['public', 'private'];
