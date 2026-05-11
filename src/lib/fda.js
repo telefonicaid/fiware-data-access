@@ -83,6 +83,16 @@ const FRESH_CURSOR_BATCH_SIZE = 250;
 
 const DEFAULT_DATASOURCE_ID = 'default';
 
+function assertSupportedDatasourceType(type) {
+  if (type !== 'postgres') {
+    throw new FDAError(
+      400,
+      'UnsupportedDatasourceType',
+      `Datasource type ${type} is not supported for this operation`,
+    );
+  }
+}
+
 async function resolveDatasourceCredentials(service, datasourceId) {
   const ds = await retrieveDatasource(service, datasourceId);
   if (!ds) {
@@ -818,6 +828,8 @@ export async function fetchFDA(
       : query;
   const normalizedVisibility = normalizeVisibility(visibility);
   const normalizedServicePath = normalizeServicePath(servicePath);
+  const datasource = await getDatasourceForService(service, datasourceId);
+  assertSupportedDatasourceType(datasource.type);
 
   await createFDAMongo(
     fdaId,
