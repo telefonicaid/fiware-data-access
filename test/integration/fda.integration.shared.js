@@ -126,6 +126,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       console.log('[TEST] Mongo:', mongoUri);
       console.log('[TEST] Postgres:', `${pgHost}:${pgPort}`);
 
+      // Health Mongo
       {
         const mc = new MongoClient(mongoUri, {
           serverSelectionTimeoutMS: 10_000,
@@ -136,6 +137,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
         console.log('[TEST] Mongo OK');
       }
 
+      // Health MinIO + bucket
       {
         const s3 = new S3Client({
           endpoint: minioUrl,
@@ -152,6 +154,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
         console.log('[TEST] MinIO OK');
       }
 
+      // Health Postgres + seed
       {
         const pgClient = new Client({
           host: pgHost,
