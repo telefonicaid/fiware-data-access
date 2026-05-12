@@ -256,8 +256,8 @@ Each document represents one scheduled or running job and includes:
 -   FDA creation **does not create buckets automatically**; they must exist beforehand
 -   DAs query the FDA Parquet files directly via DuckDB
 -   Metadata in MongoDB ensures unique combination of `fdaId` and `service`
--   Datasources are managed per `Fiware-Service`; deleting a datasource referenced by FDAs is allowed, and dependent FDA
-    operations fail later when datasource resolution is required
+-   Datasources are managed per `Fiware-Service`; deleting a datasource referenced by at least one FDA is blocked with
+    `DatasourceInUse`
 
 ---
 
