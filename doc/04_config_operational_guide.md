@@ -81,13 +81,15 @@ Important behavior:
 -   If a referenced datasource does not exist, FDA operations fail with `DatasourceNotFound`.
 -   `datasourceId` in FDA creation is optional; if omitted, FDA uses `default`.
 
-Operational note about `DatasourceNotFound`:
+#### Operational note about DatasourceNotFound
 
 -   In normal API-only operation, datasource deletion is protected by `DatasourceInUse`, so referenced datasources
     cannot be removed through the API.
 -   In practice, `DatasourceNotFound` usually appears in two situations:
     1. Legacy/inconsistent data where an FDA references a datasource that is not present in the current deployment.
     2. Out-of-band datasource removal (for example direct MongoDB changes outside the API lifecycle).
+
+#### Postgres Pool config
 
 Environment variables control **pool behavior**:
 
