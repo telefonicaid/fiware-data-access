@@ -1,3 +1,3 @@
-Fix: reject manual refresh (`PUT /{visibility}/fdas/{fdaId}`) for fresh-only FDAs (#163)
+- Fix: reject manual refresh (`PUT /{visibility}/fdas/{fdaId}`) for fresh-only FDAs (#163)
 - Add: datasource provisioning and multi-datasource support. Global per-service datasource CRUD API, datasource validation on create/update, datasource deletion guard, FDA datasource binding with optional default, mandatory connection verification (#134)
 - Remove: PostgreSQL connection env vars (`FDA_PG_USER`,`FDA_PG_PASSWORD`.`FDA_PG_HOST`.`FDA_PG_PORT`) in favor of datasource-managed credentials (#134)
