@@ -38,8 +38,8 @@ pg.types.setTypeParser(pg.types.builtins.INT8, (value) =>
 const logger = getBasicLogger();
 const pools = new Map();
 
-function getPoolKey(user, host, port, database) {
-  return `${user}@${host}:${port}/${database}`;
+function getPoolKey(user, password, host, port, database) {
+  return JSON.stringify({ user, password, host, port, database });
 }
 
 function clearPoolIdleTimer(entry) {
@@ -87,7 +87,7 @@ function schedulePoolIdleClose(key) {
 }
 
 export function getPgPool(user, password, host, port, database) {
-  const key = getPoolKey(user, host, port, database);
+  const key = getPoolKey(user, password, host, port, database);
 
   if (pools.has(key)) {
     const existing = pools.get(key);
@@ -150,21 +150,17 @@ export function getPgClient(user, password, host, port, database) {
   });
 }
 
-export async function uploadTable(s3Client, bucket, database, query, path) {
+export async function uploadTable(
+  s3Client,
+  bucket,
+  pgCredentials,
+  query,
+  path,
+) {
+  const { user, password, host, port, database } = pgCredentials;
   logger.debug({ bucket, database, query, path }, '[DEBUG]: uploadTable');
-  const key = getPoolKey(
-    config.pg.usr,
-    config.pg.host,
-    config.pg.port,
-    database,
-  );
-  const pgPool = getPgPool(
-    config.pg.usr,
-    config.pg.pass,
-    config.pg.host,
-    config.pg.port,
-    database,
-  );
+  const key = getPoolKey(user, password, host, port, database);
+  const pgPool = getPgPool(user, password, host, port, database);
   const pgClient = await pgPool.connect();
 
   const baseQuery = `COPY (${query}) TO STDOUT WITH CSV HEADER`;
@@ -199,20 +195,10 @@ export async function uploadTable(s3Client, bucket, database, query, path) {
   }
 }
 
-export async function runPgQuery(database, text, values) {
-  const key = getPoolKey(
-    config.pg.usr,
-    config.pg.host,
-    config.pg.port,
-    database,
-  );
-  const pgPool = getPgPool(
-    config.pg.usr,
-    config.pg.pass,
-    config.pg.host,
-    config.pg.port,
-    database,
-  );
+export async function runPgQuery(pgCredentials, text, values) {
+  const { user, password, host, port, database } = pgCredentials;
+  const key = getPoolKey(user, password, host, port, database);
+  const pgPool = getPgPool(user, password, host, port, database);
 
   const pgClient = await pgPool.connect();
 
@@ -234,20 +220,15 @@ export async function runPgQuery(database, text, values) {
   }
 }
 
-export async function createPgCursorReader(database, text, values, batchSize) {
-  const key = getPoolKey(
-    config.pg.usr,
-    config.pg.host,
-    config.pg.port,
-    database,
-  );
-  const pgPool = getPgPool(
-    config.pg.usr,
-    config.pg.pass,
-    config.pg.host,
-    config.pg.port,
-    database,
-  );
+export async function createPgCursorReader(
+  pgCredentials,
+  text,
+  values,
+  batchSize,
+) {
+  const { user, password, host, port, database } = pgCredentials;
+  const key = getPoolKey(user, password, host, port, database);
+  const pgPool = getPgPool(user, password, host, port, database);
 
   let pgClient;
   let cursor;

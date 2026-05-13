@@ -42,6 +42,7 @@ import { MongoClient } from 'mongodb';
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
+import { registerDatasourcesIntegrationTests } from './suites/datasources.integration.tests.js';
 import { registerPlatformIntegrationTests } from './suites/platform.integration.tests.js';
 import { registerSlidingWindowsIntegrationTests } from './suites/slidingWindows.integration.tests.js';
 import { registerFdaCreationIntegrationTests } from './suites/fdaCreation.integration.tests.js';
@@ -315,6 +316,17 @@ export function runFDAIntegrationSuite({ mode, label }) {
       appProc = undefined;
     }
 
+    registerDatasourcesIntegrationTests({
+      getBaseUrl: () => baseUrl,
+      service,
+      servicePath,
+      visibility,
+      getPgHost: () => pgHost,
+      getPgPort: () => pgPort,
+      httpReq,
+      waitUntilFDACompleted,
+    });
+
     registerPlatformIntegrationTests({
       getAppPort: () => appPort,
       httpReq,
@@ -517,7 +529,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
           createDa.json ?? createDa.text,
         );
       }
-      expect(createDa.status).toBe(201);
+      expect(createDa.status).toBe(200);
 
       const queryRes = await httpReq({
         method: 'GET',
@@ -629,7 +641,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
         },
       });
 
-      expect(createRes.status).toBe(201);
+      expect(createRes.status).toBe(200);
 
       // Execute with minAge=25 (should return 2 rows)
       const firstQuery = await httpReq({
@@ -718,7 +730,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
         },
       });
 
-      expect(createDa.status).toBe(201);
+      expect(createDa.status).toBe(200);
 
       const createFreshFda = await httpReq({
         method: 'POST',
@@ -1089,7 +1101,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
           },
         });
 
-        expect(createDa.status).toBe(201);
+        expect(createDa.status).toBe(200);
 
         const cachedJson = await httpReq({
           method: 'GET',
@@ -1278,7 +1290,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
         },
       });
 
-      expect(createDa.status).toBe(201);
+      expect(createDa.status).toBe(200);
 
       const res = await httpFormReq({
         method: 'POST',
@@ -1374,7 +1386,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
         },
       });
 
-      expect(createDa.status).toBe(201);
+      expect(createDa.status).toBe(200);
 
       const mismatchRes = await httpFormReq({
         method: 'POST',
@@ -1539,7 +1551,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
           },
         });
 
-        expect(createDa.status).toBe(201);
+        expect(createDa.status).toBe(200);
 
         const jsonRes = await httpFormReq({
           method: 'POST',

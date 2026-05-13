@@ -79,7 +79,7 @@ export function registerDaDataQueriesIntegrationTests({
         },
       });
 
-      if (createDa.status !== 201) {
+      if (createDa.status !== 200) {
         throw new Error(
           `Failed to create fixture DA: ${createDa.status} ${JSON.stringify(createDa.json)}`,
         );
@@ -199,7 +199,7 @@ export function registerDaDataQueriesIntegrationTests({
         },
       });
 
-      expect(createDa.status).toBe(201);
+      expect(createDa.status).toBe(200);
 
       const res = await httpReqRaw({
         method: 'GET',
@@ -271,7 +271,7 @@ export function registerDaDataQueriesIntegrationTests({
         },
       });
 
-      expect(createDa.status).toBe(201);
+      expect(createDa.status).toBe(200);
 
       const res = await httpReqRaw({
         method: 'GET',
@@ -341,7 +341,7 @@ export function registerDaDataQueriesIntegrationTests({
         },
       });
 
-      expect(createDa.status).toBe(201);
+      expect(createDa.status).toBe(200);
 
       const res = await httpReq({
         method: 'GET',

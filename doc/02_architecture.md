@@ -8,6 +8,20 @@ This document describes the system architecture of **FIWARE Data Access**, inclu
 
 This section explains what an **FDA** and a **DA / CDA** are in the context of the FIWARE Data Access API.
 
+### Datasource
+
+A **Datasource** represents the connection definition FDA uses to access source systems.
+
+In the current implementation:
+
+-   Datasources are scoped by `Fiware-Service` and identified by `datasourceId`
+-   FDAs store `datasourceId` and resolve credentials at execution time
+-   Supported datasource type is currently `postgres`
+
+In simple terms:
+
+> **A datasource is the reusable connection profile used by FDAs to fetch fresh/source data.**
+
 ### FDA
 
 An **FDA** represents a **materialized dataset** in the system. It:
@@ -107,15 +121,16 @@ The **FIWARE Data Access** system consists of:
 -   **Node.js FDA server**: handles API requests, processes FDA and DA objects, orchestrates data flow
 -   **PostgreSQL**: source database for FDAs
 -   **MinIO**: object storage for Parquet files
--   **MongoDB**: stores metadata about FDAs and DAs
+-   **MongoDB**: stores metadata about FDAs, DAs, and datasources
 -   **DuckDB**: executes queries over Parquet files stored in MinIO
 
 Data flow:
 
 1. FDA is created from PostgreSQL → CSV → Parquet → uploaded to MinIO
 2. Metadata about the FDA and its DAs is stored in MongoDB
-3. DA queries are executed on Parquet datasets using DuckDB
-4. Results are returned as JSON via the API
+3. FDA source/fresh execution resolves datasource credentials from MongoDB by `service + datasourceId`
+4. DA queries are executed on Parquet datasets using DuckDB
+5. Results are returned as JSON via the API
 
 Fresh mode:
 
@@ -129,7 +144,7 @@ Fresh mode:
 
 ## Database Model
 
-`Fiware-Data-Access` uses a single MongoDB collection named **fdas** to manage all FDA and DA metadata.
+`Fiware-Data-Access` uses MongoDB collections for FDA/DA metadata and datasource provisioning.
 
 ### FDAs collection
 
@@ -147,6 +162,7 @@ Each document corresponds to one FDA:
 -   **status**: current execution status (`fetching`, `transforming`, `uploading`, `completed`, `failed`)
 -   **progress**: execution progress percentage (0–100)
 -   **lastFetch**: timestamp of the last fetch (ISO date)
+-   **datasourceId**: datasource identifier used to resolve source credentials (default `default` when omitted)
 
 Each DA contains:
 
@@ -183,6 +199,33 @@ Each DA contains:
 }
 ```
 
+### Datasources collection
+
+Each document corresponds to one datasource definition for one service:
+
+-   **service**: FIWARE service (`fiware-service`) name
+-   **datasourceId**: datasource identifier (unique within the service)
+-   **type**: datasource type (currently `postgres`)
+-   **config**: connection settings (for postgres: `user`, `password`, `host`, `port`, `database`)
+
+#### Example MongoDB datasource document
+
+```json
+{
+    "_id": "6960aa3cc0d41d928f5e6b99",
+    "service": "fiwareService",
+    "datasourceId": "default",
+    "type": "postgres",
+    "config": {
+        "user": "postgres",
+        "password": "postgres",
+        "host": "localhost",
+        "port": 5432,
+        "database": "fiwareService"
+    }
+}
+```
+
 ### Agenda Jobs Collection
 
 When automatic refresh or manual regeneration is enabled, the system uses Agenda with MongoDB as a backend.
@@ -213,6 +256,8 @@ Each document represents one scheduled or running job and includes:
 -   FDA creation **does not create buckets automatically**; they must exist beforehand
 -   DAs query the FDA Parquet files directly via DuckDB
 -   Metadata in MongoDB ensures unique combination of `fdaId` and `service`
+-   Datasources are managed per `Fiware-Service`; deleting a datasource referenced by at least one FDA is blocked with
+    `DatasourceInUse`
 
 ---
 
