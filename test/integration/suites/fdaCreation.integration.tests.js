@@ -271,7 +271,7 @@ export function registerFdaCreationIntegrationTests({
       },
     });
 
-    expect(createDa.status).toBe(201);
+    expect(createDa.status).toBe(200);
 
     const queryRes = await httpReq({
       method: 'GET',

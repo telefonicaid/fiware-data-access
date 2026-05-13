@@ -87,10 +87,6 @@ await jest.unstable_mockModule('../../src/lib/utils/logger.js', () => ({
 await jest.unstable_mockModule('../../src/lib/fdaConfig.js', () => ({
   config: {
     pg: {
-      usr: 'pg-user',
-      pass: 'pg-pass',
-      host: 'pg-host',
-      port: 5432,
       pool: {
         max: 10,
         idleTimeoutMillis: 10000,
@@ -145,7 +141,14 @@ describe('pg utils', () => {
   test('runPgQuery returns rows on success', async () => {
     currentClient.query.mockResolvedValue({ rows: [{ id: 1 }] });
 
-    const rows = await runPgQuery('svc_db', 'SELECT 1', []);
+    const creds = {
+      user: 'u',
+      password: 'p',
+      host: 'h',
+      port: 5432,
+      database: 'svc_db',
+    };
+    const rows = await runPgQuery(creds, 'SELECT 1', []);
 
     expect(currentPool.connect).toHaveBeenCalledTimes(1);
     expect(currentClient.query).toHaveBeenCalledWith('SELECT 1', []);
@@ -156,9 +159,14 @@ describe('pg utils', () => {
   test('runPgQuery wraps non-FDA errors', async () => {
     currentClient.query.mockRejectedValue(new Error('query exploded'));
 
-    await expect(
-      runPgQuery('svc_db', 'SELECT bad()', []),
-    ).rejects.toMatchObject({
+    const creds = {
+      user: 'u',
+      password: 'p',
+      host: 'h',
+      port: 5432,
+      database: 'svc_db',
+    };
+    await expect(runPgQuery(creds, 'SELECT bad()', [])).rejects.toMatchObject({
       status: 500,
       type: 'PostgresServerError',
       message: 'Error running fresh query: query exploded',
@@ -171,7 +179,14 @@ describe('pg utils', () => {
     const fdaError = new FDAError(429, 'TooManyFreshQueries', 'limit');
     currentClient.query.mockRejectedValue(fdaError);
 
-    await expect(runPgQuery('svc_db', 'SELECT 1', [])).rejects.toBe(fdaError);
+    const creds = {
+      user: 'u',
+      password: 'p',
+      host: 'h',
+      port: 5432,
+      database: 'svc_db',
+    };
+    await expect(runPgQuery(creds, 'SELECT 1', [])).rejects.toBe(fdaError);
 
     expect(currentClient.release).toHaveBeenCalledTimes(1);
   });
@@ -183,7 +198,14 @@ describe('pg utils', () => {
     };
     currentClient.query.mockReturnValue(cursorObject);
 
-    const reader = await createPgCursorReader('svc_db', 'SELECT id', [9], 100);
+    const creds = {
+      user: 'u',
+      password: 'p',
+      host: 'h',
+      port: 5432,
+      database: 'svc_db',
+    };
+    const reader = await createPgCursorReader(creds, 'SELECT id', [9], 100);
 
     await expect(reader.readNextChunk()).resolves.toEqual([{ id: 100 }]);
 
@@ -198,8 +220,15 @@ describe('pg utils', () => {
   test('createPgCursorReader wraps non-FDA errors', async () => {
     currentPool.connect.mockRejectedValue(new Error('connect exploded'));
 
+    const creds = {
+      user: 'u',
+      password: 'p',
+      host: 'h',
+      port: 5432,
+      database: 'svc_db',
+    };
     await expect(
-      createPgCursorReader('svc_db', 'SELECT 1', [], 10),
+      createPgCursorReader(creds, 'SELECT 1', [], 10),
     ).rejects.toMatchObject({
       status: 500,
       type: 'PostgresServerError',
@@ -219,8 +248,15 @@ describe('pg utils', () => {
     };
     newUploadMock.mockReturnValue(uploader);
 
+    const creds = {
+      user: 'u',
+      password: 'p',
+      host: 'h',
+      port: 5432,
+      database: 'svc_db',
+    };
     await expect(
-      uploadTable({}, 'bucketA', 'svc_db', 'SELECT * FROM t', 'path/file'),
+      uploadTable({}, 'bucketA', creds, 'SELECT * FROM t', 'path/file'),
     ).rejects.toMatchObject({
       status: 503,
       type: 'UploadError',
@@ -247,7 +283,14 @@ describe('pg utils', () => {
     };
     newUploadMock.mockReturnValue(uploader);
 
-    await uploadTable({}, 'bucketA', 'svc_db', 'SELECT * FROM t', 'path/file');
+    const creds = {
+      user: 'u',
+      password: 'p',
+      host: 'h',
+      port: 5432,
+      database: 'svc_db',
+    };
+    await uploadTable({}, 'bucketA', creds, 'SELECT * FROM t', 'path/file');
 
     expect(loggerMock.debug).toHaveBeenCalledWith(
       'Upload completed successfully',
@@ -259,8 +302,22 @@ describe('pg utils', () => {
   test('closePgPools closes all created pools', async () => {
     currentClient.query.mockResolvedValue({ rows: [] });
 
-    await runPgQuery('svc_db_1', 'SELECT 1', []);
-    await runPgQuery('svc_db_2', 'SELECT 1', []);
+    const creds1 = {
+      user: 'u',
+      password: 'p',
+      host: 'h',
+      port: 5432,
+      database: 'svc_db_1',
+    };
+    const creds2 = {
+      user: 'u',
+      password: 'p',
+      host: 'h',
+      port: 5432,
+      database: 'svc_db_2',
+    };
+    await runPgQuery(creds1, 'SELECT 1', []);
+    await runPgQuery(creds2, 'SELECT 1', []);
     await closePgPools();
 
     expect(poolCtorMock).toHaveBeenCalledTimes(2);
@@ -274,7 +331,14 @@ describe('pg utils', () => {
     currentPool.idleCount = 1;
     currentPool.waitingCount = 0;
 
-    await runPgQuery('svc_db_idle', 'SELECT 1', []);
+    const creds = {
+      user: 'u',
+      password: 'p',
+      host: 'h',
+      port: 5432,
+      database: 'svc_db_idle',
+    };
+    await runPgQuery(creds, 'SELECT 1', []);
 
     await jest.advanceTimersByTimeAsync(60);
 
@@ -291,7 +355,14 @@ describe('pg utils', () => {
     const previousTimeout = config.pg.pool.databaseIdleTimeoutMillis;
     config.pg.pool.databaseIdleTimeoutMillis = 0;
 
-    await runPgQuery('svc_db_no_idle_close', 'SELECT 1', []);
+    const creds = {
+      user: 'u',
+      password: 'p',
+      host: 'h',
+      port: 5432,
+      database: 'svc_db_no_idle_close',
+    };
+    await runPgQuery(creds, 'SELECT 1', []);
     await jest.advanceTimersByTimeAsync(120);
 
     expect(currentPool.end).not.toHaveBeenCalled();
@@ -305,9 +376,16 @@ describe('pg utils', () => {
       return { rows: [{ id: 1 }] };
     });
 
-    await expect(
-      runPgQuery('svc_db_missing_entry', 'SELECT 1', []),
-    ).resolves.toEqual([{ id: 1 }]);
+    const creds = {
+      user: 'u',
+      password: 'p',
+      host: 'h',
+      port: 5432,
+      database: 'svc_db_missing_entry',
+    };
+    await expect(runPgQuery(creds, 'SELECT 1', [])).resolves.toEqual([
+      { id: 1 },
+    ]);
 
     expect(currentClient.release).toHaveBeenCalledTimes(1);
   });
@@ -319,7 +397,14 @@ describe('pg utils', () => {
     currentPool.idleCount = 1;
     currentPool.waitingCount = 0;
 
-    await runPgQuery('svc_db_busy_pool', 'SELECT 1', []);
+    const creds = {
+      user: 'u',
+      password: 'p',
+      host: 'h',
+      port: 5432,
+      database: 'svc_db_busy_pool',
+    };
+    await runPgQuery(creds, 'SELECT 1', []);
 
     await jest.advanceTimersByTimeAsync(60);
     expect(currentPool.end).not.toHaveBeenCalled();

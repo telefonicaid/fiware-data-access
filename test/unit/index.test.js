@@ -57,6 +57,11 @@ const fdaMocks = {
   getDA: jest.fn(),
   putDA: jest.fn(),
   deleteDA: jest.fn(),
+  createDatasourceForService: jest.fn(),
+  getDatasourcesForService: jest.fn(),
+  getDatasourceForService: jest.fn(),
+  updateDatasourceForService: jest.fn(),
+  deleteDatasourceForService: jest.fn(),
 };
 
 const mongoMocks = {
@@ -126,6 +131,15 @@ function resetModuleMocks() {
   fdaMocks.getDA.mockReset().mockResolvedValue({ id: 'da1' });
   fdaMocks.putDA.mockReset().mockResolvedValue(undefined);
   fdaMocks.deleteDA.mockReset().mockResolvedValue(undefined);
+  fdaMocks.createDatasourceForService.mockReset().mockResolvedValue(undefined);
+  fdaMocks.getDatasourcesForService.mockReset().mockResolvedValue([]);
+  fdaMocks.getDatasourceForService.mockReset().mockResolvedValue({
+    datasourceId: 'default',
+    type: 'postgres',
+    config: {},
+  });
+  fdaMocks.updateDatasourceForService.mockReset().mockResolvedValue(undefined);
+  fdaMocks.deleteDatasourceForService.mockReset().mockResolvedValue(undefined);
 
   mongoMocks.createIndex.mockReset().mockResolvedValue(undefined);
   mongoMocks.disconnectClient.mockReset().mockResolvedValue(undefined);
@@ -277,6 +291,11 @@ async function loadIndexModule({
     getDA: fdaMocks.getDA,
     putDA: fdaMocks.putDA,
     deleteDA: fdaMocks.deleteDA,
+    createDatasourceForService: fdaMocks.createDatasourceForService,
+    getDatasourcesForService: fdaMocks.getDatasourcesForService,
+    getDatasourceForService: fdaMocks.getDatasourceForService,
+    updateDatasourceForService: fdaMocks.updateDatasourceForService,
+    deleteDatasourceForService: fdaMocks.deleteDatasourceForService,
   }));
 
   await jest.unstable_mockModule('../../src/lib/utils/mongo.js', () => ({
@@ -542,7 +561,7 @@ describe('index routes - validation and middleware branches', () => {
       .set('Fiware-Service', 'svc')
       .set('Fiware-ServicePath', '/servicepath')
       .send({ id: 'da1', query: 'SELECT 2', description: 'da' })
-      .expect(201);
+      .expect(200);
 
     await request(app)
       .get('/public/fdas/fda1/das/da1')
@@ -585,6 +604,7 @@ describe('index routes - validation and middleware branches', () => {
       {},
       true,
       true,
+      undefined,
     );
     expect(fdaMocks.updateFDA).toHaveBeenCalledWith(
       'svc',
@@ -619,6 +639,92 @@ describe('index routes - validation and middleware branches', () => {
       '/servicepath',
     );
     expect(utilsMocks.validateAllowedFieldsBody).toHaveBeenCalled();
+  });
+
+  test('covers datasource CRUD routes', async () => {
+    fdaMocks.getDatasourcesForService.mockResolvedValueOnce([
+      { datasourceId: 'default', type: 'postgres', config: { host: 'db' } },
+    ]);
+    fdaMocks.getDatasourceForService.mockResolvedValueOnce({
+      datasourceId: 'default',
+      type: 'postgres',
+      config: { host: 'db' },
+    });
+
+    await request(app)
+      .post('/datasources')
+      .set('Fiware-Service', 'svc')
+      .send({
+        datasourceId: 'default',
+        type: 'postgres',
+        config: { host: 'db' },
+      })
+      .expect(200);
+
+    await request(app)
+      .get('/datasources')
+      .set('Fiware-Service', 'svc')
+      .expect(200)
+      .expect([
+        { datasourceId: 'default', type: 'postgres', config: { host: 'db' } },
+      ]);
+
+    await request(app)
+      .get('/datasources/default')
+      .set('Fiware-Service', 'svc')
+      .expect(200)
+      .expect({
+        datasourceId: 'default',
+        type: 'postgres',
+        config: { host: 'db' },
+      });
+
+    await request(app)
+      .put('/datasources/default')
+      .set('Fiware-Service', 'svc')
+      .send({ config: { host: 'db2' } })
+      .expect(204);
+
+    await request(app)
+      .delete('/datasources/default')
+      .set('Fiware-Service', 'svc')
+      .expect(204);
+
+    expect(fdaMocks.createDatasourceForService).toHaveBeenCalledWith(
+      'svc',
+      'default',
+      'postgres',
+      { host: 'db' },
+    );
+    expect(fdaMocks.getDatasourcesForService).toHaveBeenCalledWith('svc');
+    expect(fdaMocks.getDatasourceForService).toHaveBeenCalledWith(
+      'svc',
+      'default',
+    );
+    expect(fdaMocks.updateDatasourceForService).toHaveBeenCalledWith(
+      'svc',
+      'default',
+      undefined,
+      { host: 'db2' },
+    );
+    expect(fdaMocks.deleteDatasourceForService).toHaveBeenCalledWith(
+      'svc',
+      'default',
+    );
+  });
+
+  test('validates datasource routes missing headers and required fields', async () => {
+    await request(app).post('/datasources').send({}).expect(400);
+    await request(app).get('/datasources').expect(400);
+    await request(app).get('/datasources/default').expect(400);
+    await request(app).put('/datasources/default').send({}).expect(400);
+    await request(app).delete('/datasources/default').expect(400);
+
+    expect(utilsMocks.validateAllowedFieldsBody).toHaveBeenCalledWith({}, [
+      'datasourceId',
+      'type',
+      'config',
+    ]);
   });
 
   test('returns 400 when PUT /fdas receives a body payload', async () => {

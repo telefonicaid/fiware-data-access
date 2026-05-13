@@ -56,6 +56,12 @@ import {
   updateDA,
   removeDA,
   updateFDAStatus,
+  createDatasource,
+  retrieveDatasources,
+  retrieveDatasource,
+  updateDatasource,
+  removeDatasource,
+  countFDAsUsingDatasource,
 } from './utils/mongo.js';
 import {
   normalizeForSerialization,
@@ -75,6 +81,103 @@ import { config } from './fdaConfig.js';
 import { FDAError } from './fdaError.js';
 
 const FRESH_CURSOR_BATCH_SIZE = 250;
+
+const DEFAULT_DATASOURCE_ID = 'default';
+
+function assertSupportedDatasourceType(type) {
+  if (type !== 'postgres') {
+    throw new FDAError(
+      400,
+      'UnsupportedDatasourceType',
+      `Datasource type ${type} is not supported for this operation`,
+    );
+  }
+}
+
+async function resolveDatasourceCredentials(service, datasourceId) {
+  const ds = await retrieveDatasource(service, datasourceId);
+  if (!ds) {
+    throw new FDAError(
+      404,
+      'DatasourceNotFound',
+      `Datasource ${datasourceId} not found for service ${service}`,
+    );
+  }
+
+  assertSupportedDatasourceType(ds.type);
+
+  return ds.config;
+}
+
+async function validateDatasourceConnection(type, dsConfig) {
+  assertSupportedDatasourceType(type);
+
+  try {
+    await runPgQuery(dsConfig, 'SELECT 1', []);
+  } catch (error) {
+    throw new FDAError(
+      400,
+      'InvalidDatasourceConnection',
+      `Could not connect to datasource: ${error.message}`,
+    );
+  }
+}
+
+export async function createDatasourceForService(
+  service,
+  datasourceId,
+  type,
+  dsConfig,
+) {
+  await validateDatasourceConnection(type, dsConfig);
+  await createDatasource(service, datasourceId, type, dsConfig);
+}
+
+export function getDatasourcesForService(service) {
+  return retrieveDatasources(service);
+}
+
+export async function getDatasourceForService(service, datasourceId) {
+  const ds = await retrieveDatasource(service, datasourceId);
+  if (!ds) {
+    throw new FDAError(
+      404,
+      'DatasourceNotFound',
+      `Datasource ${datasourceId} not found for service ${service}`,
+    );
+  }
+  return ds;
+}
+
+export async function updateDatasourceForService(
+  service,
+  datasourceId,
+  type,
+  dsConfig,
+) {
+  if (type !== undefined || dsConfig !== undefined) {
+    const current = await getDatasourceForService(service, datasourceId);
+    await validateDatasourceConnection(
+      type ?? current.type,
+      dsConfig ?? current.config,
+    );
+  }
+
+  await updateDatasource(service, datasourceId, type, dsConfig);
+}
+
+export async function deleteDatasourceForService(service, datasourceId) {
+  const usedBy = await countFDAsUsingDatasource(service, datasourceId);
+  if (usedBy > 0) {
+    throw new FDAError(
+      409,
+      'DatasourceInUse',
+      `Datasource ${datasourceId} is being used by ${usedBy} FDA(s) in service ${service}`,
+    );
+  }
+
+  await removeDatasource(service, datasourceId);
+}
 export const VALID_VISIBILITIES = ['public', 'private'];
 const VALID_VISIBILITIES_SET = new Set(VALID_VISIBILITIES);
 const VALID_REFRESH_POLICY_TYPES = ['none', 'interval', 'window'];
@@ -228,13 +331,13 @@ export async function executeFDAQuery({
     config.freshQueries.maxConcurrent,
   );
   try {
-    const query = await buildFreshFDAQuery(
+    const fda = await getAccessibleFDA(service, fdaId, visibility, servicePath);
+    const query = buildFreshQueryFromFDA(fda, fdaId);
+    const pgCredentials = await resolveDatasourceCredentials(
       service,
-      visibility,
-      servicePath,
-      fdaId,
+      fda.datasourceId ?? DEFAULT_DATASOURCE_ID,
     );
-    const rows = await runPgQuery(service, query, []);
+    const rows = await runPgQuery(pgCredentials, query, []);
     return normalizeForSerialization(rows);
   } finally {
     releaseFreshSlot();
@@ -446,15 +549,19 @@ async function createFreshRowSource({
   let cursorReader;
 
   try {
-    const { text, values } = await buildFreshQueryStatement(
+    const { text, values, fda } = await buildFreshQueryStatement(
       service,
       visibility,
       servicePath,
       params,
     );
+    const pgCredentials = await resolveDatasourceCredentials(
+      service,
+      fda.datasourceId ?? DEFAULT_DATASOURCE_ID,
+    );
 
     cursorReader = await createPgCursorReader(
-      service,
+      pgCredentials,
       text,
       values,
       FRESH_CURSOR_BATCH_SIZE,
@@ -493,15 +600,19 @@ async function createFreshFDARowSource({
   let cursorReader;
 
   try {
-    const query = await buildFreshFDAQuery(
+    const { query, fda } = await buildFreshFDAQuery(
       service,
       visibility,
       servicePath,
       fdaId,
     );
+    const pgCredentials = await resolveDatasourceCredentials(
+      service,
+      fda.datasourceId ?? DEFAULT_DATASOURCE_ID,
+    );
 
     cursorReader = await createPgCursorReader(
-      service,
+      pgCredentials,
       query,
       [],
       FRESH_CURSOR_BATCH_SIZE,
@@ -532,14 +643,17 @@ async function executeFreshQuery({ service, visibility, servicePath, params }) {
     config.freshQueries.maxConcurrent,
   );
   try {
-    const { text, values } = await buildFreshQueryStatement(
+    const { text, values, fda } = await buildFreshQueryStatement(
       service,
       visibility,
       servicePath,
       params,
     );
-
-    const rows = await runPgQuery(service, text, values);
+    const pgCredentials = await resolveDatasourceCredentials(
+      service,
+      fda.datasourceId ?? DEFAULT_DATASOURCE_ID,
+    );
+    const rows = await runPgQuery(pgCredentials, text, values);
     return normalizeForSerialization(rows);
   } catch (e) {
     if (e instanceof FDAError) {
@@ -574,11 +688,18 @@ async function buildFreshQueryStatement(
   const validatedParams = resolveDAParams(rest || {}, da.params);
   const freshBaseQuery = buildFreshDAQuery(fda.query, da.query);
 
-  return replaceNamedParamsWithPositional(freshBaseQuery, validatedParams);
+  return {
+    ...replaceNamedParamsWithPositional(freshBaseQuery, validatedParams),
+    fda,
+  };
 }
 
 async function buildFreshFDAQuery(service, visibility, servicePath, fdaId) {
   const fda = await getAccessibleFDA(service, fdaId, visibility, servicePath);
+  return { query: buildFreshQueryFromFDA(fda, fdaId), fda };
+}
+
+function buildFreshQueryFromFDA(fda, fdaId) {
   if (fda.cached !== false) {
     throw new FDAError(
       409,
@@ -725,6 +846,7 @@ export async function fetchFDA(
   objStgConf,
   defaultDataAccessEnabled,
   cached = true,
+  datasourceId = DEFAULT_DATASOURCE_ID,
 ) {
   validateScheduledOptions(refreshPolicy, objStgConf);
   const timeQuery =
@@ -733,6 +855,8 @@ export async function fetchFDA(
       : query;
   const normalizedVisibility = normalizeVisibility(visibility);
   const normalizedServicePath = normalizeServicePath(servicePath);
+  const datasource = await getDatasourceForService(service, datasourceId);
+  assertSupportedDatasourceType(datasource.type);
 
   await createFDAMongo(
     fdaId,
@@ -745,6 +869,7 @@ export async function fetchFDA(
     timeColumn,
     objStgConf,
     cached,
+    datasourceId,
   );
 
   if (cached) {
@@ -754,6 +879,7 @@ export async function fetchFDA(
         fdaId,
         timeQuery,
         normalizedServicePath,
+        datasourceId,
       );
     } catch (err) {
       await rollbackFDAProvisioning(service, fdaId, normalizedServicePath);
@@ -806,6 +932,7 @@ export async function fetchFDA(
     timeColumn,
     refreshPolicy,
     objStgConf,
+    datasourceId,
   });
 
   // Schedule refreshes according to policy
@@ -824,6 +951,7 @@ export async function fetchFDA(
         timeColumn,
         refreshPolicy,
         objStgConf,
+        datasourceId,
       },
       {
         skipImmediate: true,
@@ -876,6 +1004,7 @@ export async function fetchFDA(
         refreshPolicy,
         objStgConf,
         partitionFlag: true,
+        datasourceId,
       },
       {
         skipImmediate: true,
@@ -1043,6 +1172,7 @@ export async function updateFDA(service, fdaId, visibility, servicePath) {
     refreshPolicy: previous.refreshPolicy,
     objStgConf: previous.objStgConf,
     partitionFlag: true,
+    datasourceId: previous.datasourceId ?? DEFAULT_DATASOURCE_ID,
   });
 
   if (previous.refreshPolicy?.params?.windowSize) {
@@ -1064,6 +1194,7 @@ export async function processFDAAsync(
   refreshPolicy,
   objStgConf,
   partitionFlag,
+  datasourceId = DEFAULT_DATASOURCE_ID,
 ) {
   const storagePath = getFDAStoragePath(fdaId, servicePath);
   const bucketName = getBucketNameFromService(service);
@@ -1080,7 +1211,7 @@ export async function processFDAAsync(
 
     await uploadTableToObjStg(
       service,
-      service,
+      datasourceId,
       finalQuery,
       bucketName,
       storagePath,
@@ -1316,7 +1447,7 @@ export async function cleanPartition(
 
 async function uploadTableToObjStg(
   service,
-  database,
+  datasourceId,
   query,
   bucket,
   path,
@@ -1331,8 +1462,12 @@ async function uploadTableToObjStg(
     config.objstg.usr,
     config.objstg.pass,
   );
+  const pgCredentials = await resolveDatasourceCredentials(
+    service,
+    datasourceId,
+  );
   await updateFDAStatus(service, fdaId, servicePath, 'fetching', 20);
-  await uploadTable(s3Client, bucket, database, query, path);
+  await uploadTable(s3Client, bucket, pgCredentials, query, path);
 
   const conn = await getDBConnection();
   try {
@@ -1524,7 +1659,13 @@ function toFDAApiResponse(fda, { includeId }) {
   };
 }
 
-async function createOneRowParquetSync(service, fdaId, query, servicePath) {
+async function createOneRowParquetSync(
+  service,
+  fdaId,
+  query,
+  servicePath,
+  datasourceId,
+) {
   const s3Client = getS3Client(
     `${config.objstg.protocol}://${config.objstg.endpoint}`,
     config.objstg.usr,
@@ -1532,9 +1673,19 @@ async function createOneRowParquetSync(service, fdaId, query, servicePath) {
   );
   const storagePath = getFDAStoragePath(fdaId, servicePath);
   const bucketName = getBucketNameFromService(service);
+  const pgCredentials = await resolveDatasourceCredentials(
+    service,
+    datasourceId,
+  );
 
   const oneRowQuery = buildOneRowQuery(query);
-  await uploadTable(s3Client, bucketName, service, oneRowQuery, storagePath);
+  await uploadTable(
+    s3Client,
+    bucketName,
+    pgCredentials,
+    oneRowQuery,
+    storagePath,
+  );
 
   const conn = await getDBConnection();
   try {

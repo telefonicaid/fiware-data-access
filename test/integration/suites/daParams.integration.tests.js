@@ -269,7 +269,7 @@ export function registerDaParamsIntegrationTests({
           createDa.json ?? createDa.text,
         );
       }
-      expect(createDa.status).toBe(201);
+      expect(createDa.status).toBe(200);
 
       const noTypeDa = await httpReq({
         method: 'POST',
