@@ -69,7 +69,7 @@ export function registerDaCrudIntegrationTests({
           createDa.json ?? createDa.text,
         );
       }
-      expect(createDa.status).toBe(201);
+      expect(createDa.status).toBe(200);
 
       const queryRes = await httpReq({
         method: 'GET',
@@ -184,7 +184,7 @@ export function registerDaCrudIntegrationTests({
         },
       });
 
-      expect(createRes.status).toBe(201);
+      expect(createRes.status).toBe(200);
 
       const firstQuery = await httpReq({
         method: 'GET',

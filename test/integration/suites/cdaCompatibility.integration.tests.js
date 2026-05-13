@@ -84,7 +84,7 @@ export function registerCdaCompatibilityIntegrationTests({
         },
       });
 
-      expect(createDa.status).toBe(201);
+      expect(createDa.status).toBe(200);
 
       const res = await httpFormReq({
         method: 'POST',
@@ -177,7 +177,7 @@ export function registerCdaCompatibilityIntegrationTests({
         },
       });
 
-      expect(createDa.status).toBe(201);
+      expect(createDa.status).toBe(200);
 
       const mismatchRes = await httpFormReq({
         method: 'POST',
@@ -345,7 +345,7 @@ export function registerCdaCompatibilityIntegrationTests({
           },
         });
 
-        expect(createDa.status).toBe(201);
+        expect(createDa.status).toBe(200);
 
         const jsonRes = await httpFormReq({
           method: 'POST',

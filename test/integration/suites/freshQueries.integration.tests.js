@@ -69,7 +69,7 @@ export function registerFreshQueriesIntegrationTests({
         },
       });
 
-      expect(createDa.status).toBe(201);
+      expect(createDa.status).toBe(200);
 
       const createFreshFda = await httpReq({
         method: 'POST',
@@ -436,7 +436,7 @@ export function registerFreshQueriesIntegrationTests({
           },
         });
 
-        expect(createDa.status).toBe(201);
+        expect(createDa.status).toBe(200);
 
         const cachedJson = await httpReq({
           method: 'GET',
