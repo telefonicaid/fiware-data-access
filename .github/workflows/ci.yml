@@ -32,7 +32,26 @@ jobs:
         run: npm install
       - name: Run EsLint Node.js Linter
         run: npm run lint
-  tests:
+  unit-tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Git checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 24.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+
+      - name: Install dependencies
+        run: |
+          npm install
+
+      - name: Run unit tests
+        run: |
+          npm test -- test/unit
+  integration-tests:
     name: Integration tests
     runs-on: ubuntu-latest
     steps:
@@ -53,12 +72,12 @@ jobs:
         run: |
           npm install
 
-      - name: Run tests
+      - name: Run integration tests
         env:
-          TESTCONTAINERS_RYUK_DISABLED: "true"
-          DOCKER_HOST: "unix:///var/run/docker.sock"
+          TESTCONTAINERS_RYUK_DISABLED: 'true'
+          DOCKER_HOST: 'unix:///var/run/docker.sock'
         run: |
-          npm test
+          npm test -- test/integration
   coverage:
     name: Test coverage
     runs-on: ubuntu-latest
