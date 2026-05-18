@@ -8,6 +8,8 @@
 parameterized APIs. It provides an efficient, open-source solution for storing and querying datasets in object storage,
 replacing the legacy Pentaho CDA extension in smart city stacks.
 
+> Every dataset tells a story. Some are just stored in Parquet.
+
 ---
 
 ## 📦 Main Components

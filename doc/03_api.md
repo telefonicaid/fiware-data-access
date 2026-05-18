@@ -134,7 +134,7 @@ When required query parameters are missing from the request:
 
 ```bash
 curl -i http://localhost:8080/public/fdas/fda1/das/da1/data \
-  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-Service: trantor" \
   -H "Fiware-ServicePath: /servicePath"
 ```
 
@@ -156,7 +156,7 @@ When required fields are missing from the request payload:
 ```bash
 curl -i -X POST http://localhost:8080/public/fdas \
   -H "Content-Type: application/json" \
-  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-Service: trantor" \
   -H "Fiware-ServicePath: /servicePath" \
   -d '{
     "id": "fda01"
@@ -185,7 +185,7 @@ request body, the request will be rejected with:
 ```bash
 curl -i -X PUT http://localhost:8080/public/fdas/fda_alarms/das/da_all_alarms \
   -H "Content-Type: application/json" \
-  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-Service: trantor" \
   -H "Fiware-ServicePath: /servicePath" \
   -d '{
     "query": "SELECT * LIMIT 5",
@@ -211,7 +211,7 @@ When requesting an FDA that doesn't exist:
 
 ```bash
 curl -i http://localhost:8080/public/fdas/nonexistent \
-  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-Service: trantor" \
   -H "Fiware-ServicePath: /servicePath"
 ```
 
@@ -220,7 +220,7 @@ curl -i http://localhost:8080/public/fdas/nonexistent \
 ```json
 {
     "error": "FDANotFound",
-    "description": "FDA nonexistent not found in service my-bucket"
+    "description": "FDA nonexistent not found in service trantor"
 }
 ```
 
@@ -232,7 +232,7 @@ When requesting a Data Access that doesn't exist:
 
 ```bash
 curl -i http://localhost:8080/public/fdas/fda_alarms/das/nonexistent-da \
-  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-Service: trantor" \
   -H "Fiware-ServicePath: /servicePath"
 ```
 
@@ -241,7 +241,7 @@ curl -i http://localhost:8080/public/fdas/fda_alarms/das/nonexistent-da \
 ```json
 {
     "error": "DaNotFound",
-    "description": "DA nonexistent-da not found in FDA fda_alarms and service my-bucket."
+    "description": "DA nonexistent-da not found in FDA fda_alarms and service trantor."
 }
 ```
 
@@ -254,7 +254,7 @@ When attempting to create a resource that already exists:
 ```bash
 curl -i -X POST http://localhost:8080/public/fdas \
   -H "Content-Type: application/json" \
-  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-Service: trantor" \
   -H "Fiware-ServicePath: /servicePath" \
   -d '{
     "id": "fda_alarms",
@@ -268,7 +268,7 @@ curl -i -X POST http://localhost:8080/public/fdas \
 ```json
 {
     "error": "DuplicatedKey",
-    {"description":"FDA with id fda_alarms and my-bucket already exists: MongoServerError: E11000 duplicate key error collection: fiware-data-access.fdas index: fdaId_1_service_1 dup key: { fdaId: \"fda_alarms\", service: \"my-bucket\" }"}
+    {"description":"FDA with id fda_alarms and trantor already exists: MongoServerError: E11000 duplicate key error collection: fiware-data-access.fdas index: fdaId_1_service_1 dup key: { fdaId: \"fda_alarms\", service: \"trantor\" }"}
 }
 ```
 
@@ -281,7 +281,7 @@ When a connection error occurs with a backend service:
 ```bash
 curl -i -X POST http://localhost:8080/public/fdas \
   -H "Content-Type: application/json" \
-  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-Service: trantor" \
   -H "Fiware-ServicePath: /servicePath" \
   -d '{
     "id": "fda_test",
@@ -330,7 +330,7 @@ When an unexpected error occurs during request processing:
 ```bash
 curl -i -X POST http://localhost:8080/public/fdas \
   -H "Content-Type: application/json" \
-  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-Service: trantor" \
   -H "Fiware-ServicePath: /servicePath" \
   -d '{
     "id": "fda_alarms",
@@ -470,10 +470,10 @@ fda_up 1
 fda_http_server_requests_total{method="GET",route="/health",status_class="2xx",status_code="200"} 4
 # HELP fda_tenant_requests_total Total HTTP requests carrying FIWARE tenant headers.
 # TYPE fda_tenant_requests_total counter
-fda_tenant_requests_total{fiware_service="my-bucket",fiware_service_path="/",method="GET",route="/:visibility/fdas",status_class="2xx"} 8
+fda_tenant_requests_total{fiware_service="trantor",fiware_service_path="/",method="GET",route="/:visibility/fdas",status_class="2xx"} 8
 # HELP fda_catalog_fdas_by_service Number of FDA documents by fiware service and servicePath.
 # TYPE fda_catalog_fdas_by_service gauge
-fda_catalog_fdas_by_service{fiware_service="my-bucket",fiware_service_path="/"} 12
+fda_catalog_fdas_by_service{fiware_service="trantor",fiware_service_path="/"} 12
 # HELP fda_jobs_agenda_total Total number of Agenda jobs stored in MongoDB.
 # TYPE fda_jobs_agenda_total gauge
 fda_jobs_agenda_total 7
@@ -509,9 +509,9 @@ None.
 
 _**Request headers**_
 
-| Header           | Optional | Description                                                          | Example     |
-| ---------------- | -------- | -------------------------------------------------------------------- | ----------- |
-| `Fiware-Service` |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket` |
+| Header           | Optional | Description                                                          | Example   |
+| ---------------- | -------- | -------------------------------------------------------------------- | --------- |
+| `Fiware-Service` |          | Tenant or service, using the common mechanism of the FIWARE platform | `trantor` |
 
 _**Request payload**_
 
@@ -534,7 +534,7 @@ _**Example Request:**_
 
 ```bash
 curl -i -X GET http://localhost:8080/datasources \
-  -H "Fiware-Service: my-bucket"
+  -H "Fiware-Service: trantor"
 ```
 
 _**Example Response:**_
@@ -549,7 +549,7 @@ _**Example Response:**_
             "password": "postgres",
             "host": "localhost",
             "port": 5432,
-            "database": "my-bucket"
+            "database": "trantor"
         }
     }
 ]
@@ -572,7 +572,7 @@ _**Request headers**_
 | Header           | Optional | Description                                                          | Example            |
 | ---------------- | -------- | -------------------------------------------------------------------- | ------------------ |
 | `Content-Type`   |          | MIME type. Required to be `application/json`.                        | `application/json` |
-| `Fiware-Service` |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket`        |
+| `Fiware-Service` |          | Tenant or service, using the common mechanism of the FIWARE platform | `trantor`          |
 
 _**Request payload**_
 
@@ -600,7 +600,7 @@ _**Example Request:**_
 ```bash
 curl -i -X POST http://localhost:8080/datasources \
     -H "Content-Type: application/json" \
-    -H "Fiware-Service: my-bucket" \
+    -H "Fiware-Service: trantor" \
     -d '{
         "datasourceId": "default",
         "type": "postgres",
@@ -609,7 +609,7 @@ curl -i -X POST http://localhost:8080/datasources \
             "password": "postgres",
             "host": "localhost",
             "port": 5432,
-            "database": "my-bucket"
+            "database": "trantor"
         }
     }'
 ```
@@ -630,9 +630,9 @@ None.
 
 _**Request headers**_
 
-| Header           | Optional | Description                                                          | Example     |
-| ---------------- | -------- | -------------------------------------------------------------------- | ----------- |
-| `Fiware-Service` |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket` |
+| Header           | Optional | Description                                                          | Example   |
+| ---------------- | -------- | -------------------------------------------------------------------- | --------- |
+| `Fiware-Service` |          | Tenant or service, using the common mechanism of the FIWARE platform | `trantor` |
 
 _**Request payload**_
 
@@ -655,7 +655,7 @@ _**Example Request:**_
 
 ```bash
 curl -i -X GET http://localhost:8080/datasources/default \
-    -H "Fiware-Service: my-bucket"
+    -H "Fiware-Service: trantor"
 ```
 
 #### Update Datasource `PUT /datasources/{datasourceId}`
@@ -677,7 +677,7 @@ _**Request headers**_
 | Header           | Optional | Description                                                          | Example            |
 | ---------------- | -------- | -------------------------------------------------------------------- | ------------------ |
 | `Content-Type`   |          | MIME type. Required to be `application/json`.                        | `application/json` |
-| `Fiware-Service` |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket`        |
+| `Fiware-Service` |          | Tenant or service, using the common mechanism of the FIWARE platform | `trantor`          |
 
 _**Request payload**_
 
@@ -704,7 +704,7 @@ _**Example Request:**_
 ```bash
 curl -i -X PUT http://localhost:8080/datasources/default \
     -H "Content-Type: application/json" \
-    -H "Fiware-Service: my-bucket" \
+    -H "Fiware-Service: trantor" \
     -d '{
         "type": "postgres",
         "config": {
@@ -712,7 +712,7 @@ curl -i -X PUT http://localhost:8080/datasources/default \
             "password": "postgres",
             "host": "localhost",
             "port": 5432,
-            "database": "my-bucket"
+            "database": "trantor"
         }
     }'
 ```
@@ -736,9 +736,9 @@ None.
 
 _**Request headers**_
 
-| Header           | Optional | Description                                                          | Example     |
-| ---------------- | -------- | -------------------------------------------------------------------- | ----------- |
-| `Fiware-Service` |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket` |
+| Header           | Optional | Description                                                          | Example   |
+| ---------------- | -------- | -------------------------------------------------------------------- | --------- |
+| `Fiware-Service` |          | Tenant or service, using the common mechanism of the FIWARE platform | `trantor` |
 
 _**Request payload**_
 
@@ -761,7 +761,7 @@ _**Example Request:**_
 
 ```bash
 curl -i -X DELETE http://localhost:8080/datasources/default \
-    -H "Fiware-Service: my-bucket"
+    -H "Fiware-Service: trantor"
 ```
 
 The delete operation does not validate whether existing FDAs reference the datasource. Any dependent FDA operation will
@@ -849,7 +849,7 @@ _**Request headers**_
 
 | Header               | Optional | Description                                                          | Example        |
 | -------------------- | -------- | -------------------------------------------------------------------- | -------------- |
-| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket`    |
+| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform | `trantor`      |
 | `Fiware-ServicePath` |          | NGSI hierarchical service path. Filters results to exact match.      | `/servicePath` |
 
 _**Request payload**_
@@ -878,7 +878,7 @@ _**Example Request:**_
 
 ```bash
 curl -i -X GET http://localhost:8080/public/fdas \
-  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-Service: trantor" \
   -H "Fiware-ServicePath: /servicePath"
 ```
 
@@ -924,7 +924,7 @@ _**Request headers**_
 | Header               | Optional | Description                                                          | Example            |
 | -------------------- | -------- | -------------------------------------------------------------------- | ------------------ |
 | `Content-Type`       |          | MIME type. Required to be `application/json`.                        | `application/json` |
-| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket`        |
+| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform | `trantor`          |
 | `Fiware-ServicePath` |          | NGSI hierarchical service path. Stored and exact-matched on access.  | `/servicePath`     |
 
 _**Request payload**_
@@ -937,7 +937,7 @@ _**Example Request:**_
 ```bash
 curl -i -X POST http://localhost:8080/public/fdas \
   -H "Content-Type: application/json" \
-  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-Service: trantor" \
   -H "Fiware-ServicePath: /servicePath" \
   -d '{
     "id": "fda_alarms",
@@ -957,7 +957,7 @@ _**Example Request disabling default DA:**_
 ```bash
 curl -i -X POST "http://localhost:8080/public/fdas?defaultDataAccess=false" \
     -H "Content-Type: application/json" \
-    -H "Fiware-Service: my-bucket" \
+    -H "Fiware-Service: trantor" \
     -H "Fiware-ServicePath: /servicePath" \
     -d '{
         "id": "fda_alarms_no_default",
@@ -971,7 +971,7 @@ _**Example Request for an only-fresh FDA:**_
 ```bash
 curl -i -X POST http://localhost:8080/public/fdas \
     -H "Content-Type: application/json" \
-    -H "Fiware-Service: my-bucket" \
+    -H "Fiware-Service: trantor" \
     -H "Fiware-ServicePath: /servicePath" \
     -d '{
         "id": "fda_live_alarms",
@@ -1032,7 +1032,7 @@ _**Request headers**_
 
 | Header               | Optional | Description                                                          | Example        |
 | -------------------- | -------- | -------------------------------------------------------------------- | -------------- |
-| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket`    |
+| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform | `trantor`      |
 | `Fiware-ServicePath` |          | NGSI hierarchical service path. Must match the FDA's stored path.    | `/servicePath` |
 
 _**Request payload**_
@@ -1058,7 +1058,7 @@ _**Example Request:**_
 
 ```bash
 curl -i -X GET http://localhost:8080/public/fdas/fda_alarms \
-  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-Service: trantor" \
   -H "Fiware-ServicePath: /servicePath"
 ```
 
@@ -1108,7 +1108,7 @@ _**Request headers**_
 
 | Header               | Optional | Description                                                          | Example        |
 | -------------------- | -------- | -------------------------------------------------------------------- | -------------- |
-| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket`    |
+| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform | `trantor`      |
 | `Fiware-ServicePath` |          | NGSI hierarchical service path. Must match the FDA's stored path.    | `/servicePath` |
 
 _**Request payload**_
@@ -1158,7 +1158,7 @@ _**Request headers**_
 
 | Header               | Optional | Description                                                          | Example        |
 | -------------------- | -------- | -------------------------------------------------------------------- | -------------- |
-| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket`    |
+| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform | `trantor`      |
 | `Fiware-ServicePath` |          | NGSI hierarchical service path. Must match the FDA's stored path.    | `/servicePath` |
 
 _**Request payload**_
@@ -1254,7 +1254,7 @@ _**Request headers**_
 
 | Header               | Optional | Description                                                          | Example        |
 | -------------------- | -------- | -------------------------------------------------------------------- | -------------- |
-| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket`    |
+| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform | `trantor`      |
 | `Fiware-ServicePath` |          | NGSI hierarchical service path. Must match the FDA's stored path.    | `/servicePath` |
 
 _**Request payload**_
@@ -1280,7 +1280,7 @@ _**Example Request:**_
 
 ```bash
 curl -i -X GET http://localhost:8080/public/fdas/fda_alarms/das \
-  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-Service: trantor" \
   -H "Fiware-ServicePath: /servicePath"
 ```
 
@@ -1321,7 +1321,7 @@ _**Request headers**_
 | Header               | Optional | Description                                                          | Example            |
 | -------------------- | -------- | -------------------------------------------------------------------- | ------------------ |
 | `Content-Type`       |          | MIME type. Required to be `application/json`.                        | `application/json` |
-| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket`        |
+| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform | `trantor`          |
 | `Fiware-ServicePath` |          | NGSI hierarchical service path. Must match the FDA's stored path.    | `/servicePath`     |
 
 _**Request payload**_
@@ -1334,7 +1334,7 @@ _**Example Request:**_
 ```bash
 curl -i -X POST http://localhost:8080/public/fdas/fda_alarms/das \
   -H "Content-Type: application/json" \
-  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-Service: trantor" \
   -H "Fiware-ServicePath: /servicePath" \
   -d '{
     "id": "da_all_alarms",
@@ -1388,7 +1388,7 @@ _**Request headers**_
 
 | Header               | Optional | Description                                                          | Example        |
 | -------------------- | -------- | -------------------------------------------------------------------- | -------------- |
-| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket`    |
+| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform | `trantor`      |
 | `Fiware-ServicePath` |          | NGSI hierarchical service path. Must match the FDA's stored path.    | `/servicePath` |
 
 _**Request payload**_
@@ -1414,7 +1414,7 @@ _**Example Request:**_
 
 ```bash
 curl -i -X GET http://localhost:8080/public/fdas/fda_alarms/das/da_all_alarms \
-  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-Service: trantor" \
   -H "Fiware-ServicePath: /servicePath"
 ```
 
@@ -1449,7 +1449,7 @@ _**Request headers**_
 | Header               | Optional | Description                                                          | Example            |
 | -------------------- | -------- | -------------------------------------------------------------------- | ------------------ |
 | `Content-Type`       |          | MIME type. Required to be `application/json`.                        | `application/json` |
-| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket`        |
+| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform | `trantor`          |
 | `Fiware-ServicePath` |          | NGSI hierarchical service path. Must match the FDA's stored path.    | `/servicePath`     |
 
 _**Request payload**_
@@ -1462,7 +1462,7 @@ _**Example Request:**_
 ```bash
 curl -i -X PUT http://localhost:8080/public/fdas/fda_alarms/das/da_all_alarms \
   -H "Content-Type: application/json" \
-  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-Service: trantor" \
   -H "Fiware-ServicePath: /servicePath" \
   -d '{
     "description": "Todas las alarmas (actualizado)",
@@ -1504,7 +1504,7 @@ _**Request headers**_
 
 | Header               | Optional | Description                                                          | Example        |
 | -------------------- | -------- | -------------------------------------------------------------------- | -------------- |
-| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket`    |
+| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform | `trantor`      |
 | `Fiware-ServicePath` |          | NGSI hierarchical service path. Must match the FDA's stored path.    | `/servicePath` |
 
 _**Request payload**_
@@ -1546,7 +1546,7 @@ _**Request headers**_
 
 | Header               | Optional | Description                                                          | Example        |
 | -------------------- | -------- | -------------------------------------------------------------------- | -------------- |
-| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket`    |
+| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform | `trantor`      |
 | `Fiware-ServicePath` |          | NGSI hierarchical service path. Must match the FDA's stored path.    | `/servicePath` |
 
 _**Response code**_
@@ -1566,7 +1566,7 @@ _**Example Request:**_
 
 ```bash
 curl -i -X GET "http://localhost:8080/public/fdas/fda_live_alarms/data" \
-    -H "Fiware-Service: my-bucket" \
+    -H "Fiware-Service: trantor" \
     -H "Fiware-ServicePath: /servicePath"
 ```
 
@@ -1591,7 +1591,7 @@ _**Request headers**_
 
 | Header               | Optional | Description                                                          | Example        |
 | -------------------- | -------- | -------------------------------------------------------------------- | -------------- |
-| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform | `my-bucket`    |
+| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform | `trantor`      |
 | `Fiware-ServicePath` |          | NGSI hierarchical service path. Must match the FDA's stored path.    | `/servicePath` |
 
 _**Request payload**_
@@ -1647,7 +1647,7 @@ _**Example Request (without DA parameters):**_
 
 ```bash
 curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_all_alarms/data" \
-  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-Service: trantor" \
   -H "Fiware-ServicePath: /servicePath"
 ```
 
@@ -1688,7 +1688,7 @@ _**Example Request (with parameters):**_
 
 ```bash
 curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_filter_by_name/data?pattern=%25nosignal%25" \
-  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-Service: trantor" \
   -H "Fiware-ServicePath: /servicePath"
 ```
 
@@ -1708,7 +1708,7 @@ _**Example Request (CSV output):**_
 
 ```bash
 curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_all_alarms/data" \
-  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-Service: trantor" \
   -H "Fiware-ServicePath: /servicePath" \
     -H "Accept: text/csv" \
   --output results.csv
@@ -1718,7 +1718,7 @@ _**Example Request (Excel output):**_
 
 ```bash
 curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_all_alarms/data" \
-  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-Service: trantor" \
   -H "Fiware-ServicePath: /servicePath" \
     -H "Accept: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" \
   --output results.xlsx
@@ -1728,7 +1728,7 @@ _**Example Request (NDJSON streaming):**_
 
 ```bash
 curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_all_alarms/data" \
-  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-Service: trantor" \
   -H "Fiware-ServicePath: /servicePath" \
   -H "Accept: application/x-ndjson"
 ```
@@ -1747,7 +1747,7 @@ _**Request headers**_
 | Header           | Optional | Description                                                              | Example            |
 | ---------------- | -------- | ------------------------------------------------------------------------ | ------------------ |
 | `Content-Type`   |          | Must be `application/x-www-form-urlencoded`                              | —                  |
-| `Fiware-Service` | ✓        | Tenant/service name. If not present, it is derived from the `path` field | `my-bucket`        |
+| `Fiware-Service` | ✓        | Tenant/service name. If not present, it is derived from the `path` field | `trantor`          |
 | `Accept`         | ✓        | Currently ignored (response is always JSON CDA format)                   | `application/json` |
 
 ---
@@ -1807,8 +1807,8 @@ _**Example Request (JSON, default):**_
 ```bash
 curl -i -X POST "http://localhost:8085/plugin/cda/api/doQuery" \
   -H "Content-Type: application/x-www-form-urlencoded" \
-  -H "Fiware-Service: my-bucket" \
-  -d "path=/public/my-bucket/verticals/sql/da1" \
+  -H "Fiware-Service: trantor" \
+  -d "path=/public/trantor/verticals/sql/da1" \
   -d "dataAccessId=da1" \
   -d "pageSize=10"
 ```
@@ -1832,8 +1832,8 @@ _**Example Request (CSV output):**_
 ```bash
 curl -i -X POST "http://localhost:8085/plugin/cda/api/doQuery" \
   -H "Content-Type: application/x-www-form-urlencoded" \
-  -H "Fiware-Service: my-bucket" \
-  -d "path=/public/my-bucket/verticals/sql/fda1" \
+  -H "Fiware-Service: trantor" \
+  -d "path=/public/trantor/verticals/sql/fda1" \
   -d "dataAccessId=da1" \
   -d "outputType=csv" \
   --output results.csv
@@ -1844,8 +1844,8 @@ _**Example Request (Excel output):**_
 ```bash
 curl -i -X POST "http://localhost:8085/plugin/cda/api/doQuery" \
   -H "Content-Type: application/x-www-form-urlencoded" \
-  -H "Fiware-Service: my-bucket" \
-  -d "path=/public/my-bucket/verticals/sql/fda1" \
+  -H "Fiware-Service: trantor" \
+  -d "path=/public/trantor/verticals/sql/fda1" \
   -d "dataAccessId=da1" \
   -d "outputType=xls" \
   --output results.xlsx

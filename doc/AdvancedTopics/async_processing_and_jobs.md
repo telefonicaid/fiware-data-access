@@ -178,7 +178,7 @@ Example document:
     "data": {
         "fdaId": "fda_alarms",
         "query": "SELECT * FROM public.alarms",
-        "service": "my-bucket",
+        "service": "trantor",
         "lastModifiedBy": null
     },
     "nextRunAt": "2026-03-02T14:58:20.213Z",

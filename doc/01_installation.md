@@ -183,7 +183,7 @@ Create at least one datasource for your `Fiware-Service` before creating FDAs:
 ```bash
 curl -i -X POST http://localhost:8080/datasources \
   -H "Content-Type: application/json" \
-  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-Service: trantor" \
   -d '{
     "datasourceId": "default",
     "type": "postgres",
@@ -192,7 +192,7 @@ curl -i -X POST http://localhost:8080/datasources \
       "password": "postgres",
       "host": "localhost",
       "port": 5432,
-      "database": "my-bucket"
+      "database": "trantor"
     }
   }'
 ```
@@ -291,7 +291,7 @@ Content-Type: text/plain; version=0.0.4; charset=utf-8
 
 Both the bucket and database must have the **same name** and will be referred to as `fiware-service`.
 
-For this example, we'll use `my-bucket`:
+For this example, we'll use `trantor`:
 
 #### Create MinIO bucket
 
@@ -299,27 +299,27 @@ Using the MinIO console:
 
 1. Open `http://localhost:9000`
 2. Login with credentials from your Docker Compose setup
-3. Create a bucket named `my-bucket`
+3. Create a bucket named `trantor`
 
 #### Create PostgreSQL database
 
 ```bash
 # Assuming PostgreSQL is running in Docker
-docker exec -it postgres_container psql -U postgres -c 'CREATE DATABASE "my-bucket";'
+docker exec -it postgres_container psql -U postgres -c 'CREATE DATABASE "trantor";'
 ```
 
 Or directly (if PostgreSQL is on localhost):
 
 ```bash
-psql -h localhost -U postgres -c 'CREATE DATABASE "my-bucket";'
+psql -h localhost -U postgres -c 'CREATE DATABASE "trantor";'
 ```
 
 ### 3. Create sample data in PostgreSQL
 
-Connect to the `my-bucket` database and create the sample table:
+Connect to the `trantor` database and create the sample table:
 
 ```bash
-docker exec -it postgres_container psql -U postgres -d "my-bucket" << 'EOF'
+docker exec -it postgres_container psql -U postgres -d "trantor" << 'EOF'
 DROP TABLE IF EXISTS public.alarms;
 
 CREATE TABLE public.alarms (
@@ -418,11 +418,11 @@ EOF
 
 ### 4. List existing FDAs
 
-List all FDAs for the service `my-bucket` and servicePath `public`:
+List all FDAs for the service `trantor` and servicePath `public`:
 
 ```bash
 curl -i -X GET http://localhost:8080/public/fdas \
-  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-Service: trantor" \
   -H "Fiware-ServicePath: /public"
 ```
 
@@ -442,7 +442,7 @@ Create an FDA that extracts all alarms from the PostgreSQL table:
 ```bash
 curl -i -X POST http://localhost:8080/public/fdas \
   -H "Content-Type: application/json" \
-  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-Service: trantor" \
   -H "Fiware-ServicePath: /public" \
   -d '{
     "id": "fda_alarms",
@@ -468,7 +468,7 @@ List FDAs again to confirm:
 
 ```bash
 curl -i -X GET http://localhost:8080/public/fdas \
-  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-Service: trantor" \
   -H "Fiware-ServicePath: /public"
 ```
 
@@ -506,7 +506,7 @@ Create the DA for `fda_alarms`:
 ```bash
 curl -i -X POST http://localhost:8080/public/fdas/fda_alarms/das \
   -H "Content-Type: application/json" \
-  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-Service: trantor" \
   -H "Fiware-ServicePath: /public" \
   -d '{
     "id": "da_all_alarms",
@@ -532,7 +532,7 @@ Run a query against the FDA/DA (JSON response):
 
 ```bash
 curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_all_alarms/data" \
-  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-Service: trantor" \
   -H "Fiware-ServicePath: /public"
 ```
 
@@ -546,7 +546,7 @@ Or request streaming NDJSON by setting the `Accept` header:
 
 ```bash
 curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_all_alarms/data" \
-  -H "Fiware-Service: my-bucket" \
+  -H "Fiware-Service: trantor" \
   -H "Fiware-ServicePath: /public" \
   -H 'Accept: application/x-ndjson'
 ```

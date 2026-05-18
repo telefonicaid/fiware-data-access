@@ -296,13 +296,13 @@ fda_http_server_errors_total{method="GET",route="/:visibility/fdas/:fdaId/das/:d
 fda_http_server_errors_total{method="GET",route="/:visibility/fdas/:fdaId/das/:daId/data",status_class="4xx",status_code="404"} 1
 # HELP fda_tenant_requests_total Total HTTP requests carrying FIWARE tenant headers.
 # TYPE fda_tenant_requests_total counter
-fda_tenant_requests_total{fiware_service="my-bucket",fiware_service_path="/other",method="GET",route="/:visibility/fdas/:fdaId/das/:daId/data",status_class="4xx"} 1
-fda_tenant_requests_total{fiware_service="my-bucket",fiware_service_path="/public",method="GET",route="/:visibility/fdas/:fdaId/das/:daId/data",status_class="4xx"} 1
-fda_tenant_requests_total{fiware_service="my-bucket",fiware_service_path="/servicePath",method="GET",route="/:visibility/fdas/:fdaId/das/:daId/data",status_class="2xx"} 2
-fda_tenant_requests_total{fiware_service="my-bucket",fiware_service_path="/servicePath",method="GET",route="/:visibility/fdas/:fdaId/das/:daId/data",status_class="4xx"} 3
-fda_tenant_requests_total{fiware_service="my-bucket",fiware_service_path="/servicePath",method="GET",route="/:visibility/fdas",status_class="2xx"} 1
-fda_tenant_requests_total{fiware_service="my-bucket",fiware_service_path="/servicePath",method="POST",route="/:visibility/fdas/:fdaId/das",status_class="2xx"} 1
-fda_tenant_requests_total{fiware_service="my-bucket",fiware_service_path="/servicePath",method="POST",route="/:visibility/fdas",status_class="2xx"} 2
+fda_tenant_requests_total{fiware_service="trantor",fiware_service_path="/other",method="GET",route="/:visibility/fdas/:fdaId/das/:daId/data",status_class="4xx"} 1
+fda_tenant_requests_total{fiware_service="trantor",fiware_service_path="/public",method="GET",route="/:visibility/fdas/:fdaId/das/:daId/data",status_class="4xx"} 1
+fda_tenant_requests_total{fiware_service="trantor",fiware_service_path="/servicePath",method="GET",route="/:visibility/fdas/:fdaId/das/:daId/data",status_class="2xx"} 2
+fda_tenant_requests_total{fiware_service="trantor",fiware_service_path="/servicePath",method="GET",route="/:visibility/fdas/:fdaId/das/:daId/data",status_class="4xx"} 3
+fda_tenant_requests_total{fiware_service="trantor",fiware_service_path="/servicePath",method="GET",route="/:visibility/fdas",status_class="2xx"} 1
+fda_tenant_requests_total{fiware_service="trantor",fiware_service_path="/servicePath",method="POST",route="/:visibility/fdas/:fdaId/das",status_class="2xx"} 1
+fda_tenant_requests_total{fiware_service="trantor",fiware_service_path="/servicePath",method="POST",route="/:visibility/fdas",status_class="2xx"} 2
 # HELP fda_catalog_services_observed Distinct Fiware-Service values seen in traffic.
 # TYPE fda_catalog_services_observed gauge
 fda_catalog_services_observed 1
@@ -323,7 +323,7 @@ fda_catalog_das_total 1
 fda_catalog_fdas_by_status{status="completed"} 2
 # HELP fda_catalog_fdas_by_service Number of FDA documents by fiware service and servicePath.
 # TYPE fda_catalog_fdas_by_service gauge
-fda_catalog_fdas_by_service{fiware_service="my-bucket",fiware_service_path="/servicePath"} 2
+fda_catalog_fdas_by_service{fiware_service="trantor",fiware_service_path="/servicePath"} 2
 # HELP fda_jobs_agenda_total Total number of Agenda jobs stored in MongoDB.
 # TYPE fda_jobs_agenda_total gauge
 fda_jobs_agenda_total 0
