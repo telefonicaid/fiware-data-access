@@ -4,5 +4,5 @@
         "filters": "__OPER__ = '>='"
     },
     "cda": "dumps",
-    "path": "s3://my-bucket-api/output/"
+    "path": "s3://trantor-api/output/"
 }

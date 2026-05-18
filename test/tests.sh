@@ -3,7 +3,7 @@
 
 # Send POST request to storeSet
 curl -i -X POST http://localhost:8080/storeSet \
-  -d '{"cda": "dumps", "filePath": "test/examples/dumps.csv", "path": "s3://my-bucket-api/output/"}' \
+  -d '{"cda": "dumps", "filePath": "test/examples/dumps.csv", "path": "s3://trantor-api/output/"}' \
   -H 'content-type: application/json'
 
 # Run ApacheBench (ab) performance test

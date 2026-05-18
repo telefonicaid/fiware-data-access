@@ -48,7 +48,7 @@ services:
       sleep 5 &&
       mc alias set local http://minio:9000 admin admin123 &&
       mc admin info local &&
-      mc mb --ignore-existing local/my-bucket &&
+      mc mb --ignore-existing local/trantor &&
       mc admin trace -v -a local &&
       tail -f /dev/null
       "
@@ -77,7 +77,7 @@ services:
     # Default env variables will be used if not specify in .env
     image: ${FDA_POSTGIS_IMAGE:-postgis/postgis:15-3.3}
     volumes:
-      - ${FDA_DBPATH_POSTGIS:-/data/postgis}:/var/lib/postgresql/data
+      - ./postgis-data:/var/lib/postgresql/data
     expose:
       - "5432"
     ports:
