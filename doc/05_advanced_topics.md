@@ -136,6 +136,7 @@ FDA includes a compatibility layer to support legacy Pentaho CDA clients.
 ### Endpoint
 
 ```
+GET /plugin/cda/api/doQuery
 POST /plugin/cda/api/doQuery
 ```
 
@@ -145,6 +146,7 @@ This layer:
 
 -   Translates CDA-style requests into FDA execution calls
 -   Resolves `service` from `path` if not explicitly provided
+-   Resolves `visibility` and `servicePath` from `path` (with `servicePath = /<visibility>`)
 -   Resolves `fdaId` from the end of `path` field if it includes more than `service` and `visibility`, otherwise
     defaults to `dataAccessId`. It strips the `fdaId` at the end of the path of the `.cda` extension if present
 -   Uses `dataAccessId` as DA identifier
@@ -201,6 +203,8 @@ Currently unsupported features:
 -   NDJSON streaming in CDA mode
 
 These may be implemented in future versions if required.
+
+Detailed reference available at: [`CDA legacy compatibility`](/doc/AdvancedTopics/cda_legacy_compatibility.md)
 
 ---
 
