@@ -24,6 +24,8 @@
 
 import { executeQuery } from '../fda.js';
 
+const VALID_VISIBILITIES = new Set(['public', 'private']);
+
 export async function handleCdaQuery({ body, outputType = 'json' }) {
   const { service, visibility, fdaId, daId, queryParams, servicePath } =
     adaptCdaParams(body);
@@ -52,8 +54,7 @@ function adaptCdaParams(body) {
 
   // --------- RESOLVE SERVICE ----------
   const pathParts = path.split('/').filter(Boolean);
-  const visibility = pathParts[0] || 'private';
-  const service = pathParts.length <= 1 ? pathParts[0] : pathParts[1];
+  const { visibility, service } = resolveServiceContext(pathParts);
   const servicePath = `/${visibility}`;
 
   // fdaId comes at the end of the path (we remove .cda extension if present)
@@ -92,6 +93,34 @@ function adaptCdaParams(body) {
     fdaId,
     daId,
     queryParams,
+  };
+}
+
+function resolveServiceContext(pathParts) {
+  // Supported styles:
+  // - /public/<service>/...
+  // - home/<service>/verticals/public/<file>.cda
+  if (VALID_VISIBILITIES.has(pathParts[0])) {
+    return {
+      visibility: pathParts[0],
+      service: pathParts.length <= 1 ? pathParts[0] : pathParts[1],
+    };
+  }
+
+  if (pathParts[0] === 'home' && pathParts.length > 1) {
+    const visibilityPart = pathParts.find((part, index) => {
+      return index > 1 && VALID_VISIBILITIES.has(part);
+    });
+
+    return {
+      visibility: visibilityPart || 'public',
+      service: pathParts[1],
+    };
+  }
+
+  return {
+    visibility: pathParts[0] || 'private',
+    service: pathParts.length <= 1 ? pathParts[0] : pathParts[1],
   };
 }
 
