@@ -1,0 +1,1 @@
+- Add: Pentaho CDA backward compatibility now supports browser-style `GET /plugin/cda/api/doQuery` with query params, including `outputType` (`json`, `csv`, `xls`) (#108)
