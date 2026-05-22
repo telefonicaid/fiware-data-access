@@ -32,7 +32,7 @@
         -   [Delete DA](#delete-da-delete-visibilityfdasfdaiddasdaid)
     -   [Data operations](#data-operations)
         -   [Data query](#data-query-get-visibilityfdasfdaiddasdaiddata)
-        -   [Query (Pentaho CDA legacy support)](#query-post-plugincdaapidoquery-pentaho-cda-legacy-support)
+        -   [Query (Pentaho CDA legacy support)](#query-plugincdaapidoquery-pentaho-cda-legacy-support)
 -   [Navigation](#-navigation)
 
 ## Introduction
@@ -1733,7 +1733,7 @@ curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_all_alarms/d
   -H "Accept: application/x-ndjson"
 ```
 
-#### Query `POST /plugin/cda/api/doQuery` (Pentaho CDA legacy support)
+#### Query `/plugin/cda/api/doQuery` (Pentaho CDA legacy support)
 
 This endpoint provides backward compatibility with legacy Pentaho CDA clients.
 
@@ -1742,28 +1742,47 @@ executions and transforming the response into CDA-compatible format.
 
 This endpoint does **not** execute queries directly. It delegates execution to the FDA query engine.
 
+Supported methods:
+
+-   `GET /plugin/cda/api/doQuery`
+-   `POST /plugin/cda/api/doQuery`
+
 _**Request headers**_
 
 | Header           | Optional | Description                                                              | Example            |
 | ---------------- | -------- | ------------------------------------------------------------------------ | ------------------ |
-| `Content-Type`   |          | Must be `application/x-www-form-urlencoded`                              | —                  |
+| `Content-Type`   | ✓        | For `POST`, should be `application/x-www-form-urlencoded`                | —                  |
 | `Fiware-Service` | ✓        | Tenant/service name. If not present, it is derived from the `path` field | `trantor`          |
-| `Accept`         | ✓        | Currently ignored (response is always JSON CDA format)                   | `application/json` |
+| `Accept`         | ✓        | Ignored when `outputType` is provided. If omitted, defaults to JSON      | `application/json` |
 
 ---
 
-_**Request body (form-urlencoded)**_
+_**Request payload**_
 
-The request body must be sent as `application/x-www-form-urlencoded`.
+For `POST`, send as `application/x-www-form-urlencoded` body.
 
-| Field          | Optional | Description                                                                                                           | Example                              |
-| -------------- | -------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| `path`         |          | Path used to resolve service. FDA identifier defaults to `dataAccessId` if path only has visibility and service.      | `/public/service/verticals/sql/fda1` |
-| `dataAccessId` |          | Identifier of the Data Access (DA) inside the FDA                                                                     | `da1`                                |
-| `outputType`   | ✓        | Format of the returned results. **Default:** `json`. Allowed values: `json`, `csv`, `xls`.                            | `csv`                                |
-| `param*`       | ✓        | Query parameters prefixed with `param`. If omitted, no DA query parameters are passed.                                | `parammunicipality=NA`               |
-| `pageSize`     | ✓        | Pagination size (must be handled explicitly by the DA). If omitted, this field is not passed and DA defaults apply.   | `10`                                 |
-| `pageStart`    | ✓        | Pagination offset (must be handled explicitly by the DA). If omitted, this field is not passed and DA defaults apply. | `0`                                  |
+For `GET`, send as query parameters.
+
+| Field          | Optional | Description                                                                                                                                                                                                                             | Example                              |
+| -------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `path`         |          | Path used to resolve context (`visibility`, `service`, and FDA id). Supported formats include `/public/<service>/...` and `home/<service>/verticals/public/<fda>.cda`. If no explicit FDA id is present, it defaults to `dataAccessId`. | `/public/service/verticals/sql/fda1` |
+| `dataAccessId` |          | Identifier of the Data Access (DA) inside the FDA                                                                                                                                                                                       | `da1`                                |
+| `outputType`   | ✓        | Format of the returned results. **Default:** `json`. Allowed values: `json`, `csv`, `xls`.                                                                                                                                              | `csv`                                |
+| `param*`       | ✓        | Query parameters prefixed with `param`. If omitted, no DA query parameters are passed.                                                                                                                                                  | `parammunicipality=NA`               |
+| `pageSize`     | ✓        | Pagination size (must be handled explicitly by the DA). If omitted, this field is not passed and DA defaults apply.                                                                                                                     | `10`                                 |
+| `pageStart`    | ✓        | Pagination offset (must be handled explicitly by the DA). If omitted, this field is not passed and DA defaults apply.                                                                                                                   | `0`                                  |
+
+---
+
+_**Path-to-scope convention (legacy CDA)**_
+
+In this compatibility endpoint, `visibility` and `servicePath` are resolved from `path` to preserve Pentaho legacy
+behavior:
+
+-   `visibility`: extracted from `path` (`public` or `private`)
+-   `servicePath`: normalized as `/${visibility}`
+
+This convention is intentional and backward compatible with legacy clients that did not manage `Fiware-ServicePath`.
 
 ---
 
@@ -1811,6 +1830,19 @@ curl -i -X POST "http://localhost:8085/plugin/cda/api/doQuery" \
   -d "path=/public/trantor/verticals/sql/da1" \
   -d "dataAccessId=da1" \
   -d "pageSize=10"
+```
+
+_**Example Request (GET + query params, JSON default):**_
+
+```bash
+curl -i -X GET "http://localhost:8085/plugin/cda/api/doQuery?path=/public/trantor/verticals/sql/fda1&dataAccessId=da1&paramminAge=25&pageSize=10&pageStart=0"
+```
+
+_**Example Request (GET legacy CKAN/Pentaho style + CSV):**_
+
+```bash
+curl -i -X GET "http://localhost:8085/plugin/cda/api/doQuery?path=home/trantor/verticals/public/environment.cda&dataAccessId=airqualityobserved&paramstart=2023-01-01%2000%3A00%3A00&paramfinish=2023-03-30%2023%3A59%3A59&_TRUST_USER_=opendata_trantor&outputType=csv" \
+    --output results.csv
 ```
 
 _**Example Response (JSON):**_
