@@ -148,4 +148,29 @@ describe('cda adapter', () => {
       },
     });
   });
+
+  test('supports legacy home/<service>/verticals/public/<file>.cda path format', async () => {
+    const { handleCdaQuery } = await loadCdaAdapterModule();
+
+    executeQueryMock.mockResolvedValueOnce([]);
+
+    await handleCdaQuery({
+      body: {
+        path: '/home/sc_alcoi/verticals/public/environment.cda',
+        dataAccessId: 'airqualityobserved',
+      },
+    });
+
+    expect(executeQueryMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        service: 'sc_alcoi',
+        visibility: 'public',
+        servicePath: '/public',
+        params: expect.objectContaining({
+          fdaId: 'environment',
+          daId: 'airqualityobserved',
+        }),
+      }),
+    );
+  });
 });
