@@ -636,10 +636,14 @@ app.delete('/datasources/:datasourceId', async (req, res) => {
   return res.sendStatus(204);
 });
 
-app.post('/plugin/cda/api/doQuery', async (req, res) => {
-  const startTime = Date.now();
+function getCdaRequestParams(req) {
+  return req.method === 'GET' ? req.query ?? {} : req.body ?? {};
+}
 
-  const { path, dataAccessId, ...rest } = req.body;
+async function handleCdaDoQuery(req, res) {
+  const requestParams = getCdaRequestParams(req);
+  const { path, dataAccessId } = requestParams;
+
   if (!path || !dataAccessId) {
     return res.status(400).json({
       error: 'BadRequest',
@@ -647,7 +651,7 @@ app.post('/plugin/cda/api/doQuery', async (req, res) => {
     });
   }
 
-  const rawOutputType = req.body.outputType || DEFAULT_OUTPUT_TYPE;
+  const rawOutputType = requestParams.outputType || DEFAULT_OUTPUT_TYPE;
 
   if (!VALID_OUTPUT_TYPES.includes(rawOutputType)) {
     return res.status(400).json({
@@ -658,7 +662,7 @@ app.post('/plugin/cda/api/doQuery', async (req, res) => {
 
   try {
     const result = await handleCdaQuery({
-      body: req.body,
+      body: requestParams,
       outputType: rawOutputType,
     });
 
@@ -672,7 +676,10 @@ app.post('/plugin/cda/api/doQuery', async (req, res) => {
       description: err.message || 'Unexpected error executing query',
     });
   }
-});
+}
+
+app.post('/plugin/cda/api/doQuery', handleCdaDoQuery);
+app.get('/plugin/cda/api/doQuery', handleCdaDoQuery);
 
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
