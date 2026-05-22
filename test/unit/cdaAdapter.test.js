@@ -122,6 +122,32 @@ describe('cda adapter', () => {
     );
   });
 
+  test('maps param* fields into DA query params', async () => {
+    const { handleCdaQuery } = await loadCdaAdapterModule();
+
+    executeQueryMock.mockResolvedValueOnce([]);
+
+    await handleCdaQuery({
+      body: {
+        path: '/public/svc/fdaID',
+        dataAccessId: 'daA',
+        paramminAge: '30',
+        paramcity: 'Madrid',
+      },
+    });
+
+    expect(executeQueryMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        params: expect.objectContaining({
+          fdaId: 'fdaID',
+          daId: 'daA',
+          minAge: '30',
+          city: 'Madrid',
+        }),
+      }),
+    );
+  });
+
   test('returns json with default outputType and path ends in .cda', async () => {
     const { handleCdaQuery } = await loadCdaAdapterModule();
 
@@ -169,6 +195,31 @@ describe('cda adapter', () => {
         params: expect.objectContaining({
           fdaId: 'environment',
           daId: 'airqualityobserved',
+        }),
+      }),
+    );
+  });
+
+  test('supports fallback path style without explicit visibility prefix', async () => {
+    const { handleCdaQuery } = await loadCdaAdapterModule();
+
+    executeQueryMock.mockResolvedValueOnce([]);
+
+    await handleCdaQuery({
+      body: {
+        path: '/legacyService',
+        dataAccessId: 'daLegacy',
+      },
+    });
+
+    expect(executeQueryMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        service: 'legacyService',
+        visibility: 'legacyService',
+        servicePath: '/legacyService',
+        params: expect.objectContaining({
+          fdaId: 'daLegacy',
+          daId: 'daLegacy',
         }),
       }),
     );

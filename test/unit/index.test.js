@@ -1343,6 +1343,37 @@ describe('index routes - validation and middleware branches', () => {
       }),
     );
   });
+
+  test('returns JSON CDA payload on GET /plugin/cda/api/doQuery when outputType is omitted', async () => {
+    cdaMocks.handleCdaQuery.mockResolvedValueOnce({
+      metadata: [{ colIndex: 0, colName: 'col1' }],
+      resultset: [['x']],
+      queryInfo: { pageStart: 0, pageSize: 0, totalRows: 1 },
+    });
+
+    const res = await request(app)
+      .get('/plugin/cda/api/doQuery')
+      .query({
+        path: '/public/svc/verticals/sql/fda1',
+        dataAccessId: 'da1',
+      })
+      .expect(200);
+
+    expect(res.body).toEqual({
+      metadata: [{ colIndex: 0, colName: 'col1' }],
+      resultset: [['x']],
+      queryInfo: { pageStart: 0, pageSize: 0, totalRows: 1 },
+    });
+    expect(cdaMocks.handleCdaQuery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          path: '/public/svc/verticals/sql/fda1',
+          dataAccessId: 'da1',
+        }),
+        outputType: 'json',
+      }),
+    );
+  });
 });
 
 describe('index bootstrap and shutdown branches', () => {
