@@ -224,4 +224,85 @@ describe('cda adapter', () => {
       }),
     );
   });
+
+  test('uses public as default visibility for home path without explicit visibility segment', async () => {
+    const { handleCdaQuery } = await loadCdaAdapterModule();
+
+    executeQueryMock.mockResolvedValueOnce([]);
+
+    await handleCdaQuery({
+      body: {
+        path: '/home/sc_alcoi/verticals/sql/environment.cda',
+        dataAccessId: 'airqualityobserved',
+      },
+    });
+
+    expect(executeQueryMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        service: 'sc_alcoi',
+        visibility: 'public',
+        servicePath: '/public',
+      }),
+    );
+  });
+
+  test('uses the same token as service when path is only visibility', async () => {
+    const { handleCdaQuery } = await loadCdaAdapterModule();
+
+    executeQueryMock.mockResolvedValueOnce([]);
+
+    await handleCdaQuery({
+      body: {
+        path: '/public',
+        dataAccessId: 'daA',
+      },
+    });
+
+    expect(executeQueryMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        service: 'public',
+        visibility: 'public',
+        servicePath: '/public',
+      }),
+    );
+  });
+
+  test('propagates __total into queryInfo.totalRows', async () => {
+    const { handleCdaQuery } = await loadCdaAdapterModule();
+
+    executeQueryMock.mockResolvedValueOnce([
+      { col1: 'a', __total: '99' },
+      { col1: 'b', __total: '99' },
+    ]);
+
+    const result = await handleCdaQuery({
+      body: {
+        path: '/public/svc/fdaID',
+        dataAccessId: 'daA',
+      },
+    });
+
+    expect(result.queryInfo.totalRows).toBe(99);
+  });
+
+  test('falls back to private visibility when path has no segments', async () => {
+    const { handleCdaQuery } = await loadCdaAdapterModule();
+
+    executeQueryMock.mockResolvedValueOnce([]);
+
+    await handleCdaQuery({
+      body: {
+        path: '/',
+        dataAccessId: 'daA',
+      },
+    });
+
+    expect(executeQueryMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        service: undefined,
+        visibility: 'private',
+        servicePath: '/private',
+      }),
+    );
+  });
 });
