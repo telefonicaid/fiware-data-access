@@ -1,3 +1,4 @@
+
 # Architecture
 
 This document describes the system architecture of **FIWARE Data Access**, including main concepts and database model.
@@ -7,6 +8,8 @@ This document describes the system architecture of **FIWARE Data Access**, inclu
 ## Concepts
 
 This section explains what an **FDA** and a **DA / CDA** are in the context of the FIWARE Data Access API.
+
+<img width="1536" height="1024" alt="FDA_diagram" src="https://github.com/user-attachments/assets/6f6a99bd-4925-484d-84d0-a0d91edbf397" />
 
 ### Datasource
 
