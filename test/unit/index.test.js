@@ -1300,6 +1300,80 @@ describe('index routes - validation and middleware branches', () => {
     );
     expect(res.headers['content-disposition']).toMatch(/results\.xlsx/);
   });
+
+  test('returns 400 for invalid outputType on GET /doQuery', async () => {
+    const res = await request(app)
+      .get('/plugin/cda/api/doQuery')
+      .query({
+        path: '/public/svc',
+        dataAccessId: 'da1',
+        outputType: 'html',
+      })
+      .expect(400);
+
+    expect(res.body).toEqual({
+      error: 'BadRequest',
+      description: expect.stringContaining("Invalid outputType 'html'"),
+    });
+    expect(cdaMocks.handleCdaQuery).not.toHaveBeenCalled();
+  });
+
+  test('returns CSV when outputType=csv is requested on GET /plugin/cda/api/doQuery with legacy path', async () => {
+    cdaMocks.handleCdaQuery.mockResolvedValueOnce([{ col1: 'x', col2: 'y' }]);
+
+    const res = await request(app)
+      .get('/plugin/cda/api/doQuery')
+      .query({
+        path: '/home/sc_alcoi/verticals/public/environment.cda',
+        dataAccessId: 'airqualityobserved',
+        _TRUST_USER_: 'opendata_sc_alcoi',
+        outputType: 'csv',
+      })
+      .expect(200);
+
+    expect(res.headers['content-type']).toMatch(/text\/csv/);
+    expect(res.text).toContain('col1,col2');
+    expect(cdaMocks.handleCdaQuery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          path: '/home/sc_alcoi/verticals/public/environment.cda',
+          dataAccessId: 'airqualityobserved',
+        }),
+        outputType: 'csv',
+      }),
+    );
+  });
+
+  test('returns JSON CDA payload on GET /plugin/cda/api/doQuery when outputType is omitted', async () => {
+    cdaMocks.handleCdaQuery.mockResolvedValueOnce({
+      metadata: [{ colIndex: 0, colName: 'col1' }],
+      resultset: [['x']],
+      queryInfo: { pageStart: 0, pageSize: 0, totalRows: 1 },
+    });
+
+    const res = await request(app)
+      .get('/plugin/cda/api/doQuery')
+      .query({
+        path: '/public/svc/verticals/sql/fda1',
+        dataAccessId: 'da1',
+      })
+      .expect(200);
+
+    expect(res.body).toEqual({
+      metadata: [{ colIndex: 0, colName: 'col1' }],
+      resultset: [['x']],
+      queryInfo: { pageStart: 0, pageSize: 0, totalRows: 1 },
+    });
+    expect(cdaMocks.handleCdaQuery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          path: '/public/svc/verticals/sql/fda1',
+          dataAccessId: 'da1',
+        }),
+        outputType: 'json',
+      }),
+    );
+  });
 });
 
 describe('index bootstrap and shutdown branches', () => {

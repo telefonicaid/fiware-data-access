@@ -122,6 +122,32 @@ describe('cda adapter', () => {
     );
   });
 
+  test('maps param* fields into DA query params', async () => {
+    const { handleCdaQuery } = await loadCdaAdapterModule();
+
+    executeQueryMock.mockResolvedValueOnce([]);
+
+    await handleCdaQuery({
+      body: {
+        path: '/public/svc/fdaID',
+        dataAccessId: 'daA',
+        paramminAge: '30',
+        paramcity: 'Madrid',
+      },
+    });
+
+    expect(executeQueryMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        params: expect.objectContaining({
+          fdaId: 'fdaID',
+          daId: 'daA',
+          minAge: '30',
+          city: 'Madrid',
+        }),
+      }),
+    );
+  });
+
   test('returns json with default outputType and path ends in .cda', async () => {
     const { handleCdaQuery } = await loadCdaAdapterModule();
 
@@ -147,5 +173,136 @@ describe('cda adapter', () => {
         totalRows: 1,
       },
     });
+  });
+
+  test('supports legacy home/<service>/verticals/public/<file>.cda path format', async () => {
+    const { handleCdaQuery } = await loadCdaAdapterModule();
+
+    executeQueryMock.mockResolvedValueOnce([]);
+
+    await handleCdaQuery({
+      body: {
+        path: '/home/sc_alcoi/verticals/public/environment.cda',
+        dataAccessId: 'airqualityobserved',
+      },
+    });
+
+    expect(executeQueryMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        service: 'sc_alcoi',
+        visibility: 'public',
+        servicePath: '/public',
+        params: expect.objectContaining({
+          fdaId: 'environment',
+          daId: 'airqualityobserved',
+        }),
+      }),
+    );
+  });
+
+  test('supports fallback path style without explicit visibility prefix', async () => {
+    const { handleCdaQuery } = await loadCdaAdapterModule();
+
+    executeQueryMock.mockResolvedValueOnce([]);
+
+    await handleCdaQuery({
+      body: {
+        path: '/legacyService',
+        dataAccessId: 'daLegacy',
+      },
+    });
+
+    expect(executeQueryMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        service: 'legacyService',
+        visibility: 'legacyService',
+        servicePath: '/legacyService',
+        params: expect.objectContaining({
+          fdaId: 'daLegacy',
+          daId: 'daLegacy',
+        }),
+      }),
+    );
+  });
+
+  test('uses public as default visibility for home path without explicit visibility segment', async () => {
+    const { handleCdaQuery } = await loadCdaAdapterModule();
+
+    executeQueryMock.mockResolvedValueOnce([]);
+
+    await handleCdaQuery({
+      body: {
+        path: '/home/sc_alcoi/verticals/sql/environment.cda',
+        dataAccessId: 'airqualityobserved',
+      },
+    });
+
+    expect(executeQueryMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        service: 'sc_alcoi',
+        visibility: 'public',
+        servicePath: '/public',
+      }),
+    );
+  });
+
+  test('uses the same token as service when path is only visibility', async () => {
+    const { handleCdaQuery } = await loadCdaAdapterModule();
+
+    executeQueryMock.mockResolvedValueOnce([]);
+
+    await handleCdaQuery({
+      body: {
+        path: '/public',
+        dataAccessId: 'daA',
+      },
+    });
+
+    expect(executeQueryMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        service: 'public',
+        visibility: 'public',
+        servicePath: '/public',
+      }),
+    );
+  });
+
+  test('propagates __total into queryInfo.totalRows', async () => {
+    const { handleCdaQuery } = await loadCdaAdapterModule();
+
+    executeQueryMock.mockResolvedValueOnce([
+      { col1: 'a', __total: '99' },
+      { col1: 'b', __total: '99' },
+    ]);
+
+    const result = await handleCdaQuery({
+      body: {
+        path: '/public/svc/fdaID',
+        dataAccessId: 'daA',
+      },
+    });
+
+    expect(result.queryInfo.totalRows).toBe(99);
+  });
+
+  test('falls back to private visibility when path has no segments', async () => {
+    const { handleCdaQuery } = await loadCdaAdapterModule();
+
+    executeQueryMock.mockResolvedValueOnce([]);
+
+    await handleCdaQuery({
+      body: {
+        path: '/',
+        dataAccessId: 'daA',
+      },
+    });
+
+    expect(executeQueryMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        service: undefined,
+        visibility: 'private',
+        servicePath: '/private',
+      }),
+    );
   });
 });

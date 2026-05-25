@@ -137,6 +137,60 @@ export function registerCdaCompatibilityIntegrationTests({
       expect(ndjsonAttempt.json).toHaveProperty('resultset');
     });
 
+    test('GET /plugin/cda/api/doQuery supports query params without FIWARE headers', async () => {
+      const baseUrl = getBaseUrl();
+      const url = new URL(`${baseUrl}/plugin/cda/api/doQuery`);
+
+      url.searchParams.set('path', `/public/${service}/verticals/sql/${fdaId}`);
+      url.searchParams.set('dataAccessId', daId);
+      url.searchParams.set('paramminAge', '25');
+      url.searchParams.set('pageSize', '2');
+      url.searchParams.set('pageStart', '0');
+
+      const res = await httpReq({
+        method: 'GET',
+        url: url.toString(),
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.json).toHaveProperty('metadata');
+      expect(res.json).toHaveProperty('resultset');
+      expect(res.json).toHaveProperty('queryInfo');
+      expect(res.json.queryInfo.pageStart).toBe(0);
+      expect(res.json.queryInfo.pageSize).toBe(2);
+    });
+
+    test('GET /plugin/cda/api/doQuery supports legacy home path and outputType query param', async () => {
+      const baseUrl = getBaseUrl();
+      const url = new URL(`${baseUrl}/plugin/cda/api/doQuery`);
+
+      url.searchParams.set(
+        'path',
+        `home/${service}/verticals/public/${fdaId}.cda`,
+      );
+      url.searchParams.set('dataAccessId', daId);
+      url.searchParams.set('paramminAge', '25');
+      url.searchParams.set('outputType', 'csv');
+      url.searchParams.set('_TRUST_USER_', `opendata_${service}`);
+
+      const res = await httpReqRaw({
+        method: 'GET',
+        url: url.toString(),
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toContain('text/csv');
+      expect(res.headers['content-disposition']).toContain('results.csv');
+
+      const lines = res.text
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+      expect(lines[0]).toBe('id,name,age');
+      expect(lines[1]).toBe('1,ana,30');
+      expect(lines[2]).toBe('3,carlos,40');
+    });
+
     test('POST /plugin/cda/api/doQuery rejects scope mismatch', async () => {
       const baseUrl = getBaseUrl();
       const privateFdaId = 'fda_cda_scope_private';
