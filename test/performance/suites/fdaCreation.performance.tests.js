@@ -1,0 +1,231 @@
+// Copyright 2025 Telefónica Soluciones de Informática y Comunicaciones de España, S.A.U.
+// PROJECT: fiware-data-access
+//
+// This software and / or computer program has been developed by Telefónica Soluciones
+// de Informática y Comunicaciones de España, S.A.U (hereinafter TSOL) and is protected
+// as copyright by the applicable legislation on intellectual property.
+//
+// It belongs to TSOL, and / or its licensors, the exclusive rights of reproduction,
+// distribution, public communication and transformation, and any economic right on it,
+// all without prejudice of the moral rights of the authors mentioned above. It is expressly
+// forbidden to decompile, disassemble, reverse engineer, sublicense or otherwise transmit
+// by any means, translate or create derivative works of the software and / or computer
+// programs, and perform with respect to all or part of such programs, any type of exploitation.
+//
+// Any use of all or part of the software and / or computer program will require the
+// express written consent of TSOL. In all cases, it will be necessary to make
+// an express reference to TSOL ownership in the software and / or computer
+// program.
+//
+// Non-fulfillment of the provisions set forth herein and, in general, any violation of
+// the peaceful possession and ownership of these rights will be prosecuted by the means
+// provided in both Spanish and international law. TSOL reserves any civil or
+// criminal actions it may exercise to protect its rights.
+
+import { test, expect } from '@jest/globals';
+import { performance } from 'node:perf_hooks';
+
+export function registerFdaCreationPerformanceTests({
+  getBaseUrl,
+  service,
+  servicePath,
+  visibility,
+  fdaId,
+  httpReq,
+  waitUntilFDACompleted,
+  maxWaitMs,
+}) {
+  test(
+    'Create basic FDA',
+    async () => {
+      const baseUrl = getBaseUrl();
+
+      performance.mark('fda-create-start');
+      const res = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: fdaId,
+          query:
+            'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+          description: 'Performance test: CSV to Parquet conversion',
+        },
+      });
+
+      if (res.status >= 400) {
+        console.error('POST /fdas failed:', res.status, res.json ?? res.text);
+      }
+      expect(res.status).toBe(202);
+
+      performance.mark('fda-wait-start');
+      await waitUntilFDACompleted({
+        baseUrl,
+        service,
+        fdaId,
+        visibility: 'public',
+        timeout: 30000,
+      });
+      console.log('after wait until completed');
+      performance.mark('fda-wait-end');
+
+      performance.mark('fda-create-end');
+
+      performance.measure(
+        'fda-create-total',
+        'fda-create-start',
+        'fda-create-end',
+      );
+      performance.measure('fda-polling-wait', 'fda-wait-start', 'fda-wait-end');
+
+      const totalMeasure = performance.getEntriesByName('fda-create-total')[0];
+      const pollingMeasure =
+        performance.getEntriesByName('fda-polling-wait')[0];
+
+      console.log(
+        `[PERF] FDA creation took ${totalMeasure.duration.toFixed(2)}ms (polling: ${pollingMeasure.duration.toFixed(2)}ms)`,
+      );
+    },
+    maxWaitMs(),
+  );
+
+  test(
+    'Create compressed FDA',
+    async () => {
+      const baseUrl = getBaseUrl();
+      const uniqueFdaId = `${fdaId}-compressed`;
+
+      performance.mark('fda-create-start');
+      const res = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: uniqueFdaId,
+          query:
+            'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+          description: 'Performance test: CSV to Parquet conversion',
+          objStgConf: {
+            compression: true,
+          },
+        },
+      });
+
+      if (res.status >= 400) {
+        console.error('POST /fdas failed:', res.status, res.json ?? res.text);
+      }
+      expect(res.status).toBe(202);
+
+      performance.mark('fda-wait-start');
+      await waitUntilFDACompleted({
+        baseUrl,
+        service,
+        fdaId: uniqueFdaId,
+        visibility: 'public',
+        timeout: 30000,
+      });
+      console.log('after wait until completed');
+      performance.mark('fda-wait-end');
+
+      performance.mark('fda-create-end');
+
+      performance.measure(
+        'fda-create-compression-total',
+        'fda-create-start',
+        'fda-create-end',
+      );
+      performance.measure(
+        'fda-create-compression-polling-wait',
+        'fda-wait-start',
+        'fda-wait-end',
+      );
+
+      const totalMeasure = performance.getEntriesByName(
+        'fda-create-compression-total',
+      )[0];
+      const pollingMeasure = performance.getEntriesByName(
+        'fda-create-compression-polling-wait',
+      )[0];
+
+      console.log(
+        `[PERF] FDA creation took ${totalMeasure.duration.toFixed(2)}ms (polling: ${pollingMeasure.duration.toFixed(2)}ms)`,
+      );
+    },
+    maxWaitMs(),
+  );
+
+  test(
+    'Create partitioned FDA',
+    async () => {
+      const baseUrl = getBaseUrl();
+      const uniqueFdaId = `${fdaId}-partitioned`;
+
+      performance.mark('fda-create-start');
+      const res = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: uniqueFdaId,
+          query:
+            'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+          description: 'Performance test: CSV to Parquet conversion',
+          timeColumn: 'timeinstant',
+          objStgConf: {
+            partition: 'day',
+          },
+        },
+      });
+
+      if (res.status >= 400) {
+        console.error('POST /fdas failed:', res.status, res.json ?? res.text);
+      }
+      expect(res.status).toBe(202);
+
+      performance.mark('fda-wait-start');
+      await waitUntilFDACompleted({
+        baseUrl,
+        service,
+        fdaId: uniqueFdaId,
+        visibility: 'public',
+        timeout: 30000,
+      });
+
+      performance.mark('fda-wait-end');
+
+      performance.mark('fda-create-end');
+
+      performance.measure(
+        'fda-create-partitioned-total',
+        'fda-create-start',
+        'fda-create-end',
+      );
+      performance.measure(
+        'fda-create-partitioned-polling-wait',
+        'fda-wait-start',
+        'fda-wait-end',
+      );
+
+      const totalMeasure = performance.getEntriesByName(
+        'fda-create-partitioned-total',
+      )[0];
+      const pollingMeasure = performance.getEntriesByName(
+        'fda-create-partitioned-polling-wait',
+      )[0];
+
+      console.log(
+        `[PERF] FDA creation took ${totalMeasure.duration.toFixed(2)}ms (polling: ${pollingMeasure.duration.toFixed(2)}ms)`,
+      );
+    },
+    maxWaitMs(),
+  );
+}

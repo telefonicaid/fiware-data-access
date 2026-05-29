@@ -19,7 +19,8 @@
     "test:coverage:unit": "NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules c8 --reporter=lcov --reporter=text-summary --reports-dir=coverage/unit jest --runInBand test/unit",
     "test:coverage:integration": "NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules c8 --reporter=lcov --reporter=text-summary --reports-dir=coverage/integration jest --runInBand test/integration",
     "test:coverage:merge": "npx --yes lcov-result-merger 'coverage/*/lcov.info' coverage/lcov.info",
-    "test:coverage:ci": "npm run test:coverage:unit && npm run test:coverage:integration && npm run test:coverage:merge"
+    "test:coverage:ci": "npm run test:coverage:unit && npm run test:coverage:integration && npm run test:coverage:merge",
+    "test:performance": "NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest --runInBand test/performance"
   },
   "engines": {
     "node": ">=24"
