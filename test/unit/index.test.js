@@ -940,6 +940,192 @@ describe('index routes - validation and middleware branches', () => {
     expect(fdaMocks.executeQueryStream).not.toHaveBeenCalled();
   });
 
+  test('supports query-style DA data endpoint GET /data/da', async () => {
+    fdaMocks.executeQuery.mockResolvedValueOnce([{ id: 1 }]);
+
+    const res = await request(app)
+      .get('/data/da')
+      .query({
+        service: 'svc',
+        servicePath: '/servicepath',
+        visibility: 'public',
+        fdaId: 'fda1',
+        daId: 'da1',
+        minAge: '18',
+      })
+      .expect(200);
+
+    expect(res.body).toEqual([{ id: 1 }]);
+    expect(fdaMocks.executeQuery).toHaveBeenCalledWith({
+      service: 'svc',
+      visibility: 'public',
+      servicePath: '/servicepath',
+      params: {
+        fdaId: 'fda1',
+        daId: 'da1',
+        minAge: '18',
+      },
+    });
+  });
+
+  test('supports query-style DA outputType from query param', async () => {
+    const res = await request(app)
+      .get('/data/da')
+      .query({
+        service: 'svc',
+        servicePath: '/servicepath',
+        visibility: 'public',
+        fdaId: 'fda1',
+        daId: 'da1',
+        minAge: '18',
+        outputType: 'csv',
+      })
+      .expect(200);
+
+    expect(res.text).toBe('streamed-csv');
+    expect(fdaMocks.executeQueryStream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        format: 'csv',
+      }),
+    );
+    expect(fdaMocks.executeQuery).not.toHaveBeenCalled();
+  });
+
+  test('supports query-style FDA data endpoint GET /data/fda', async () => {
+    fdaMocks.executeFDAQuery.mockResolvedValueOnce([{ id: 'fda-row' }]);
+
+    const res = await request(app)
+      .get('/data/fda')
+      .query({
+        service: 'svc',
+        servicePath: '/servicepath',
+        visibility: 'public',
+        fdaId: 'fda1',
+      })
+      .expect(200);
+
+    expect(res.body).toEqual([{ id: 'fda-row' }]);
+    expect(fdaMocks.executeFDAQuery).toHaveBeenCalledWith({
+      service: 'svc',
+      visibility: 'public',
+      servicePath: '/servicepath',
+      fdaId: 'fda1',
+    });
+  });
+
+  test('supports query-style FDA outputType from query param', async () => {
+    const res = await request(app)
+      .get('/data/fda')
+      .query({
+        service: 'svc',
+        servicePath: '/servicepath',
+        visibility: 'public',
+        fdaId: 'fda1',
+        outputType: 'csv',
+      })
+      .expect(200);
+
+    expect(res.text).toBe('streamed-fda-csv');
+    expect(fdaMocks.executeFDAQueryStream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        format: 'csv',
+      }),
+    );
+    expect(fdaMocks.executeFDAQuery).not.toHaveBeenCalled();
+  });
+
+  test('returns 400 for invalid query-style outputType in GET /data/da', async () => {
+    const res = await request(app)
+      .get('/data/da')
+      .query({
+        service: 'svc',
+        servicePath: '/servicepath',
+        visibility: 'public',
+        fdaId: 'fda1',
+        daId: 'da1',
+        outputType: 'html',
+      })
+      .expect(400);
+
+    expect(res.body).toEqual({
+      error: 'BadRequest',
+      description: expect.stringContaining("Invalid outputType 'html'"),
+    });
+  });
+
+  test('returns 409 when query-style DA request mixes legacy headers', async () => {
+    const res = await request(app)
+      .get('/data/da')
+      .set('Fiware-Service', 'svc')
+      .query({
+        service: 'svc',
+        servicePath: '/servicepath',
+        visibility: 'public',
+        fdaId: 'fda1',
+        daId: 'da1',
+      })
+      .expect(409);
+
+    expect(res.body.error).toBe('RequestStyleConflict');
+    expect(fdaMocks.executeQuery).not.toHaveBeenCalled();
+    expect(fdaMocks.executeQueryStream).not.toHaveBeenCalled();
+  });
+
+  test('returns 409 when query-style FDA request mixes legacy headers', async () => {
+    const res = await request(app)
+      .get('/data/fda')
+      .set('Fiware-ServicePath', '/servicepath')
+      .query({
+        service: 'svc',
+        servicePath: '/servicepath',
+        visibility: 'public',
+        fdaId: 'fda1',
+      })
+      .expect(409);
+
+    expect(res.body.error).toBe('RequestStyleConflict');
+    expect(fdaMocks.executeFDAQuery).not.toHaveBeenCalled();
+    expect(fdaMocks.executeFDAQueryStream).not.toHaveBeenCalled();
+  });
+
+  test('returns 400 when query-style FDA request includes extra query params', async () => {
+    const res = await request(app)
+      .get('/data/fda')
+      .query({
+        service: 'svc',
+        servicePath: '/servicepath',
+        visibility: 'public',
+        fdaId: 'fda1',
+        limit: '1',
+      })
+      .expect(400);
+
+    expect(res.body).toEqual({
+      error: 'BadRequest',
+      description: 'FDA fresh query does not accept query parameters',
+    });
+    expect(fdaMocks.executeFDAQuery).not.toHaveBeenCalled();
+    expect(fdaMocks.executeFDAQueryStream).not.toHaveBeenCalled();
+  });
+
+  test('returns 400 when required query-style fields are missing in GET /data/da', async () => {
+    const res = await request(app)
+      .get('/data/da')
+      .query({
+        service: 'svc',
+        servicePath: '/servicepath',
+        visibility: 'public',
+        fdaId: 'fda1',
+      })
+      .expect(400);
+
+    expect(res.body).toEqual({
+      error: 'BadRequest',
+      description: 'Missing params in the request',
+    });
+    expect(fdaMocks.executeQuery).not.toHaveBeenCalled();
+  });
+
   test('covers DELETE DA route success path', async () => {
     await request(app)
       .delete('/public/fdas/fda1/das/da1')
