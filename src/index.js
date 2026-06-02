@@ -75,6 +75,7 @@ import {
   buildMetricsText,
   getMetricsContentType,
 } from './lib/metrics.js';
+import { FDAError } from './lib/fdaError.js';
 
 export const app = express();
 const PORT = config.port;
@@ -96,6 +97,88 @@ const DATA_ACCEPT_CONTENT_TYPE_TO_OUTPUT = {
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xls',
   'application/vnd.ms-excel': 'xls',
 };
+
+const QUERY_STYLE_DA_REQUIRED_FIELDS = [
+  'service',
+  'servicePath',
+  'visibility',
+  'fdaId',
+  'daId',
+];
+
+const QUERY_STYLE_FDA_REQUIRED_FIELDS = [
+  'service',
+  'servicePath',
+  'visibility',
+  'fdaId',
+];
+
+const QUERY_STYLE_CONTEXT_FIELDS = [...QUERY_STYLE_DA_REQUIRED_FIELDS];
+const QUERY_STYLE_OUTPUT_TYPES = ['json', 'ndjson', 'csv', 'xls'];
+
+function throwRequestStyleConflictIfMixed(req) {
+  const hasLegacyHeaders =
+    req.get('Fiware-Service') !== undefined ||
+    req.get('Fiware-ServicePath') !== undefined;
+
+  if (hasLegacyHeaders) {
+    throw new FDAError(
+      409,
+      'RequestStyleConflict',
+      'Cannot mix query-style and header-style request parameters',
+    );
+  }
+}
+
+function assertRequiredQueryFields(query, requiredFields) {
+  const missing = requiredFields.filter((field) => {
+    const value = query[field];
+    return value === undefined || value === null || value === '';
+  });
+
+  if (missing.length > 0) {
+    throw new FDAError(400, 'BadRequest', 'Missing params in the request');
+  }
+}
+
+function getOutputTypeFromAcceptHeader(req) {
+  const matched = req.accepts(DATA_CONTENT_TYPES);
+  if (!matched) {
+    throw new FDAError(
+      406,
+      'NotAcceptable',
+      'Accept header must allow application/json, application/x-ndjson, text/csv, or application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+  }
+
+  return DATA_ACCEPT_CONTENT_TYPE_TO_OUTPUT[matched];
+}
+
+function getQueryStyleOutputType(query) {
+  const rawOutputType = query.outputType ?? DEFAULT_OUTPUT_TYPE;
+
+  if (!QUERY_STYLE_OUTPUT_TYPES.includes(rawOutputType)) {
+    throw new FDAError(
+      400,
+      'BadRequest',
+      `Invalid outputType '${rawOutputType}'. Allowed values: ${QUERY_STYLE_OUTPUT_TYPES.join(', ')}`,
+    );
+  }
+
+  return rawOutputType;
+}
+
+function splitDaQueryStyleParams(query) {
+  const queryParams = { ...query };
+
+  for (const reservedField of QUERY_STYLE_CONTEXT_FIELDS) {
+    delete queryParams[reservedField];
+  }
+
+  delete queryParams.outputType;
+
+  return queryParams;
+}
 
 async function sendRowsByOutputType(res, rows, outputType) {
   if (outputType === 'csv') {
@@ -555,6 +638,80 @@ app.get('/:visibility/fdas/:fdaId/data', async (req, res) => {
   });
 
   return sendRowsByOutputType(res, rows, outputType);
+});
+
+app.get('/data/da', async (req, res) => {
+  throwRequestStyleConflictIfMixed(req);
+  validateForbiddenFieldsQuery(req.query, ['fresh']);
+  assertRequiredQueryFields(req.query, QUERY_STYLE_DA_REQUIRED_FIELDS);
+
+  const { service, servicePath, visibility, fdaId, daId } = req.query;
+  const outputType = getQueryStyleOutputType(req.query);
+  const params = {
+    fdaId,
+    daId,
+    ...splitDaQueryStyleParams(req.query),
+  };
+
+  if (outputType === 'ndjson' || outputType === 'csv') {
+    return executeQueryStream({
+      service,
+      visibility,
+      servicePath,
+      params,
+      req,
+      res,
+      format: outputType,
+    });
+  }
+
+  const rows = await executeQuery({
+    service,
+    visibility,
+    servicePath,
+    params,
+  });
+
+  return sendRowsByOutputType(res, rows, outputType);
+});
+
+app.get('/data/fda', async (req, res) => {
+  throwRequestStyleConflictIfMixed(req);
+  validateForbiddenFieldsQuery(req.query, ['fresh']);
+  assertRequiredQueryFields(req.query, QUERY_STYLE_FDA_REQUIRED_FIELDS);
+
+  const { service, servicePath, visibility, fdaId, outputType, ...rest } =
+    req.query;
+  if (Object.keys(rest).length > 0) {
+    throw new FDAError(
+      400,
+      'BadRequest',
+      'FDA fresh query does not accept query parameters',
+    );
+  }
+
+  const queryStyleOutputType = getQueryStyleOutputType({ outputType });
+
+  if (queryStyleOutputType === 'ndjson' || queryStyleOutputType === 'csv') {
+    return executeFDAQueryStream({
+      service,
+      visibility,
+      servicePath,
+      fdaId,
+      req,
+      res,
+      format: queryStyleOutputType,
+    });
+  }
+
+  const rows = await executeFDAQuery({
+    service,
+    visibility,
+    servicePath,
+    fdaId,
+  });
+
+  return sendRowsByOutputType(res, rows, queryStyleOutputType);
 });
 
 app.post('/datasources', async (req, res) => {
