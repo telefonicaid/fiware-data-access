@@ -98,46 +98,15 @@ const DATA_ACCEPT_CONTENT_TYPE_TO_OUTPUT = {
   'application/vnd.ms-excel': 'xls',
 };
 
-const QUERY_STYLE_DA_REQUIRED_FIELDS = [
-  'service',
-  'servicePath',
-  'visibility',
-  'fdaId',
-  'daId',
-];
-
-const QUERY_STYLE_FDA_REQUIRED_FIELDS = [
-  'service',
-  'servicePath',
-  'visibility',
-  'fdaId',
-];
-
-const QUERY_STYLE_CONTEXT_FIELDS = [...QUERY_STYLE_DA_REQUIRED_FIELDS];
 const QUERY_STYLE_OUTPUT_TYPES = ['json', 'ndjson', 'csv', 'xls'];
 
-function throwRequestStyleConflictIfMixed(req) {
-  const hasLegacyHeaders =
-    req.get('Fiware-Service') !== undefined ||
-    req.get('Fiware-ServicePath') !== undefined;
-
-  if (hasLegacyHeaders) {
+function throwRequestStyleConflictIfMixed(hasHeaderContext, hasQueryContext) {
+  if (hasHeaderContext && hasQueryContext) {
     throw new FDAError(
       409,
       'RequestStyleConflict',
       'Cannot mix query-style and header-style request parameters',
     );
-  }
-}
-
-function assertRequiredQueryFields(query, requiredFields) {
-  const missing = requiredFields.filter((field) => {
-    const value = query[field];
-    return value === undefined || value === null || value === '';
-  });
-
-  if (missing.length > 0) {
-    throw new FDAError(400, 'BadRequest', 'Missing params in the request');
   }
 }
 
@@ -171,13 +140,47 @@ function getQueryStyleOutputType(query) {
 function splitDaQueryStyleParams(query) {
   const queryParams = { ...query };
 
-  for (const reservedField of QUERY_STYLE_CONTEXT_FIELDS) {
-    delete queryParams[reservedField];
-  }
-
+  delete queryParams.service;
+  delete queryParams.servicePath;
   delete queryParams.outputType;
 
   return queryParams;
+}
+
+function resolveServiceContextFromRequest(req) {
+  const headerService = req.get('Fiware-Service');
+  const headerServicePath = req.get('Fiware-ServicePath');
+  const queryService = req.query.service;
+  const queryServicePath = req.query.servicePath;
+
+  const hasHeaderContext =
+    headerService !== undefined || headerServicePath !== undefined;
+  const hasQueryContext =
+    queryService !== undefined || queryServicePath !== undefined;
+
+  throwRequestStyleConflictIfMixed(hasHeaderContext, hasQueryContext);
+
+  if (hasQueryContext) {
+    if (!queryService || !queryServicePath) {
+      throw new FDAError(400, 'BadRequest', 'Missing params in the request');
+    }
+
+    return {
+      style: 'query',
+      service: queryService,
+      servicePath: queryServicePath,
+    };
+  }
+
+  if (!headerService || !headerServicePath) {
+    throw new FDAError(400, 'BadRequest', 'Missing params in the request');
+  }
+
+  return {
+    style: 'header',
+    service: headerService,
+    servicePath: headerServicePath,
+  };
 }
 
 async function sendRowsByOutputType(res, rows, outputType) {
@@ -534,24 +537,20 @@ app.delete('/:visibility/fdas/:fdaId/das/:daId', async (req, res) => {
 
 app.get('/:visibility/fdas/:fdaId/das/:daId/data', async (req, res) => {
   const { visibility, fdaId, daId } = req.params;
-  const service = req.get('Fiware-Service');
-  const servicePath = req.get('Fiware-ServicePath');
+  const { service, servicePath, style } = resolveServiceContextFromRequest(req);
 
-  validateForbiddenFieldsQuery(req.query, ['outputType', 'fresh']);
+  let outputType;
+  let queryParams;
 
-  const matched = req.accepts(DATA_CONTENT_TYPES);
-  if (!matched) {
-    return res.status(406).json({
-      error: 'NotAcceptable',
-      description:
-        'Accept header must allow application/json, application/x-ndjson, text/csv, or application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    });
+  if (style === 'query') {
+    validateForbiddenFieldsQuery(req.query, ['fresh']);
+    outputType = getQueryStyleOutputType(req.query);
+    queryParams = splitDaQueryStyleParams(req.query);
+  } else {
+    validateForbiddenFieldsQuery(req.query, ['outputType', 'fresh']);
+    outputType = getOutputTypeFromAcceptHeader(req);
+    queryParams = { ...req.query };
   }
-
-  const outputType = DATA_ACCEPT_CONTENT_TYPE_TO_OUTPUT[matched];
-
-  const queryParams = { ...req.query };
-  delete queryParams.outputType;
 
   if (!fdaId || !daId || !service || !servicePath || !visibility) {
     return res.status(400).json({
@@ -590,26 +589,35 @@ app.get('/:visibility/fdas/:fdaId/das/:daId/data', async (req, res) => {
 
 app.get('/:visibility/fdas/:fdaId/data', async (req, res) => {
   const { visibility, fdaId } = req.params;
-  const service = req.get('Fiware-Service');
-  const servicePath = req.get('Fiware-ServicePath');
+  const { service, servicePath, style } = resolveServiceContextFromRequest(req);
 
-  if (Object.keys(req.query).length > 0) {
-    return res.status(400).json({
-      error: 'BadRequest',
-      description: 'FDA fresh query does not accept query parameters',
-    });
+  let outputType;
+  if (style === 'query') {
+    validateForbiddenFieldsQuery(req.query, ['fresh']);
+    const {
+      service: _s,
+      servicePath: _sp,
+      outputType: _ot,
+      ...rest
+    } = req.query;
+    if (Object.keys(rest).length > 0) {
+      return res.status(400).json({
+        error: 'BadRequest',
+        description: 'FDA fresh query does not accept query parameters',
+      });
+    }
+
+    outputType = getQueryStyleOutputType(req.query);
+  } else {
+    if (Object.keys(req.query).length > 0) {
+      return res.status(400).json({
+        error: 'BadRequest',
+        description: 'FDA fresh query does not accept query parameters',
+      });
+    }
+
+    outputType = getOutputTypeFromAcceptHeader(req);
   }
-
-  const matched = req.accepts(DATA_CONTENT_TYPES);
-  if (!matched) {
-    return res.status(406).json({
-      error: 'NotAcceptable',
-      description:
-        'Accept header must allow application/json, application/x-ndjson, text/csv, or application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    });
-  }
-
-  const outputType = DATA_ACCEPT_CONTENT_TYPE_TO_OUTPUT[matched];
 
   if (!fdaId || !service || !servicePath || !visibility) {
     return res.status(400).json({
@@ -638,80 +646,6 @@ app.get('/:visibility/fdas/:fdaId/data', async (req, res) => {
   });
 
   return sendRowsByOutputType(res, rows, outputType);
-});
-
-app.get('/data/da', async (req, res) => {
-  throwRequestStyleConflictIfMixed(req);
-  validateForbiddenFieldsQuery(req.query, ['fresh']);
-  assertRequiredQueryFields(req.query, QUERY_STYLE_DA_REQUIRED_FIELDS);
-
-  const { service, servicePath, visibility, fdaId, daId } = req.query;
-  const outputType = getQueryStyleOutputType(req.query);
-  const params = {
-    fdaId,
-    daId,
-    ...splitDaQueryStyleParams(req.query),
-  };
-
-  if (outputType === 'ndjson' || outputType === 'csv') {
-    return executeQueryStream({
-      service,
-      visibility,
-      servicePath,
-      params,
-      req,
-      res,
-      format: outputType,
-    });
-  }
-
-  const rows = await executeQuery({
-    service,
-    visibility,
-    servicePath,
-    params,
-  });
-
-  return sendRowsByOutputType(res, rows, outputType);
-});
-
-app.get('/data/fda', async (req, res) => {
-  throwRequestStyleConflictIfMixed(req);
-  validateForbiddenFieldsQuery(req.query, ['fresh']);
-  assertRequiredQueryFields(req.query, QUERY_STYLE_FDA_REQUIRED_FIELDS);
-
-  const { service, servicePath, visibility, fdaId, outputType, ...rest } =
-    req.query;
-  if (Object.keys(rest).length > 0) {
-    throw new FDAError(
-      400,
-      'BadRequest',
-      'FDA fresh query does not accept query parameters',
-    );
-  }
-
-  const queryStyleOutputType = getQueryStyleOutputType({ outputType });
-
-  if (queryStyleOutputType === 'ndjson' || queryStyleOutputType === 'csv') {
-    return executeFDAQueryStream({
-      service,
-      visibility,
-      servicePath,
-      fdaId,
-      req,
-      res,
-      format: queryStyleOutputType,
-    });
-  }
-
-  const rows = await executeFDAQuery({
-    service,
-    visibility,
-    servicePath,
-    fdaId,
-  });
-
-  return sendRowsByOutputType(res, rows, queryStyleOutputType);
 });
 
 app.post('/datasources', async (req, res) => {
