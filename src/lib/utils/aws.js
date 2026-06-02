@@ -87,6 +87,16 @@ export async function dropFile(s3Client, bucket, path) {
       }),
     );
   } catch (e) {
+    if (
+      e?.$metadata?.httpStatusCode === 404 ||
+      e?.name === 'NotFound' ||
+      e?.name === 'NoSuchKey' ||
+      e?.Code === 'NoSuchKey' ||
+      e?.code === 'NoSuchKey'
+    ) {
+      return;
+    }
+
     throw new FDAError(
       500,
       'S3ServerError',
@@ -97,6 +107,11 @@ export async function dropFile(s3Client, bucket, path) {
 
 export async function dropFiles(s3Client, bucket, objsToRemove) {
   logger.debug({ bucket, objsToRemove }, '[DEBUG]: dropFiles');
+
+  if (!objsToRemove?.length) {
+    return;
+  }
+
   try {
     await s3Client.send(
       new DeleteObjectsCommand({

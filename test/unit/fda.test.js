@@ -2152,6 +2152,30 @@ describe('deleteFDA', () => {
     ]);
   });
 
+  test('deleteFDA removes FDA even when Minio has no matching objects', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      _id: 'mongo-id',
+      visibility: 'private',
+      servicePath: '/servicepath',
+    });
+    awsMocks.listObjects.mockResolvedValue([]);
+
+    await deleteFDA('svc', 'fdaA', 'private', '/servicepath');
+
+    expect(awsMocks.dropFiles).toHaveBeenCalledWith({}, 'svc', []);
+    expect(mongoMocks.removeFDA).toHaveBeenCalledWith(
+      'svc',
+      'fdaA',
+      '/servicepath',
+    );
+    expect(agenda.cancel).toHaveBeenCalledWith({
+      name: 'refresh-fda',
+      'data.service': 'svc',
+      'data.fdaId': 'fdaA',
+      'data.servicePath': '/servicepath',
+    });
+  });
+
   test('throws FDANotFound when FDA does not exist', async () => {
     mongoMocks.retrieveFDA.mockResolvedValue(undefined);
     mongoMocks.retrieveFDAs.mockResolvedValue([]);

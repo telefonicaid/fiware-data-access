@@ -1,2 +1,3 @@
 - Add: Pentaho CDA backward compatibility now supports browser-style `GET /plugin/cda/api/doQuery` with query params, including `outputType` (`json`, `csv`, `xls`) (#108)
 - Add: New query-style endpoints `GET /data/da` and `GET /data/fda` (#175)
+- Fix: FDA deletion now ignores missing Minio objects so Sliding Window and fresh FDAs can be removed even when no files were uploaded (#169)
