@@ -22,13 +22,15 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
-import { describe, test, expect } from '@jest/globals';
+import { describe, beforeAll, test, expect } from '@jest/globals';
 
 export function registerQueryStyleDataIntegrationTests({
   getBaseUrl,
   service,
   servicePath,
   visibility,
+  getPgHost,
+  getPgPort,
   httpReq,
   httpReqRaw,
   buildQueryStyleDaDataUrl,
@@ -38,6 +40,84 @@ export function registerQueryStyleDataIntegrationTests({
   describe('Query-style data endpoints', () => {
     const fixtureFdaId = 'fda_qs_dq_fixture';
     const fixtureDaId = 'da_qs_dq_fixture';
+
+    async function ensureDefaultDatasource(baseUrl) {
+      const createRes = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/datasources`,
+        headers: {
+          'Content-Type': 'application/json',
+          'Fiware-Service': service,
+        },
+        body: {
+          datasourceId: 'default',
+          type: 'postgres',
+          config: {
+            user: 'postgres',
+            password: 'postgres',
+            host: getPgHost(),
+            port: getPgPort(),
+            database: service,
+          },
+        },
+      });
+
+      if (createRes.status !== 200 && createRes.status !== 409) {
+        throw new Error(
+          `Failed to ensure default datasource: ${createRes.status} ${JSON.stringify(createRes.json)}`,
+        );
+      }
+    }
+
+    beforeAll(async () => {
+      const baseUrl = getBaseUrl();
+
+      await ensureDefaultDatasource(baseUrl);
+
+      const createFda = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: fixtureFdaId,
+          query: 'SELECT id, name, age FROM public.users ORDER BY id',
+          description: 'query-style da data fixture',
+        },
+      });
+
+      if (createFda.status !== 202) {
+        throw new Error(
+          `Failed to create query-style DA fixture FDA: ${createFda.status} ${JSON.stringify(createFda.json)}`,
+        );
+      }
+
+      await waitUntilFDACompleted({ baseUrl, service, fdaId: fixtureFdaId });
+
+      const createDa = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas/${fixtureFdaId}/das`,
+        headers: { 'Fiware-Service': service },
+        body: {
+          id: fixtureDaId,
+          description: 'query-style da filter fixture',
+          query: `
+            SELECT id, name, age
+            WHERE age > $minAge
+            ORDER BY id
+          `,
+          params: [{ name: 'minAge', type: 'Number', required: true }],
+        },
+      });
+
+      if (createDa.status !== 200) {
+        throw new Error(
+          `Failed to create query-style DA fixture: ${createDa.status} ${JSON.stringify(createDa.json)}`,
+        );
+      }
+    });
 
     test('GET /data/da supports query-style URL-only execution', async () => {
       const baseUrl = getBaseUrl();

@@ -392,6 +392,8 @@ export function runFDAIntegrationSuite({ mode, label }) {
       service,
       servicePath,
       visibility,
+      getPgHost: () => pgHost,
+      getPgPort: () => pgPort,
       httpReq,
       httpReqRaw,
       buildQueryStyleDaDataUrl,
