@@ -32,6 +32,8 @@
         -   [Delete DA](#delete-da-delete-visibilityfdasfdaiddasdaid)
     -   [Data operations](#data-operations)
         -   [Data query](#data-query-get-visibilityfdasfdaiddasdaiddata)
+        -   [Query-style Data Access query](#query-style-data-access-query-get-datada)
+        -   [Query-style FDA data query](#query-style-fda-data-query-get-datafda)
         -   [Query (Pentaho CDA legacy support)](#query-plugincdaapidoquery-pentaho-cda-legacy-support)
 -   [Navigation](#-navigation)
 
@@ -95,6 +97,7 @@ All error responses follow this structure:
 | 409  | Conflict              | `FDAUnavailable`            | FDA `exampleId` is not queryable yet because the first fetch has not completed.                                                                                                                                                                                                                                    |
 | 409  | Conflict              | `FDANotOnlyFresh`           | The FDA is cached (`cached=true`) and cannot be queried through `GET /{visibility}/fdas/{fdaId}/data`; use a DA instead.                                                                                                                                                                                           |
 | 409  | Conflict              | `FDAOnlyFresh`              | The FDA was created with `cached=false`, so it does not allow DAs nor cached DA queries.                                                                                                                                                                                                                           |
+| 409  | Conflict              | `RequestStyleConflict`      | The request mixes query-style URL parameters (`/data/da` or `/data/fda`) with legacy `Fiware-Service`/`Fiware-ServicePath` headers. Use only one style per request.                                                                                                                                                |
 | 409  | Conflict              | `DatasourceInUse`           | Attempted to delete a datasource that is currently referenced by one or more FDAs in the same `Fiware-Service`.                                                                                                                                                                                                    |
 | 429  | Too Many Requests     | `TooManyFreshQueries`       | The number of concurrent direct fresh FDA queries exceeded `FDA_MAX_CONCURRENT_FRESH_QUERIES`.                                                                                                                                                                                                                     |
 | 500  | Internal Server Error | `S3ServerError`             | An error occurred in the S3 object storage component.                                                                                                                                                                                                                                                              |
@@ -1570,6 +1573,38 @@ curl -i -X GET "http://localhost:8080/public/fdas/fda_live_alarms/data" \
     -H "Fiware-ServicePath: /servicePath"
 ```
 
+#### Query-style FDA data query `GET /data/fda`
+
+Runs the FDA base query directly against PostgreSQL (same behavior as `GET /{visibility}/fdas/{fdaId}/data`) using URL
+query parameters instead of tenant headers and scoped path.
+
+_**Request query parameters**_
+
+| Parameter     | Optional | Description                                                                     | Example           |
+| ------------- | -------- | ------------------------------------------------------------------------------- | ----------------- |
+| `service`     |          | Tenant or service                                                               | `trantor`         |
+| `servicePath` |          | NGSI hierarchical service path                                                  | `/servicePath`    |
+| `visibility`  |          | FDA access visibility. Allowed values: `public`, `private`                      | `public`          |
+| `fdaId`       |          | Id of the `fda`                                                                 | `fda_live_alarms` |
+| `outputType`  | ✓        | Output format. Allowed values: `json`, `ndjson`, `csv`, `xls`. Default: `json`. | `csv`             |
+
+_**Request headers**_
+
+`Fiware-Service` and `Fiware-ServicePath` must not be sent with this endpoint. If they are present, API returns
+`409 RequestStyleConflict`.
+
+_**Behavior notes**_
+
+-   This endpoint is always fresh and requires `FDA_ROLE_SYNCQUERIES=true`.
+-   No additional query parameters are allowed besides `outputType`.
+-   Response format is controlled by `outputType` query parameter.
+
+_**Example Request:**_
+
+```bash
+curl -i -X GET "http://localhost:8080/data/fda?service=trantor&servicePath=%2FservicePath&visibility=public&fdaId=fda_live_alarms"
+```
+
 #### Data Access query `GET /{visibility}/fdas/{fdaId}/das/{daId}/data`
 
 Runs a stored parameterized query for the selected DA. The request path declares the access visibility and the query
@@ -1690,6 +1725,40 @@ _**Example Request (with parameters):**_
 curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_filter_by_name/data?pattern=%25nosignal%25" \
   -H "Fiware-Service: trantor" \
   -H "Fiware-ServicePath: /servicePath"
+```
+
+#### Query-style Data Access query `GET /data/da`
+
+Runs a stored parameterized DA query (same behavior as `GET /{visibility}/fdas/{fdaId}/das/{daId}/data`) using URL query
+parameters instead of tenant headers and scoped path.
+
+_**Request query parameters**_
+
+| Parameter     | Optional | Description                                                                     | Example                  |
+| ------------- | -------- | ------------------------------------------------------------------------------- | ------------------------ |
+| `service`     |          | Tenant or service                                                               | `trantor`                |
+| `servicePath` |          | NGSI hierarchical service path                                                  | `/servicePath`           |
+| `visibility`  |          | FDA access visibility. Allowed values: `public`, `private`                      | `public`                 |
+| `fdaId`       |          | Id of the `fda`                                                                 | `fda_alarms`             |
+| `daId`        |          | Id of the `da`                                                                  | `da_filter_by_name`      |
+| `outputType`  | ✓        | Output format. Allowed values: `json`, `ndjson`, `csv`, `xls`. Default: `json`. | `csv`                    |
+| DA params     | ✓        | DA-specific parameters declared in `params`                                     | `pattern=%25nosignal%25` |
+
+_**Request headers**_
+
+`Fiware-Service` and `Fiware-ServicePath` must not be sent with this endpoint. If they are present, API returns
+`409 RequestStyleConflict`.
+
+_**Behavior notes**_
+
+-   `outputType` and `fresh` query fields are rejected with `400 BadRequest`.
+-   `fresh` query field is rejected with `400 BadRequest`.
+-   Response format is controlled by `outputType` query parameter.
+
+_**Example Request:**_
+
+```bash
+curl -i -X GET "http://localhost:8080/data/da?service=trantor&servicePath=%2FservicePath&visibility=public&fdaId=fda_alarms&daId=da_filter_by_name&pattern=%25nosignal%25"
 ```
 
 _**Example Response:**_
