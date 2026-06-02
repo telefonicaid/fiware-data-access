@@ -940,17 +940,14 @@ describe('index routes - validation and middleware branches', () => {
     expect(fdaMocks.executeQueryStream).not.toHaveBeenCalled();
   });
 
-  test('supports query-style DA data endpoint GET /data/da', async () => {
+  test('supports query-style DA variant on GET /:visibility/fdas/:fdaId/das/:daId/data', async () => {
     fdaMocks.executeQuery.mockResolvedValueOnce([{ id: 1 }]);
 
     const res = await request(app)
-      .get('/data/da')
+      .get('/public/fdas/fda1/das/da1/data')
       .query({
         service: 'svc',
         servicePath: '/servicepath',
-        visibility: 'public',
-        fdaId: 'fda1',
-        daId: 'da1',
         minAge: '18',
       })
       .expect(200);
@@ -968,15 +965,12 @@ describe('index routes - validation and middleware branches', () => {
     });
   });
 
-  test('supports query-style DA outputType from query param', async () => {
+  test('supports query-style DA outputType from query param on existing URL', async () => {
     const res = await request(app)
-      .get('/data/da')
+      .get('/public/fdas/fda1/das/da1/data')
       .query({
         service: 'svc',
         servicePath: '/servicepath',
-        visibility: 'public',
-        fdaId: 'fda1',
-        daId: 'da1',
         minAge: '18',
         outputType: 'csv',
       })
@@ -991,16 +985,14 @@ describe('index routes - validation and middleware branches', () => {
     expect(fdaMocks.executeQuery).not.toHaveBeenCalled();
   });
 
-  test('supports query-style FDA data endpoint GET /data/fda', async () => {
+  test('supports query-style FDA variant on GET /:visibility/fdas/:fdaId/data', async () => {
     fdaMocks.executeFDAQuery.mockResolvedValueOnce([{ id: 'fda-row' }]);
 
     const res = await request(app)
-      .get('/data/fda')
+      .get('/public/fdas/fda1/data')
       .query({
         service: 'svc',
         servicePath: '/servicepath',
-        visibility: 'public',
-        fdaId: 'fda1',
       })
       .expect(200);
 
@@ -1013,14 +1005,12 @@ describe('index routes - validation and middleware branches', () => {
     });
   });
 
-  test('supports query-style FDA outputType from query param', async () => {
+  test('supports query-style FDA outputType from query param on existing URL', async () => {
     const res = await request(app)
-      .get('/data/fda')
+      .get('/public/fdas/fda1/data')
       .query({
         service: 'svc',
         servicePath: '/servicepath',
-        visibility: 'public',
-        fdaId: 'fda1',
         outputType: 'csv',
       })
       .expect(200);
@@ -1034,15 +1024,12 @@ describe('index routes - validation and middleware branches', () => {
     expect(fdaMocks.executeFDAQuery).not.toHaveBeenCalled();
   });
 
-  test('returns 400 for invalid query-style outputType in GET /data/da', async () => {
+  test('returns 400 for invalid query-style outputType in DA data URL', async () => {
     const res = await request(app)
-      .get('/data/da')
+      .get('/public/fdas/fda1/das/da1/data')
       .query({
         service: 'svc',
         servicePath: '/servicepath',
-        visibility: 'public',
-        fdaId: 'fda1',
-        daId: 'da1',
         outputType: 'html',
       })
       .expect(400);
@@ -1053,16 +1040,13 @@ describe('index routes - validation and middleware branches', () => {
     });
   });
 
-  test('returns 409 when query-style DA request mixes legacy headers', async () => {
+  test('returns 409 when DA data URL mixes query-style context with legacy headers', async () => {
     const res = await request(app)
-      .get('/data/da')
+      .get('/public/fdas/fda1/das/da1/data')
       .set('Fiware-Service', 'svc')
       .query({
         service: 'svc',
         servicePath: '/servicepath',
-        visibility: 'public',
-        fdaId: 'fda1',
-        daId: 'da1',
       })
       .expect(409);
 
@@ -1071,15 +1055,13 @@ describe('index routes - validation and middleware branches', () => {
     expect(fdaMocks.executeQueryStream).not.toHaveBeenCalled();
   });
 
-  test('returns 409 when query-style FDA request mixes legacy headers', async () => {
+  test('returns 409 when FDA data URL mixes query-style context with legacy headers', async () => {
     const res = await request(app)
-      .get('/data/fda')
+      .get('/public/fdas/fda1/data')
       .set('Fiware-ServicePath', '/servicepath')
       .query({
         service: 'svc',
         servicePath: '/servicepath',
-        visibility: 'public',
-        fdaId: 'fda1',
       })
       .expect(409);
 
@@ -1088,14 +1070,12 @@ describe('index routes - validation and middleware branches', () => {
     expect(fdaMocks.executeFDAQueryStream).not.toHaveBeenCalled();
   });
 
-  test('returns 400 when query-style FDA request includes extra query params', async () => {
+  test('returns 400 when query-style FDA request includes unsupported query params', async () => {
     const res = await request(app)
-      .get('/data/fda')
+      .get('/public/fdas/fda1/data')
       .query({
         service: 'svc',
         servicePath: '/servicepath',
-        visibility: 'public',
-        fdaId: 'fda1',
         limit: '1',
       })
       .expect(400);
@@ -1108,14 +1088,11 @@ describe('index routes - validation and middleware branches', () => {
     expect(fdaMocks.executeFDAQueryStream).not.toHaveBeenCalled();
   });
 
-  test('returns 400 when required query-style fields are missing in GET /data/da', async () => {
+  test('returns 400 when query-style service context is incomplete in DA data URL', async () => {
     const res = await request(app)
-      .get('/data/da')
+      .get('/public/fdas/fda1/das/da1/data')
       .query({
         service: 'svc',
-        servicePath: '/servicepath',
-        visibility: 'public',
-        fdaId: 'fda1',
       })
       .expect(400);
 
