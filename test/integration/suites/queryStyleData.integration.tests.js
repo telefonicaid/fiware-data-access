@@ -33,8 +33,8 @@ export function registerQueryStyleDataIntegrationTests({
   getPgPort,
   httpReq,
   httpReqRaw,
-  buildQueryStyleDaDataUrl,
-  buildQueryStyleFdaDataUrl,
+  buildDaDataUrl,
+  buildFdaDataUrl,
   waitUntilFDACompleted,
 }) {
   describe('Query-style data endpoints', () => {
@@ -119,18 +119,15 @@ export function registerQueryStyleDataIntegrationTests({
       }
     });
 
-    test('GET /data/da supports query-style URL-only execution', async () => {
+    test('GET /{visibility}/fdas/{fdaId}/das/{daId}/data supports query-style context in query params', async () => {
       const baseUrl = getBaseUrl();
 
       const res = await httpReq({
         method: 'GET',
-        url: buildQueryStyleDaDataUrl(baseUrl, {
+        url: buildDaDataUrl(baseUrl, servicePath, fixtureFdaId, fixtureDaId, {
           service,
           servicePath,
-          visibility,
-          fdaId: fixtureFdaId,
-          daId: fixtureDaId,
-          params: { minAge: 25 },
+          minAge: 25,
         }),
         headers: { Accept: 'application/json' },
       });
@@ -142,19 +139,16 @@ export function registerQueryStyleDataIntegrationTests({
       ]);
     });
 
-    test('GET /data/da supports outputType query param', async () => {
+    test('GET /{visibility}/fdas/{fdaId}/das/{daId}/data supports outputType query param in query-style mode', async () => {
       const baseUrl = getBaseUrl();
 
       const res = await httpReqRaw({
         method: 'GET',
-        url: buildQueryStyleDaDataUrl(baseUrl, {
+        url: buildDaDataUrl(baseUrl, servicePath, fixtureFdaId, fixtureDaId, {
           service,
           servicePath,
-          visibility,
-          fdaId: fixtureFdaId,
-          daId: fixtureDaId,
           outputType: 'csv',
-          params: { minAge: 25 },
+          minAge: 25,
         }),
       });
 
@@ -163,18 +157,15 @@ export function registerQueryStyleDataIntegrationTests({
       expect(res.text).toContain('id,name,age');
     });
 
-    test('GET /data/da returns 409 when query-style is mixed with legacy headers', async () => {
+    test('GET /{visibility}/fdas/{fdaId}/das/{daId}/data returns 409 when query-style is mixed with legacy headers', async () => {
       const baseUrl = getBaseUrl();
 
       const res = await httpReq({
         method: 'GET',
-        url: buildQueryStyleDaDataUrl(baseUrl, {
+        url: buildDaDataUrl(baseUrl, servicePath, fixtureFdaId, fixtureDaId, {
           service,
           servicePath,
-          visibility,
-          fdaId: fixtureFdaId,
-          daId: fixtureDaId,
-          params: { minAge: 25 },
+          minAge: 25,
         }),
         headers: {
           'Fiware-Service': service,
@@ -186,19 +177,16 @@ export function registerQueryStyleDataIntegrationTests({
       expect(res.json.error).toBe('RequestStyleConflict');
     });
 
-    test('GET /data/da rejects invalid outputType query param', async () => {
+    test('GET /{visibility}/fdas/{fdaId}/das/{daId}/data rejects invalid outputType query param in query-style mode', async () => {
       const baseUrl = getBaseUrl();
 
       const res = await httpReq({
         method: 'GET',
-        url: buildQueryStyleDaDataUrl(baseUrl, {
+        url: buildDaDataUrl(baseUrl, servicePath, fixtureFdaId, fixtureDaId, {
           service,
           servicePath,
-          visibility,
-          fdaId: fixtureFdaId,
-          daId: fixtureDaId,
           outputType: 'html',
-          params: { minAge: 25 },
+          minAge: 25,
         }),
       });
 
@@ -207,7 +195,7 @@ export function registerQueryStyleDataIntegrationTests({
       expect(res.json.description).toContain("Invalid outputType 'html'");
     });
 
-    test('GET /data/fda supports query-style URL-only execution', async () => {
+    test('GET /{visibility}/fdas/{fdaId}/data supports query-style context in query params', async () => {
       const baseUrl = getBaseUrl();
       const fdaQueryStyleId = 'fda_query_style_direct';
 
@@ -231,12 +219,7 @@ export function registerQueryStyleDataIntegrationTests({
 
       const freshRes = await httpReq({
         method: 'GET',
-        url: buildQueryStyleFdaDataUrl(baseUrl, {
-          service,
-          servicePath,
-          visibility,
-          fdaId: fdaQueryStyleId,
-        }),
+        url: `${buildFdaDataUrl(baseUrl, servicePath, fdaQueryStyleId)}?service=${encodeURIComponent(service)}&servicePath=${encodeURIComponent(servicePath)}`,
       });
 
       expect(freshRes.status).toBe(200);
@@ -244,7 +227,7 @@ export function registerQueryStyleDataIntegrationTests({
       expect(freshRes.json.length).toBeGreaterThan(0);
     });
 
-    test('GET /data/fda supports outputType query param', async () => {
+    test('GET /{visibility}/fdas/{fdaId}/data supports outputType query param in query-style mode', async () => {
       const baseUrl = getBaseUrl();
       const fdaQueryStyleCsvId = 'fda_query_style_csv';
 
@@ -268,13 +251,7 @@ export function registerQueryStyleDataIntegrationTests({
 
       const freshRes = await httpReqRaw({
         method: 'GET',
-        url: buildQueryStyleFdaDataUrl(baseUrl, {
-          service,
-          servicePath,
-          visibility,
-          fdaId: fdaQueryStyleCsvId,
-          outputType: 'csv',
-        }),
+        url: `${buildFdaDataUrl(baseUrl, servicePath, fdaQueryStyleCsvId)}?service=${encodeURIComponent(service)}&servicePath=${encodeURIComponent(servicePath)}&outputType=csv`,
       });
 
       expect(freshRes.status).toBe(200);
@@ -282,7 +259,7 @@ export function registerQueryStyleDataIntegrationTests({
       expect(freshRes.text).toContain('id,name,age,timeinstant,authorized');
     });
 
-    test('GET /data/fda returns 409 when query-style is mixed with legacy headers', async () => {
+    test('GET /{visibility}/fdas/{fdaId}/data returns 409 when query-style is mixed with legacy headers', async () => {
       const baseUrl = getBaseUrl();
       const fdaConflictId = 'fda_query_style_conflict';
 
@@ -306,12 +283,7 @@ export function registerQueryStyleDataIntegrationTests({
 
       const freshRes = await httpReq({
         method: 'GET',
-        url: buildQueryStyleFdaDataUrl(baseUrl, {
-          service,
-          servicePath,
-          visibility,
-          fdaId: fdaConflictId,
-        }),
+        url: `${buildFdaDataUrl(baseUrl, servicePath, fdaConflictId)}?service=${encodeURIComponent(service)}&servicePath=${encodeURIComponent(servicePath)}`,
         headers: {
           'Fiware-Service': service,
         },
@@ -321,7 +293,7 @@ export function registerQueryStyleDataIntegrationTests({
       expect(freshRes.json.error).toBe('RequestStyleConflict');
     });
 
-    test('GET /data/fda rejects invalid outputType query param', async () => {
+    test('GET /{visibility}/fdas/{fdaId}/data rejects invalid outputType query param in query-style mode', async () => {
       const baseUrl = getBaseUrl();
       const fdaInvalidOutputTypeId = 'fda_query_style_invalid_output_type';
 
@@ -345,13 +317,7 @@ export function registerQueryStyleDataIntegrationTests({
 
       const freshRes = await httpReq({
         method: 'GET',
-        url: buildQueryStyleFdaDataUrl(baseUrl, {
-          service,
-          servicePath,
-          visibility,
-          fdaId: fdaInvalidOutputTypeId,
-          outputType: 'html',
-        }),
+        url: `${buildFdaDataUrl(baseUrl, servicePath, fdaInvalidOutputTypeId)}?service=${encodeURIComponent(service)}&servicePath=${encodeURIComponent(servicePath)}&outputType=html`,
       });
 
       expect(freshRes.status).toBe(400);

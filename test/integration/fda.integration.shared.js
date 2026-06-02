@@ -54,8 +54,6 @@ import {
   httpReqRaw,
   buildDaDataUrl,
   buildFdaDataUrl,
-  buildQueryStyleDaDataUrl,
-  buildQueryStyleFdaDataUrl,
   getFreePort,
   connectWithRetry,
   waitUntilFDACompleted,
@@ -396,8 +394,8 @@ export function runFDAIntegrationSuite({ mode, label }) {
       getPgPort: () => pgPort,
       httpReq,
       httpReqRaw,
-      buildQueryStyleDaDataUrl,
-      buildQueryStyleFdaDataUrl,
+      buildDaDataUrl,
+      buildFdaDataUrl,
       waitUntilFDACompleted,
     });
 
