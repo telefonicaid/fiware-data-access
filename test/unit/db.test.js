@@ -308,6 +308,24 @@ describe('db utils', () => {
       'SELECT * WHERE id = $1',
       false,
       '/servicepath',
+      'completed',
+    );
+
+    expect(result).toBe(
+      "FROM read_parquet('s3://my-service/servicepath/fdaA.parquet') SELECT * WHERE id = $1",
+    );
+  });
+
+  test('buildDAQuery builds query with partition using basic path when FDA isnt completed', async () => {
+    const { buildDAQuery } = await loadDbModule();
+
+    const result = buildDAQuery(
+      'my-service',
+      'fdaA',
+      'SELECT * WHERE id = $1',
+      true,
+      '/servicepath',
+      'pending',
     );
 
     expect(result).toBe(
@@ -324,6 +342,7 @@ describe('db utils', () => {
       'SELECT * WHERE id = $1',
       true,
       '/servicepath',
+      'completed',
     );
 
     expect(result).toBe(
@@ -340,6 +359,7 @@ describe('db utils', () => {
       'SELECT * WHERE id = $1',
       false,
       '/servicepath',
+      'completed',
     );
 
     expect(result).toBe(
