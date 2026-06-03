@@ -75,6 +75,7 @@ import {
   buildMetricsText,
   getMetricsContentType,
 } from './lib/metrics.js';
+import { FDAError } from './lib/fdaError.js';
 
 export const app = express();
 const PORT = config.port;
@@ -96,6 +97,91 @@ const DATA_ACCEPT_CONTENT_TYPE_TO_OUTPUT = {
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xls',
   'application/vnd.ms-excel': 'xls',
 };
+
+const QUERY_STYLE_OUTPUT_TYPES = ['json', 'ndjson', 'csv', 'xls'];
+
+function throwRequestStyleConflictIfMixed(hasHeaderContext, hasQueryContext) {
+  if (hasHeaderContext && hasQueryContext) {
+    throw new FDAError(
+      409,
+      'RequestStyleConflict',
+      'Cannot mix query-style and header-style request parameters',
+    );
+  }
+}
+
+function getOutputTypeFromAcceptHeader(req) {
+  const matched = req.accepts(DATA_CONTENT_TYPES);
+  if (!matched) {
+    throw new FDAError(
+      406,
+      'NotAcceptable',
+      'Accept header must allow application/json, application/x-ndjson, text/csv, or application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+  }
+
+  return DATA_ACCEPT_CONTENT_TYPE_TO_OUTPUT[matched];
+}
+
+function getQueryStyleOutputType(query) {
+  const rawOutputType = query.outputType ?? DEFAULT_OUTPUT_TYPE;
+
+  if (!QUERY_STYLE_OUTPUT_TYPES.includes(rawOutputType)) {
+    throw new FDAError(
+      400,
+      'BadRequest',
+      `Invalid outputType '${rawOutputType}'. Allowed values: ${QUERY_STYLE_OUTPUT_TYPES.join(', ')}`,
+    );
+  }
+
+  return rawOutputType;
+}
+
+function splitDaQueryStyleParams(query) {
+  const queryParams = { ...query };
+
+  delete queryParams.service;
+  delete queryParams.servicePath;
+  delete queryParams.outputType;
+
+  return queryParams;
+}
+
+function resolveServiceContextFromRequest(req) {
+  const headerService = req.get('Fiware-Service');
+  const headerServicePath = req.get('Fiware-ServicePath');
+  const queryService = req.query.service;
+  const queryServicePath = req.query.servicePath;
+
+  const hasHeaderContext =
+    headerService !== undefined || headerServicePath !== undefined;
+  const hasQueryContext =
+    queryService !== undefined || queryServicePath !== undefined;
+
+  throwRequestStyleConflictIfMixed(hasHeaderContext, hasQueryContext);
+
+  if (hasQueryContext) {
+    if (!queryService || !queryServicePath) {
+      throw new FDAError(400, 'BadRequest', 'Missing params in the request');
+    }
+
+    return {
+      style: 'query',
+      service: queryService,
+      servicePath: queryServicePath,
+    };
+  }
+
+  if (!headerService || !headerServicePath) {
+    throw new FDAError(400, 'BadRequest', 'Missing params in the request');
+  }
+
+  return {
+    style: 'header',
+    service: headerService,
+    servicePath: headerServicePath,
+  };
+}
 
 async function sendRowsByOutputType(res, rows, outputType) {
   if (outputType === 'csv') {
@@ -451,24 +537,20 @@ app.delete('/:visibility/fdas/:fdaId/das/:daId', async (req, res) => {
 
 app.get('/:visibility/fdas/:fdaId/das/:daId/data', async (req, res) => {
   const { visibility, fdaId, daId } = req.params;
-  const service = req.get('Fiware-Service');
-  const servicePath = req.get('Fiware-ServicePath');
+  const { service, servicePath, style } = resolveServiceContextFromRequest(req);
 
-  validateForbiddenFieldsQuery(req.query, ['outputType', 'fresh']);
+  let outputType;
+  let queryParams;
 
-  const matched = req.accepts(DATA_CONTENT_TYPES);
-  if (!matched) {
-    return res.status(406).json({
-      error: 'NotAcceptable',
-      description:
-        'Accept header must allow application/json, application/x-ndjson, text/csv, or application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    });
+  if (style === 'query') {
+    validateForbiddenFieldsQuery(req.query, ['fresh']);
+    outputType = getQueryStyleOutputType(req.query);
+    queryParams = splitDaQueryStyleParams(req.query);
+  } else {
+    validateForbiddenFieldsQuery(req.query, ['outputType', 'fresh']);
+    outputType = getOutputTypeFromAcceptHeader(req);
+    queryParams = { ...req.query };
   }
-
-  const outputType = DATA_ACCEPT_CONTENT_TYPE_TO_OUTPUT[matched];
-
-  const queryParams = { ...req.query };
-  delete queryParams.outputType;
 
   if (!fdaId || !daId || !service || !servicePath || !visibility) {
     return res.status(400).json({
@@ -507,26 +589,35 @@ app.get('/:visibility/fdas/:fdaId/das/:daId/data', async (req, res) => {
 
 app.get('/:visibility/fdas/:fdaId/data', async (req, res) => {
   const { visibility, fdaId } = req.params;
-  const service = req.get('Fiware-Service');
-  const servicePath = req.get('Fiware-ServicePath');
+  const { service, servicePath, style } = resolveServiceContextFromRequest(req);
 
-  if (Object.keys(req.query).length > 0) {
-    return res.status(400).json({
-      error: 'BadRequest',
-      description: 'FDA fresh query does not accept query parameters',
-    });
+  let outputType;
+  if (style === 'query') {
+    validateForbiddenFieldsQuery(req.query, ['fresh']);
+    const {
+      service: _s,
+      servicePath: _sp,
+      outputType: _ot,
+      ...rest
+    } = req.query;
+    if (Object.keys(rest).length > 0) {
+      return res.status(400).json({
+        error: 'BadRequest',
+        description: 'FDA fresh query does not accept query parameters',
+      });
+    }
+
+    outputType = getQueryStyleOutputType(req.query);
+  } else {
+    if (Object.keys(req.query).length > 0) {
+      return res.status(400).json({
+        error: 'BadRequest',
+        description: 'FDA fresh query does not accept query parameters',
+      });
+    }
+
+    outputType = getOutputTypeFromAcceptHeader(req);
   }
-
-  const matched = req.accepts(DATA_CONTENT_TYPES);
-  if (!matched) {
-    return res.status(406).json({
-      error: 'NotAcceptable',
-      description:
-        'Accept header must allow application/json, application/x-ndjson, text/csv, or application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    });
-  }
-
-  const outputType = DATA_ACCEPT_CONTENT_TYPE_TO_OUTPUT[matched];
 
   if (!fdaId || !service || !servicePath || !visibility) {
     return res.status(400).json({
