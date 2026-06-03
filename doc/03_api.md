@@ -32,8 +32,6 @@
         -   [Delete DA](#delete-da-delete-visibilityfdasfdaiddasdaid)
     -   [Data operations](#data-operations)
         -   [Data query](#data-query-get-visibilityfdasfdaiddasdaiddata)
-        -   [Query-style Data Access query](#query-style-data-access-query-get-datada)
-        -   [Query-style FDA data query](#query-style-fda-data-query-get-datafda)
         -   [Query (Pentaho CDA legacy support)](#query-plugincdaapidoquery-pentaho-cda-legacy-support)
 -   [Navigation](#-navigation)
 
@@ -1576,7 +1574,8 @@ _**Content negotiation and serialization notes**_
 -   In query-style context, response format is controlled by `outputType` query parameter.
 -   This endpoint requires `FDA_ROLE_SYNCQUERIES=true` in the API instance.
 -   In query-style context, no additional query parameters are allowed besides `service`, `servicePath`, and
-    `outputType`.
+    `outputType`; if the client attempts to send any other query parameter, the API returns `400 BadRequest` with
+    `FDA fresh query does not accept query parameters`.
 -   With `Accept: application/x-ndjson` and `Accept: text/csv`, results are streamed incrementally from PostgreSQL using
     a cursor.
 
