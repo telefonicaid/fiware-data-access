@@ -1571,7 +1571,8 @@ _**Response code**_
 
 _**Content negotiation and serialization notes**_
 
--   In header-style context, response format is negotiated through the `Accept` header.
+-   In header-style context, response format is negotiated through the `Accept` header (using the
+    [standard HTTP content negotiation mechanism](https://datatracker.ietf.org/doc/html/rfc2616#section-12)).
 -   In query-style context, response format is controlled by `outputType` query parameter.
 -   This endpoint requires `FDA_ROLE_SYNCQUERIES=true` in the API instance.
 -   In query-style context, no additional query parameters are allowed besides `service`, `servicePath`, and
