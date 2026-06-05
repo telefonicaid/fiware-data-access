@@ -574,7 +574,6 @@ export function buildDAQuery(
   userQuery,
   partition,
   servicePath,
-  status,
 ) {
   logger.debug(
     { service, fdaId, userQuery, partition },
@@ -598,7 +597,7 @@ export function buildDAQuery(
   const bucketName = getBucketNameFromService(service);
   const parquetPath = `s3://${bucketName}/${objectKey}.parquet`;
 
-  if (partition && status === 'completed') {
+  if (partition) {
     return `FROM read_parquet('${parquetPath}/**/*.parquet') ${trimmed}`;
   } else {
     return `FROM read_parquet('${parquetPath}') ${trimmed}`;
@@ -638,7 +637,7 @@ export async function validateDAQuery(
   userQuery,
   servicePath,
 ) {
-  const { objStgConf = {}, status } =
+  const { objStgConf = {} } =
     (await retrieveFDA(service, fdaId, servicePath)) || {};
   const query = buildDAQuery(
     service,
@@ -646,7 +645,6 @@ export async function validateDAQuery(
     userQuery,
     objStgConf?.partition,
     servicePath,
-    status,
   );
 
   let stmt;
