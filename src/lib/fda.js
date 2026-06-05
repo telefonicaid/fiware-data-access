@@ -1677,7 +1677,7 @@ async function createOneRowParquetSync(
     datasourceId,
   );
 
-  const oneRowQuery = buildOneRowQuery(query);
+  const oneRowQuery = buildOneRowQuery(query, timeColumn);
   await uploadTable(
     s3Client,
     bucketName,
@@ -1702,9 +1702,11 @@ async function createOneRowParquetSync(
   }
 }
 
-function buildOneRowQuery(query) {
+function buildOneRowQuery(query, timeColumn) {
   const normalizedQuery = query.trim().replace(/;+\s*$/, '');
-  return `SELECT * FROM (${normalizedQuery}) AS fda_one_row LIMIT 1`;
+  const orderBy = timeColumn ? ` ORDER BY ${timeColumn} DESC NULLS LAST` : '';
+
+  return `SELECT * FROM (${normalizedQuery}) AS fda_one_row ${orderBy} LIMIT 1`;
 }
 
 async function buildDefaultDataAccessDefinition(

@@ -308,7 +308,6 @@ describe('db utils', () => {
       'SELECT * WHERE id = $1',
       false,
       '/servicepath',
-      'completed',
     );
 
     expect(result).toBe(
@@ -325,11 +324,10 @@ describe('db utils', () => {
       'SELECT * WHERE id = $1',
       true,
       '/servicepath',
-      'pending',
     );
 
     expect(result).toBe(
-      "FROM read_parquet('s3://my-service/servicepath/fdaA.parquet') SELECT * WHERE id = $1",
+      "FROM read_parquet('s3://my-service/servicepath/fdaA.parquet/**/*.parquet') SELECT * WHERE id = $1",
     );
   });
 

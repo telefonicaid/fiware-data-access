@@ -1036,13 +1036,15 @@ describe('fetchFDA', () => {
         port: 5432,
         database: 'svc',
       },
-      'SELECT * FROM (SELECT id FROM users) AS fda_one_row LIMIT 1',
+      'SELECT * FROM (SELECT id FROM users) AS fda_one_row  ORDER BY timeinstant DESC NULLS LAST LIMIT 1',
       'servicepath/fda1',
     );
     expect(dbMocks.toParquet).toHaveBeenCalledWith(
       {},
       'svc/servicepath/fda1.csv',
       'svc/servicepath/fda1.parquet',
+      'timeinstant',
+      undefined,
     );
     expect(awsMocks.dropFile).toHaveBeenCalledWith(
       {},
