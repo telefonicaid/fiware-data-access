@@ -40,7 +40,6 @@ export async function startFetcher() {
       timeColumn,
       refreshPolicy,
       objStgConf,
-      partitionFlag = false,
     } = job.attrs.data;
     // Should agenda also log errors?
     try {
@@ -52,7 +51,6 @@ export async function startFetcher() {
         timeColumn,
         refreshPolicy,
         objStgConf,
-        partitionFlag,
       );
     } catch (e) {
       logger.error('Fetcher error: ', e);

@@ -994,7 +994,6 @@ export async function fetchFDA(
   if (refreshPolicy?.type === 'window') {
     const { refreshInterval, windowSize } = refreshPolicy.params || {};
 
-    // partitionFlag lets us know we are refreshing already existing partitioned files for performance purposes
     await agenda.every(
       refreshInterval,
       'refresh-fda',
@@ -1006,7 +1005,6 @@ export async function fetchFDA(
         timeColumn,
         refreshPolicy,
         objStgConf,
-        partitionFlag: true,
         datasourceId,
       },
       {
@@ -1174,7 +1172,6 @@ export async function updateFDA(service, fdaId, visibility, servicePath) {
     timeColumn: previous.timeColumn,
     refreshPolicy: previous.refreshPolicy,
     objStgConf: previous.objStgConf,
-    partitionFlag: true,
     datasourceId: previous.datasourceId ?? DEFAULT_DATASOURCE_ID,
   });
 
@@ -1196,7 +1193,6 @@ export async function processFDAAsync(
   timeColumn,
   refreshPolicy,
   objStgConf,
-  partitionFlag,
   datasourceId = DEFAULT_DATASOURCE_ID,
 ) {
   const storagePath = getFDAStoragePath(fdaId, servicePath);
@@ -1222,7 +1218,6 @@ export async function processFDAAsync(
       servicePath,
       timeColumn,
       objStgConf,
-      partitionFlag,
     );
 
     await updateFDAStatus(service, fdaId, servicePath, 'completed', 100);

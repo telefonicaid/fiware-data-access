@@ -1768,7 +1768,6 @@ describe('updateFDA', () => {
       timeColumn: undefined,
       refreshPolicy: undefined,
       objStgConf: undefined,
-      partitionFlag: true,
     });
   });
 
@@ -1807,7 +1806,6 @@ describe('updateFDA', () => {
         },
       },
       objStgConf: undefined,
-      partitionFlag: true,
     });
 
     expect(agenda.now).toHaveBeenCalledWith('clean-partition', {
