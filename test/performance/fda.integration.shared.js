@@ -73,7 +73,6 @@ export function runFDAIntegrationSuite({ mode, label }) {
     let baseUrl;
 
     const service = 'myservice';
-    const fdaId = 'performanceFda1';
 
     beforeAll(async () => {
       // Containers
@@ -393,7 +392,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       service,
       servicePath: '/public',
       visibility: 'public',
-      fdaId,
+      fdaId: `perf-test`,
       httpReq,
       waitUntilFDACompleted,
       maxWaitMs: () => maxWaitMs,
@@ -403,8 +402,10 @@ export function runFDAIntegrationSuite({ mode, label }) {
       getBaseUrl: () => baseUrl,
       service,
       servicePath: '/public',
-      fdaId,
+      visibility: 'public',
+      fdaId: `perf-test`,
       httpReq,
+      waitUntilFDACompleted,
       buildDaDataUrl,
     });
   });
