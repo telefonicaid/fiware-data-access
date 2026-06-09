@@ -1307,10 +1307,14 @@ export async function deleteFDA(service, fdaId, visibility, servicePath) {
     config.objstg.pass,
   );
   // This way we remove FDAs independently of if theyre partitioned or not
-  const objPaths = await listObjects(
-    s3Client,
-    bucketName,
-    getFDAStoragePath(fdaId, targetServicePath),
+  const storagePath = getFDAStoragePath(fdaId, targetServicePath);
+  const allObjPaths = await listObjects(s3Client, bucketName, storagePath);
+  // Filter strictly to objects belonging to this FDA only, preventing
+  // accidental deletion of sibling FDAs whose IDs share a common prefix
+  // (e.g. fda_test and fda_test_1 both match the prefix "fda_test").
+  const objPaths = allObjPaths.filter(
+    (key) =>
+      key.startsWith(`${storagePath}/`) || key.startsWith(`${storagePath}.`),
   );
   await dropFiles(s3Client, bucketName, objPaths);
 
@@ -1427,11 +1431,16 @@ export async function cleanPartition(
   );
   const bucketName = getBucketNameFromService(service);
 
-  /* c8 ignore next 6 */
-  const objPaths = await listObjects(
+  /* c8 ignore next 10 */
+  const cleanPartitionStoragePath = getFDAStoragePath(fdaId, servicePath);
+  const allPartitionPaths = await listObjects(
     s3Client,
     bucketName,
-    getFDAStoragePath(fdaId, servicePath),
+    cleanPartitionStoragePath,
+  );
+  // Filter strictly to objects belonging to this FDA only (same prefix-collision guard as deleteFDA)
+  const objPaths = allPartitionPaths.filter((key) =>
+    key.startsWith(`${cleanPartitionStoragePath}/`),
   );
 
   const partitionsToRemove = [];
