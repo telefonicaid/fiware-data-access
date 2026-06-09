@@ -43,6 +43,19 @@ import {
   buildDaDataUrl,
 } from '../integration/utils/integrationTestUtils.js';
 import { registerFdaQueryPerformanceTests } from './suites/fdaQuery.performance.tests.js';
+import {
+  parsePerformanceTableRows,
+  PERFORMANCE_TABLE_ROWS_ARG,
+} from './utils/performanceTestUtils.js';
+
+const performanceTableRows = parsePerformanceTableRows(
+  process.env.PERFORMANCE_TABLE_ROWS ??
+    process.env.npm_config_performanceTableRows ??
+    process.argv
+      .find((arg) => arg.startsWith(PERFORMANCE_TABLE_ROWS_ARG))
+      ?.slice(PERFORMANCE_TABLE_ROWS_ARG.length) ??
+    process.argv.slice(2).find((arg) => /^\d+$/.test(arg)),
+);
 
 const { Client } = pg;
 
@@ -172,7 +185,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
           (i % 2 = 0),
           (ARRAY['ES','FR','DE','IT','UK','PT','NL'])[(i % 7) + 1],
           (i % 1000)
-        FROM generate_series(1, 100) AS s(i);
+        FROM generate_series(1, ${performanceTableRows}) AS s(i);
       `);
 
         await pgClient.end();
