@@ -38,6 +38,7 @@ export function registerFdaVariantsIntegrationTests({
       const baseUrl = getBaseUrl();
       const prefixFdaId = 'fda_test';
       const siblingPrefixFdaId = 'fda_test_1';
+      const siblingDaId = 'da_sibling_test';
 
       async function deleteFdaIfPresent(fdaId) {
         const deleteRes = await httpReq({
@@ -98,6 +99,21 @@ export function registerFdaVariantsIntegrationTests({
           fdaId: siblingPrefixFdaId,
         });
 
+        const createSiblingDa = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas/${siblingPrefixFdaId}/das`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: siblingDaId,
+            query: 'SELECT id, name, age, timeinstant, authorized',
+          },
+        });
+
+        expect(createSiblingDa.status).toBe(200);
+
         const listRes = await httpReq({
           method: 'GET',
           url: `${baseUrl}/${visibility}/fdas`,
@@ -138,7 +154,7 @@ export function registerFdaVariantsIntegrationTests({
 
         const siblingDataRead = await httpReq({
           method: 'GET',
-          url: buildFdaDataUrl(baseUrl, servicePath, siblingPrefixFdaId),
+          url: `${baseUrl}/${visibility}/fdas/${siblingPrefixFdaId}/das/${siblingDaId}/data`,
           headers: {
             'Fiware-Service': service,
             'Fiware-ServicePath': servicePath,
