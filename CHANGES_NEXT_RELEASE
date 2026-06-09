@@ -1,1 +1,1 @@
-Fix: bug creating DAs for partitioned FDAs
+Fix: bug creating DAs in partitioned FDAs
