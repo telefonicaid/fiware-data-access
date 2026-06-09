@@ -139,7 +139,6 @@ export async function runPreparedStatement(
     da.query,
     objStgConf?.partition,
     storedServicePath ?? servicePath,
-    'completed',
   );
 
   const stmt = await conn.prepare(query);
