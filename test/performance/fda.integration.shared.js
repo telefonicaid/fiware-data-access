@@ -87,6 +87,8 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
     const service = 'myservice';
 
+    let tableSize;
+
     beforeAll(async () => {
       // Containers
       minio = await new GenericContainer('minio/minio:latest')
@@ -188,6 +190,11 @@ export function runFDAIntegrationSuite({ mode, label }) {
         FROM generate_series(1, ${performanceTableRows}) AS s(i);
       `);
 
+        const sizeResult = await pgClient.query(
+          `SELECT pg_size_pretty(pg_total_relation_size('public.users')) as size`,
+        );
+        tableSize = sizeResult.rows[0].size;
+
         await pgClient.end();
         console.log('[TEST] Postgres OK');
       }
@@ -204,24 +211,30 @@ export function runFDAIntegrationSuite({ mode, label }) {
     afterAll(async () => {
       await stopApp();
       await Promise.allSettled([minio?.stop(), mongo?.stop(), postgis?.stop()]);
-
-      // Performance test stats
-      // postgres table size etc
-
-      // Performance table
-      const measures = performance.getEntriesByType('measure');
-      if (measures.length > 0) {
-        const data = measures.map((m) => ({
-          Measurement: m.name,
-          'Duration (ms)': m.duration.toFixed(2),
-        }));
-        console.log('\n');
-        console.table(data);
-      }
+      printPerformanceStats();
     });
 
     function wait(ms) {
       return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    function printPerformanceStats() {
+      const data = {
+        'Rows in table': performanceTableRows,
+        'PostgreSQL table size': tableSize,
+      };
+      console.log('\n');
+      console.table(data);
+
+      // Performance table
+      const measures = performance.getEntriesByType('measure');
+      if (measures.length > 0) {
+        const data = Object.fromEntries(
+          measures.map((m) => [m.name, `${m.duration.toFixed(2)} ms`]),
+        );
+        console.log('\n');
+        console.table(data);
+      }
     }
 
     function buildCommonEnv(overrides = {}) {
