@@ -71,6 +71,7 @@ const mongoMocks = {
   retrieveDatasource: jest.fn(),
   updateDatasource: jest.fn(),
   removeDatasource: jest.fn(),
+  validateMongoDatasourceConnection: jest.fn(),
 };
 
 const jobsMocks = {
@@ -127,6 +128,8 @@ await jest.unstable_mockModule('../../src/lib/utils/mongo.js', () => ({
   retrieveDatasource: mongoMocks.retrieveDatasource,
   updateDatasource: mongoMocks.updateDatasource,
   removeDatasource: mongoMocks.removeDatasource,
+  validateMongoDatasourceConnection:
+    mongoMocks.validateMongoDatasourceConnection,
 }));
 
 await jest.unstable_mockModule('../../src/lib/fdaConfig.js', () => ({
@@ -407,11 +410,11 @@ describe('fda fresh query execution', () => {
       visibility: 'private',
       servicePath: '/servicepath',
       cached: false,
-      datasourceId: 'mongo-ds',
+      datasourceId: 'legacy-ds',
     });
     mongoMocks.retrieveDatasource.mockResolvedValue({
-      datasourceId: 'mongo-ds',
-      type: 'mongodb',
+      datasourceId: 'legacy-ds',
+      type: 'mysql',
       config: {},
     });
 
@@ -1025,6 +1028,8 @@ describe('fetchFDA', () => {
       undefined,
       true,
       'default',
+      undefined,
+      undefined,
     );
     expect(pgMocks.uploadTable).toHaveBeenCalledWith(
       {},
@@ -1124,6 +1129,103 @@ describe('fetchFDA', () => {
         { name: 'pageStart', default: 0 },
       ],
     );
+  });
+
+  test('rejects mongodb FDA creation when collection is missing', async () => {
+    mongoMocks.retrieveDatasource.mockResolvedValueOnce({
+      datasourceId: 'mongo-ds',
+      type: 'mongodb',
+      config: {
+        uri: 'mongodb://mongo:27017',
+        database: 'svc',
+      },
+    });
+
+    await expect(
+      fetchFDA(
+        'fda_mongo_1',
+        { status: 'ok' },
+        'svc',
+        'public',
+        '/servicepath',
+        'mongo fda',
+        { type: 'none' },
+        undefined,
+        undefined,
+        false,
+        false,
+        'mongo-ds',
+      ),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidMongoFDAContract',
+    });
+  });
+
+  test('rejects mongodb FDA creation when attrs are invalid', async () => {
+    mongoMocks.retrieveDatasource.mockResolvedValueOnce({
+      datasourceId: 'mongo-ds',
+      type: 'mongodb',
+      config: {
+        uri: 'mongodb://mongo:27017',
+        database: 'svc',
+      },
+    });
+
+    await expect(
+      fetchFDA(
+        'fda_mongo_2',
+        { status: 'ok' },
+        'svc',
+        'public',
+        '/servicepath',
+        'mongo fda',
+        { type: 'none' },
+        undefined,
+        undefined,
+        false,
+        false,
+        'mongo-ds',
+        'events',
+        [],
+      ),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidMongoFDAContract',
+    });
+  });
+
+  test('rejects mongodb FDA creation when query is not an object', async () => {
+    mongoMocks.retrieveDatasource.mockResolvedValueOnce({
+      datasourceId: 'mongo-ds',
+      type: 'mongodb',
+      config: {
+        uri: 'mongodb://mongo:27017',
+        database: 'svc',
+      },
+    });
+
+    await expect(
+      fetchFDA(
+        'fda_mongo_3',
+        'status = ok',
+        'svc',
+        'public',
+        '/servicepath',
+        'mongo fda',
+        { type: 'none' },
+        undefined,
+        undefined,
+        false,
+        false,
+        'mongo-ds',
+        'events',
+        ['name'],
+      ),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidMongoFDAContract',
+    });
   });
 
   test('creates default DA without time filters when FDA has no timeColumn', async () => {
@@ -1915,6 +2017,26 @@ describe('datasource service helpers', () => {
     });
 
     expect(mongoMocks.createDatasource).not.toHaveBeenCalled();
+  });
+
+  test('validates mongodb datasource connection before creating datasource', async () => {
+    const dsConfig = {
+      uri: 'mongodb://mongo:27017',
+      database: 'svc',
+    };
+
+    await createDatasourceForService('svc', 'mongo-ds', 'mongodb', dsConfig);
+
+    expect(mongoMocks.validateMongoDatasourceConnection).toHaveBeenCalledWith(
+      dsConfig,
+    );
+    expect(pgMocks.runPgQuery).not.toHaveBeenCalled();
+    expect(mongoMocks.createDatasource).toHaveBeenCalledWith(
+      'svc',
+      'mongo-ds',
+      'mongodb',
+      dsConfig,
+    );
   });
 
   test('validates merged datasource config before updating datasource', async () => {
