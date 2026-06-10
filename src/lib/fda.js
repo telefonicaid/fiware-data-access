@@ -36,7 +36,12 @@ import {
   PARTITION_TYPES,
   refreshIntervalPartitionCheck,
 } from './utils/db.js';
-import { uploadTable, runPgQuery, createPgCursorReader } from './utils/pg.js';
+import {
+  uploadTable,
+  runPgQuery,
+  createPgCursorReader,
+  validatePostgresDatasourceConnection,
+} from './utils/pg.js';
 import {
   getS3Client,
   dropFile,
@@ -62,6 +67,7 @@ import {
   updateDatasource,
   removeDatasource,
   countFDAsUsingDatasource,
+  validateMongoDatasourceConnection,
 } from './utils/mongo.js';
 import {
   normalizeForSerialization,
@@ -83,13 +89,50 @@ import { FDAError } from './fdaError.js';
 const FRESH_CURSOR_BATCH_SIZE = 250;
 
 const DEFAULT_DATASOURCE_ID = 'default';
+const SUPPORTED_DATASOURCE_TYPES = new Set(['postgres', 'mongodb']);
 
 function assertSupportedDatasourceType(type) {
-  if (type !== 'postgres') {
+  if (!SUPPORTED_DATASOURCE_TYPES.has(type)) {
     throw new FDAError(
       400,
       'UnsupportedDatasourceType',
       `Datasource type ${type} is not supported for this operation`,
+    );
+  }
+}
+
+function validateMongoFDAContract(query, collection, attrs) {
+  if (!collection || typeof collection !== 'string') {
+    throw new FDAError(
+      400,
+      'InvalidMongoFDAContract',
+      'Mongo FDA requires a non-empty collection field',
+    );
+  }
+
+  if (!Array.isArray(attrs) || attrs.length === 0) {
+    throw new FDAError(
+      400,
+      'InvalidMongoFDAContract',
+      'Mongo FDA requires attrs as a non-empty array of strings',
+    );
+  }
+
+  if (
+    attrs.some((attr) => typeof attr !== 'string' || attr.trim().length === 0)
+  ) {
+    throw new FDAError(
+      400,
+      'InvalidMongoFDAContract',
+      'Mongo FDA attrs must contain only non-empty strings',
+    );
+  }
+
+  if (!query || typeof query !== 'object' || Array.isArray(query)) {
+    throw new FDAError(
+      400,
+      'InvalidMongoFDAContract',
+      'Mongo FDA query must be a JSON object filter',
     );
   }
 }
@@ -112,15 +155,12 @@ async function resolveDatasourceCredentials(service, datasourceId) {
 async function validateDatasourceConnection(type, dsConfig) {
   assertSupportedDatasourceType(type);
 
-  try {
-    await runPgQuery(dsConfig, 'SELECT 1', []);
-  } catch (error) {
-    throw new FDAError(
-      400,
-      'InvalidDatasourceConnection',
-      `Could not connect to datasource: ${error.message}`,
-    );
+  if (type === 'postgres') {
+    await validatePostgresDatasourceConnection(dsConfig);
+  } else {
+    await validateMongoDatasourceConnection(dsConfig);
   }
+  return;
 }
 
 export async function createDatasourceForService(
@@ -847,6 +887,8 @@ export async function fetchFDA(
   defaultDataAccessEnabled,
   cached = true,
   datasourceId = DEFAULT_DATASOURCE_ID,
+  collection,
+  attrs,
 ) {
   validateScheduledOptions(refreshPolicy, objStgConf);
   const timeQuery =
@@ -857,6 +899,10 @@ export async function fetchFDA(
   const normalizedServicePath = normalizeServicePath(servicePath);
   const datasource = await getDatasourceForService(service, datasourceId);
   assertSupportedDatasourceType(datasource.type);
+
+  if (datasource.type === 'mongodb') {
+    validateMongoFDAContract(query, collection, attrs);
+  }
 
   await createFDAMongo(
     fdaId,
@@ -870,6 +916,8 @@ export async function fetchFDA(
     objStgConf,
     cached,
     datasourceId,
+    collection,
+    attrs,
   );
 
   if (cached) {
