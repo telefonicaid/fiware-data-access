@@ -102,6 +102,35 @@ export async function createDatasource(service, datasourceId, type, dsConfig) {
   }
 }
 
+export async function validateMongoDatasourceConnection(dsConfig) {
+  const uri = dsConfig?.uri;
+  const database = dsConfig?.database;
+
+  if (!uri || !database) {
+    throw new FDAError(
+      400,
+      'InvalidDatasourceConnection',
+      'Mongo datasource config must include uri and database',
+    );
+  }
+
+  const validationClient = new MongoClient(uri, {
+    serverSelectionTimeoutMS: 5000,
+  });
+
+  try {
+    await validationClient.db(database).command({ ping: 1 });
+  } catch (error) {
+    throw new FDAError(
+      400,
+      'InvalidDatasourceConnection',
+      `Could not connect to datasource: ${error.message}`,
+    );
+  } finally {
+    await validationClient.close().catch(() => {});
+  }
+}
+
 export async function retrieveDatasources(service) {
   logger.debug({ service }, '[DEBUG]: retrieveDatasources');
   const collection = await getDatasourcesCollection();
@@ -239,6 +268,8 @@ export async function createFDAMongo(
   objStgConf,
   cached = true,
   datasourceId = DEFAULT_DATASOURCE_ID,
+  collection,
+  attrs,
 ) {
   logger.debug({ fdaId, query, service, description }, '[DEBUG]: createFDA');
   const collection = await getCollection();
@@ -262,6 +293,8 @@ export async function createFDAMongo(
       objStgConf,
       cached,
       datasourceId,
+      ...(collection && { collection }),
+      ...(attrs && { attrs }),
     });
   } catch (e) {
     if (e.code === 11000) {
