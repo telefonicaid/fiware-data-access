@@ -880,6 +880,8 @@ export async function fetchFDA(
         timeQuery,
         normalizedServicePath,
         datasourceId,
+        timeColumn,
+        objStgConf,
       );
     } catch (err) {
       await rollbackFDAProvisioning(service, fdaId, normalizedServicePath);
@@ -894,6 +896,7 @@ export async function fetchFDA(
         fdaId,
         normalizedServicePath,
         timeColumn,
+        objStgConf,
       );
 
       await createDA(
@@ -991,7 +994,6 @@ export async function fetchFDA(
   if (refreshPolicy?.type === 'window') {
     const { refreshInterval, windowSize } = refreshPolicy.params || {};
 
-    // partitionFlag lets us know we are refreshing already existing partitioned files for performance purposes
     await agenda.every(
       refreshInterval,
       'refresh-fda',
@@ -1003,7 +1005,6 @@ export async function fetchFDA(
         timeColumn,
         refreshPolicy,
         objStgConf,
-        partitionFlag: true,
         datasourceId,
       },
       {
@@ -1171,7 +1172,6 @@ export async function updateFDA(service, fdaId, visibility, servicePath) {
     timeColumn: previous.timeColumn,
     refreshPolicy: previous.refreshPolicy,
     objStgConf: previous.objStgConf,
-    partitionFlag: true,
     datasourceId: previous.datasourceId ?? DEFAULT_DATASOURCE_ID,
   });
 
@@ -1193,7 +1193,6 @@ export async function processFDAAsync(
   timeColumn,
   refreshPolicy,
   objStgConf,
-  partitionFlag,
   datasourceId = DEFAULT_DATASOURCE_ID,
 ) {
   const storagePath = getFDAStoragePath(fdaId, servicePath);
@@ -1219,7 +1218,6 @@ export async function processFDAAsync(
       servicePath,
       timeColumn,
       objStgConf,
-      partitionFlag,
     );
 
     await updateFDAStatus(service, fdaId, servicePath, 'completed', 100);
@@ -1464,7 +1462,6 @@ async function uploadTableToObjStg(
   servicePath,
   timeColumn,
   objStgConf,
-  partitionFlag,
 ) {
   const s3Client = getS3Client(
     `${config.objstg.protocol}://${config.objstg.endpoint}`,
@@ -1483,8 +1480,8 @@ async function uploadTableToObjStg(
     await updateFDAStatus(service, fdaId, servicePath, 'transforming', 60);
 
     // DuckDB cant overwrite files in Minio, so for partitioned files we upload them in a tmp file and the move them
-    // We only do this for files that already exist (partitionFlag=true) so upload performance on partitions doesnt get affected
-    const parquetPath = partitionFlag
+    // This includes first upload because the one row parquet is also partitioned
+    const parquetPath = objStgConf?.partition
       ? getPath(bucket, 'tmp/' + path, '.parquet')
       : getPath(bucket, path, '.parquet');
 
@@ -1497,7 +1494,7 @@ async function uploadTableToObjStg(
       objStgConf?.compression,
     );
 
-    if (partitionFlag) {
+    if (objStgConf?.partition) {
       const objectsList = await listObjects(
         s3Client,
         bucket,
@@ -1674,6 +1671,8 @@ async function createOneRowParquetSync(
   query,
   servicePath,
   datasourceId,
+  timeColumn,
+  objStgConf,
 ) {
   const s3Client = getS3Client(
     `${config.objstg.protocol}://${config.objstg.endpoint}`,
@@ -1687,7 +1686,7 @@ async function createOneRowParquetSync(
     datasourceId,
   );
 
-  const oneRowQuery = buildOneRowQuery(query);
+  const oneRowQuery = buildOneRowQuery(query, timeColumn);
   await uploadTable(
     s3Client,
     bucketName,
@@ -1703,6 +1702,8 @@ async function createOneRowParquetSync(
       conn,
       getPath(bucketName, storagePath, '.csv'),
       parquetPath,
+      timeColumn,
+      objStgConf?.partition,
     );
     await dropFile(s3Client, bucketName, `${storagePath}.csv`);
   } finally {
@@ -1710,9 +1711,11 @@ async function createOneRowParquetSync(
   }
 }
 
-function buildOneRowQuery(query) {
+function buildOneRowQuery(query, timeColumn) {
   const normalizedQuery = query.trim().replace(/;+\s*$/, '');
-  return `SELECT * FROM (${normalizedQuery}) AS fda_one_row LIMIT 1`;
+  const orderBy = timeColumn ? ` ORDER BY ${timeColumn} DESC NULLS LAST` : '';
+
+  return `SELECT * FROM (${normalizedQuery}) AS fda_one_row ${orderBy} LIMIT 1`;
 }
 
 async function buildDefaultDataAccessDefinition(
@@ -1720,11 +1723,13 @@ async function buildDefaultDataAccessDefinition(
   fdaId,
   servicePath,
   timeColumn,
+  objStgConf,
 ) {
   const columns = await getFDAColumnNamesFromParquet(
     service,
     fdaId,
     servicePath,
+    objStgConf,
   );
 
   const resolvedTimeColumn = resolveDefaultDATimeColumnName(
@@ -1822,12 +1827,19 @@ function resolveDefaultDATimeColumnName(timeColumn, columns) {
   );
 }
 
-async function getFDAColumnNamesFromParquet(service, fdaId, servicePath) {
+async function getFDAColumnNamesFromParquet(
+  service,
+  fdaId,
+  servicePath,
+  objStgConf,
+) {
   const conn = await getDBConnection();
   try {
     const storagePath = getFDAStoragePath(fdaId, servicePath);
     const bucketName = getBucketNameFromService(service);
-    const parquetPath = `s3://${bucketName}/${storagePath}.parquet`;
+    const parquetPath = objStgConf?.partition
+      ? `s3://${bucketName}/${storagePath}.parquet/**/*.parquet`
+      : `s3://${bucketName}/${storagePath}.parquet`;
     const safeParquetPath = parquetPath.replace(/'/g, "''");
 
     const describeResult = await conn.run(
