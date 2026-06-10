@@ -34,6 +34,153 @@ export function registerFdaVariantsIntegrationTests({
   buildFdaDataUrl,
 }) {
   describe('FDA variants', () => {
+    test('DELETE /fdas/:fdaId only removes the targeted FDA when another FDA shares its prefix', async () => {
+      const baseUrl = getBaseUrl();
+      const prefixFdaId = 'fda_test';
+      const siblingPrefixFdaId = 'fda_test_1';
+      const siblingDaId = 'da_sibling_test';
+
+      async function deleteFdaIfPresent(fdaId) {
+        const deleteRes = await httpReq({
+          method: 'DELETE',
+          url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+
+        expect([204, 404]).toContain(deleteRes.status);
+      }
+
+      try {
+        const createFirstFda = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: prefixFdaId,
+            query:
+              'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+            description: 'prefix delete regression FDA 1',
+          },
+        });
+
+        expect(createFirstFda.status).toBe(202);
+
+        const createSiblingFda = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: siblingPrefixFdaId,
+            query:
+              'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+            description: 'prefix delete regression FDA 2',
+          },
+        });
+
+        expect(createSiblingFda.status).toBe(202);
+
+        await waitUntilFDACompleted({
+          baseUrl,
+          service,
+          fdaId: prefixFdaId,
+        });
+        await waitUntilFDACompleted({
+          baseUrl,
+          service,
+          fdaId: siblingPrefixFdaId,
+        });
+
+        const createSiblingDa = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas/${siblingPrefixFdaId}/das`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: siblingDaId,
+            query: 'SELECT id, name, age, timeinstant, authorized',
+          },
+        });
+
+        expect(createSiblingDa.status).toBe(200);
+
+        const listRes = await httpReq({
+          method: 'GET',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+
+        expect(listRes.status).toBe(200);
+        expect(Array.isArray(listRes.json)).toBe(true);
+        expect(listRes.json.some((fda) => fda.id === prefixFdaId)).toBe(true);
+        expect(listRes.json.some((fda) => fda.id === siblingPrefixFdaId)).toBe(
+          true,
+        );
+
+        const deleteFirstFda = await httpReq({
+          method: 'DELETE',
+          url: `${baseUrl}/${visibility}/fdas/${prefixFdaId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+
+        expect(deleteFirstFda.status).toBe(204);
+
+        const siblingRead = await httpReq({
+          method: 'GET',
+          url: `${baseUrl}/${visibility}/fdas/${siblingPrefixFdaId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+
+        expect(siblingRead.status).toBe(200);
+
+        const siblingDataRead = await httpReq({
+          method: 'GET',
+          url: `${baseUrl}/${visibility}/fdas/${siblingPrefixFdaId}/das/${siblingDaId}/data`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+
+        expect(siblingDataRead.status).toBe(200);
+        expect(Array.isArray(siblingDataRead.json)).toBe(true);
+        expect(siblingDataRead.json).toHaveLength(3);
+
+        const deleteSiblingFda = await httpReq({
+          method: 'DELETE',
+          url: `${baseUrl}/${visibility}/fdas/${siblingPrefixFdaId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+
+        expect(deleteSiblingFda.status).toBe(204);
+      } finally {
+        await deleteFdaIfPresent(prefixFdaId);
+        await deleteFdaIfPresent(siblingPrefixFdaId);
+      }
+    });
+
     test('POST /fdas?defaultDataAccess=false creates FDA without default DA', async () => {
       const baseUrl = getBaseUrl();
       const disabledFdaId = 'fda_default_da_disabled';

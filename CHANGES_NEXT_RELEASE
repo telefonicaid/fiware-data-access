@@ -1,1 +1,2 @@
 Fix: bug creating DAs in partitioned FDAs
+Fix: bug deleting an FDA whose id is a prefix of another FDA in the same Fiware-ServicePath (#187)
