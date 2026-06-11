@@ -24,7 +24,7 @@
 
 export const PERFORMANCE_TABLE_ROWS_ARG = '--performanceTableRows=';
 export const MAX_TIMEOUT_MS_ARG = '--maxTimeOutMs=';
-const DEFAULT_PERFORMANCE_TABLE_ROWS = 1000;
+const DEFAULT_PERFORMANCE_TABLE_ROWS = 1_000_000;
 const DEFAULT_MAX_TIMEOUT_MS = 300_000;
 
 export function parsePerformanceTableRows(rawValue) {
