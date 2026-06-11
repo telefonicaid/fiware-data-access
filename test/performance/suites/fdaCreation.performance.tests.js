@@ -63,6 +63,30 @@ export function registerFdaCreationPerformanceTests({
       expect(res.status).toBe(202);
 
       performance.mark('fda-create-start');
+      await waitUntilFDAStatus({
+        baseUrl,
+        service,
+        fdaId,
+        visibility,
+        timeout: maxWaitMs(),
+        status: 'fetching',
+        progress: 20,
+        httpReq,
+      });
+      performance.mark('fda-fetch-start');
+
+      await waitUntilFDAStatus({
+        baseUrl,
+        service,
+        fdaId,
+        visibility,
+        timeout: maxWaitMs(),
+        status: 'transforming',
+        progress: 60,
+        httpReq,
+      });
+      performance.mark('fda-fetch-end');
+
       await waitUntilFDACompleted({
         baseUrl,
         service,
@@ -77,12 +101,14 @@ export function registerFdaCreationPerformanceTests({
         'fda-create-start',
         'fda-create-end',
       );
+      performance.measure('Fetch time', 'fda-fetch-start', 'fda-fetch-end');
 
       const creationTime =
         performance.getEntriesByName('Basic FDA creation')[0];
+      const fetchTime = performance.getEntriesByName('Fetch time')[0];
 
       console.log(
-        `[PERF] Basic FDA creation took ${creationTime.duration.toFixed(2)}ms`,
+        `[PERF] Basic FDA creation took ${creationTime.duration.toFixed(2)}ms (fetch step: ${fetchTime.duration.toFixed(2)}ms)`,
       );
     },
     maxWaitMs(),
