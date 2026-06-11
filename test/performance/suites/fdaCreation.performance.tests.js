@@ -66,18 +66,19 @@ export function registerFdaCreationPerformanceTests({
         baseUrl,
         service,
         fdaId,
-        visibility: 'public',
-        timeout: 30000,
+        visibility,
+        timeout: maxWaitMs(),
       });
       performance.mark('fda-create-end');
 
       performance.measure(
-        'basic-fda-create',
+        'Basic FDA creation',
         'fda-create-start',
         'fda-create-end',
       );
 
-      const creationTime = performance.getEntriesByName('basic-fda-create')[0];
+      const creationTime =
+        performance.getEntriesByName('Basic FDA creation')[0];
 
       console.log(
         `[PERF] Basic FDA creation took ${creationTime.duration.toFixed(2)}ms`,
@@ -120,7 +121,7 @@ export function registerFdaCreationPerformanceTests({
         baseUrl,
         service,
         fdaId: uniqueFdaId,
-        visibility: 'public',
+        visibility,
         timeout: maxWaitMs(),
         status: 'transforming',
         progress: 60,
@@ -132,7 +133,7 @@ export function registerFdaCreationPerformanceTests({
         baseUrl,
         service,
         fdaId: uniqueFdaId,
-        visibility: 'public',
+        visibility,
         timeout: maxWaitMs(),
         status: 'uploading',
         progress: 80,
@@ -144,27 +145,27 @@ export function registerFdaCreationPerformanceTests({
         baseUrl,
         service,
         fdaId: uniqueFdaId,
-        visibility: 'public',
-        timeout: 30000,
+        visibility,
+        timeout: maxWaitMs(),
       });
       performance.mark('fda-create-end');
 
       performance.measure(
-        'compression-time',
+        'Compression time',
         'fda-compression-start',
         'fda-compression-end',
       );
       performance.measure(
-        'compressed-fda-create',
+        'Compressed FDA creation',
         'fda-create-start',
         'fda-create-end',
       );
 
       const creationTime = performance.getEntriesByName(
-        'compressed-fda-create',
+        'Compressed FDA creation',
       )[0];
       const compressionTime =
-        performance.getEntriesByName('compression-time')[0];
+        performance.getEntriesByName('Compression time')[0];
 
       console.log(
         `[PERF] Compressed FDA creation took ${creationTime.duration.toFixed(2)}ms (compression step: ${compressionTime.duration.toFixed(2)}ms)`,
@@ -208,7 +209,7 @@ export function registerFdaCreationPerformanceTests({
         baseUrl,
         service,
         fdaId: uniqueFdaId,
-        visibility: 'public',
+        visibility,
         timeout: maxWaitMs(),
         status: 'transforming',
         progress: 60,
@@ -220,7 +221,7 @@ export function registerFdaCreationPerformanceTests({
         baseUrl,
         service,
         fdaId: uniqueFdaId,
-        visibility: 'public',
+        visibility,
         timeout: maxWaitMs(),
         status: 'uploading',
         progress: 80,
@@ -232,27 +233,27 @@ export function registerFdaCreationPerformanceTests({
         baseUrl,
         service,
         fdaId: uniqueFdaId,
-        visibility: 'public',
-        timeout: 30000,
+        visibility,
+        timeout: maxWaitMs(),
       });
 
       performance.mark('fda-create-end');
 
       performance.measure(
-        'partition-time',
+        'Partition time',
         'fda-partition-start',
         'fda-partition-end',
       );
       performance.measure(
-        'partitioned-fda-create',
+        'Partitioned FDA creation',
         'fda-create-start',
         'fda-create-end',
       );
 
       const creationTime = performance.getEntriesByName(
-        'partitioned-fda-create',
+        'Partitioned FDA creation',
       )[0];
-      const partitionTime = performance.getEntriesByName('partition-time')[0];
+      const partitionTime = performance.getEntriesByName('Partition time')[0];
 
       console.log(
         `[PERF] Partitioned FDA creation took ${creationTime.duration.toFixed(2)}ms (partition step: ${partitionTime.duration.toFixed(2)}ms)`,
@@ -260,4 +261,52 @@ export function registerFdaCreationPerformanceTests({
     },
     maxWaitMs(),
   );
+
+  test('Create fresh FDA', async () => {
+    const baseUrl = getBaseUrl();
+    const uniqueFdaId = `${fdaId}-fresh`;
+
+    const res = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/${visibility}/fdas`,
+      headers: {
+        'Fiware-Service': service,
+        'Fiware-ServicePath': servicePath,
+      },
+      body: {
+        id: uniqueFdaId,
+        query:
+          'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+        description: 'only fresh FDA',
+        cached: false,
+      },
+    });
+
+    if (res.status >= 400) {
+      console.error('POST /fdas failed:', res.status, res.json ?? res.text);
+    }
+    expect(res.status).toBe(202);
+
+    performance.mark('fda-create-start');
+    await waitUntilFDACompleted({
+      baseUrl,
+      service,
+      fdaId: uniqueFdaId,
+      visibility,
+      timeout: maxWaitMs(),
+    });
+    performance.mark('fda-create-end');
+
+    performance.measure(
+      'Fresh FDA creation',
+      'fda-create-start',
+      'fda-create-end',
+    );
+
+    const creationTime = performance.getEntriesByName('Fresh FDA creation')[0];
+
+    console.log(
+      `[PERF] Fresh FDA creation took ${creationTime.duration.toFixed(2)}ms`,
+    );
+  });
 }

@@ -23,6 +23,7 @@
 // criminal actions it may exercise to protect its rights.
 
 import { test, expect } from '@jest/globals';
+import { buildFdaDataUrl } from '../../integration/utils/integrationTestUtils';
 
 export function registerFdaQueryPerformanceTests({
   getBaseUrl,
@@ -33,7 +34,7 @@ export function registerFdaQueryPerformanceTests({
   buildDaDataUrl,
 }) {
   describe('DA data queries', () => {
-    test('GET /{visibility}/fdas/{fdaId}/das/{daId}/data from basic FDA', async () => {
+    test('Query basic FDA', async () => {
       const baseUrl = getBaseUrl();
 
       performance.mark('query-start');
@@ -60,16 +61,16 @@ export function registerFdaQueryPerformanceTests({
       expect(queryRes.text).toBeDefined();
 
       performance.mark('query-end');
-      performance.measure('basic-query', 'query-start', 'query-end');
+      performance.measure('Basic query', 'query-start', 'query-end');
 
-      const totalTime = performance.getEntriesByName('basic-query')[0];
+      const totalTime = performance.getEntriesByName('Basic query')[0];
 
       console.log(
         `[PERF] Basic DA query took ${totalTime.duration.toFixed(2)}ms`,
       );
     });
 
-    test('GET /{visibility}/fdas/{fdaId}/das/{daId}/data from compressed FDA', async () => {
+    test('Query compressed FDA', async () => {
       const baseUrl = getBaseUrl();
 
       performance.mark('query-start');
@@ -102,16 +103,16 @@ export function registerFdaQueryPerformanceTests({
       expect(queryRes.text).toBeDefined();
 
       performance.mark('query-end');
-      performance.measure('compressed-query', 'query-start', 'query-end');
+      performance.measure('Compressed query', 'query-start', 'query-end');
 
-      const totalTime = performance.getEntriesByName('compressed-query')[0];
+      const totalTime = performance.getEntriesByName('Compressed query')[0];
 
       console.log(
         `[PERF] Compressed DA query took ${totalTime.duration.toFixed(2)}ms`,
       );
     });
 
-    test('GET /{visibility}/fdas/{fdaId}/das/{daId}/data from partitioned FDA', async () => {
+    test('Query partitioned FDA', async () => {
       const baseUrl = getBaseUrl();
 
       performance.mark('query-start');
@@ -144,16 +145,16 @@ export function registerFdaQueryPerformanceTests({
       expect(queryRes.text).toBeDefined();
 
       performance.mark('query-end');
-      performance.measure('partitioned-query', 'query-start', 'query-end');
+      performance.measure('Partitioned query', 'query-start', 'query-end');
 
-      const totalTime = performance.getEntriesByName('partitioned-query')[0];
+      const totalTime = performance.getEntriesByName('Partitioned query')[0];
 
       console.log(
         `[PERF] Partitioned DA query took ${totalTime.duration.toFixed(2)}ms`,
       );
     });
 
-    test('GET /{visibility}/fdas/{fdaId}/das/{daId}/data from partitioned FDA (date based query)', async () => {
+    test('Query partitioned FDA (date based query)', async () => {
       const baseUrl = getBaseUrl();
 
       performance.mark('query-start');
@@ -189,17 +190,38 @@ export function registerFdaQueryPerformanceTests({
 
       performance.mark('query-end');
       performance.measure(
-        'partitioned-dateBased-query',
+        'Partitioned date-based query',
         'query-start',
         'query-end',
       );
 
       const totalMeasure = performance.getEntriesByName(
-        'partitioned-dateBased-query',
+        'Partitioned date-based query',
       )[0];
 
       console.log(
         `[PERF] Partitioned DA query (date based) took ${totalMeasure.duration.toFixed(2)}ms`,
+      );
+    });
+
+    test('Query fresh FDA', async () => {
+      const baseUrl = getBaseUrl();
+
+      performance.mark('query-start');
+      const res = await httpReq({
+        method: 'GET',
+        url: buildFdaDataUrl(baseUrl, servicePath, `${fdaId}-fresh`),
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect(res.status).toBe(200);
+      performance.mark('query-end');
+      performance.measure('Fresh query', 'query-start', 'query-end');
+
+      const totalTime = performance.getEntriesByName('Fresh query')[0];
+
+      console.log(
+        `[PERF] Fresh DA query took ${totalTime.duration.toFixed(2)}ms`,
       );
     });
   });
