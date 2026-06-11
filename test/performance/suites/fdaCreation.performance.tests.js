@@ -87,6 +87,18 @@ export function registerFdaCreationPerformanceTests({
       });
       performance.mark('fda-fetch-end');
 
+      await waitUntilFDAStatus({
+        baseUrl,
+        service,
+        fdaId,
+        visibility,
+        timeout: maxWaitMs(),
+        status: 'uploading',
+        progress: 80,
+        httpReq,
+      });
+      performance.mark('fda-parquet-end');
+
       await waitUntilFDACompleted({
         baseUrl,
         service,
@@ -102,13 +114,19 @@ export function registerFdaCreationPerformanceTests({
         'fda-create-end',
       );
       performance.measure('Fetch time', 'fda-fetch-start', 'fda-fetch-end');
+      performance.measure(
+        'Parquet conversion',
+        'fda-fetch-end',
+        'fda-parquet-end',
+      );
 
       const creationTime =
         performance.getEntriesByName('Basic FDA creation')[0];
       const fetchTime = performance.getEntriesByName('Fetch time')[0];
+      const parquetTime = performance.getEntriesByName('Parquet conversion')[0];
 
       console.log(
-        `[PERF] Basic FDA creation took ${creationTime.duration.toFixed(2)}ms (fetch step: ${fetchTime.duration.toFixed(2)}ms)`,
+        `[PERF] Basic FDA creation took ${creationTime.duration.toFixed(2)}ms (fetch step: ${fetchTime.duration.toFixed(2)}ms) (parquet conversion step: ${parquetTime.duration.toFixed(2)}ms)`,
       );
     },
     maxWaitMs(),
