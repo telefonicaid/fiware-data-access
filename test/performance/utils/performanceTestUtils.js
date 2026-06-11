@@ -75,7 +75,7 @@ export async function waitUntilFDAStatus({
 
       if (res.json.progress > progress) {
         console.log(
-          `[TEST] FDA status update was faster than check status interval. Last seen status=${res.json.status}, progress=${res.json.progress}`,
+          `[PERF] FDA status update was faster than check status interval. Last seen status=${res.json.status}, progress=${res.json.progress}`,
         );
         return res.json;
       }

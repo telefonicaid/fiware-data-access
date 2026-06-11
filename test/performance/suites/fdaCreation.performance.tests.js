@@ -204,6 +204,30 @@ export function registerFdaCreationPerformanceTests({
       expect(res.status).toBe(202);
 
       performance.mark('fda-create-start');
+      await waitUntilFDAStatus({
+        baseUrl,
+        service,
+        fdaId: uniqueFdaId,
+        visibility: 'public',
+        timeout: maxWaitMs(),
+        status: 'transforming',
+        progress: 60,
+        httpReq,
+      });
+      performance.mark('fda-partition-start');
+
+      await waitUntilFDAStatus({
+        baseUrl,
+        service,
+        fdaId: uniqueFdaId,
+        visibility: 'public',
+        timeout: maxWaitMs(),
+        status: 'uploading',
+        progress: 80,
+        httpReq,
+      });
+
+      performance.mark('fda-partition-end');
       await waitUntilFDACompleted({
         baseUrl,
         service,
@@ -215,6 +239,11 @@ export function registerFdaCreationPerformanceTests({
       performance.mark('fda-create-end');
 
       performance.measure(
+        'partition-time',
+        'fda-partition-start',
+        'fda-partition-end',
+      );
+      performance.measure(
         'partitioned-fda-create',
         'fda-create-start',
         'fda-create-end',
@@ -223,9 +252,10 @@ export function registerFdaCreationPerformanceTests({
       const creationTime = performance.getEntriesByName(
         'partitioned-fda-create',
       )[0];
+      const partitionTime = performance.getEntriesByName('partition-time')[0];
 
       console.log(
-        `[PERF] Partitioned FDA creation took ${creationTime.duration.toFixed(2)}ms`,
+        `[PERF] Partitioned FDA creation took ${creationTime.duration.toFixed(2)}ms (partition step: ${partitionTime.duration.toFixed(2)}ms)`,
       );
     },
     maxWaitMs(),
