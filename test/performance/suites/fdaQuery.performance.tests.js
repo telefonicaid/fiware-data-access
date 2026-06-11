@@ -36,7 +36,7 @@ export function registerFdaQueryPerformanceTests({
     test('GET /{visibility}/fdas/{fdaId}/das/{daId}/data from basic FDA', async () => {
       const baseUrl = getBaseUrl();
 
-      performance.mark('da-query-start');
+      performance.mark('query-start');
       const queryRes = await httpReq({
         method: 'GET',
         url: buildDaDataUrl(baseUrl, servicePath, fdaId, 'defaultDataAccess', {
@@ -59,26 +59,20 @@ export function registerFdaQueryPerformanceTests({
       expect(queryRes.status).toBe(200);
       expect(queryRes.text).toBeDefined();
 
-      performance.mark('da-query-end');
-      performance.measure(
-        'da-query-basic-total',
-        'da-query-start',
-        'da-query-end',
-      );
+      performance.mark('query-end');
+      performance.measure('basic-query', 'query-start', 'query-end');
 
-      const totalMeasure = performance.getEntriesByName(
-        'da-query-basic-total',
-      )[0];
+      const totalTime = performance.getEntriesByName('basic-query')[0];
 
       console.log(
-        `[PERF] Basic DA query took ${totalMeasure.duration.toFixed(2)}ms`,
+        `[PERF] Basic DA query took ${totalTime.duration.toFixed(2)}ms`,
       );
     });
 
     test('GET /{visibility}/fdas/{fdaId}/das/{daId}/data from compressed FDA', async () => {
       const baseUrl = getBaseUrl();
 
-      performance.mark('da-query-start');
+      performance.mark('query-start');
       const queryRes = await httpReq({
         method: 'GET',
         url: buildDaDataUrl(
@@ -107,26 +101,20 @@ export function registerFdaQueryPerformanceTests({
       expect(queryRes.status).toBe(200);
       expect(queryRes.text).toBeDefined();
 
-      performance.mark('da-query-end');
-      performance.measure(
-        'da-query-compressed-total',
-        'da-query-start',
-        'da-query-end',
-      );
+      performance.mark('query-end');
+      performance.measure('compressed-query', 'query-start', 'query-end');
 
-      const totalMeasure = performance.getEntriesByName(
-        'da-query-compressed-total',
-      )[0];
+      const totalTime = performance.getEntriesByName('compressed-query')[0];
 
       console.log(
-        `[PERF] Compressed DA query took ${totalMeasure.duration.toFixed(2)}ms`,
+        `[PERF] Compressed DA query took ${totalTime.duration.toFixed(2)}ms`,
       );
     });
 
     test('GET /{visibility}/fdas/{fdaId}/das/{daId}/data from partitioned FDA', async () => {
       const baseUrl = getBaseUrl();
 
-      performance.mark('da-query-start');
+      performance.mark('query-start');
       const queryRes = await httpReq({
         method: 'GET',
         url: buildDaDataUrl(
@@ -155,26 +143,20 @@ export function registerFdaQueryPerformanceTests({
       expect(queryRes.status).toBe(200);
       expect(queryRes.text).toBeDefined();
 
-      performance.mark('da-query-end');
-      performance.measure(
-        'da-query-partitioned-total',
-        'da-query-start',
-        'da-query-end',
-      );
+      performance.mark('query-end');
+      performance.measure('partitioned-query', 'query-start', 'query-end');
 
-      const totalMeasure = performance.getEntriesByName(
-        'da-query-partitioned-total',
-      )[0];
+      const totalTime = performance.getEntriesByName('partitioned-query')[0];
 
       console.log(
-        `[PERF] Partitioned DA query took ${totalMeasure.duration.toFixed(2)}ms`,
+        `[PERF] Partitioned DA query took ${totalTime.duration.toFixed(2)}ms`,
       );
     });
 
     test('GET /{visibility}/fdas/{fdaId}/das/{daId}/data from partitioned FDA (date based query)', async () => {
       const baseUrl = getBaseUrl();
 
-      performance.mark('da-query-start');
+      performance.mark('query-start');
       const queryRes = await httpReq({
         method: 'GET',
         url: buildDaDataUrl(
@@ -205,15 +187,15 @@ export function registerFdaQueryPerformanceTests({
       expect(queryRes.status).toBe(200);
       expect(queryRes.text).toBeDefined();
 
-      performance.mark('da-query-end');
+      performance.mark('query-end');
       performance.measure(
-        'da-query-partitioned-date-total',
-        'da-query-start',
-        'da-query-end',
+        'partitioned-dateBased-query',
+        'query-start',
+        'query-end',
       );
 
       const totalMeasure = performance.getEntriesByName(
-        'da-query-partitioned-date-total',
+        'partitioned-dateBased-query',
       )[0];
 
       console.log(

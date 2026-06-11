@@ -24,6 +24,7 @@
 
 import { test, expect } from '@jest/globals';
 import { performance } from 'node:perf_hooks';
+import { waitUntilFDAStatus } from '../utils/performanceTestUtils';
 
 export function registerFdaCreationPerformanceTests({
   getBaseUrl,
@@ -40,7 +41,6 @@ export function registerFdaCreationPerformanceTests({
     async () => {
       const baseUrl = getBaseUrl();
 
-      performance.mark('fda-create-start');
       const res = await httpReq({
         method: 'POST',
         url: `${baseUrl}/${visibility}/fdas`,
@@ -61,7 +61,7 @@ export function registerFdaCreationPerformanceTests({
       }
       expect(res.status).toBe(202);
 
-      performance.mark('fda-wait-start');
+      performance.mark('fda-create-start');
       await waitUntilFDACompleted({
         baseUrl,
         service,
@@ -69,24 +69,18 @@ export function registerFdaCreationPerformanceTests({
         visibility: 'public',
         timeout: 30000,
       });
-      console.log('after wait until completed');
-      performance.mark('fda-wait-end');
-
       performance.mark('fda-create-end');
 
       performance.measure(
-        'fda-create-total',
+        'basic-fda-create',
         'fda-create-start',
         'fda-create-end',
       );
-      performance.measure('fda-polling-wait', 'fda-wait-start', 'fda-wait-end');
 
-      const totalMeasure = performance.getEntriesByName('fda-create-total')[0];
-      const pollingMeasure =
-        performance.getEntriesByName('fda-polling-wait')[0];
+      const creationTime = performance.getEntriesByName('basic-fda-create')[0];
 
       console.log(
-        `[PERF] FDA creation took ${totalMeasure.duration.toFixed(2)}ms (polling: ${pollingMeasure.duration.toFixed(2)}ms)`,
+        `[PERF] Basic FDA creation took ${creationTime.duration.toFixed(2)}ms`,
       );
     },
     maxWaitMs(),
@@ -98,7 +92,6 @@ export function registerFdaCreationPerformanceTests({
       const baseUrl = getBaseUrl();
       const uniqueFdaId = `${fdaId}-compressed`;
 
-      performance.mark('fda-create-start');
       const res = await httpReq({
         method: 'POST',
         url: `${baseUrl}/${visibility}/fdas`,
@@ -122,7 +115,31 @@ export function registerFdaCreationPerformanceTests({
       }
       expect(res.status).toBe(202);
 
-      performance.mark('fda-wait-start');
+      performance.mark('fda-create-start');
+      await waitUntilFDAStatus({
+        baseUrl,
+        service,
+        fdaId: uniqueFdaId,
+        visibility: 'public',
+        timeout: maxWaitMs(),
+        status: 'transforming',
+        progress: 60,
+        httpReq,
+      });
+      performance.mark('fda-compression-start');
+
+      await waitUntilFDAStatus({
+        baseUrl,
+        service,
+        fdaId: uniqueFdaId,
+        visibility: 'public',
+        timeout: maxWaitMs(),
+        status: 'uploading',
+        progress: 80,
+        httpReq,
+      });
+      performance.mark('fda-compression-end');
+
       await waitUntilFDACompleted({
         baseUrl,
         service,
@@ -130,31 +147,27 @@ export function registerFdaCreationPerformanceTests({
         visibility: 'public',
         timeout: 30000,
       });
-      console.log('after wait until completed');
-      performance.mark('fda-wait-end');
-
       performance.mark('fda-create-end');
 
       performance.measure(
-        'fda-create-compression-total',
+        'compression-time',
+        'fda-compression-start',
+        'fda-compression-end',
+      );
+      performance.measure(
+        'compressed-fda-create',
         'fda-create-start',
         'fda-create-end',
       );
-      performance.measure(
-        'fda-create-compression-polling-wait',
-        'fda-wait-start',
-        'fda-wait-end',
-      );
 
-      const totalMeasure = performance.getEntriesByName(
-        'fda-create-compression-total',
+      const creationTime = performance.getEntriesByName(
+        'compressed-fda-create',
       )[0];
-      const pollingMeasure = performance.getEntriesByName(
-        'fda-create-compression-polling-wait',
-      )[0];
+      const compressionTime =
+        performance.getEntriesByName('compression-time')[0];
 
       console.log(
-        `[PERF] FDA creation took ${totalMeasure.duration.toFixed(2)}ms (polling: ${pollingMeasure.duration.toFixed(2)}ms)`,
+        `[PERF] Compressed FDA creation took ${creationTime.duration.toFixed(2)}ms (compression step: ${compressionTime.duration.toFixed(2)}ms)`,
       );
     },
     maxWaitMs(),
@@ -166,7 +179,6 @@ export function registerFdaCreationPerformanceTests({
       const baseUrl = getBaseUrl();
       const uniqueFdaId = `${fdaId}-partitioned`;
 
-      performance.mark('fda-create-start');
       const res = await httpReq({
         method: 'POST',
         url: `${baseUrl}/${visibility}/fdas`,
@@ -191,7 +203,7 @@ export function registerFdaCreationPerformanceTests({
       }
       expect(res.status).toBe(202);
 
-      performance.mark('fda-wait-start');
+      performance.mark('fda-create-start');
       await waitUntilFDACompleted({
         baseUrl,
         service,
@@ -200,30 +212,20 @@ export function registerFdaCreationPerformanceTests({
         timeout: 30000,
       });
 
-      performance.mark('fda-wait-end');
-
       performance.mark('fda-create-end');
 
       performance.measure(
-        'fda-create-partitioned-total',
+        'partitioned-fda-create',
         'fda-create-start',
         'fda-create-end',
       );
-      performance.measure(
-        'fda-create-partitioned-polling-wait',
-        'fda-wait-start',
-        'fda-wait-end',
-      );
 
-      const totalMeasure = performance.getEntriesByName(
-        'fda-create-partitioned-total',
-      )[0];
-      const pollingMeasure = performance.getEntriesByName(
-        'fda-create-partitioned-polling-wait',
+      const creationTime = performance.getEntriesByName(
+        'partitioned-fda-create',
       )[0];
 
       console.log(
-        `[PERF] FDA creation took ${totalMeasure.duration.toFixed(2)}ms (polling: ${pollingMeasure.duration.toFixed(2)}ms)`,
+        `[PERF] Partitioned FDA creation took ${creationTime.duration.toFixed(2)}ms`,
       );
     },
     maxWaitMs(),
