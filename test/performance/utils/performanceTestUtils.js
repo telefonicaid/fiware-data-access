@@ -41,3 +41,50 @@ export function parsePerformanceTableRows(rawValue) {
 
   return candidate;
 }
+
+export async function waitUntilFDAStatus({
+  baseUrl,
+  service,
+  fdaId,
+  visibility = 'public',
+  timeout = 10000,
+  interval = 300,
+  status,
+  progress,
+  httpReq,
+}) {
+  const start = Date.now();
+  let lastSeen;
+
+  while (Date.now() - start < timeout) {
+    const res = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/${visibility}/fdas/${encodeURIComponent(fdaId)}`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    if (res.status === 200 && res.json) {
+      lastSeen = { status: res.json.status, progress: res.json.progress };
+
+      if (
+        res.json.status === status &&
+        (progress === undefined || res.json.progress === progress)
+      ) {
+        return res.json;
+      }
+
+      if (res.json.progress > progress) {
+        console.log(
+          `[TEST] FDA status update was faster than check status interval. Last seen status=${res.json.status}, progress=${res.json.progress}`,
+        );
+        return res.json;
+      }
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, interval));
+  }
+
+  throw new Error(
+    `Timeout waiting for FDA ${fdaId} to reach completed state (last status=${lastSeen?.status ?? 'unknown'}, progress=${lastSeen?.progress ?? 'unknown'}, error=${lastSeen?.error ?? 'n/a'})`,
+  );
+}
