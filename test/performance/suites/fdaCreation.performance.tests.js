@@ -36,6 +36,8 @@ export function registerFdaCreationPerformanceTests({
   waitUntilFDACompleted,
   maxWaitMs,
 }) {
+  const query =
+    'SELECT id, name, age, timeinstant, authorized, country, score FROM public.users ORDER BY id';
   test(
     'Create basic FDA',
     async () => {
@@ -50,8 +52,7 @@ export function registerFdaCreationPerformanceTests({
         },
         body: {
           id: fdaId,
-          query:
-            'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+          query,
           description: 'Performance test: CSV to Parquet conversion',
         },
       });
@@ -102,8 +103,7 @@ export function registerFdaCreationPerformanceTests({
         },
         body: {
           id: uniqueFdaId,
-          query:
-            'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+          query,
           description: 'Performance test: CSV to Parquet conversion',
           objStgConf: {
             compression: true,
@@ -189,8 +189,7 @@ export function registerFdaCreationPerformanceTests({
         },
         body: {
           id: uniqueFdaId,
-          query:
-            'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+          query,
           description: 'Performance test: CSV to Parquet conversion',
           timeColumn: 'timeinstant',
           objStgConf: {
@@ -275,8 +274,7 @@ export function registerFdaCreationPerformanceTests({
       },
       body: {
         id: uniqueFdaId,
-        query:
-          'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+        query,
         description: 'only fresh FDA',
         cached: false,
       },
