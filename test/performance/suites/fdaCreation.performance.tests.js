@@ -53,7 +53,7 @@ export function registerFdaCreationPerformanceTests({
         body: {
           id: fdaId,
           query,
-          description: 'Performance test: CSV to Parquet conversion',
+          description: 'Performance test: basic FDA',
         },
       });
 
@@ -148,7 +148,7 @@ export function registerFdaCreationPerformanceTests({
         body: {
           id: uniqueFdaId,
           query,
-          description: 'Performance test: CSV to Parquet conversion',
+          description: 'Performance test: compressed FDA',
           objStgConf: {
             compression: true,
           },
@@ -234,7 +234,7 @@ export function registerFdaCreationPerformanceTests({
         body: {
           id: uniqueFdaId,
           query,
-          description: 'Performance test: CSV to Parquet conversion',
+          description: 'Performance test: partitioned FDA',
           timeColumn: 'timeinstant',
           objStgConf: {
             partition: 'day',
@@ -319,7 +319,7 @@ export function registerFdaCreationPerformanceTests({
       body: {
         id: uniqueFdaId,
         query,
-        description: 'only fresh FDA',
+        description: 'Performance test: fresh FDA',
         cached: false,
       },
     });
