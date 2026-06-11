@@ -45,7 +45,9 @@ import {
 import { registerFdaQueryPerformanceTests } from './suites/fdaQuery.performance.tests.js';
 import {
   parsePerformanceTableRows,
+  parseMaxTimeoutMs,
   PERFORMANCE_TABLE_ROWS_ARG,
+  MAX_TIMEOUT_MS_ARG,
 } from './utils/performanceTestUtils.js';
 
 const performanceTableRows = parsePerformanceTableRows(
@@ -56,10 +58,17 @@ const performanceTableRows = parsePerformanceTableRows(
       ?.slice(PERFORMANCE_TABLE_ROWS_ARG.length) ??
     process.argv.slice(2).find((arg) => /^\d+$/.test(arg)),
 );
+const maxTimeoutMs = parseMaxTimeoutMs(
+  process.env.maxTimeOutMs ??
+    process.env.npm_config_maxTimeOutMs ??
+    process.argv
+      .find((arg) => arg.startsWith(MAX_TIMEOUT_MS_ARG))
+      ?.slice(MAX_TIMEOUT_MS_ARG.length),
+);
 
 const { Client } = pg;
 
-jest.setTimeout(240_000);
+jest.setTimeout(maxTimeoutMs);
 
 export const EXECUTION_MODES = Object.freeze({
   COMBINED: 'combined',
@@ -68,8 +77,6 @@ export const EXECUTION_MODES = Object.freeze({
 
 export function runFDAIntegrationSuite({ mode, label }) {
   describe(`FDA API - integration (${label})`, () => {
-    const maxWaitMs = 300000;
-
     let minio;
     let mongo;
     let postgis;
@@ -421,7 +428,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       fdaId: `perf-test`,
       httpReq,
       waitUntilFDACompleted,
-      maxWaitMs: () => maxWaitMs,
+      maxWaitMs: () => maxTimeoutMs,
     });
 
     registerFdaQueryPerformanceTests({

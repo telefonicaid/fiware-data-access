@@ -23,7 +23,9 @@
 // criminal actions it may exercise to protect its rights.
 
 export const PERFORMANCE_TABLE_ROWS_ARG = '--performanceTableRows=';
+export const MAX_TIMEOUT_MS_ARG = '--maxTimeOutMs=';
 const DEFAULT_PERFORMANCE_TABLE_ROWS = 1000;
+const DEFAULT_MAX_TIMEOUT_MS = 300_000;
 
 export function parsePerformanceTableRows(rawValue) {
   if (rawValue == null || rawValue === '') {
@@ -37,6 +39,21 @@ export function parsePerformanceTableRows(rawValue) {
       `[TEST] Ignoring invalid performanceTableRows value: ${normalized}`,
     );
     return DEFAULT_PERFORMANCE_TABLE_ROWS;
+  }
+
+  return candidate;
+}
+
+export function parseMaxTimeoutMs(rawValue) {
+  if (rawValue == null || rawValue === '') {
+    return DEFAULT_MAX_TIMEOUT_MS;
+  }
+
+  const normalized = String(rawValue).trim();
+  const candidate = Number(normalized);
+  if (!Number.isInteger(candidate) || candidate <= 0) {
+    console.warn(`[TEST] Ignoring invalid maxTimeOutMs value: ${normalized}`);
+    return DEFAULT_MAX_TIMEOUT_MS;
   }
 
   return candidate;
