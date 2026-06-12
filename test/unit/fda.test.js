@@ -43,10 +43,12 @@ const pgMocks = {
   uploadTable: jest.fn(),
   runPgQuery: jest.fn(),
   createPgCursorReader: jest.fn(),
+  validatePostgresDatasourceConnection: jest.fn(),
 };
 
 const awsMocks = {
   getS3Client: jest.fn(),
+  newUpload: jest.fn(),
   dropFile: jest.fn(),
   dropFiles: jest.fn(),
   moveObject: jest.fn(),
@@ -72,6 +74,7 @@ const mongoMocks = {
   updateDatasource: jest.fn(),
   removeDatasource: jest.fn(),
   validateMongoDatasourceConnection: jest.fn(),
+  readMongoDatasourceRows: jest.fn(),
 };
 
 const jobsMocks = {
@@ -100,10 +103,13 @@ await jest.unstable_mockModule('../../src/lib/utils/pg.js', () => ({
   uploadTable: pgMocks.uploadTable,
   runPgQuery: pgMocks.runPgQuery,
   createPgCursorReader: pgMocks.createPgCursorReader,
+  validatePostgresDatasourceConnection:
+    pgMocks.validatePostgresDatasourceConnection,
 }));
 
 await jest.unstable_mockModule('../../src/lib/utils/aws.js', () => ({
   getS3Client: awsMocks.getS3Client,
+  newUpload: awsMocks.newUpload,
   dropFile: awsMocks.dropFile,
   dropFiles: awsMocks.dropFiles,
   moveObject: awsMocks.moveObject,
@@ -130,6 +136,7 @@ await jest.unstable_mockModule('../../src/lib/utils/mongo.js', () => ({
   removeDatasource: mongoMocks.removeDatasource,
   validateMongoDatasourceConnection:
     mongoMocks.validateMongoDatasourceConnection,
+  readMongoDatasourceRows: mongoMocks.readMongoDatasourceRows,
 }));
 
 await jest.unstable_mockModule('../../src/lib/fdaConfig.js', () => ({
@@ -990,8 +997,12 @@ describe('fetchFDA', () => {
     jest.clearAllMocks();
     awsMocks.getS3Client.mockReturnValue({});
     awsMocks.dropFile.mockResolvedValue(undefined);
+    awsMocks.newUpload.mockReturnValue({
+      done: jest.fn().mockResolvedValue(undefined),
+    });
     mongoMocks.createFDAMongo.mockResolvedValue(undefined);
     mongoMocks.removeFDA.mockResolvedValue(undefined);
+    mongoMocks.readMongoDatasourceRows.mockResolvedValue([]);
     dbMocks.getDBConnection.mockResolvedValue({});
     dbMocks.releaseDBConnection.mockResolvedValue(undefined);
     dbMocks.toParquet.mockResolvedValue(undefined);
@@ -1215,6 +1226,39 @@ describe('fetchFDA', () => {
         undefined,
         undefined,
         false,
+        false,
+        'mongo-ds',
+        'events',
+        ['name'],
+      ),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidMongoFDAContract',
+    });
+  });
+
+  test('rejects mongodb FDA creation when cached is false', async () => {
+    mongoMocks.retrieveDatasource.mockResolvedValueOnce({
+      datasourceId: 'mongo-ds',
+      type: 'mongodb',
+      config: {
+        uri: 'mongodb://mongo:27017',
+        database: 'svc',
+      },
+    });
+
+    await expect(
+      fetchFDA(
+        'fda_mongo_4',
+        { status: 'ok' },
+        'svc',
+        'public',
+        '/servicepath',
+        'mongo fda',
+        { type: 'none' },
+        undefined,
+        undefined,
+        true,
         false,
         'mongo-ds',
         'events',
@@ -1966,6 +2010,20 @@ describe('datasource service helpers', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     pgMocks.runPgQuery.mockResolvedValue([{ ok: 1 }]);
+    pgMocks.validatePostgresDatasourceConnection.mockImplementation(
+      async (dsConfig) => {
+        try {
+          await pgMocks.runPgQuery(dsConfig, 'SELECT 1', []);
+        } catch (error) {
+          throw new FDAError(
+            400,
+            'InvalidDatasourceConnection',
+            `Could not connect to datasource: ${error.message}`,
+          );
+        }
+      },
+    );
+    mongoMocks.validateMongoDatasourceConnection.mockResolvedValue(undefined);
     mongoMocks.retrieveDatasource.mockResolvedValue({
       datasourceId: 'default',
       type: 'postgres',
@@ -2079,11 +2137,15 @@ describe('processFDAAsync', () => {
     jest.clearAllMocks();
     awsMocks.getS3Client.mockReturnValue({});
     awsMocks.dropFile.mockResolvedValue(undefined);
+    awsMocks.newUpload.mockReturnValue({
+      done: jest.fn().mockResolvedValue(undefined),
+    });
     dbMocks.getDBConnection.mockResolvedValue({});
     dbMocks.releaseDBConnection.mockResolvedValue(undefined);
     dbMocks.toParquet.mockResolvedValue(undefined);
     pgMocks.uploadTable.mockResolvedValue(undefined);
     mongoMocks.updateFDAStatus.mockResolvedValue(undefined);
+    mongoMocks.readMongoDatasourceRows.mockResolvedValue([]);
     mongoMocks.retrieveDatasource.mockResolvedValue({
       datasourceId: 'default',
       type: 'postgres',
@@ -2211,6 +2273,102 @@ describe('processFDAAsync', () => {
       0,
       'upload failed',
     );
+  });
+
+  test('uploads Mongo datasource rows as CSV before parquet conversion', async () => {
+    mongoMocks.retrieveDatasource.mockResolvedValue({
+      datasourceId: 'mongo-ds',
+      type: 'mongodb',
+      config: {
+        uri: 'mongodb://mongo:27017',
+        database: 'svc',
+      },
+    });
+    mongoMocks.retrieveFDA.mockResolvedValueOnce({
+      fdaId: 'fda_mongo_cached',
+      query: { status: 'ok' },
+      collection: 'events',
+      attrs: ['device', 'status'],
+      cached: true,
+      servicePath: '/servicepath',
+    });
+    mongoMocks.readMongoDatasourceRows.mockResolvedValueOnce([
+      { device: 'dev-1', status: 'ok' },
+      { device: 'dev-2', status: 'warn' },
+    ]);
+
+    await processFDAAsync(
+      'fda_mongo_cached',
+      { status: 'ok' },
+      'svc',
+      '/servicepath',
+      undefined,
+      { type: 'none' },
+      undefined,
+      false,
+      'mongo-ds',
+    );
+
+    expect(mongoMocks.readMongoDatasourceRows).toHaveBeenCalledWith(
+      {
+        uri: 'mongodb://mongo:27017',
+        database: 'svc',
+      },
+      'events',
+      { status: 'ok' },
+      ['device', 'status'],
+      { limit: undefined },
+    );
+    expect(awsMocks.newUpload).toHaveBeenCalledWith(
+      {},
+      'svc',
+      'servicepath/fda_mongo_cached.csv',
+      'device,status\ndev-1,ok\ndev-2,warn\n',
+      5,
+      1,
+    );
+    expect(dbMocks.toParquet).toHaveBeenCalledWith(
+      {},
+      'svc/servicepath/fda_mongo_cached.csv',
+      'svc/servicepath/fda_mongo_cached.parquet',
+      undefined,
+      undefined,
+      undefined,
+    );
+  });
+
+  test('rejects Mongo window refresh during async processing', async () => {
+    mongoMocks.retrieveDatasource.mockResolvedValueOnce({
+      datasourceId: 'mongo-ds',
+      type: 'mongodb',
+      config: {
+        uri: 'mongodb://mongo:27017',
+        database: 'svc',
+      },
+    });
+
+    await expect(
+      processFDAAsync(
+        'fda_mongo_cached',
+        { status: 'ok' },
+        'svc',
+        '/servicepath',
+        'timeinstant',
+        {
+          type: 'window',
+          params: {
+            refreshInterval: '1 hour',
+            fetchSize: 'hour',
+          },
+        },
+        undefined,
+        false,
+        'mongo-ds',
+      ),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidMongoFDAContract',
+    });
   });
 });
 
