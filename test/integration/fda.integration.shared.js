@@ -48,6 +48,7 @@ import { registerQueryStyleDataIntegrationTests } from './suites/queryStyleData.
 import { registerVisibilityConstraintsIntegrationTests } from './suites/visibilityConstraints.integration.tests.js';
 import { registerCdaCompatibilityIntegrationTests } from './suites/cdaCompatibility.integration.tests.js';
 import { registerFdaLifecycleIntegrationTests } from './suites/fdaLifecycle.integration.tests.js';
+import { registerMongoFdasIntegrationTests } from './suites/mongoFdas.integration.tests.js';
 import {
   httpReq,
   httpFormReq,
@@ -469,6 +470,18 @@ export function runFDAIntegrationSuite({ mode, label }) {
       httpReq,
       waitUntilFDACompleted,
       getMongoUri: () => mongoUri,
+    });
+
+    registerMongoFdasIntegrationTests({
+      getBaseUrl: () => baseUrl,
+      getMongoUri: () => mongoUri,
+      service,
+      servicePath,
+      visibility,
+      httpReq,
+      httpReqRaw,
+      waitUntilFDACompleted,
+      buildDaDataUrl,
     });
   });
 }
