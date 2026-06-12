@@ -669,6 +669,65 @@ export function registerSlidingWindowsIntegrationTests({
     }
   });
 
+  test('POST /fdas/:fdaId/das Create DA for partitioned FDA', async () => {
+    const baseUrl = getBaseUrl();
+    const daQuery = `
+      SELECT id, name, age
+      WHERE age > $minAge
+      ORDER BY id;
+    `;
+
+    const createDa = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/${visibility}/fdas/fda_refresh/das`,
+      headers: { 'Fiware-Service': service },
+      body: {
+        id: 'partitioned_da1',
+        description: 'age filter',
+        query: daQuery,
+        params: [
+          {
+            name: 'minAge',
+            type: 'Number',
+            required: true,
+          },
+        ],
+      },
+    });
+
+    if (createDa.status >= 400) {
+      console.error(
+        'POST /das failed:',
+        createDa.status,
+        createDa.json ?? createDa.text,
+      );
+    }
+    expect(createDa.status).toBe(200);
+
+    const queryRes = await httpReq({
+      method: 'GET',
+      url: buildDaDataUrl(
+        baseUrl,
+        servicePath,
+        'fda_refresh',
+        'partitioned_da1',
+        {
+          minAge: 25,
+        },
+      ),
+      headers: { 'Fiware-Service': service },
+    });
+
+    if (queryRes.status >= 400) {
+      console.error(
+        'GET /{visibility}/fdas/{fdaId}/das/{daId}/data failed:',
+        queryRes.status,
+        queryRes.json ?? queryRes.text,
+      );
+    }
+    expect(queryRes.status).toBe(200);
+  });
+
   test('PUT /fdas/:fdaId keeps only current window rows after manual update', async () => {
     const baseUrl = getBaseUrl();
     const suffix = `${Date.now()}`;

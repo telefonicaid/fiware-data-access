@@ -1052,13 +1052,15 @@ describe('fetchFDA', () => {
         port: 5432,
         database: 'svc',
       },
-      'SELECT * FROM (SELECT id FROM users) AS fda_one_row LIMIT 1',
+      'SELECT * FROM (SELECT id FROM users) AS fda_one_row  ORDER BY timeinstant DESC NULLS LAST LIMIT 1',
       'servicepath/fda1',
     );
     expect(dbMocks.toParquet).toHaveBeenCalledWith(
       {},
       'svc/servicepath/fda1.csv',
       'svc/servicepath/fda1.parquet',
+      'timeinstant',
+      undefined,
     );
     expect(awsMocks.dropFile).toHaveBeenCalledWith(
       {},
@@ -1914,7 +1916,6 @@ describe('updateFDA', () => {
       timeColumn: undefined,
       refreshPolicy: undefined,
       objStgConf: undefined,
-      partitionFlag: true,
     });
   });
 
@@ -1953,7 +1954,6 @@ describe('updateFDA', () => {
         },
       },
       objStgConf: undefined,
-      partitionFlag: true,
     });
 
     expect(agenda.now).toHaveBeenCalledWith('clean-partition', {
@@ -2392,12 +2392,12 @@ describe('deleteFDA', () => {
       visibility: 'private',
       servicePath: '/servicepath',
     });
-    awsMocks.listObjects.mockResolvedValue(['routeTo/fdaA.parquet']);
+    awsMocks.listObjects.mockResolvedValue(['servicepath/fdaA.parquet']);
 
     await deleteFDA('svc', 'fdaA', 'private', '/servicepath');
 
     expect(awsMocks.dropFiles).toHaveBeenCalledWith({}, 'svc', [
-      'routeTo/fdaA.parquet',
+      'servicepath/fdaA.parquet',
     ]);
     expect(mongoMocks.removeFDA).toHaveBeenCalledWith(
       'svc',
@@ -2418,7 +2418,7 @@ describe('deleteFDA', () => {
       visibility: 'private',
       servicePath: '/servicepath',
     });
-    awsMocks.listObjects.mockResolvedValue(['routeTo/fdaA.parquet']);
+    awsMocks.listObjects.mockResolvedValue(['servicepath/fdaA.parquet']);
 
     await deleteFDA('service_name', 'fdaA', 'private', '/servicepath');
 
@@ -2428,7 +2428,31 @@ describe('deleteFDA', () => {
       'servicepath/fdaA',
     );
     expect(awsMocks.dropFiles).toHaveBeenCalledWith({}, 'service-name', [
-      'routeTo/fdaA.parquet',
+      'servicepath/fdaA.parquet',
+    ]);
+  });
+
+  test('deleteFDA only removes objects belonging to the target FDA, not sibling FDAs sharing a prefix', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      _id: 'mongo-id',
+      visibility: 'private',
+      servicePath: '/test',
+    });
+    // listObjects returns objects for both fda_test and fda_test_1 because S3
+    // prefix listing matches any key starting with "test/fda_test"
+    awsMocks.listObjects.mockResolvedValue([
+      'test/fda_test.parquet',
+      'test/fda_test_1.parquet',
+      'test/fda_test/year=2024/data.parquet',
+      'test/fda_test_1/year=2024/data.parquet',
+    ]);
+
+    await deleteFDA('svc', 'fda_test', 'private', '/test');
+
+    // Only objects belonging to fda_test must be dropped
+    expect(awsMocks.dropFiles).toHaveBeenCalledWith({}, 'svc', [
+      'test/fda_test.parquet',
+      'test/fda_test/year=2024/data.parquet',
     ]);
   });
 
@@ -2927,8 +2951,8 @@ describe('cleanPartition', () => {
     jest.clearAllMocks();
     awsMocks.getS3Client.mockReturnValue({});
     awsMocks.listObjects.mockResolvedValue([
-      'svc/fdaA/2020-01-01.parquet',
-      'svc/fdaA/2099-01-01.parquet',
+      'public/fdaA/2020-01-01.parquet',
+      'public/fdaA/2099-01-01.parquet',
     ]);
     awsMocks.dropFiles.mockResolvedValue(undefined);
   });
@@ -2951,7 +2975,7 @@ describe('cleanPartition', () => {
     expect(awsMocks.listObjects).toHaveBeenCalledWith({}, 'svc', 'public/fdaA');
 
     expect(awsMocks.dropFiles).toHaveBeenCalledWith({}, 'svc', [
-      'svc/fdaA/2020-01-01.parquet',
+      'public/fdaA/2020-01-01.parquet',
     ]);
   });
 
@@ -3005,7 +3029,7 @@ describe('cleanPartition', () => {
     );
 
     expect(awsMocks.dropFiles).toHaveBeenCalledWith({}, 'svc', [
-      'svc/fdaA/2020-01-01.parquet',
+      'public/fdaA/2020-01-01.parquet',
     ]);
   });
 
