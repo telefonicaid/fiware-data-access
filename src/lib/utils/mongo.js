@@ -62,6 +62,26 @@ async function getDatasourcesCollection() {
   return db.collection('datasources');
 }
 
+function getNestedMongoValue(doc, fieldPath) {
+  return fieldPath.split('.').reduce((current, segment) => {
+    if (current === null || current === undefined) {
+      return undefined;
+    }
+
+    return current[segment];
+  }, doc);
+}
+
+function buildMongoProjection(attrs) {
+  const projection = { _id: 0 };
+
+  for (const attr of attrs) {
+    projection[attr] = 1;
+  }
+
+  return projection;
+}
+
 export async function createIndex() {
   const fdasCollection = await getCollection();
   await fdasCollection.createIndex(
@@ -128,6 +148,49 @@ export async function validateMongoDatasourceConnection(dsConfig) {
     );
   } finally {
     await validationClient.close().catch(() => {});
+  }
+}
+
+export async function readMongoDatasourceRows(
+  dsConfig,
+  collectionName,
+  filter,
+  attrs,
+  { limit } = {},
+) {
+  const client = new MongoClient(dsConfig.uri, {
+    serverSelectionTimeoutMS: 5000,
+  });
+
+  try {
+    await client.connect();
+
+    const rows = await client
+      .db(dsConfig.database)
+      .collection(collectionName)
+      .find(filter ?? {}, {
+        projection: buildMongoProjection(attrs),
+        ...(limit ? { limit } : {}),
+      })
+      .toArray();
+
+    return rows.map((row) => {
+      const mappedRow = {};
+
+      for (const attr of attrs) {
+        mappedRow[attr] = getNestedMongoValue(row, attr);
+      }
+
+      return mappedRow;
+    });
+  } catch (error) {
+    throw new FDAError(
+      500,
+      'MongoDBServerError',
+      `Error reading datasource collection ${collectionName}: ${error.message}`,
+    );
+  } finally {
+    await client.close().catch(() => {});
   }
 }
 
@@ -272,12 +335,12 @@ export async function createFDAMongo(
   attrs,
 ) {
   logger.debug({ fdaId, query, service, description }, '[DEBUG]: createFDA');
-  const collection = await getCollection();
+  const fdasCollection = await getCollection();
   const initialStatus = cached ? 'fetching' : 'completed';
   const initialProgress = cached ? 0 : 100;
   try {
     // As there is a unique index on (service, servicePath, fdaId), this throws an error when the same scoped FDA already exists.
-    await collection.insertOne({
+    await fdasCollection.insertOne({
       fdaId,
       query,
       das: {},
