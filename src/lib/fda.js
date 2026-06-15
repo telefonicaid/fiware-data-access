@@ -2072,7 +2072,9 @@ async function createDefaultDAIfNeeded({
   objStgConf,
   normalizedVisibility,
 }) {
-  if (!cached || !defaultDataAccessEnabled) return;
+  if (!cached || !defaultDataAccessEnabled) {
+    return;
+  }
 
   try {
     const defaultDA = await buildDefaultDataAccessDefinition(
