@@ -188,7 +188,6 @@ async function validateDatasourceConnection(type, dsConfig) {
   } else {
     await validateMongoDatasourceConnection(dsConfig);
   }
-  return;
 }
 
 export async function createDatasourceForService(

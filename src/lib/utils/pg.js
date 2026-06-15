@@ -285,6 +285,4 @@ export async function validatePostgresDatasourceConnection(dsConfig) {
       `Could not connect to datasource: ${error.message}`,
     );
   }
-
-  return;
 }
