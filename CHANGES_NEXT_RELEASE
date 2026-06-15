@@ -1,2 +1,3 @@
+Add: MongoDB datasource support as a new datasource type, including connection validation, cached-only FDA support, Mongo-specific contract and full ingestion pipeline integration (#176)
 Fix: bug preventing the creation of DAs for partitioned FDAs due to incorrect DA query path building (FROM clausule)
 Fix: bug deleting an FDA whose id is a prefix of another FDA in the same Fiware-ServicePath (#187)
