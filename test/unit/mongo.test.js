@@ -528,4 +528,70 @@ describe('mongo utils', () => {
       },
     });
   });
+
+  test('validateMongoDatasourceConnection throws when uri or database is missing', async () => {
+    const { validateMongoDatasourceConnection } = await loadMongoModule();
+
+    await expect(validateMongoDatasourceConnection({})).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidDatasourceConnection',
+      message: 'Mongo datasource config must include uri and database',
+    });
+
+    await expect(
+      validateMongoDatasourceConnection({ uri: 'mongodb://x' }),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidDatasourceConnection',
+    });
+  });
+
+  test('validateMongoDatasourceConnection wraps ping failure', async () => {
+    const { validateMongoDatasourceConnection } = await loadMongoModule();
+
+    const fakeClient = {
+      db: jest.fn(() => ({
+        command: jest.fn().mockRejectedValue(new Error('ping failed')),
+      })),
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+
+    mongoClientCtorMock.mockImplementationOnce(() => fakeClient);
+
+    await expect(
+      validateMongoDatasourceConnection({
+        uri: 'mongodb://localhost:27017',
+        database: 'test-db',
+      }),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidDatasourceConnection',
+      message: expect.stringContaining('ping failed'),
+    });
+
+    expect(fakeClient.close).toHaveBeenCalled();
+  });
+
+  test('validateMongoDatasourceConnection succeeds when ping works', async () => {
+    const { validateMongoDatasourceConnection } = await loadMongoModule();
+
+    const fakeClient = {
+      db: jest.fn(() => ({
+        command: jest.fn().mockResolvedValue({ ok: 1 }),
+      })),
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+
+    mongoClientCtorMock.mockImplementationOnce(() => fakeClient);
+
+    await expect(
+      validateMongoDatasourceConnection({
+        uri: 'mongodb://localhost:27017',
+        database: 'test-db',
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(fakeClient.db).toHaveBeenCalledWith('test-db');
+    expect(fakeClient.close).toHaveBeenCalled();
+  });
 });
