@@ -200,6 +200,13 @@ function createReqRes() {
   return { req, res, reqHandlers };
 }
 
+async function loadFdaModule() {
+  jest.resetModules();
+
+  const mod = await import('../../src/lib/fda.js');
+  return mod;
+}
+
 describe('fda fresh query execution', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -3068,5 +3075,72 @@ describe('cleanPartition', () => {
       expect(err.type).toContain('CleaningError');
       expect(err.status).toBe(400);
     }
+  });
+});
+
+describe('mongo utils extra coverage', () => {
+  test('getStoredFDA returns FDA when exists', async () => {
+    const { getStoredFDA } = await loadFdaModule();
+
+    mongoMocks.retrieveFDA.mockResolvedValueOnce({
+      fdaId: 'fdaA',
+    });
+
+    const result = await getStoredFDA('svc', 'fdaA', '/sp');
+
+    expect(result).toEqual({ fdaId: 'fdaA' });
+    expect(mongoMocks.retrieveFDA).toHaveBeenCalledWith('svc', 'fdaA', '/sp');
+  });
+
+  test('getStoredFDA throws 404 when FDA does not exist', async () => {
+    const { getStoredFDA } = await loadFdaModule();
+
+    mongoMocks.retrieveFDA.mockResolvedValueOnce(null);
+
+    await expect(getStoredFDA('svc', 'missing', '/sp')).rejects.toMatchObject({
+      status: 404,
+      type: 'FDANotFound',
+      message: expect.stringContaining('missing'),
+    });
+  });
+
+  test('validateMongoFDAContract throws when attrs is empty', async () => {
+    const { validateMongoFDAContract } = await loadFdaModule();
+
+    expect(() =>
+      validateMongoFDAContract({}, 'col', [], 'time', true),
+    ).toThrow();
+  });
+
+  test('validateMongoFDAContract throws when attrs contain invalid strings', async () => {
+    const { validateMongoFDAContract } = await loadFdaModule();
+
+    expect(() =>
+      validateMongoFDAContract({}, 'col', ['ok', ''], 'time', true),
+    ).toThrow();
+  });
+
+  test('validateMongoFDAContract throws when query is invalid', async () => {
+    const { validateMongoFDAContract } = await loadFdaModule();
+
+    expect(() =>
+      validateMongoFDAContract([], 'col', ['a'], 'time', true),
+    ).toThrow();
+  });
+
+  test('validateMongoFDAContract throws when timeColumn not in attrs', async () => {
+    const { validateMongoFDAContract } = await loadFdaModule();
+
+    expect(() =>
+      validateMongoFDAContract({ a: 1 }, 'col', ['a'], 'missing_time', true),
+    ).toThrow();
+  });
+
+  test('validateMongoFDAContract throws when cached is false', async () => {
+    const { validateMongoFDAContract } = await loadFdaModule();
+
+    expect(() =>
+      validateMongoFDAContract({ a: 1 }, 'col', ['a'], 'a', false),
+    ).toThrow();
   });
 });
