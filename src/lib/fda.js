@@ -1598,7 +1598,7 @@ async function ensureFDAReadyForQuery(service, fdaId, visibility, servicePath) {
   }
 }
 
-async function getStoredFDA(service, fdaId, servicePath) {
+export async function getStoredFDA(service, fdaId, servicePath) {
   const fda = await retrieveFDA(service, fdaId, servicePath);
 
   if (!fda) {

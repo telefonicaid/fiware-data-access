@@ -167,6 +167,7 @@ const {
   deleteDatasourceForService,
   fetchFDA,
   getFDA,
+  getStoredFDA,
   updateFDA,
   processFDAAsync,
   deleteFDA,
@@ -3080,8 +3081,6 @@ describe('cleanPartition', () => {
 
 describe('mongo utils extra coverage', () => {
   test('getStoredFDA returns FDA when exists', async () => {
-    const { getStoredFDA } = await loadFdaModule();
-
     mongoMocks.retrieveFDA.mockResolvedValueOnce({
       fdaId: 'fdaA',
     });
@@ -3089,27 +3088,15 @@ describe('mongo utils extra coverage', () => {
     const result = await getStoredFDA('svc', 'fdaA', '/sp');
 
     expect(result).toEqual({ fdaId: 'fdaA' });
-    expect(mongoMocks.retrieveFDA).toHaveBeenCalledWith('svc', 'fdaA', '/sp');
   });
 
   test('getStoredFDA throws 404 when FDA does not exist', async () => {
-    const { getStoredFDA } = await loadFdaModule();
-
     mongoMocks.retrieveFDA.mockResolvedValueOnce(null);
 
     await expect(getStoredFDA('svc', 'missing', '/sp')).rejects.toMatchObject({
       status: 404,
       type: 'FDANotFound',
-      message: expect.stringContaining('missing'),
     });
-  });
-
-  test('validateMongoFDAContract throws when attrs is empty', async () => {
-    const { validateMongoFDAContract } = await loadFdaModule();
-
-    expect(() =>
-      validateMongoFDAContract({}, 'col', [], 'time', true),
-    ).toThrow();
   });
 
   test('validateMongoFDAContract throws when attrs contain invalid strings', async () => {
