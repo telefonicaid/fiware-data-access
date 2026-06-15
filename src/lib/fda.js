@@ -973,36 +973,16 @@ export async function fetchFDA(
     }
   }
 
-  if (cached && defaultDataAccessEnabled) {
-    try {
-      const defaultDA = await buildDefaultDataAccessDefinition(
-        service,
-        fdaId,
-        normalizedServicePath,
-        timeColumn,
-        objStgConf,
-      );
-
-      await createDA(
-        service,
-        fdaId,
-        'defaultDataAccess',
-        'Default Data Access providing access to whole FDA data. It has parameters for all columns in the FDA.',
-        defaultDA.query,
-        defaultDA.params,
-        normalizedVisibility,
-        normalizedServicePath,
-      );
-    } catch (err) {
-      // If default DA creation fails, rollback the entire FDA
-      await rollbackFDAProvisioning(service, fdaId, normalizedServicePath);
-      throw new FDAError(
-        500,
-        'DefaultDataAccessCreationError',
-        `Failed to create default Data Access for FDA ${fdaId}: ${err.message}`,
-      );
-    }
-  }
+  await createDefaultDAIfNeeded({
+    cached,
+    defaultDataAccessEnabled,
+    service,
+    fdaId,
+    normalizedServicePath,
+    timeColumn,
+    objStgConf,
+    normalizedVisibility,
+  });
 
   if (!cached) {
     return;
@@ -1023,107 +1003,18 @@ export async function fetchFDA(
   });
 
   // Schedule refreshes according to policy
-  if (refreshPolicy?.type === 'interval') {
-    const { refreshInterval, windowSize } = refreshPolicy.params || {};
-
-    // unique is not really needed since we check existence before, but it adds an extra layer of safety in case of duplicate calls
-    await agenda.every(
-      refreshInterval,
-      'refresh-fda',
-      {
-        fdaId,
-        query: timeQuery,
-        service,
-        servicePath: normalizedServicePath,
-        timeColumn,
-        refreshPolicy,
-        objStgConf,
-        datasourceId,
-      },
-      {
-        skipImmediate: true,
-        unique: buildFDAJobFilter(
-          'refresh-fda',
-          service,
-          fdaId,
-          normalizedServicePath,
-        ),
-      },
-    );
-
-    if (windowSize) {
-      await agenda.every(
-        refreshInterval,
-        'clean-partition',
-        {
-          fdaId,
-          service,
-          servicePath: normalizedServicePath,
-          windowSize,
-          objStgConf,
-        },
-        {
-          skipImmediate: true,
-          unique: buildFDAJobFilter(
-            'clean-partition',
-            service,
-            fdaId,
-            normalizedServicePath,
-          ),
-        },
-      );
-    }
-  }
-
-  if (refreshPolicy?.type === 'window') {
-    const { refreshInterval, windowSize } = refreshPolicy.params || {};
-
-    await agenda.every(
-      refreshInterval,
-      'refresh-fda',
-      {
-        fdaId,
-        query: timeQuery,
-        service,
-        servicePath: normalizedServicePath,
-        timeColumn,
-        refreshPolicy,
-        objStgConf,
-        datasourceId,
-      },
-      {
-        skipImmediate: true,
-        unique: buildFDAJobFilter(
-          'refresh-fda',
-          service,
-          fdaId,
-          normalizedServicePath,
-        ),
-      },
-    );
-
-    if (windowSize) {
-      await agenda.every(
-        refreshInterval,
-        'clean-partition',
-        {
-          fdaId,
-          service,
-          servicePath: normalizedServicePath,
-          windowSize,
-          objStgConf,
-        },
-        {
-          skipImmediate: true,
-          unique: buildFDAJobFilter(
-            'clean-partition',
-            service,
-            fdaId,
-            normalizedServicePath,
-          ),
-        },
-      );
-    }
+  if (refreshPolicy?.type === 'interval' || refreshPolicy?.type === 'window') {
+    await scheduleFDAJobs({
+      agenda,
+      fdaId,
+      query: timeQuery,
+      service,
+      servicePath: normalizedServicePath,
+      timeColumn,
+      refreshPolicy,
+      objStgConf,
+      datasourceId,
+    });
   }
 }
 
@@ -2114,3 +2005,100 @@ const getPath = (bucket, path, extension) => {
   const cleanPath = path?.startsWith('/') ? path.slice(1) : path;
   return `${cleanBucket}/${cleanPath}${extension}`;
 };
+
+async function scheduleFDAJobs({
+  agenda,
+  fdaId,
+  query,
+  service,
+  servicePath,
+  timeColumn,
+  refreshPolicy,
+  objStgConf,
+  datasourceId,
+}) {
+  const { refreshInterval, windowSize } = refreshPolicy.params || {};
+
+  await agenda.every(
+    refreshInterval,
+    'refresh-fda',
+    {
+      fdaId,
+      query,
+      service,
+      servicePath,
+      timeColumn,
+      refreshPolicy,
+      objStgConf,
+      datasourceId,
+    },
+    {
+      skipImmediate: true,
+      unique: buildFDAJobFilter('refresh-fda', service, fdaId, servicePath),
+    },
+  );
+
+  if (windowSize) {
+    await agenda.every(
+      refreshInterval,
+      'clean-partition',
+      {
+        fdaId,
+        service,
+        servicePath,
+        windowSize,
+        objStgConf,
+      },
+      {
+        skipImmediate: true,
+        unique: buildFDAJobFilter(
+          'clean-partition',
+          service,
+          fdaId,
+          servicePath,
+        ),
+      },
+    );
+  }
+}
+
+async function createDefaultDAIfNeeded({
+  cached,
+  defaultDataAccessEnabled,
+  service,
+  fdaId,
+  normalizedServicePath,
+  timeColumn,
+  objStgConf,
+  normalizedVisibility,
+}) {
+  if (!cached || !defaultDataAccessEnabled) return;
+
+  try {
+    const defaultDA = await buildDefaultDataAccessDefinition(
+      service,
+      fdaId,
+      normalizedServicePath,
+      timeColumn,
+      objStgConf,
+    );
+
+    await createDA(
+      service,
+      fdaId,
+      'defaultDataAccess',
+      'Default Data Access providing access to whole FDA data. It has parameters for all columns in the FDA.',
+      defaultDA.query,
+      defaultDA.params,
+      normalizedVisibility,
+      normalizedServicePath,
+    );
+  } catch (err) {
+    await rollbackFDAProvisioning(service, fdaId, normalizedServicePath);
+    throw new FDAError(
+      500,
+      'DefaultDataAccessCreationError',
+      `Failed to create default Data Access for FDA ${fdaId}: ${err.message}`,
+    );
+  }
+}
