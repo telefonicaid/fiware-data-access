@@ -24,8 +24,10 @@
 
 export const PERFORMANCE_TABLE_ROWS_ARG = '--performanceTableRows=';
 export const MAX_TIMEOUT_MS_ARG = '--maxTimeOutMs=';
+export const FDA_LOAD_TEST_COUNT_ARG = '--fdaLoadTestCount=';
 const DEFAULT_PERFORMANCE_TABLE_ROWS = 1_000_000;
 const DEFAULT_MAX_TIMEOUT_MS = 300_000;
+const DEFAULT_LOAD_FDA_COUNT = 5;
 
 export function parsePerformanceTableRows(rawValue) {
   if (rawValue == null || rawValue === '') {
@@ -54,6 +56,23 @@ export function parseMaxTimeoutMs(rawValue) {
   if (!Number.isInteger(candidate) || candidate <= 0) {
     console.warn(`[TEST] Ignoring invalid maxTimeOutMs value: ${normalized}`);
     return DEFAULT_MAX_TIMEOUT_MS;
+  }
+
+  return candidate;
+}
+
+export function parseFdaLoadTestCount(rawValue) {
+  if (rawValue == null || rawValue === '') {
+    return DEFAULT_LOAD_FDA_COUNT;
+  }
+
+  const normalized = String(rawValue).trim();
+  const candidate = Number(normalized);
+  if (!Number.isInteger(candidate) || candidate <= 0) {
+    console.warn(
+      `[TEST] Ignoring invalid fdaLoadTestCount value: ${normalized}`,
+    );
+    return DEFAULT_LOAD_FDA_COUNT;
   }
 
   return candidate;
@@ -104,4 +123,9 @@ export async function waitUntilFDAStatus({
   throw new Error(
     `Timeout waiting for FDA ${fdaId} to reach completed state (last status=${lastSeen?.status ?? 'unknown'}, progress=${lastSeen?.progress ?? 'unknown'}, error=${lastSeen?.error ?? 'n/a'})`,
   );
+}
+
+export function calculatePercentile(sortedValues, percentile) {
+  const index = Math.ceil((percentile / 100) * sortedValues.length) - 1;
+  return sortedValues[Math.max(0, index)];
 }

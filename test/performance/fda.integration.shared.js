@@ -35,6 +35,8 @@ import { MongoClient } from 'mongodb';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { registerFdaCreationPerformanceTests } from './suites/fdaCreation.performance.tests.js';
+import { registerFdaLoadPerformanceTests } from './suites/fdaLoad.performance.tests.js';
+import { registerFdaQueryPerformanceTests } from './suites/fdaQuery.performance.tests.js';
 import {
   httpReq,
   getFreePort,
@@ -42,12 +44,13 @@ import {
   waitUntilFDACompleted,
   buildDaDataUrl,
 } from '../integration/utils/integrationTestUtils.js';
-import { registerFdaQueryPerformanceTests } from './suites/fdaQuery.performance.tests.js';
 import {
   parsePerformanceTableRows,
   parseMaxTimeoutMs,
+  parseFdaLoadTestCount,
   PERFORMANCE_TABLE_ROWS_ARG,
   MAX_TIMEOUT_MS_ARG,
+  FDA_LOAD_TEST_COUNT_ARG,
 } from './utils/performanceTestUtils.js';
 
 const performanceTableRows = parsePerformanceTableRows(
@@ -64,6 +67,14 @@ const maxTimeoutMs = parseMaxTimeoutMs(
     process.argv
       .find((arg) => arg.startsWith(MAX_TIMEOUT_MS_ARG))
       ?.slice(MAX_TIMEOUT_MS_ARG.length),
+);
+
+const loadFdaCount = parseFdaLoadTestCount(
+  process.env.FDA_LOAD_TEST_COUNT ??
+    process.env.npm_config_fdaLoadTestCount ??
+    process.argv
+      .find((arg) => arg.startsWith(FDA_LOAD_TEST_COUNT_ARG))
+      ?.slice(FDA_LOAD_TEST_COUNT_ARG.length),
 );
 
 const { Client } = pg;
@@ -229,6 +240,8 @@ export function runFDAIntegrationSuite({ mode, label }) {
       const data = {
         'Rows in table': performanceTableRows,
         'PostgreSQL table size': tableSize,
+        'Concurrent FDAs created': loadFdaCount,
+        'Max timeout (ms)': maxTimeoutMs,
       };
       console.log('\n');
       console.table(data);
@@ -440,6 +453,17 @@ export function runFDAIntegrationSuite({ mode, label }) {
       httpReq,
       waitUntilFDACompleted,
       buildDaDataUrl,
+    });
+
+    registerFdaLoadPerformanceTests({
+      getBaseUrl: () => baseUrl,
+      service,
+      servicePath: '/public',
+      visibility: 'public',
+      httpReq,
+      waitUntilFDACompleted,
+      maxWaitMs: () => maxTimeoutMs,
+      loadFdaCount,
     });
   });
 }

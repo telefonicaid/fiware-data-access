@@ -1,0 +1,175 @@
+// Copyright 2025 Telefónica Soluciones de Informática y Comunicaciones de España, S.A.U.
+// PROJECT: fiware-data-access
+//
+// This software and / or computer program has been developed by Telefónica Soluciones
+// de Informática y Comunicaciones de España, S.A.U (hereinafter TSOL) and is protected
+// as copyright by the applicable legislation on intellectual property.
+//
+// It belongs to TSOL, and / or its licensors, the exclusive rights of reproduction,
+// distribution, public communication and transformation, and any economic right on it,
+// all without prejudice of the moral rights of the authors mentioned above. It is expressly
+// forbidden to decompile, disassemble, reverse engineer, sublicense or otherwise transmit
+// by any means, translate or create derivative works of the software and / or computer
+// programs, and perform with respect to all or part of such programs, any type of exploitation.
+//
+// Any use of all or part of the software and / or computer program will require the
+// express written consent of TSOL. In all cases, it will be necessary to make
+// an express reference to TSOL ownership in the software and / or computer program.
+//
+// Non-fulfillment of the provisions set forth herein and, in general, any violation of
+// the peaceful possession and ownership of these rights will be prosecuted by the means
+// provided in both Spanish and international law. TSOL reserves any civil or
+// criminal actions it may exercise to protect its rights.
+
+import { test, expect } from '@jest/globals';
+import { calculatePercentile } from '../utils/performanceTestUtils';
+
+const DEFAULT_LOAD_FDA_COUNT = 5;
+
+export function registerFdaLoadPerformanceTests({
+  getBaseUrl,
+  service,
+  servicePath,
+  visibility,
+  httpReq,
+  waitUntilFDACompleted,
+  maxWaitMs,
+  loadFdaCount,
+}) {
+  describe('FDA creation load', () => {
+    const effectiveLoadFdaCount = Number(
+      loadFdaCount ?? DEFAULT_LOAD_FDA_COUNT,
+    );
+    const query =
+      'SELECT id, name, age, timeinstant, authorized, country, score FROM public.users ORDER BY id';
+
+    test(
+      'Create and complete multiple FDAs concurrently',
+      async () => {
+        const baseUrl = getBaseUrl();
+
+        // Phase 1: Submit all FDAs concurrently
+        performance.mark('load-submit-start');
+        const submitRequests = Array.from(
+          { length: effectiveLoadFdaCount },
+          (_, index) => {
+            const fdaId = `perf-load-${index + 1}`;
+            return httpReq({
+              method: 'POST',
+              url: `${baseUrl}/${visibility}/fdas`,
+              headers: {
+                'Fiware-Service': service,
+                'Fiware-ServicePath': servicePath,
+              },
+              body: {
+                id: fdaId,
+                query,
+                description: `Performance load test FDA ${index + 1}`,
+              },
+            }).then((res) => ({ fdaId, res }));
+          },
+        );
+
+        const submitResults = await Promise.all(submitRequests);
+        performance.mark('load-submit-end');
+
+        const successfulSubmits = submitResults.filter(
+          ({ res }) => res.status === 202,
+        );
+        const failedSubmits = submitResults.filter(
+          ({ res }) => res.status >= 400 || res.status !== 202,
+        );
+
+        if (failedSubmits.length > 0) {
+          console.error(
+            '[PERF] Some create requests failed:',
+            failedSubmits.map(({ fdaId, res }) => ({
+              fdaId,
+              status: res.status,
+            })),
+          );
+        }
+
+        expect(successfulSubmits.length).toBe(effectiveLoadFdaCount);
+
+        // Phase 2: Wait for all FDAs to complete
+        performance.mark('load-complete-start');
+        const fdaIds = successfulSubmits.map(({ fdaId }) => fdaId);
+        const completionTimes = [];
+
+        const waitRequests = fdaIds.map((fdaId) =>
+          (async () => {
+            const startMs = Date.now();
+            await waitUntilFDACompleted({
+              baseUrl,
+              service,
+              fdaId,
+              visibility,
+              timeout: maxWaitMs(),
+            });
+            const durationMs = Date.now() - startMs;
+            completionTimes.push({ fdaId, durationMs });
+            return { fdaId, durationMs };
+          })(),
+        );
+
+        const completionResults = await Promise.all(waitRequests);
+        performance.mark('load-complete-end');
+
+        // Calculate timing statistics
+        const sortedDurations = completionTimes
+          .map(({ durationMs }) => durationMs)
+          .sort((a, b) => a - b);
+
+        const p50 = calculatePercentile(sortedDurations, 50);
+        const p90 = calculatePercentile(sortedDurations, 90);
+        const p95 = calculatePercentile(sortedDurations, 95);
+        const p99 = calculatePercentile(sortedDurations, 99);
+        const minDuration = sortedDurations[0];
+        const maxDuration = sortedDurations[sortedDurations.length - 1];
+        const avgDuration =
+          sortedDurations.reduce((a, b) => a + b, 0) / sortedDurations.length;
+
+        performance.measure(
+          'Load submit',
+          'load-submit-start',
+          'load-submit-end',
+        );
+        const submitMeasure = performance.getEntriesByName('Load submit')[0];
+        const submitDuration = submitMeasure?.duration ?? 0;
+
+        performance.measure(
+          'Load completion',
+          'load-complete-start',
+          'load-complete-end',
+        );
+        const completeMeasure =
+          performance.getEntriesByName('Load completion')[0];
+        const completeDuration = completeMeasure?.duration ?? 0;
+
+        // Log results
+        console.log(
+          `\n[PERF] Concurrent FDA Creation Load Test (${effectiveLoadFdaCount} FDAs):`,
+        );
+        console.log(
+          `  Submission phase: ${submitDuration.toFixed(2)}ms for ${effectiveLoadFdaCount} requests`,
+        );
+        console.log(
+          `  Completion phase: ${completeDuration.toFixed(2)}ms to complete all FDAs`,
+        );
+        console.log('\n  Per-FDA completion times:');
+        console.table({
+          'Min (ms)': minDuration.toFixed(2),
+          'P50 (ms)': p50.toFixed(2),
+          'P90 (ms)': p90.toFixed(2),
+          'P95 (ms)': p95.toFixed(2),
+          'P99 (ms)': p99.toFixed(2),
+          'Max (ms)': maxDuration.toFixed(2),
+          'Avg (ms)': avgDuration.toFixed(2),
+          'Total (ms)': completeDuration.toFixed(2),
+        });
+      },
+      maxWaitMs(),
+    );
+  });
+}
