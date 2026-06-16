@@ -48,9 +48,11 @@ import {
   parsePerformanceTableRows,
   parseMaxTimeoutMs,
   parseFdaLoadTestCount,
+  parseFdaLoadRampUpMs,
   PERFORMANCE_TABLE_ROWS_ARG,
   MAX_TIMEOUT_MS_ARG,
   FDA_LOAD_TEST_COUNT_ARG,
+  FDA_LOAD_RAMP_UP_MS_ARG,
 } from './utils/performanceTestUtils.js';
 
 const performanceTableRows = parsePerformanceTableRows(
@@ -75,6 +77,13 @@ const loadFdaCount = parseFdaLoadTestCount(
     process.argv
       .find((arg) => arg.startsWith(FDA_LOAD_TEST_COUNT_ARG))
       ?.slice(FDA_LOAD_TEST_COUNT_ARG.length),
+);
+const loadFdaRampUpMs = parseFdaLoadRampUpMs(
+  process.env.FDA_LOAD_RAMP_UP_MS ??
+    process.env.npm_config_fdaLoadRampUpMs ??
+    process.argv
+      .find((arg) => arg.startsWith(FDA_LOAD_RAMP_UP_MS_ARG))
+      ?.slice(FDA_LOAD_RAMP_UP_MS_ARG.length),
 );
 
 const { Client } = pg;
@@ -242,6 +251,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
         'PostgreSQL table size': tableSize,
         'Concurrent FDAs created': loadFdaCount,
         'Max timeout (ms)': maxTimeoutMs,
+        'Load ramp-up (ms)': loadFdaRampUpMs,
       };
       console.log('\n');
       console.table(data);
@@ -464,6 +474,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       waitUntilFDACompleted,
       maxWaitMs: () => maxTimeoutMs,
       loadFdaCount,
+      loadFdaRampUpMs,
     });
   });
 }

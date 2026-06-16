@@ -35,6 +35,7 @@ export function registerFdaLoadPerformanceTests({
   waitUntilFDACompleted,
   maxWaitMs,
   loadFdaCount,
+  loadFdaRampUpMs,
 }) {
   describe('FDA creation load', () => {
     const effectiveLoadFdaCount = Number(
@@ -47,31 +48,57 @@ export function registerFdaLoadPerformanceTests({
       'Create and complete multiple FDAs concurrently',
       async () => {
         const baseUrl = getBaseUrl();
+        const submitState = { firstMarked: false };
 
-        // Phase 1: Submit all FDAs concurrently
+        // Phase 1: Submit all FDAs with optional ramp-up
         performance.mark('load-submit-start');
-        const submitRequests = Array.from(
-          { length: effectiveLoadFdaCount },
-          (_, index) => {
-            const fdaId = `perf-load-${index + 1}`;
-            return httpReq({
-              method: 'POST',
-              url: `${baseUrl}/${visibility}/fdas`,
-              headers: {
-                'Fiware-Service': service,
-                'Fiware-ServicePath': servicePath,
-              },
-              body: {
-                id: fdaId,
-                query,
-                description: `Performance load test FDA ${index + 1}`,
-              },
-            }).then((res) => ({ fdaId, res }));
-          },
-        );
+        const submitRequests = [];
+        const submitIntervals = loadFdaRampUpMs
+          ? loadFdaRampUpMs / effectiveLoadFdaCount
+          : 0;
+
+        for (let index = 0; index < effectiveLoadFdaCount; index += 1) {
+          const fdaId = `perf-load-${index + 1}`;
+          const requestPromise = new Promise((resolve) => {
+            const delay = Math.round(index * submitIntervals);
+            setTimeout(async () => {
+              if (!submitState.firstMarked) {
+                performance.mark('ramp-first-submit');
+                submitState.firstMarked = true;
+              }
+              if (index === effectiveLoadFdaCount - 1) {
+                performance.mark('ramp-last-submit');
+              }
+              const res = await httpReq({
+                method: 'POST',
+                url: `${baseUrl}/${visibility}/fdas`,
+                headers: {
+                  'Fiware-Service': service,
+                  'Fiware-ServicePath': servicePath,
+                },
+                body: {
+                  id: fdaId,
+                  query,
+                  description: `Performance load test FDA ${index + 1}`,
+                },
+              });
+              resolve({ fdaId, res, submitDelayMs: delay });
+            }, delay);
+          });
+          submitRequests.push(requestPromise);
+        }
 
         const submitResults = await Promise.all(submitRequests);
         performance.mark('load-submit-end');
+
+        // Measure actual ramp-up duration
+        if (submitState.firstMarked) {
+          performance.measure(
+            'Ramp up',
+            'ramp-first-submit',
+            'ramp-last-submit',
+          );
+        }
 
         const successfulSubmits = submitResults.filter(
           ({ res }) => res.status === 202,
@@ -113,7 +140,7 @@ export function registerFdaLoadPerformanceTests({
           })(),
         );
 
-        const completionResults = await Promise.all(waitRequests);
+        await Promise.all(waitRequests);
         performance.mark('load-complete-end');
 
         // Calculate timing statistics
@@ -147,6 +174,13 @@ export function registerFdaLoadPerformanceTests({
           performance.getEntriesByName('Load completion')[0];
         const completeDuration = completeMeasure?.duration ?? 0;
 
+        const rampUpMeasure = performance.getEntriesByName('Ramp up')[0];
+        const rampUpDuration = rampUpMeasure?.duration ?? 0;
+        const submitThroughput =
+          effectiveLoadFdaCount / (submitDuration / 1000 || 1);
+        const completionThroughput =
+          effectiveLoadFdaCount / (completeDuration / 1000 || 1);
+
         // Log results
         console.log(
           `\n[PERF] Concurrent FDA Creation Load Test (${effectiveLoadFdaCount} FDAs):`,
@@ -156,6 +190,15 @@ export function registerFdaLoadPerformanceTests({
         );
         console.log(
           `  Completion phase: ${completeDuration.toFixed(2)}ms to complete all FDAs`,
+        );
+        console.log(
+          `  Ramp-up interval: ${loadFdaRampUpMs}ms across ${effectiveLoadFdaCount} requests`,
+        );
+        console.log(
+          `  Effective submit throughput: ${submitThroughput.toFixed(2)} req/s`,
+        );
+        console.log(
+          `  Effective completion throughput: ${completionThroughput.toFixed(2)} req/s`,
         );
         console.log('\n  Per-FDA completion times:');
         console.table({
@@ -167,6 +210,7 @@ export function registerFdaLoadPerformanceTests({
           'Max (ms)': maxDuration.toFixed(2),
           'Avg (ms)': avgDuration.toFixed(2),
           'Total (ms)': completeDuration.toFixed(2),
+          'Ramp-up (ms)': rampUpDuration.toFixed(2),
         });
       },
       maxWaitMs(),
