@@ -5,7 +5,7 @@ export default {
   collectCoverage: false,
   coverageDirectory: 'coverage',
   collectCoverageFrom: ['lib/**/*.js', '*.js', '!**/node_modules/**'],
-  coverageReporters: ['text-summary', 'lcov'],
+  coverageReporters: ['text-summary', 'lcov', 'html'],
   // Ensure polyfills run before test files import modules that need Web APIs
   setupFiles: ['./jest.setup.js'],
   testPathIgnorePatterns: ['/node_modules/'],
