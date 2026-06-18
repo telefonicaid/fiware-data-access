@@ -95,25 +95,27 @@ Provides context for the measurements by displaying the configuration used durin
 
 Contains the primary benchmark results collected during the test run.
 
-| Measure                      | Description                                                                        |
-| ---------------------------- | ---------------------------------------------------------------------------------- |
-| Basic FDA creation           | Total end-to-end time required to create a standard FDA.                           |
-| Fetch time                   | Time spent waiting for the FDA to reach the fetching/transforming phase.           |
-| Parquet conversion           | Time between fetch completion and upload start, representing Parquet generation.   |
-| Compression time             | Time spent performing data compression.                                            |
-| Compressed FDA creation      | Total end-to-end time required to create a compressed FDA.                         |
-| Partition time               | Time spent performing data partitioning.                                           |
-| Partitioned FDA creation     | Total end-to-end time required to create a partitioned FDA.                        |
-| Fresh FDA creation           | Total end-to-end time required to create a fresh FDA with caching disabled.        |
-| Basic query                  | Execution time of a standard DA query with ND-JSON output format.                  |
-| Basic query (JSON)           | Execution time of a standard DA query with JSON output format.                     |
-| Basic query (CSV)            | Execution time of a standard DA query with CSV output format.                      |
-| Compressed query             | Execution time of a DA query against a compressed FDA.                             |
-| Partitioned query            | Execution time of a DA query against a partitioned FDA.                            |
-| Partitioned date-based query | Execution time of a date-filtered query against a partitioned FDA.                 |
-| Fresh query                  | Execution time of a query against a fresh FDA.                                     |
-| Ramp up                      | Measured time between the first and last FDA submission request.                   |
-| Load completion              | Time from the start of completion polling until all FDAs have finished processing. |
+| Measure                      | Description                                                                                          |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Basic FDA creation           | Total end-to-end time required to create a standard FDA.                                             |
+| Fetch time                   | Time spent waiting for the FDA to reach the fetching/transforming phase.                             |
+| Parquet conversion           | Time between fetch completion and upload start, representing Parquet generation.                     |
+| Compression time             | Time spent performing data compression.                                                              |
+| Compressed FDA creation      | Total end-to-end time required to create a compressed FDA.                                           |
+| Partition time               | Time spent performing data partitioning.                                                             |
+| Partitioned FDA creation     | Total end-to-end time required to create a partitioned FDA.                                          |
+| Fresh FDA creation           | Total end-to-end time required to create a fresh FDA with caching disabled.                          |
+| Basic query                  | Execution time of a standard DA query with ND-JSON output format.                                    |
+| Basic query (JSON)           | Execution time of a standard DA query with JSON output format.                                       |
+| Basic query (CSV)            | Execution time of a standard DA query with CSV output format.                                        |
+| Compressed query             | Execution time of a DA query against a compressed FDA.                                               |
+| Partitioned query            | Execution time of a DA query against a partitioned FDA.                                              |
+| Partitioned date-based query | Execution time of a date-filtered query against a partitioned FDA.                                   |
+| Fresh query                  | Execution time of a query against a fresh FDA.                                                       |
+| Creation ramp up             | Measured time between the first and last FDA submission request.                                     |
+| Creation load completion     | Time from the start of completion polling until all FDAs have finished processing.                   |
+| Query ramp up                | Measured time between the first and the last concurrent query requests being sent.                   |
+| Query load completion        | Measured time from the start of the concurrent query batch until all query responses have completed. |
 
 ### 3. Load Test Statistics
 
