@@ -34,7 +34,7 @@ export function registerFdaQueryPerformanceTests({
   buildDaDataUrl,
 }) {
   describe('DA data queries', () => {
-    test('Query basic FDA', async () => {
+    test('Query basic FDA (ND-JSON)', async () => {
       const baseUrl = getBaseUrl();
 
       performance.mark('query-start');
@@ -64,6 +64,78 @@ export function registerFdaQueryPerformanceTests({
       performance.measure('Basic query', 'query-start', 'query-end');
 
       const totalTime = performance.getEntriesByName('Basic query')[0];
+
+      console.log(
+        `[PERF] Basic DA query took ${totalTime.duration.toFixed(2)}ms`,
+      );
+    });
+
+    test('Query basic FDA (JSON format)', async () => {
+      const baseUrl = getBaseUrl();
+
+      performance.mark('query-start');
+      const queryRes = await httpReq({
+        method: 'GET',
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, 'defaultDataAccess', {
+          age: 25,
+        }),
+        headers: {
+          'Fiware-Service': service,
+          Accept: 'application/json',
+        },
+      });
+
+      if (queryRes.status >= 400) {
+        console.error(
+          'GET /{visibility}/fdas/{fdaId}/das/{daId}/data JSON failed:',
+          queryRes.status,
+          queryRes.text,
+        );
+      }
+
+      expect(queryRes.status).toBe(200);
+      expect(queryRes.text).toBeDefined();
+
+      performance.mark('query-end');
+      performance.measure('Basic query (JSON)', 'query-start', 'query-end');
+
+      const totalTime = performance.getEntriesByName('Basic query (JSON)')[0];
+
+      console.log(
+        `[PERF] Basic DA query took ${totalTime.duration.toFixed(2)}ms`,
+      );
+    });
+
+    test('Query basic FDA (CSV format)', async () => {
+      const baseUrl = getBaseUrl();
+
+      performance.mark('query-start');
+      const queryRes = await httpReq({
+        method: 'GET',
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, 'defaultDataAccess', {
+          age: 25,
+        }),
+        headers: {
+          'Fiware-Service': service,
+          Accept: 'text/csv',
+        },
+      });
+
+      if (queryRes.status >= 400) {
+        console.error(
+          'GET /{visibility}/fdas/{fdaId}/das/{daId}/data CSV failed:',
+          queryRes.status,
+          queryRes.text,
+        );
+      }
+
+      expect(queryRes.status).toBe(200);
+      expect(queryRes.text).toBeDefined();
+
+      performance.mark('query-end');
+      performance.measure('Basic query (CSV)', 'query-start', 'query-end');
+
+      const totalTime = performance.getEntriesByName('Basic query (CSV)')[0];
 
       console.log(
         `[PERF] Basic DA query took ${totalTime.duration.toFixed(2)}ms`,

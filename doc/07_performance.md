@@ -105,7 +105,9 @@ Contains the primary benchmark results collected during the test run.
 | Partition time               | Time spent performing data partitioning.                                           |
 | Partitioned FDA creation     | Total end-to-end time required to create a partitioned FDA.                        |
 | Fresh FDA creation           | Total end-to-end time required to create a fresh FDA with caching disabled.        |
-| Basic query                  | Execution time of a standard DA query.                                             |
+| Basic query                  | Execution time of a standard DA query with ND-JSON output format.                  |
+| Basic query (JSON)           | Execution time of a standard DA query with JSON output format.                     |
+| Basic query (CSV)            | Execution time of a standard DA query with CSV output format.                      |
 | Compressed query             | Execution time of a DA query against a compressed FDA.                             |
 | Partitioned query            | Execution time of a DA query against a partitioned FDA.                            |
 | Partitioned date-based query | Execution time of a date-filtered query against a partitioned FDA.                 |
