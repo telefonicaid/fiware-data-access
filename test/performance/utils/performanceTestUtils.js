@@ -22,6 +22,9 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
+import http from 'node:http';
+import { withDefaultServicePath } from '../../integration/utils/integrationTestUtils';
+
 export const PERFORMANCE_TABLE_ROWS_ARG = '--performanceTableRows=';
 export const MAX_TIMEOUT_MS_ARG = '--maxTimeOutMs=';
 export const FDA_LOAD_TEST_COUNT_ARG = '--fdaLoadTestCount=';
@@ -147,4 +150,40 @@ export async function waitUntilFDAStatus({
 export function calculatePercentile(sortedValues, percentile) {
   const index = Math.ceil((percentile / 100) * sortedValues.length) - 1;
   return sortedValues[Math.max(0, index)];
+}
+
+export function httpReqNoBody({ method, url, headers, body }) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const finalHeaders = withDefaultServicePath(headers || {});
+    const req = http.request(
+      {
+        method,
+        hostname: u.hostname,
+        port: u.port,
+        path: u.pathname + u.search,
+        headers: {
+          ...finalHeaders,
+          ...(body ? { 'Content-Type': 'application/json' } : {}),
+        },
+        timeout: 30_000,
+      },
+      (res) => {
+        res.on('data', () => {});
+        res.on('end', () => {
+          resolve({
+            status: res.statusCode,
+            headers: res.headers,
+          });
+        });
+      },
+    );
+
+    req.on('timeout', () => req.destroy(new Error('timeout')));
+    req.on('error', reject);
+    if (body) {
+      req.write(JSON.stringify(body));
+    }
+    req.end();
+  });
 }

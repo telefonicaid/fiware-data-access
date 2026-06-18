@@ -27,7 +27,7 @@ import net from 'node:net';
 
 const DEFAULT_TEST_SERVICE_PATH = '/public';
 
-function withDefaultServicePath(headers = {}) {
+export function withDefaultServicePath(headers = {}) {
   if (headers['Fiware-Service'] && !headers['Fiware-ServicePath']) {
     return {
       ...headers,

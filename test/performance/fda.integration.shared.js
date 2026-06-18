@@ -53,6 +53,7 @@ import {
   MAX_TIMEOUT_MS_ARG,
   FDA_LOAD_TEST_COUNT_ARG,
   FDA_LOAD_RAMP_UP_MS_ARG,
+  httpReqNoBody,
 } from './utils/performanceTestUtils.js';
 
 const performanceTableRows = parsePerformanceTableRows(
@@ -471,10 +472,12 @@ export function runFDAIntegrationSuite({ mode, label }) {
       servicePath: '/public',
       visibility: 'public',
       httpReq,
+      httpReqNoBody,
       waitUntilFDACompleted,
       maxWaitMs: () => maxTimeoutMs,
       loadFdaCount,
       loadFdaRampUpMs,
+      buildDaDataUrl,
     });
   });
 }
