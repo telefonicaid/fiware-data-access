@@ -636,7 +636,8 @@ export async function validateDAQuery(
   userQuery,
   servicePath,
 ) {
-  const { objStgConf = {} } = (await retrieveFDA(service, fdaId)) || {};
+  const { objStgConf = {} } =
+    (await retrieveFDA(service, fdaId, servicePath)) || {};
   const query = buildDAQuery(
     service,
     fdaId,

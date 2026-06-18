@@ -129,6 +129,21 @@ describe('aws utils', () => {
     });
   });
 
+  test('dropFile ignores missing object errors', async () => {
+    const { dropFile } = await loadAwsModule();
+
+    currentS3Client.send.mockRejectedValueOnce(
+      Object.assign(new Error('missing'), {
+        name: 'NoSuchKey',
+        $metadata: { httpStatusCode: 404 },
+      }),
+    );
+
+    await expect(
+      dropFile(currentS3Client, 'bucket-a', 'file-a'),
+    ).resolves.toBeUndefined();
+  });
+
   test('dropFiles wraps delete errors with FDAError', async () => {
     const { dropFiles } = await loadAwsModule();
 
@@ -142,6 +157,16 @@ describe('aws utils', () => {
       status: 500,
       type: 'S3ServerError',
     });
+  });
+
+  test('dropFiles is a no-op for an empty object list', async () => {
+    const { dropFiles } = await loadAwsModule();
+
+    await expect(
+      dropFiles(currentS3Client, 'bucket-a', []),
+    ).resolves.toBeUndefined();
+
+    expect(currentS3Client.send).not.toHaveBeenCalled();
   });
 
   test('moveObject wraps aws moving object errors with FDAError', async () => {

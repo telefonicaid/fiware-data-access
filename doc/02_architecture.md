@@ -8,6 +8,8 @@ This document describes the system architecture of **FIWARE Data Access**, inclu
 
 This section explains what an **FDA** and a **DA / CDA** are in the context of the FIWARE Data Access API.
 
+[Architecture](../doc/images/FDA_diagram.png)
+
 ### Datasource
 
 A **Datasource** represents the connection definition FDA uses to access source systems.

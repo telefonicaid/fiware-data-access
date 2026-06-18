@@ -44,6 +44,7 @@ import { registerDaParamsIntegrationTests } from './suites/daParams.integration.
 import { registerFdaVariantsIntegrationTests } from './suites/fdaVariants.integration.tests.js';
 import { registerDaCrudIntegrationTests } from './suites/daCrud.integration.tests.js';
 import { registerFreshQueriesIntegrationTests } from './suites/freshQueries.integration.tests.js';
+import { registerQueryStyleDataIntegrationTests } from './suites/queryStyleData.integration.tests.js';
 import { registerVisibilityConstraintsIntegrationTests } from './suites/visibilityConstraints.integration.tests.js';
 import { registerCdaCompatibilityIntegrationTests } from './suites/cdaCompatibility.integration.tests.js';
 import { registerFdaLifecycleIntegrationTests } from './suites/fdaLifecycle.integration.tests.js';
@@ -382,6 +383,20 @@ export function runFDAIntegrationSuite({ mode, label }) {
       httpReqRaw,
       waitUntilFDACompleted,
       buildDaDataUrl,
+    });
+
+    registerQueryStyleDataIntegrationTests({
+      getBaseUrl: () => baseUrl,
+      service,
+      servicePath,
+      visibility,
+      getPgHost: () => pgHost,
+      getPgPort: () => pgPort,
+      httpReq,
+      httpReqRaw,
+      buildDaDataUrl,
+      buildFdaDataUrl,
+      waitUntilFDACompleted,
     });
 
     registerFdaVariantsIntegrationTests({

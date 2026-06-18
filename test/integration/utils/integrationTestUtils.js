@@ -213,6 +213,47 @@ export function buildFdaDataUrl(baseUrl, servicePath, fdaId) {
   return `${baseUrl}/${scope}/fdas/${encodeURIComponent(fdaId)}/data`;
 }
 
+export function buildQueryStyleDaDataUrl(
+  baseUrl,
+  { service, servicePath, visibility, fdaId, daId, outputType, params = {} },
+) {
+  const url = new URL(`${baseUrl}/data/da`);
+  url.searchParams.set('service', String(service));
+  url.searchParams.set('servicePath', String(servicePath));
+  url.searchParams.set('visibility', String(visibility));
+  url.searchParams.set('fdaId', String(fdaId));
+  url.searchParams.set('daId', String(daId));
+
+  if (outputType !== undefined) {
+    url.searchParams.set('outputType', String(outputType));
+  }
+
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined) {
+      url.searchParams.set(key, String(value));
+    }
+  }
+
+  return url.toString();
+}
+
+export function buildQueryStyleFdaDataUrl(
+  baseUrl,
+  { service, servicePath, visibility, fdaId, outputType },
+) {
+  const url = new URL(`${baseUrl}/data/fda`);
+  url.searchParams.set('service', String(service));
+  url.searchParams.set('servicePath', String(servicePath));
+  url.searchParams.set('visibility', String(visibility));
+  url.searchParams.set('fdaId', String(fdaId));
+
+  if (outputType !== undefined) {
+    url.searchParams.set('outputType', String(outputType));
+  }
+
+  return url.toString();
+}
+
 export function getFreePort() {
   return new Promise((resolve) => {
     const srv = net.createServer();
