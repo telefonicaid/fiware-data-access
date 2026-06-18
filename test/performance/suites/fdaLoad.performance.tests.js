@@ -36,12 +36,16 @@ export function registerFdaLoadPerformanceTests({
   waitUntilFDACompleted,
   maxWaitMs,
   loadFdaCount,
+  queryLoadFdaCount,
   loadFdaRampUpMs,
   buildDaDataUrl,
 }) {
   describe('FDA load tests', () => {
     const effectiveLoadFdaCount = Number(
       loadFdaCount ?? DEFAULT_LOAD_FDA_COUNT,
+    );
+    const effectiveQueryLoadFdaCount = Number(
+      queryLoadFdaCount ?? DEFAULT_LOAD_FDA_COUNT,
     );
     const query =
       'SELECT id, name, age, timeinstant, authorized, country, score FROM public.users ORDER BY id';
@@ -220,9 +224,19 @@ export function registerFdaLoadPerformanceTests({
       async () => {
         const baseUrl = getBaseUrl();
 
+        const queryRequestsCount = Math.min(
+          effectiveQueryLoadFdaCount,
+          effectiveLoadFdaCount,
+        );
+        if (effectiveQueryLoadFdaCount > effectiveLoadFdaCount) {
+          console.warn(
+            `[PERF] queryLoadFdaCount (${effectiveQueryLoadFdaCount}) exceeds created FDAs (${effectiveLoadFdaCount}); using ${queryRequestsCount} queries.`,
+          );
+        }
+
         // Build list of fdaIds that the creation test used
         const fdaIds = [];
-        for (let i = 0; i < effectiveLoadFdaCount; i += 1) {
+        for (let i = 0; i < queryRequestsCount; i += 1) {
           fdaIds.push(`perf-load-${i + 1}`);
         }
 
@@ -241,7 +255,7 @@ export function registerFdaLoadPerformanceTests({
         performance.mark('query-load-start');
 
         const submitIntervals = loadFdaRampUpMs
-          ? Math.round(loadFdaRampUpMs / effectiveLoadFdaCount)
+          ? Math.round(loadFdaRampUpMs / queryRequestsCount)
           : 0;
 
         const completionTimes = [];

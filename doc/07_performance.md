@@ -58,12 +58,13 @@ npm run test:performance
 
 The following parameters can be used to customize the test execution:
 
-| Parameter            | Description                                                                                                                                  | Default   |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
-| performanceTableRows | Number of rows generated in the PostgreSQL table used by the tests.                                                                          | 1_000_000 |
-| maxTimeOutMs         | Timeout for each individual test (ms).                                                                                                       | 300_000   |
-| fdaLoadTestCount     | Number of FDAs created concurrently during load tests.                                                                                       | 5         |
-| fdaLoadRampUpMs      | Ramp-up period (ms). If `0`, all FDAs are submitted simultaneously. Otherwise, submissions are distributed evenly across the ramp-up window. | 0         |
+| Parameter             | Description                                                                                                                                  | Default   |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| performanceTableRows  | Number of rows generated in the PostgreSQL table used by the tests.                                                                          | 1_000_000 |
+| maxTimeOutMs          | Timeout for each individual test (ms).                                                                                                       | 300_000   |
+| fdaLoadTestCount      | Number of FDAs created concurrently during load tests.                                                                                       | 5         |
+| fdaLoadRampUpMs       | Ramp-up period (ms). If `0`, all FDAs are submitted simultaneously. Otherwise, submissions are distributed evenly across the ramp-up window. | 0         |
+| fdaQueryLoadTestCount | Number of queries launched concurrently during load tests.                                                                                   | 10        |
 
 Example:
 
@@ -72,7 +73,8 @@ npm run test:performance -- \
   --performanceTableRows=100000 \
   --maxTimeOutMs=500000 \
   --fdaLoadTestCount=50 \
-  --fdaLoadRampUpMs=5000
+  --fdaLoadRampUpMs=5000 \
+  --fdaQueryLoadTestCount=100
 ```
 
 ## Test Results

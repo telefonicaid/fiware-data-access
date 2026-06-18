@@ -28,10 +28,12 @@ import { withDefaultServicePath } from '../../integration/utils/integrationTestU
 export const PERFORMANCE_TABLE_ROWS_ARG = '--performanceTableRows=';
 export const MAX_TIMEOUT_MS_ARG = '--maxTimeOutMs=';
 export const FDA_LOAD_TEST_COUNT_ARG = '--fdaLoadTestCount=';
+export const FDA_QUERY_LOAD_TEST_COUNT_ARG = '--fdaQueryLoadTestCount=';
 export const FDA_LOAD_RAMP_UP_MS_ARG = '--fdaLoadRampUpMs=';
 const DEFAULT_PERFORMANCE_TABLE_ROWS = 1_000_000;
 const DEFAULT_MAX_TIMEOUT_MS = 300_000;
 const DEFAULT_LOAD_FDA_COUNT = 5;
+const DEFAULT_QUERY_LOAD_FDA_COUNT = 10;
 const DEFAULT_LOAD_FDA_RAMP_UP_MS = 0;
 
 export function parsePerformanceTableRows(rawValue) {
@@ -78,6 +80,23 @@ export function parseFdaLoadTestCount(rawValue) {
       `[TEST] Ignoring invalid fdaLoadTestCount value: ${normalized}`,
     );
     return DEFAULT_LOAD_FDA_COUNT;
+  }
+
+  return candidate;
+}
+
+export function parseFdaQueryLoadTestCount(rawValue) {
+  if (rawValue == null || rawValue === '') {
+    return DEFAULT_QUERY_LOAD_FDA_COUNT;
+  }
+
+  const normalized = String(rawValue).trim();
+  const candidate = Number(normalized);
+  if (!Number.isInteger(candidate) || candidate <= 0) {
+    console.warn(
+      `[TEST] Ignoring invalid fdaQueryLoadTestCount value: ${normalized}`,
+    );
+    return DEFAULT_QUERY_LOAD_FDA_COUNT;
   }
 
   return candidate;
