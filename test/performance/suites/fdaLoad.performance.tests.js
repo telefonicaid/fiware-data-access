@@ -24,8 +24,6 @@
 import { test, expect } from '@jest/globals';
 import { calculatePercentile } from '../utils/performanceTestUtils';
 
-const DEFAULT_LOAD_FDA_COUNT = 5;
-
 export function registerFdaLoadPerformanceTests({
   getBaseUrl,
   service,
@@ -41,12 +39,8 @@ export function registerFdaLoadPerformanceTests({
   buildDaDataUrl,
 }) {
   describe('FDA load tests', () => {
-    const effectiveLoadFdaCount = Number(
-      loadFdaCount ?? DEFAULT_LOAD_FDA_COUNT,
-    );
-    const effectiveQueryLoadFdaCount = Number(
-      queryLoadFdaCount ?? DEFAULT_LOAD_FDA_COUNT,
-    );
+    const effectiveLoadFdaCount = Number(loadFdaCount);
+    const effectiveQueryLoadFdaCount = Number(queryLoadFdaCount);
     const query =
       'SELECT id, name, age, timeinstant, authorized, country, score FROM public.users ORDER BY id';
 
@@ -224,32 +218,32 @@ export function registerFdaLoadPerformanceTests({
       async () => {
         const baseUrl = getBaseUrl();
 
-        const queryRequestsCount = Math.min(
-          effectiveQueryLoadFdaCount,
-          effectiveLoadFdaCount,
-        );
-        if (effectiveQueryLoadFdaCount > effectiveLoadFdaCount) {
+        const queryRequestsCount = Number(effectiveQueryLoadFdaCount);
+
+        // Use a single FDA for all concurrent queries so the query load
+        // is independent from the FDA creation test.
+        const baseFdaId =
+          effectiveLoadFdaCount >= 1 ? 'perf-load-1' : 'perf-test';
+        if (effectiveLoadFdaCount < 1) {
           console.warn(
-            `[PERF] queryLoadFdaCount (${effectiveQueryLoadFdaCount}) exceeds created FDAs (${effectiveLoadFdaCount}); using ${queryRequestsCount} queries.`,
+            `[PERF] No created FDAs detected; queries will target ${baseFdaId}`,
           );
         }
 
-        // Build list of fdaIds that the creation test used
-        const fdaIds = [];
-        for (let i = 0; i < queryRequestsCount; i += 1) {
-          fdaIds.push(`perf-load-${i + 1}`);
-        }
+        // Build list of fdaIds (all identical) to issue concurrent queries
+        const fdaIds = Array.from(
+          { length: queryRequestsCount },
+          () => baseFdaId,
+        );
 
-        // Wait each FDA to be completed before querying
-        for (const fdaId of fdaIds) {
-          await waitUntilFDACompleted({
-            baseUrl,
-            service,
-            fdaId,
-            visibility,
-            timeout: maxWaitMs(),
-          });
-        }
+        // Ensure the queried FDA is completed before starting the query load
+        await waitUntilFDACompleted({
+          baseUrl,
+          service,
+          fdaId: baseFdaId,
+          visibility,
+          timeout: maxWaitMs(),
+        });
 
         const submitState = { firstMarked: false };
         performance.mark('query-load-start');
