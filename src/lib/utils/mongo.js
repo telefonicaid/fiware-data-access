@@ -151,43 +151,31 @@ export async function validateMongoDatasourceConnection(dsConfig) {
   }
 }
 
-export async function readMongoDatasourceRows(
-  dsConfig,
-  collectionName,
-  filter,
-  attrs,
-  { limit } = {},
-) {
+export async function readMongoDatasourceRows(dsConfig, query, { limit } = {}) {
+  const { collection, filter, projection, aggregation } = query;
   const client = new MongoClient(dsConfig.uri, {
     serverSelectionTimeoutMS: 5000,
   });
 
   try {
     await client.connect();
+    if (filter !== undefined) {
+      const rows = await client
+        .db(dsConfig.database)
+        .collection(collection)
+        .find(filter ?? {}, {
+          ...(projection ? { projection } : {}),
+          ...(limit ? { limit } : {}),
+        })
+        .toArray();
 
-    const rows = await client
-      .db(dsConfig.database)
-      .collection(collectionName)
-      .find(filter ?? {}, {
-        projection: buildMongoProjection(attrs),
-        ...(limit ? { limit } : {}),
-      })
-      .toArray();
-
-    return rows.map((row) => {
-      const mappedRow = {};
-
-      for (const attr of attrs) {
-        mappedRow[attr] = getNestedMongoValue(row, attr);
-      }
-
-      return mappedRow;
-    });
+      return rows;
+    }
   } catch (error) {
     throw new FDAError(
       500,
       'MongoDBServerError',
-      `Error reading datasource collection ${collectionName}: ${error.message}`,
+      `Error reading datasource collection ${collection}: ${error.message}`,
     );
   } finally {
     await client.close().catch(() => {});
@@ -331,8 +319,6 @@ export async function createFDAMongo(
   objStgConf,
   cached = true,
   datasourceId = DEFAULT_DATASOURCE_ID,
-  collection,
-  attrs,
 ) {
   logger.debug({ fdaId, query, service, description }, '[DEBUG]: createFDA');
   const fdasCollection = await getCollection();
@@ -356,8 +342,6 @@ export async function createFDAMongo(
       objStgConf,
       cached,
       datasourceId,
-      ...(collection && { collection }),
-      ...(attrs && { attrs }),
     });
   } catch (e) {
     if (e.code === 11000) {

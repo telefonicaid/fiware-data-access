@@ -312,8 +312,6 @@ app.post('/:visibility/fdas', async (req, res) => {
     'objStgConf',
     'cached',
     'datasourceId',
-    'collection',
-    'attrs',
   ]);
   const {
     id,
@@ -324,8 +322,6 @@ app.post('/:visibility/fdas', async (req, res) => {
     objStgConf,
     cached,
     datasourceId,
-    collection,
-    attrs,
   } = body;
   const service = req.get('Fiware-Service');
   const servicePath = req.get('Fiware-ServicePath');
@@ -367,8 +363,6 @@ app.post('/:visibility/fdas', async (req, res) => {
     defaultDataAccessEnabled,
     cachedEnabled,
     datasourceId,
-    collection,
-    attrs,
   );
 
   return res.status(202).json({

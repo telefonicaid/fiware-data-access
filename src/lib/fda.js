@@ -103,52 +103,84 @@ function assertSupportedDatasourceType(type) {
   }
 }
 
-function validateMongoFDAContract(
-  query,
-  collection,
-  attrs,
-  timeColumn,
-  cached,
-) {
-  if (!collection || typeof collection !== 'string') {
-    throw new FDAError(
-      400,
-      'InvalidMongoFDAContract',
-      'Mongo FDA requires a non-empty collection field',
-    );
-  }
-
-  if (!Array.isArray(attrs) || attrs.length === 0) {
-    throw new FDAError(
-      400,
-      'InvalidMongoFDAContract',
-      'Mongo FDA requires attrs as a non-empty array of strings',
-    );
-  }
-
-  if (
-    attrs.some((attr) => typeof attr !== 'string' || attr.trim().length === 0)
-  ) {
-    throw new FDAError(
-      400,
-      'InvalidMongoFDAContract',
-      'Mongo FDA attrs must contain only non-empty strings',
-    );
-  }
-
+function validateMongoFDAContract(query, timeColumn, cached) {
   if (!query || typeof query !== 'object' || Array.isArray(query)) {
     throw new FDAError(
       400,
       'InvalidMongoFDAContract',
-      'Mongo FDA query must be a JSON object filter',
+      'Mongo FDA query must be a JSON object',
     );
   }
 
-  if (timeColumn && !attrs.includes(timeColumn)) {
+  const { collection, filter, projection, aggregation } = query;
+
+  if (!collection || typeof collection !== 'string') {
     throw new FDAError(
       400,
       'InvalidMongoFDAContract',
-      'Mongo FDA timeColumn must be included in attrs',
+      'Mongo FDA query requires a non-empty collection field',
+    );
+  }
+
+  const hasFindQuery = filter !== undefined;
+  const hasAggregationQuery = aggregation !== undefined;
+
+  if (hasFindQuery === hasAggregationQuery) {
+    throw new FDAError(
+      400,
+      'InvalidMongoFDAContract',
+      'Mongo FDA query must define either filter or aggregation',
+    );
+  }
+
+  if (hasFindQuery) {
+    if (
+      filter === null ||
+      typeof filter !== 'object' ||
+      Array.isArray(filter)
+    ) {
+      throw new FDAError(
+        400,
+        'InvalidMongoFDAContract',
+        'Mongo FDA filter must be a JSON object',
+      );
+    }
+
+    if (
+      projection !== undefined &&
+      (projection === null ||
+        typeof projection !== 'object' ||
+        Array.isArray(projection))
+    ) {
+      throw new FDAError(
+        400,
+        'InvalidMongoFDAContract',
+        'Mongo FDA projection must be an object',
+      );
+    }
+
+    if (timeColumn && projection && !(timeColumn in projection)) {
+      throw new FDAError(
+        400,
+        'InvalidMongoFDAContract',
+        'Mongo FDA timeColumn must be included in projection',
+      );
+    }
+  }
+
+  if (hasAggregationQuery) {
+    if (!Array.isArray(aggregation) || aggregation.length === 0) {
+      throw new FDAError(
+        400,
+        'InvalidMongoFDAContract',
+        'Mongo FDA aggregation must be a non-empty array',
+      );
+    }
+
+    throw new FDAError(
+      400,
+      'MongoAggregationNotSupported',
+      'Aggregation pipelines are not supported yet',
     );
   }
 
@@ -914,8 +946,6 @@ export async function fetchFDA(
   defaultDataAccessEnabled,
   cached = true,
   datasourceId = DEFAULT_DATASOURCE_ID,
-  collection,
-  attrs,
 ) {
   const normalizedVisibility = normalizeVisibility(visibility);
   const normalizedServicePath = normalizeServicePath(servicePath);
@@ -923,7 +953,7 @@ export async function fetchFDA(
   validateScheduledOptions(refreshPolicy, objStgConf);
 
   if (datasource.type === 'mongodb') {
-    validateMongoFDAContract(query, collection, attrs, timeColumn, cached);
+    validateMongoFDAContract(query, timeColumn, cached);
 
     if (refreshPolicy?.type === 'window') {
       throw new FDAError(
@@ -952,8 +982,6 @@ export async function fetchFDA(
     objStgConf,
     cached,
     datasourceId,
-    collection,
-    attrs,
   );
 
   if (cached) {
@@ -1312,23 +1340,13 @@ async function getMongoFDAStorageRows(
     );
   }
 
-  validateMongoFDAContract(
-    fda.query,
-    fda.collection,
-    fda.attrs,
-    fda.timeColumn,
-    fda.cached,
-  );
+  validateMongoFDAContract(fda.query, fda.timeColumn, fda.cached);
 
   return {
-    attrs: fda.attrs,
-    rows: await readMongoDatasourceRows(
-      datasource.config,
-      fda.collection,
-      fda.query,
-      fda.attrs,
-      { limit },
-    ),
+    columns: Object.keys(fda.query.projection),
+    rows: await readMongoDatasourceRows(datasource.config, fda.query, {
+      limit,
+    }),
   };
 }
 
@@ -1525,13 +1543,13 @@ async function uploadTableToObjStg(
   if (datasource.type === 'postgres') {
     await uploadTable(s3Client, bucket, datasource.config, query, path);
   } else {
-    const { attrs, rows } = await getMongoFDAStorageRows(
+    const { columns, rows } = await getMongoFDAStorageRows(
       service,
       datasourceId,
       fdaId,
       servicePath,
     );
-    const csvContent = buildCsvContentFromRows(rows, attrs);
+    const csvContent = buildCsvContentFromRows(rows, columns);
     await uploadCsvContentToObjectStorage(s3Client, bucket, path, csvContent);
   }
 
@@ -1753,14 +1771,14 @@ async function createOneRowParquetSync(
       storagePath,
     );
   } else {
-    const { attrs, rows } = await getMongoFDAStorageRows(
+    const { columns, rows } = await getMongoFDAStorageRows(
       service,
       datasourceId,
       fdaId,
       servicePath,
       { limit: 1 },
     );
-    const csvContent = buildCsvContentFromRows(rows, attrs);
+    const csvContent = buildCsvContentFromRows(rows, columns);
     await uploadCsvContentToObjectStorage(
       s3Client,
       bucketName,
