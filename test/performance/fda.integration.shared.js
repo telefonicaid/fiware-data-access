@@ -1,0 +1,495 @@
+// Copyright 2025 Telefónica Soluciones de Informática y Comunicaciones de España, S.A.U.
+// PROJECT: fiware-data-access
+//
+// This software and / or computer program has been developed by Telefónica Soluciones
+// de Informática y Comunicaciones de España, S.A.U (hereinafter TSOL) and is protected
+// as copyright by the applicable legislation on intellectual property.
+//
+// It belongs to TSOL, and / or its licensors, the exclusive rights of reproduction,
+// distribution, public communication and transformation, and any economic right on it,
+// all without prejudice of the moral rights of the authors mentioned above. It is expressly
+// forbidden to decompile, disassemble, reverse engineer, sublicense or otherwise transmit
+// by any means, translate or create derivative works of the software and / or computer
+// programs, and perform with respect to all or part of such programs, any type of exploitation.
+//
+// Any use of all or part of the software and / or computer program will require the
+// express written consent of TSOL. In all cases, it will be necessary to make
+// an express reference to TSOL ownership in the software and / or computer
+// program.
+//
+// Non-fulfillment of the provisions set forth herein and, in general, any violation of
+// the peaceful possession and ownership of these rights will be prosecuted by the means
+// provided in both Spanish and international law. TSOL reserves any civil or
+// criminal actions it may exercise to protect its rights.
+
+import { jest, describe, beforeAll, afterAll } from '@jest/globals';
+import { GenericContainer, Wait } from 'testcontainers';
+import {
+  S3Client,
+  CreateBucketCommand,
+  HeadBucketCommand,
+  ListBucketsCommand,
+} from '@aws-sdk/client-s3';
+import pg from 'pg';
+import { MongoClient } from 'mongodb';
+import { spawn } from 'node:child_process';
+import path from 'node:path';
+import { registerFdaCreationPerformanceTests } from './suites/fdaCreation.performance.tests.js';
+import { registerFdaLoadPerformanceTests } from './suites/fdaLoad.performance.tests.js';
+import { registerFdaQueryPerformanceTests } from './suites/fdaQuery.performance.tests.js';
+import {
+  httpReq,
+  getFreePort,
+  connectWithRetry,
+  waitUntilFDACompleted,
+  buildDaDataUrl,
+} from '../integration/utils/integrationTestUtils.js';
+import {
+  parsePerformanceTableRows,
+  parseMaxTimeoutMs,
+  parseFdaLoadTestCount,
+  parseFdaQueryLoadTestCount,
+  parseFdaLoadRampUpMs,
+  PERFORMANCE_TABLE_ROWS_ARG,
+  MAX_TIMEOUT_MS_ARG,
+  FDA_LOAD_TEST_COUNT_ARG,
+  FDA_QUERY_LOAD_TEST_COUNT_ARG,
+  FDA_LOAD_RAMP_UP_MS_ARG,
+  httpReqNoBody,
+} from './utils/performanceTestUtils.js';
+
+const performanceTableRows = parsePerformanceTableRows(
+  process.env.PERFORMANCE_TABLE_ROWS ??
+    process.env.npm_config_performanceTableRows ??
+    process.argv
+      .find((arg) => arg.startsWith(PERFORMANCE_TABLE_ROWS_ARG))
+      ?.slice(PERFORMANCE_TABLE_ROWS_ARG.length) ??
+    process.argv.slice(2).find((arg) => /^\d+$/.test(arg)),
+);
+const maxTimeoutMs = parseMaxTimeoutMs(
+  process.env.maxTimeOutMs ??
+    process.env.npm_config_maxTimeOutMs ??
+    process.argv
+      .find((arg) => arg.startsWith(MAX_TIMEOUT_MS_ARG))
+      ?.slice(MAX_TIMEOUT_MS_ARG.length),
+);
+
+const loadFdaCount = parseFdaLoadTestCount(
+  process.env.FDA_LOAD_TEST_COUNT ??
+    process.env.npm_config_fdaLoadTestCount ??
+    process.argv
+      .find((arg) => arg.startsWith(FDA_LOAD_TEST_COUNT_ARG))
+      ?.slice(FDA_LOAD_TEST_COUNT_ARG.length),
+);
+const loadFdaRampUpMs = parseFdaLoadRampUpMs(
+  process.env.FDA_LOAD_RAMP_UP_MS ??
+    process.env.npm_config_fdaLoadRampUpMs ??
+    process.argv
+      .find((arg) => arg.startsWith(FDA_LOAD_RAMP_UP_MS_ARG))
+      ?.slice(FDA_LOAD_RAMP_UP_MS_ARG.length),
+);
+
+const queryLoadFdaCount = parseFdaQueryLoadTestCount(
+  process.env.FDA_QUERY_LOAD_TEST_COUNT ??
+    process.env.npm_config_fdaQueryLoadTestCount ??
+    process.argv
+      .find((arg) => arg.startsWith(FDA_QUERY_LOAD_TEST_COUNT_ARG))
+      ?.slice(FDA_QUERY_LOAD_TEST_COUNT_ARG.length),
+);
+
+const { Client } = pg;
+
+jest.setTimeout(maxTimeoutMs);
+
+export const EXECUTION_MODES = Object.freeze({
+  COMBINED: 'combined',
+  SEPARATED: 'separated',
+});
+
+export function runFDAIntegrationSuite({ mode, label }) {
+  describe(`FDA API - integration (${label})`, () => {
+    let minio;
+    let mongo;
+    let postgis;
+
+    let minioHostPort;
+    let minioUrl;
+    let mongoUri;
+    let pgHost;
+    let pgPort;
+
+    let appProc;
+    let fetcherProc;
+    let appPort;
+    let baseUrl;
+
+    const service = 'myservice';
+
+    let tableSize;
+
+    beforeAll(async () => {
+      // Containers
+      minio = await new GenericContainer('minio/minio:latest')
+        .withEnvironment({
+          MINIO_ROOT_USER: 'admin',
+          MINIO_ROOT_PASSWORD: 'admin123',
+        })
+        .withCommand(['server', '/data', '--console-address', ':9001'])
+        .withExposedPorts(9000, 9001)
+        .withWaitStrategy(Wait.forLogMessage(/API: http:\/\/.*:9000/))
+        .start();
+      minioHostPort = `${minio.getHost()}:${minio.getMappedPort(9000)}`;
+      minioUrl = `http://${minioHostPort}`;
+
+      mongo = await new GenericContainer('mongo:8.0')
+        .withExposedPorts(27017)
+        .withWaitStrategy(Wait.forLogMessage(/Waiting for connections/))
+        .start();
+      mongoUri = `mongodb://${mongo.getHost()}:${mongo.getMappedPort(27017)}/test-db`;
+
+      postgis = await new GenericContainer('postgis/postgis:15-3.3')
+        .withEnvironment({
+          POSTGRES_USER: 'postgres',
+          POSTGRES_PASSWORD: 'postgres',
+          POSTGRES_DB: service,
+        })
+        .withExposedPorts(5432)
+        .withWaitStrategy(Wait.forListeningPorts())
+        .start();
+      pgHost = '127.0.0.1';
+      pgPort = postgis.getMappedPort(5432);
+
+      console.log('[TEST] MinIO:', minioUrl);
+      console.log('[TEST] Mongo:', mongoUri);
+      console.log('[TEST] Postgres:', `${pgHost}:${pgPort}`);
+
+      // Health Mongo
+      {
+        const mc = new MongoClient(mongoUri, {
+          serverSelectionTimeoutMS: 10_000,
+        });
+        await mc.connect();
+        await mc.db('admin').command({ ping: 1 });
+        await mc.close();
+        console.log('[TEST] Mongo OK');
+      }
+
+      // Health MinIO + bucket
+      {
+        const s3 = new S3Client({
+          endpoint: minioUrl,
+          region: 'us-east-1',
+          credentials: { accessKeyId: 'admin', secretAccessKey: 'admin123' },
+          forcePathStyle: true,
+        });
+        await s3.send(new ListBucketsCommand({}));
+        try {
+          await s3.send(new HeadBucketCommand({ Bucket: service }));
+        } catch {
+          await s3.send(new CreateBucketCommand({ Bucket: service }));
+        }
+        console.log('[TEST] MinIO OK');
+      }
+
+      // Health Postgres + seed
+      {
+        const pgClient = new Client({
+          host: pgHost,
+          port: pgPort,
+          user: 'postgres',
+          password: 'postgres',
+          database: service,
+          connectionTimeoutMillis: 10_000,
+        });
+        await connectWithRetry(pgClient);
+
+        await pgClient.query(`DROP TABLE IF EXISTS public.users;`);
+        await pgClient.query(`
+        CREATE TABLE public.users (
+          id INT PRIMARY KEY,
+          name TEXT,
+          age INT,
+          timeinstant TIMESTAMP,
+          authorized BOOLEAN,
+          country TEXT,
+          score INT
+        );
+      `);
+        await pgClient.query(`
+        INSERT INTO public.users (id, name, age, timeinstant, authorized, country, score)
+        SELECT
+          i,
+          'user_' || i,
+          (i % 80) + 18,
+          now() - ((i % 365) || ' days')::interval,
+          (i % 2 = 0),
+          (ARRAY['ES','FR','DE','IT','UK','PT','NL'])[(i % 7) + 1],
+          (i % 1000)
+        FROM generate_series(1, ${performanceTableRows}) AS s(i);
+      `);
+
+        const sizeResult = await pgClient.query(
+          `SELECT pg_size_pretty(pg_total_relation_size('public.users')) as size`,
+        );
+        tableSize = sizeResult.rows[0].size;
+
+        await pgClient.end();
+        console.log('[TEST] Postgres OK');
+      }
+
+      await startApp();
+
+      await createDefaultDS({
+        getBaseUrl: () => baseUrl,
+        getPgHost: () => pgHost,
+        getPgPort: () => pgPort,
+      });
+    });
+
+    afterAll(async () => {
+      await stopApp();
+      await Promise.allSettled([minio?.stop(), mongo?.stop(), postgis?.stop()]);
+      printPerformanceStats();
+    });
+
+    function wait(ms) {
+      return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    function printPerformanceStats() {
+      const data = {
+        'Rows in table': performanceTableRows,
+        'PostgreSQL table size': tableSize,
+        'Concurrent FDAs created': loadFdaCount,
+        'Concurrent query load requests': queryLoadFdaCount,
+        'Max timeout (ms)': maxTimeoutMs,
+        'Load ramp-up (ms)': loadFdaRampUpMs,
+      };
+      console.log('\n');
+      console.table(data);
+
+      // Performance table
+      const measures = performance.getEntriesByType('measure');
+      if (measures.length > 0) {
+        const data = Object.fromEntries(
+          measures.map((m) => [m.name, `${m.duration.toFixed(2)} ms`]),
+        );
+        console.log('\n');
+        console.table(data);
+      }
+    }
+
+    function buildCommonEnv(overrides = {}) {
+      return {
+        ...process.env,
+        NODE_ENV: 'integration',
+        FDA_NODE_ENV: 'development',
+        FDA_PG_USER: 'postgres',
+        FDA_PG_PASSWORD: 'postgres',
+        FDA_PG_HOST: pgHost,
+        FDA_PG_PORT: String(pgPort),
+        FDA_OBJSTG_USER: 'admin',
+        FDA_OBJSTG_PASSWORD: 'admin123',
+        FDA_OBJSTG_PROTOCOL: 'http',
+        FDA_OBJSTG_ENDPOINT: minioHostPort,
+        FDA_MONGO_URI: mongoUri,
+        FDA_MAX_CONCURRENT_FRESH_QUERIES: '1',
+        ...overrides,
+      };
+    }
+
+    function attachProcLogs(proc, prefix) {
+      proc.stdout.on('data', (d) =>
+        console.log(`[${prefix}]`, d.toString().trim()),
+      );
+      proc.stderr.on('data', (d) =>
+        console.error(`[${prefix}-ERR]`, d.toString().trim()),
+      );
+    }
+
+    async function waitForApiReady() {
+      const start = Date.now();
+      while (Date.now() - start <= 30000) {
+        try {
+          const res = await httpReq({
+            method: 'GET',
+            url: `${baseUrl}/health`,
+          });
+          if (res.status === 200) {
+            return;
+          }
+        } catch {
+          // ignore, server not up yet
+        }
+        await wait(200);
+      }
+
+      throw new Error('Timeout waiting API to start');
+    }
+
+    async function startApp() {
+      if (
+        mode !== EXECUTION_MODES.COMBINED &&
+        mode !== EXECUTION_MODES.SEPARATED
+      ) {
+        throw new Error(`Unknown integration runtime mode: ${mode}`);
+      }
+
+      appPort = await getFreePort();
+      baseUrl = `http://127.0.0.1:${appPort}`;
+
+      const entry = path.resolve('test/helpers/start-app.js');
+
+      appProc = spawn(process.execPath, [entry], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: buildCommonEnv({
+          FDA_SERVER_PORT: String(appPort),
+          FDA_ROLE_APISERVER: 'true',
+          FDA_ROLE_FETCHER:
+            mode === EXECUTION_MODES.COMBINED ? 'true' : 'false',
+          FDA_ROLE_SYNCQUERIES: 'true',
+        }),
+      });
+
+      attachProcLogs(appProc, 'API');
+
+      await waitForApiReady();
+      console.log('[TEST] API OK at', baseUrl);
+
+      if (mode === EXECUTION_MODES.SEPARATED) {
+        fetcherProc = spawn(process.execPath, [entry], {
+          stdio: ['ignore', 'pipe', 'pipe'],
+          env: buildCommonEnv({
+            FDA_ROLE_APISERVER: 'false',
+            FDA_ROLE_FETCHER: 'true',
+            FDA_ROLE_SYNCQUERIES: 'false',
+          }),
+        });
+
+        attachProcLogs(fetcherProc, 'FETCHER');
+        await wait(2000);
+        console.log('[TEST] Fetcher OK');
+      }
+    }
+
+    async function stopProcess(proc) {
+      if (!proc) {
+        return;
+      }
+
+      proc.kill('SIGTERM');
+      await wait(500);
+      if (!proc.killed) {
+        proc.kill('SIGKILL');
+      }
+    }
+
+    async function stopApp() {
+      if (mode === EXECUTION_MODES.SEPARATED) {
+        await stopProcess(fetcherProc);
+        fetcherProc = undefined;
+      }
+
+      await stopProcess(appProc);
+      appProc = undefined;
+    }
+
+    async function createDefaultDS({ getBaseUrl, getPgHost, getPgPort }) {
+      const baseUrl = getBaseUrl();
+
+      const deleteExisting = await httpReq({
+        method: 'DELETE',
+        url: `${baseUrl}/datasources/default`,
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect([204, 404]).toContain(deleteExisting.status);
+
+      const createRes = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/datasources`,
+        headers: {
+          'Content-Type': 'application/json',
+          'Fiware-Service': service,
+        },
+        body: {
+          datasourceId: 'default',
+          type: 'postgres',
+          config: {
+            user: 'postgres',
+            password: 'postgres',
+            host: getPgHost(),
+            port: getPgPort(),
+            database: service,
+          },
+        },
+      });
+
+      if (createRes.status >= 400) {
+        console.error(
+          'POST /datasources default failed:',
+          createRes.status,
+          createRes.json ?? createRes.text,
+        );
+      }
+
+      expect(createRes.status).toBe(200);
+
+      const getRes = await httpReq({
+        method: 'GET',
+        url: `${baseUrl}/datasources/default`,
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect(getRes.status).toBe(200);
+      expect(getRes.json).toMatchObject({
+        datasourceId: 'default',
+        type: 'postgres',
+        config: {
+          user: 'postgres',
+          password: 'postgres',
+          host: getPgHost(),
+          port: getPgPort(),
+          database: service,
+        },
+      });
+    }
+
+    registerFdaCreationPerformanceTests({
+      getBaseUrl: () => baseUrl,
+      service,
+      servicePath: '/public',
+      visibility: 'public',
+      fdaId: `perf-test`,
+      httpReq,
+      waitUntilFDACompleted,
+      maxWaitMs: () => maxTimeoutMs,
+    });
+
+    registerFdaQueryPerformanceTests({
+      getBaseUrl: () => baseUrl,
+      service,
+      servicePath: '/public',
+      visibility: 'public',
+      fdaId: `perf-test`,
+      httpReq,
+      waitUntilFDACompleted,
+      buildDaDataUrl,
+    });
+
+    registerFdaLoadPerformanceTests({
+      getBaseUrl: () => baseUrl,
+      service,
+      servicePath: '/public',
+      visibility: 'public',
+      httpReq,
+      httpReqNoBody,
+      waitUntilFDACompleted,
+      maxWaitMs: () => maxTimeoutMs,
+      loadFdaCount,
+      queryLoadFdaCount,
+      loadFdaRampUpMs,
+      buildDaDataUrl,
+    });
+  });
+}
