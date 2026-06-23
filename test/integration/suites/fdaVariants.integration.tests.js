@@ -297,7 +297,7 @@ export function registerFdaVariantsIntegrationTests({
 
       const fdaId = 'fda_multipath_scope_test';
 
-      const multiServicePath = '/A/B/C/D';
+      const multiServicePath = servicePath + '/B/C/D';
 
       try {
         const createFda = await httpReq({
@@ -341,7 +341,7 @@ export function registerFdaVariantsIntegrationTests({
           url: `${baseUrl}/${visibility}/fdas`,
           headers: {
             'Fiware-Service': service,
-            'Fiware-ServicePath': '/A',
+            'Fiware-ServicePath': servicePath,
           },
         });
 
@@ -368,7 +368,7 @@ export function registerFdaVariantsIntegrationTests({
           url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
           headers: {
             'Fiware-Service': service,
-            'Fiware-ServicePath': '/A',
+            'Fiware-ServicePath': servicePath,
           },
         });
       }
