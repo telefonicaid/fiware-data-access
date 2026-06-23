@@ -605,8 +605,6 @@ describe('index routes - validation and middleware branches', () => {
       true,
       true,
       undefined,
-      undefined,
-      undefined,
     );
     expect(fdaMocks.updateFDA).toHaveBeenCalledWith(
       'svc',
