@@ -196,6 +196,9 @@ export async function readMongoDatasourceRows(dsConfig, query, { limit } = {}) {
       return mappedRow;
     });
   } catch (error) {
+    if (error instanceof FDAError) {
+      throw error;
+    }
     throw new FDAError(
       500,
       'MongoDBServerError',
