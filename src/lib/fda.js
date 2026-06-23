@@ -104,6 +104,25 @@ function assertSupportedDatasourceType(type) {
 }
 
 function validateMongoFDAContract(query, timeColumn, cached) {
+  validateBasicQueryStructure(query);
+
+  const { collection, filter, projection, aggregation } = query;
+  validateCollection(collection);
+
+  const queryType = determineQueryType(filter, aggregation);
+  validateQueryType(queryType);
+
+  if (queryType === 'find') {
+    validateFindQuery(filter, projection, timeColumn);
+  } else if (queryType === 'aggregation') {
+    validateAggregationQuery(aggregation);
+  }
+
+  validateCacheSupport(cached);
+}
+
+// Helper functions to reduce complexity
+function validateBasicQueryStructure(query) {
   if (!query || typeof query !== 'object' || Array.isArray(query)) {
     throw new FDAError(
       400,
@@ -111,9 +130,9 @@ function validateMongoFDAContract(query, timeColumn, cached) {
       'Mongo FDA query must be a JSON object',
     );
   }
+}
 
-  const { collection, filter, projection, aggregation } = query;
-
+function validateCollection(collection) {
   if (!collection || typeof collection !== 'string') {
     throw new FDAError(
       400,
@@ -121,7 +140,9 @@ function validateMongoFDAContract(query, timeColumn, cached) {
       'Mongo FDA query requires a non-empty collection field',
     );
   }
+}
 
+function determineQueryType(filter, aggregation) {
   const hasFindQuery = filter !== undefined;
   const hasAggregationQuery = aggregation !== undefined;
 
@@ -133,57 +154,70 @@ function validateMongoFDAContract(query, timeColumn, cached) {
     );
   }
 
-  if (hasFindQuery) {
-    if (
-      filter === null ||
-      typeof filter !== 'object' ||
-      Array.isArray(filter)
-    ) {
-      throw new FDAError(
-        400,
-        'InvalidMongoFDAContract',
-        'Mongo FDA filter must be a JSON object',
-      );
-    }
+  return hasFindQuery ? 'find' : 'aggregation';
+}
 
-    if (
-      projection !== undefined &&
-      (projection === null ||
-        typeof projection !== 'object' ||
-        Array.isArray(projection))
-    ) {
-      throw new FDAError(
-        400,
-        'InvalidMongoFDAContract',
-        'Mongo FDA projection must be an object',
-      );
-    }
+function validateQueryType(queryType) {
+  // No-op, but keeps the logic clean
+}
 
-    if (timeColumn && projection && !(timeColumn in projection)) {
-      throw new FDAError(
-        400,
-        'InvalidMongoFDAContract',
-        'Mongo FDA timeColumn must be included in projection',
-      );
-    }
-  }
+function validateFindQuery(filter, projection, timeColumn) {
+  validateFilter(filter);
+  validateProjection(projection);
+  validateTimeColumnInProjection(timeColumn, projection);
+}
 
-  if (hasAggregationQuery) {
-    if (!Array.isArray(aggregation) || aggregation.length === 0) {
-      throw new FDAError(
-        400,
-        'InvalidMongoFDAContract',
-        'Mongo FDA aggregation must be a non-empty array',
-      );
-    }
-
+function validateFilter(filter) {
+  if (filter === null || typeof filter !== 'object' || Array.isArray(filter)) {
     throw new FDAError(
       400,
-      'MongoAggregationNotSupported',
-      'Aggregation pipelines are not supported yet',
+      'InvalidMongoFDAContract',
+      'Mongo FDA filter must be a JSON object',
     );
   }
+}
 
+function validateProjection(projection) {
+  if (
+    projection !== undefined &&
+    (projection === null ||
+      typeof projection !== 'object' ||
+      Array.isArray(projection))
+  ) {
+    throw new FDAError(
+      400,
+      'InvalidMongoFDAContract',
+      'Mongo FDA projection must be an object',
+    );
+  }
+}
+
+function validateTimeColumnInProjection(timeColumn, projection) {
+  if (timeColumn && projection && !(timeColumn in projection)) {
+    throw new FDAError(
+      400,
+      'InvalidMongoFDAContract',
+      'Mongo FDA timeColumn must be included in projection',
+    );
+  }
+}
+
+function validateAggregationQuery(aggregation) {
+  if (!Array.isArray(aggregation) || aggregation.length === 0) {
+    throw new FDAError(
+      400,
+      'InvalidMongoFDAContract',
+      'Mongo FDA aggregation must be a non-empty array',
+    );
+  }
+  throw new FDAError(
+    400,
+    'MongoAggregationNotSupported',
+    'Aggregation pipelines are not supported yet',
+  );
+}
+
+function validateCacheSupport(cached) {
   if (cached === false) {
     throw new FDAError(
       400,

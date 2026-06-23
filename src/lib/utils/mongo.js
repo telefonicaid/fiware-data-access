@@ -152,8 +152,10 @@ export async function readMongoDatasourceRows(dsConfig, query, { limit } = {}) {
     await client.connect();
 
     let rows;
+    let hasFilter = filter !== undefined && Object.keys(filter).length > 0;
+    let hasAggregation = aggregation !== undefined && aggregation.length > 0;
 
-    if (filter !== undefined) {
+    if (hasFilter) {
       rows = await client
         .db(dsConfig.database)
         .collection(collection)
@@ -162,12 +164,20 @@ export async function readMongoDatasourceRows(dsConfig, query, { limit } = {}) {
           ...(limit ? { limit } : {}),
         })
         .toArray();
-    } else if (aggregation !== undefined) {
+    } else if (hasAggregation) {
       throw new FDAError(
         400,
         'NotImplemented',
         'Mongo aggregation queries are not supported yet',
       );
+      // rows = await client
+      //   .db(dsConfig.database)
+      //   .collection(collection)
+      //   .aggregate([
+      //     ...aggregation,
+      //     ...(limit ? [{ $limit: limit }] : []),
+      //   ])
+      //   .toArray();
     } else {
       throw new FDAError(
         400,
@@ -176,10 +186,13 @@ export async function readMongoDatasourceRows(dsConfig, query, { limit } = {}) {
       );
     }
 
-    const columns =
-      projection !== undefined
-        ? Object.keys(projection).filter((column) => projection[column])
-        : Object.keys(rows[0] ?? {}).filter((column) => column !== '_id');
+    const hasProjection =
+      projection &&
+      typeof projection === 'object' &&
+      !Array.isArray(projection);
+    const columns = hasProjection
+      ? Object.keys(projection).filter((column) => projection[column])
+      : Object.keys(rows[0] ?? {}).filter((column) => column !== '_id');
 
     return rows.map((row) => {
       const mappedRow = {};
