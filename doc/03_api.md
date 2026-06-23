@@ -836,7 +836,7 @@ Datasource-specific constraints:
 
 -   Mongo datasource FDAs are currently cached-only (`cached=true`).
 -   Mongo datasource FDAs do not support `refreshPolicy.type=window`.
--   If `timeColumn` is provided for Mongo FDAs, it must be included in `query.projection`.
+-   If `timeColumn` is provided for Mongo FDAs, it must be included in `query.projection` (or the `query.projection` omitted at all as in this case no projection is done and all fields are retrieved).
 
 #### Refresh Policy object
 
