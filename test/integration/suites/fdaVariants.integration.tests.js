@@ -291,5 +291,87 @@ export function registerFdaVariantsIntegrationTests({
         });
       }
     });
+
+    test('Fiware-ServicePath multipath only uses first token for FDA scoping', async () => {
+      const baseUrl = getBaseUrl();
+
+      const fdaId = 'fda_multipath_scope_test';
+
+      const multiServicePath = '/A/B/C/D';
+
+      try {
+        const createFda = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': multiServicePath,
+          },
+          body: {
+            id: fdaId,
+            query:
+              'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+            description: 'multipath servicePath regression test',
+          },
+        });
+
+        expect(createFda.status).toBe(202);
+
+        await waitUntilFDACompleted({
+          baseUrl,
+          service,
+          fdaId,
+        });
+
+        const listRes = await httpReq({
+          method: 'GET',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': multiServicePath,
+          },
+        });
+
+        expect(listRes.status).toBe(200);
+        expect(Array.isArray(listRes.json)).toBe(true);
+        expect(listRes.json.some((fda) => fda.id === fdaId)).toBe(true);
+
+        const listResNormalized = await httpReq({
+          method: 'GET',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': '/A',
+          },
+        });
+
+        expect(listResNormalized.status).toBe(200);
+        expect(listResNormalized.json.some((fda) => fda.id === fdaId)).toBe(
+          true,
+        );
+
+        const dataRes = await httpReq({
+          method: 'GET',
+          url: buildFdaDataUrl(baseUrl, multiServicePath, fdaId),
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': multiServicePath,
+          },
+        });
+
+        expect(dataRes.status).toBe(200);
+        expect(Array.isArray(dataRes.json)).toBe(true);
+        expect(dataRes.json.length).toBeGreaterThan(0);
+      } finally {
+        await httpReq({
+          method: 'DELETE',
+          url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': '/A',
+          },
+        });
+      }
+    });
   });
 }
