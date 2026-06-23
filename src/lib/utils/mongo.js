@@ -72,16 +72,6 @@ function getNestedMongoValue(doc, fieldPath) {
   }, doc);
 }
 
-function buildMongoProjection(attrs) {
-  const projection = { _id: 0 };
-
-  for (const attr of attrs) {
-    projection[attr] = 1;
-  }
-
-  return projection;
-}
-
 export async function createIndex() {
   const fdasCollection = await getCollection();
   await fdasCollection.createIndex(
