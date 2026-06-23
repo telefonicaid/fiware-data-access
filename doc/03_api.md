@@ -31,7 +31,8 @@
         -   [Update DA](#update-da-put-visibilityfdasfdaiddasdaid)
         -   [Delete DA](#delete-da-delete-visibilityfdasfdaiddasdaid)
     -   [Data operations](#data-operations)
-        -   [Data query](#data-query-get-visibilityfdasfdaiddasdaiddata)
+        -   [FDA data query](#fda-data-query-get-visibilityfdasfdaiddata)
+        -   [Data Access query](#data-access-query-get-visibilityfdasfdaiddasdaiddata)
         -   [Query (Pentaho CDA legacy support)](#query-plugincdaapidoquery-pentaho-cda-legacy-support)
 -   [Navigation](#-navigation)
 
