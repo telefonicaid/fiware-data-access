@@ -3130,4 +3130,117 @@ describe('mongo utils extra coverage', () => {
       validateMongoFDAContract({ a: 1 }, 'col', ['a'], 'a', false),
     ).toThrow();
   });
+
+  test('readMongoDatasourceRows throws error for aggregation queries', async () => {
+    const { readMongoDatasourceRows } = await loadFdaModule();
+
+    const dsConfig = {};
+
+    const query = {
+      collection: 'testCollection',
+      aggregation: [{ $match: { status: 'active' } }],
+    };
+
+    await expect(
+      readMongoDatasourceRows(dsConfig, query),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'NotImplemented',
+      message: 'Mongo aggregation queries are not supported yet',
+    });
+  });
+
+  test('readMongoDatasourceRows throws error when neither filter nor aggregation defined', async () => {
+    const { readMongoDatasourceRows } = await loadFdaModule();
+
+    const dsConfig = {};
+
+    const query = {
+      collection: 'testCollection',
+      // no filter or aggregation
+    };
+
+    await expect(
+      readMongoDatasourceRows(dsConfig, query),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidMongoFDAContract',
+      message: 'Mongo query must define either filter or aggregation',
+    });
+  });
+
+  test('getNestedMongoValue returns undefined when path segment is null or undefined', () => {
+    const { getNestedMongoValue } = loadFdaModule();
+
+    const docWithNull = {
+      user: null,
+      address: {
+        city: 'Madrid',
+      },
+    };
+
+    const result1 = getNestedMongoValue(docWithNull, 'user.name');
+    expect(result1).toBeUndefined();
+
+    const docWithUndefined = {
+      user: undefined,
+      address: {
+        city: 'Madrid',
+      },
+    };
+
+    const result2 = getNestedMongoValue(docWithUndefined, 'user.name');
+    expect(result2).toBeUndefined();
+
+    const docDeepNull = {
+      user: {
+        profile: null,
+        settings: {
+          theme: 'dark',
+        },
+      },
+    };
+
+    const result3 = getNestedMongoValue(docDeepNull, 'user.profile.name');
+    expect(result3).toBeUndefined();
+
+    const docDeepUndefined = {
+      user: {
+        profile: undefined,
+        settings: {
+          theme: 'dark',
+        },
+      },
+    };
+
+    const result4 = getNestedMongoValue(docDeepUndefined, 'user.profile.name');
+    expect(result4).toBeUndefined();
+  });
+
+  test('readMongoDatasourceRows applies limit when provided', async () => {
+    const { readMongoDatasourceRows } = await loadFdaModule();
+
+    const mockCollection = {
+      find: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      toArray: jest.fn().mockResolvedValue([]),
+    };
+
+    const mockDb = {
+      collection: jest.fn().mockReturnValue(mockCollection),
+    };
+
+    const dsConfig = {
+      getConnection: jest.fn().mockResolvedValue(mockDb),
+    };
+
+    const query = {
+      collection: 'testCollection',
+      filter: { status: 'active' },
+    };
+
+    await readMongoDatasourceRows(dsConfig, query, { limit: 10 });
+
+    expect(mockCollection.limit).toHaveBeenCalledWith(10);
+  });
 });
