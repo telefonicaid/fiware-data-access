@@ -153,14 +153,18 @@ export async function validateMongoDatasourceConnection(dsConfig) {
 
 export async function readMongoDatasourceRows(dsConfig, query, { limit } = {}) {
   const { collection, filter, projection, aggregation } = query;
+
   const client = new MongoClient(dsConfig.uri, {
     serverSelectionTimeoutMS: 5000,
   });
 
   try {
     await client.connect();
+
+    let rows;
+
     if (filter !== undefined) {
-      const rows = await client
+      rows = await client
         .db(dsConfig.database)
         .collection(collection)
         .find(filter ?? {}, {
@@ -168,9 +172,34 @@ export async function readMongoDatasourceRows(dsConfig, query, { limit } = {}) {
           ...(limit ? { limit } : {}),
         })
         .toArray();
-
-      return rows;
+    } else if (aggregation !== undefined) {
+      throw new FDAError(
+        400,
+        'NotImplemented',
+        'Mongo aggregation queries are not supported yet',
+      );
+    } else {
+      throw new FDAError(
+        400,
+        'InvalidMongoFDAContract',
+        'Mongo query must define either filter or aggregation',
+      );
     }
+
+    const columns =
+      projection !== undefined
+        ? Object.keys(projection).filter((column) => projection[column])
+        : Object.keys(rows[0] ?? {}).filter((column) => column !== '_id');
+
+    return rows.map((row) => {
+      const mappedRow = {};
+
+      for (const column of columns) {
+        mappedRow[column] = getNestedMongoValue(row, column);
+      }
+
+      return mappedRow;
+    });
   } catch (error) {
     throw new FDAError(
       500,
