@@ -38,7 +38,7 @@ export function normalizeScopedServicePath(servicePath) {
     );
   }
 
-  const firstToken = normalizedServicePath.split('/').filter(Boolean)[0];
+  const firstToken = normalizedServicePath.split('/').find(Boolean);
 
   return `/${firstToken}`;
 }
