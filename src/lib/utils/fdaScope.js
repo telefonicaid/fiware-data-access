@@ -38,7 +38,9 @@ export function normalizeScopedServicePath(servicePath) {
     );
   }
 
-  return normalizedServicePath;
+  const firstToken = normalizedServicePath.split('/').filter(Boolean)[0];
+
+  return `/${firstToken}`;
 }
 
 export function getFDAStoragePath(fdaId, servicePath) {
