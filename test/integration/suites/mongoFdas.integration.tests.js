@@ -124,12 +124,18 @@ export function registerMongoFdasIntegrationTests({
         },
         body: {
           id: fdaId,
-          query: { site: 'lab' },
+          query: {
+            collection: collectionName,
+            filter: { site: 'lab' },
+            projection: {
+              device: 1,
+              status: 1,
+              reading: 1,
+            },
+          },
           description: 'mongo cached fda integration fixture',
           cached: true,
           datasourceId,
-          collection: collectionName,
-          attrs: ['device', 'status', 'reading'],
         },
       });
 
@@ -154,10 +160,10 @@ export function registerMongoFdasIntegrationTests({
           id: daId,
           description: 'mongo cached da integration fixture',
           query: `
-						SELECT device, status, reading
-						WHERE status = $status
-						ORDER BY device
-					`,
+            SELECT device, status, reading
+            WHERE status = $status
+            ORDER BY device
+          `,
           params: [{ name: 'status', type: 'Text', required: true }],
         },
       });
@@ -182,12 +188,18 @@ export function registerMongoFdasIntegrationTests({
         },
         body: {
           id: 'mongo_fresh_not_allowed',
-          query: { site: 'lab' },
+          query: {
+            collection: collectionName,
+            filter: { site: 'lab' },
+            projection: {
+              device: 1,
+              status: 1,
+              reading: 1,
+            },
+          },
           description: 'mongo fresh not allowed',
           cached: false,
           datasourceId,
-          collection: collectionName,
-          attrs: ['device', 'status', 'reading'],
         },
       });
 
@@ -210,8 +222,12 @@ export function registerMongoFdasIntegrationTests({
 
       expect(res.status).toBe(200);
       expect(res.json.datasourceId).toBe(datasourceId);
-      expect(res.json.collection).toBe(collectionName);
-      expect(res.json.attrs).toEqual(['device', 'status', 'reading']);
+      expect(res.json.query.collection).toBe(collectionName);
+      expect(res.json.query.projection).toEqual({
+        device: 1,
+        status: 1,
+        reading: 1,
+      });
       expect(res.json.cached).toBe(true);
     });
 
