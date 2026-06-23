@@ -352,7 +352,7 @@ export function registerFdaVariantsIntegrationTests({
 
         const dataRes = await httpReq({
           method: 'GET',
-          url: buildFdaDataUrl(baseUrl, multiServicePath, fdaId),
+          url: buildFdaDataUrl(baseUrl, servicePath, fdaId),
           headers: {
             'Fiware-Service': service,
             'Fiware-ServicePath': multiServicePath,
