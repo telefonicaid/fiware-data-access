@@ -110,7 +110,6 @@ function validateMongoFDAContract(query, timeColumn, cached) {
   validateCollection(collection);
 
   const queryType = determineQueryType(filter, aggregation);
-  validateQueryType(queryType);
 
   if (queryType === 'find') {
     validateFindQuery(filter, projection, timeColumn);
@@ -155,10 +154,6 @@ function determineQueryType(filter, aggregation) {
   }
 
   return hasFindQuery ? 'find' : 'aggregation';
-}
-
-function validateQueryType(queryType) {
-  // No-op, but keeps the logic clean
 }
 
 function validateFindQuery(filter, projection, timeColumn) {

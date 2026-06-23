@@ -152,8 +152,8 @@ export async function readMongoDatasourceRows(dsConfig, query, { limit } = {}) {
     await client.connect();
 
     let rows;
-    let hasFilter = filter !== undefined && Object.keys(filter).length > 0;
-    let hasAggregation = aggregation !== undefined && aggregation.length > 0;
+    const hasFilter = filter !== undefined && Object.keys(filter).length > 0;
+    const hasAggregation = aggregation !== undefined && aggregation.length > 0;
 
     if (hasFilter) {
       rows = await client
