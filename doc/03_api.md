@@ -102,7 +102,7 @@ All error responses follow this structure:
 | 500  | Internal Server Error | `DuckDBServerError`         | An error occurred in the DuckDB component.                                                                                                                                                                                                                                                                         |
 | 500  | Internal Server Error | `MongoDBServerError`        | An error occurred in the MongoDB component.                                                                                                                                                                                                                                                                        |
 | 400  | Bad Request           | `UnsupportedDatasourceType` | The referenced datasource type is not supported by the operation (supported types are `postgres` and `mongodb`).                                                                                                                                                                                                   |
-| 400  | Bad Request           | `InvalidMongoFDAContract`   | Invalid Mongo-specific FDA payload. Mongo FDAs require `query` as JSON filter object, `collection`, non-empty `attrs`, and currently only support cached mode (`cached=true`) without `window` refresh policy.                                                                                                     |
+| 400  | Bad Request           | `InvalidMongoFDAContract`   | Invalid Mongo-specific FDA payload. Mongo FDAs require a Mongo query definition inside `query`, support only cached mode (`cached=true`), and do not support `refreshPolicy.type=window`.                                                                                                                          |
 | 503  | Service Unavailable   | `UploadError`               | Connection error with the PostgreSQL database component.                                                                                                                                                                                                                                                           |
 | 503  | Service Unavailable   | `SyncQueriesDisabled`       | A direct FDA query was sent but the API instance is running with `FDA_ROLE_SYNCQUERIES=false`.                                                                                                                                                                                                                     |
 | 503  | Service Unavailable   | `MongoConnectionError`      | Connection error with the MongoDB component.                                                                                                                                                                                                                                                                       |
@@ -797,22 +797,46 @@ A FDA is represented by a JSON object with the following fields:
 | -------------------------------------------------------- | -------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `id`                                                     |          | string        | FDA unique identifier                                                                                                                                                                      |
 | `description`                                            | ✓        | string        | A free text used by the client to describe the FDA. If omitted, no description is stored.                                                                                                  |
-| `query`                                                  |          | string/object | Source query definition. For `postgres`, a SQL query string. For `mongodb`, a JSON filter object.                                                                                          |
+| `query`                                                  |          | string/object | Source query definition. For `postgres`, a SQL query string. For `mongodb`, a Mongo query definition containing `collection`, `filter` and `projection`.                                   |
 | `refreshPolicy`                                          | ✓        | object        | Optional policy for automatic refresh.                                                                                                                                                     |
 | [`objStgConf`](#object-storage-configuration-objstgconf) | ✓        | object        | Various options to configure the FDA uploaded in the object storage app.                                                                                                                   |
 | `timeColumn`                                             | ✓        | string        | Required with `refreshPolicy` of type `window` and `partition`. Column in the table indicating when the data was received (date).                                                          |
 | `cached`                                                 | ✓        | boolean       | If `false`, the FDA is created as only-fresh: no parquet snapshot is maintained, no DAs are allowed, and the FDA is queried through `GET /{visibility}/fdas/{fdaId}/data`. Default `true`. |
 | `datasourceId`                                           | ✓        | string        | Datasource id used to resolve DB credentials for this FDA. If omitted, FDA uses `default`.                                                                                                 |
-| `collection`                                             | ✓ (\*)   | string        | Mongo source collection name. Mandatory when datasource type is `mongodb`.                                                                                                                 |
-| `attrs`                                                  | ✓ (\*)   | array[string] | Ordered list of Mongo fields to project and persist. Must be a non-empty array when datasource type is `mongodb`.                                                                          |
 
 (\*) Mandatory only for Mongo datasource FDAs.
+
+For MongoDB datasources, `query` contains:
+
+| Field        | Type   | Description                                                                |
+| ------------ | ------ | -------------------------------------------------------------------------- |
+| `collection` | string | MongoDB collection name.                                                   |
+| `filter`     | object | MongoDB filter document.                                                   |
+| `projection` | object | MongoDB projection document defining the fields materialized into the FDA. |
+
+Nested MongoDB fields can be projected using dot notation:
+
+```json
+{
+    "projection": {
+        "device.name": 1,
+        "status": 1
+    }
+}
+```
+
+Projected nested fields are materialized as FDA columns preserving their dot notation (`device.name`).
+
+When generating defaultDataAccess parameters, dots are replaced by underscores. For example:
+
+-   Column: `device.name`
+-   Parameter: `device_name`
 
 Datasource-specific constraints:
 
 -   Mongo datasource FDAs are currently cached-only (`cached=true`).
 -   Mongo datasource FDAs do not support `refreshPolicy.type=window`.
--   If `timeColumn` is provided for Mongo FDAs, it must be included in `attrs`.
+-   If `timeColumn` is provided for Mongo FDAs, it must be included in `query.projection`.
 
 #### Refresh Policy object
 
@@ -1023,9 +1047,17 @@ curl -i -X POST http://localhost:8080/public/fdas \
     -d '{
         "id": "fda_mongo_events",
         "datasourceId": "mongo-default",
-        "query": { "site": "lab" },
-        "collection": "events",
-        "attrs": ["device", "status", "reading"],
+        "query": {
+            "collection": "events",
+            "filter": {
+            "site": "lab"
+            },
+            "projection": {
+            "device": 1,
+            "status": 1,
+            "reading": 1
+            }
+        },
         "description": "Mongo cached FDA",
         "cached": true
     }'
