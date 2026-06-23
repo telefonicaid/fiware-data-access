@@ -804,8 +804,6 @@ A FDA is represented by a JSON object with the following fields:
 | `cached`                                                 | ✓        | boolean       | If `false`, the FDA is created as only-fresh: no parquet snapshot is maintained, no DAs are allowed, and the FDA is queried through `GET /{visibility}/fdas/{fdaId}/data`. Default `true`. |
 | `datasourceId`                                           | ✓        | string        | Datasource id used to resolve DB credentials for this FDA. If omitted, FDA uses `default`.                                                                                                 |
 
-(\*) Mandatory only for Mongo datasource FDAs.
-
 For MongoDB datasources, `query` contains:
 
 | Field        | Type   | Description                                                                |
@@ -814,7 +812,9 @@ For MongoDB datasources, `query` contains:
 | `filter`     | object | MongoDB filter document.                                                   |
 | `projection` | object | MongoDB projection document defining the fields materialized into the FDA. |
 
-Nested MongoDB fields can be projected using dot notation:
+In MongoDB, projection can include more complex operators like `$slice` or `$elemMatch`. See the
+[MongoDB projection documentation](https://www.mongodb.com/docs/manual/tutorial/project-fields-from-query-results/) for
+details. Nested MongoDB fields can be projected using dot notation:
 
 ```json
 {
@@ -836,7 +836,8 @@ Datasource-specific constraints:
 
 -   Mongo datasource FDAs are currently cached-only (`cached=true`).
 -   Mongo datasource FDAs do not support `refreshPolicy.type=window`.
--   If `timeColumn` is provided for Mongo FDAs, it must be included in `query.projection` (or the `query.projection` omitted at all as in this case no projection is done and all fields are retrieved).
+-   If `timeColumn` is provided for Mongo FDAs, it must be included in `query.projection` (or the `query.projection`
+    omitted at all as in this case no projection is done and all fields are retrieved).
 
 #### Refresh Policy object
 
