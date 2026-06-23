@@ -170,14 +170,6 @@ export async function readMongoDatasourceRows(dsConfig, query, { limit } = {}) {
         'NotImplemented',
         'Mongo aggregation queries are not supported yet',
       );
-      // rows = await client
-      //   .db(dsConfig.database)
-      //   .collection(collection)
-      //   .aggregate([
-      //     ...aggregation,
-      //     ...(limit ? [{ $limit: limit }] : []),
-      //   ])
-      //   .toArray();
     } else {
       throw new FDAError(
         400,
