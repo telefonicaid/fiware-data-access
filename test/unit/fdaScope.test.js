@@ -42,6 +42,22 @@ describe('fdaScope utils', () => {
     );
   });
 
+  test('normalizeScopedServicePath keeps only first token (simple path)', () => {
+    expect(normalizeScopedServicePath('/A')).toBe('/A');
+  });
+
+  test('normalizeScopedServicePath keeps only first token (multipath)', () => {
+    expect(normalizeScopedServicePath('/A/B/C/D')).toBe('/A');
+  });
+
+  test('normalizeScopedServicePath trims input before processing', () => {
+    expect(normalizeScopedServicePath('   /A/B/C  ')).toBe('/A');
+  });
+
+  test('normalizeScopedServicePath throws for invalid format', () => {
+    expect(() => normalizeScopedServicePath('A/B/C')).toThrow();
+  });
+
   test('getFDAStoragePath throws when servicePath is root /', () => {
     expect(() => getFDAStoragePath('fdaA', '/')).toThrow();
   });
