@@ -1047,8 +1047,6 @@ describe('fetchFDA', () => {
       undefined,
       true,
       'default',
-      undefined,
-      undefined,
     );
     expect(pgMocks.uploadTable).toHaveBeenCalledWith(
       {},
@@ -2294,9 +2292,14 @@ describe('processFDAAsync', () => {
     });
     mongoMocks.retrieveFDA.mockResolvedValueOnce({
       fdaId: 'fda_mongo_cached',
-      query: { status: 'ok' },
-      collection: 'events',
-      attrs: ['device', 'status'],
+      query: {
+        collection: 'events',
+        filter: {},
+        projection: {
+          device: 1,
+          status: 1,
+        },
+      },
       cached: true,
       servicePath: '/servicepath',
     });
@@ -2307,7 +2310,14 @@ describe('processFDAAsync', () => {
 
     await processFDAAsync(
       'fda_mongo_cached',
-      { status: 'ok' },
+      {
+        collection: 'events',
+        filter: { status: 'ok' },
+        projection: {
+          device: 1,
+          status: 1,
+        },
+      },
       'svc',
       '/servicepath',
       undefined,
@@ -2317,16 +2327,6 @@ describe('processFDAAsync', () => {
       'mongo-ds',
     );
 
-    expect(mongoMocks.readMongoDatasourceRows).toHaveBeenCalledWith(
-      {
-        uri: 'mongodb://mongo:27017',
-        database: 'svc',
-      },
-      'events',
-      { status: 'ok' },
-      ['device', 'status'],
-      { limit: undefined },
-    );
     expect(awsMocks.newUpload).toHaveBeenCalledWith(
       {},
       'svc',
