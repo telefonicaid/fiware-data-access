@@ -1,11 +1,152 @@
 {
 	"info": {
-		"_postman_id": "232dbad8-2ca5-4136-be27-2063e9620add",
+		"_postman_id": "e5692425-53e8-4186-bb55-0e2fab0ab91b",
 		"name": "fiware-data-access",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
 		"_exporter_id": "25871624"
 	},
 	"item": [
+		{
+			"name": "Datasource",
+			"item": [
+				{
+					"name": "Get Datasources",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Fiware-Service",
+								"value": "{{Fiware-Service}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{url}}/datasources",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"datasources"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Datasource (postgres)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Fiware-Service",
+								"value": "{{Fiware-Service}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"datasourceId\": \"{{datasourceId}}\",\n    \"type\": \"postgres\",\n    \"config\": {\n        \"user\": \"postgres\",\n        \"password\": \"postgres\",\n        \"host\": \"localhost\",\n        \"port\": 5432,\n        \"database\": \"postgres\"\n    }\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{url}}/datasources",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"datasources"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Datasource",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Fiware-Service",
+								"value": "{{Fiware-Service}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{url}}/datasources/{{datasourceId}}",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"datasources",
+								"{{datasourceId}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Datasource",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Fiware-Service",
+								"value": "{{Fiware-Service}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"type\": \"postgres\",\n    \"config\": {\n        \"user\": \"postgres\",\n        \"password\": \"postgres\",\n        \"host\": \"localhost\",\n        \"port\": 5432,\n        \"database\": \"postgres\"\n    }\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{url}}/datasources/{{datasourceId}}",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"datasources",
+								"{{datasourceId}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Datasource",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Fiware-Service",
+								"value": "{{Fiware-Service}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{url}}/datasources/{{datasourceId}}",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"datasources",
+								"{{datasourceId}}"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
 		{
 			"name": "FDA",
 			"item": [
@@ -618,6 +759,80 @@
 								{
 									"key": "activity",
 									"value": "12"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Execute DA query (URL)",
+					"request": {
+						"auth": {
+							"type": "basic",
+							"basic": [
+								{
+									"key": "password",
+									"value": "{{pass}}",
+									"type": "string"
+								},
+								{
+									"key": "username",
+									"value": "{{usr}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [
+							{
+								"key": "Fiware-Service",
+								"value": "{{Fiware-Service}}",
+								"type": "text",
+								"disabled": true
+							},
+							{
+								"key": "Fiware-ServicePath",
+								"value": "{{Fiware-ServicePath}}",
+								"type": "text",
+								"disabled": true
+							},
+							{
+								"key": "Accept",
+								"value": "application/json",
+								"type": "text",
+								"disabled": true
+							}
+						],
+						"url": {
+							"raw": "{{url}}/{{visibility}}/fdas/{{fdaId}}/das/{{daId}}/data?service={{Fiware-Service}}&servicePath={{Fiware-ServicePath}}&outputType=json&id=exampleId",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"{{visibility}}",
+								"fdas",
+								"{{fdaId}}",
+								"das",
+								"{{daId}}",
+								"data"
+							],
+							"query": [
+								{
+									"key": "service",
+									"value": "{{Fiware-Service}}"
+								},
+								{
+									"key": "servicePath",
+									"value": "{{Fiware-ServicePath}}"
+								},
+								{
+									"key": "outputType",
+									"value": "json"
+								},
+								{
+									"key": "id",
+									"value": "exampleId"
 								}
 							]
 						}

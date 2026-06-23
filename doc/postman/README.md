@@ -29,6 +29,7 @@ Before sending requests, create or update a Postman environment and define the f
 | `Fiware-Service`     | Header indicating the FIWARE service          | `my-service`            |
 | `Fiware-ServicePath` | Header indicating the FIWARE service path     | `/servicePath`          |
 | `visibility`         | FDA visibility segment in the URL path        | `public` or `private`   |
+| `datasourceId`       | Identifier of the Datasource                  | `pg_datasource`         |
 | `fdaId`              | Identifier of the FDA                         | `fda_alarms`            |
 | `daId`               | Identifier of the DA                          | `da_all_alarms`         |
 
