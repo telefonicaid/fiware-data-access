@@ -7,7 +7,7 @@
 	},
 	"item": [
 		{
-			"name": "Datasources",
+			"name": "Datasource",
 			"item": [
 				{
 					"name": "Get Datasources",
