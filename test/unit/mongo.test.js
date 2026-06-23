@@ -594,4 +594,42 @@ describe('mongo utils', () => {
     expect(fakeClient.db).toHaveBeenCalledWith('test-db');
     expect(fakeClient.close).toHaveBeenCalled();
   });
+
+  test('readMongoDatasourceRows throws error for aggregation queries', async () => {
+    const { readMongoDatasourceRows } = await loadMongoModule();
+
+    const dsConfig = {};
+
+    const query = {
+      collection: 'testCollection',
+      aggregation: [{ $match: { status: 'active' } }],
+    };
+
+    await expect(
+      readMongoDatasourceRows(dsConfig, query),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'NotImplemented',
+      message: 'Mongo aggregation queries are not supported yet',
+    });
+  });
+
+  test('readMongoDatasourceRows throws error when neither filter nor aggregation defined', async () => {
+    const { readMongoDatasourceRows } = await loadMongoModule();
+
+    const dsConfig = {};
+
+    const query = {
+      collection: 'testCollection',
+      // no filter or aggregation
+    };
+
+    await expect(
+      readMongoDatasourceRows(dsConfig, query),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidMongoFDAContract',
+      message: 'Mongo query must define either filter or aggregation',
+    });
+  });
 });
