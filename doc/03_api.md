@@ -804,7 +804,7 @@ A FDA is represented by a JSON object with the following fields:
 | `cached`                                                 | ✓        | boolean       | If `false`, the FDA is created as only-fresh: no parquet snapshot is maintained, no DAs are allowed, and the FDA is queried through `GET /{visibility}/fdas/{fdaId}/data`. Default `true`. |
 | `datasourceId`                                           | ✓        | string        | Datasource id used to resolve DB credentials for this FDA. If omitted, FDA uses `default`.                                                                                                 |
 
-For MongoDB datasources, `query` contains:
+For MongoDB datasources, `query` is an object with the following keys:
 
 | Field        | Type   | Description                                                                |
 | ------------ | ------ | -------------------------------------------------------------------------- |
