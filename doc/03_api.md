@@ -827,7 +827,7 @@ details. Nested MongoDB fields can be projected using dot notation:
 
 Projected nested fields are materialized as FDA columns preserving their dot notation (`device.name`).
 
-When generating defaultDataAccess parameters, dots are replaced by underscores. For example:
+When generating [defaultDataAccess](AdvancedTopics/default_data_access.md) parameters, dots are replaced by underscores. For example:
 
 -   Column: `device.name`
 -   Parameter: `device_name`
