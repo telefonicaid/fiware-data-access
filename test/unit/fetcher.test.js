@@ -107,6 +107,7 @@ describe('fetcher', () => {
       'timeinstant',
       {},
       {},
+      undefined,
     );
   });
 
