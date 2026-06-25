@@ -410,6 +410,63 @@ export async function updateFDAStatus(
   );
 }
 
+export async function updateFDA(
+  service,
+  fdaId,
+  servicePath,
+  query,
+  description,
+  refreshPolicy,
+  timeColumn,
+  objStgConf,
+  datasourceId,
+) {
+  logger.debug(
+    {
+      service,
+      fdaId,
+      servicePath,
+      query,
+      description,
+      refreshPolicy,
+      timeColumn,
+      objStgConf,
+      datasourceId,
+    },
+    '[DEBUG]: updateFDA',
+  );
+  const collection = await getCollection();
+
+  try {
+    const filter = { service, fdaId, servicePath };
+
+    const updates = {
+      query,
+      description,
+      refreshPolicy,
+      timeColumn,
+      objStgConf,
+      datasourceId,
+    };
+
+    const setFields = Object.fromEntries(
+      Object.entries(updates).filter(([, value]) => value !== undefined),
+    );
+
+    if (Object.keys(setFields).length === 0) {
+      return;
+    }
+
+    await collection.updateOne(filter, { $set: setFields });
+  } catch (e) {
+    throw new FDAError(
+      500,
+      'MongoDBServerError',
+      `Error updating FDA ${fdaId} of service ${service}: ${e}`,
+    );
+  }
+}
+
 export async function regenerateFDA(service, fdaId, servicePath) {
   const collection = await getCollection();
 

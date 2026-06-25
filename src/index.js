@@ -35,7 +35,7 @@ import {
   executeFDAQueryStream,
   createDA,
   getFDA,
-  updateFDA,
+  putFDA,
   deleteFDA,
   getDAs,
   getDA,
@@ -391,6 +391,24 @@ app.put('/:visibility/fdas/:fdaId', async (req, res) => {
   const service = req.get('Fiware-Service');
   const servicePath = req.get('Fiware-ServicePath');
   const { visibility, fdaId } = req.params;
+  const body = req.body ?? {};
+  // Changing a FDA from cached to fresh is not allowed
+  validateAllowedFieldsBody(body, [
+    'query',
+    'description',
+    'refreshPolicy',
+    'timeColumn',
+    'objStgConf',
+    'datasourceId',
+  ]);
+  const {
+    query,
+    description,
+    refreshPolicy,
+    timeColumn,
+    objStgConf,
+    datasourceId,
+  } = body;
 
   if (!service || !fdaId || !servicePath || !visibility) {
     return res.status(400).json({
@@ -399,14 +417,18 @@ app.put('/:visibility/fdas/:fdaId', async (req, res) => {
     });
   }
 
-  if (req.body && Object.keys(req.body).length > 0) {
-    return res.status(400).json({
-      error: 'BadRequest',
-      description: 'PUT /fdas does not accept a request body',
-    });
-  }
-
-  await updateFDA(service, fdaId, visibility, servicePath);
+  await putFDA(
+    service,
+    fdaId,
+    visibility,
+    servicePath,
+    query,
+    description,
+    refreshPolicy,
+    timeColumn,
+    objStgConf,
+    datasourceId,
+  );
 
   return res.status(202).json({
     id: fdaId,
