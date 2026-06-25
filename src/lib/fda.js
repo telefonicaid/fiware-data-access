@@ -97,6 +97,9 @@ import {
 import { config } from './fdaConfig.js';
 import { FDAError } from './fdaError.js';
 
+import { getBasicLogger } from './utils/logger.js';
+const logger = getBasicLogger();
+
 const FRESH_CURSOR_BATCH_SIZE = 250;
 
 const DEFAULT_DATASOURCE_ID = 'default';
@@ -2063,6 +2066,8 @@ export async function uploadFDA({
   const normalizedVisibility = normalizeVisibility(visibility);
   const normalizedServicePath = normalizeServicePath(servicePath);
 
+  logger.debug({ fdaId, service }, 'Starting upload FDA');
+
   // 1. Create FDA record in MongoDB (if exists, throws error)
   const query = 'uploaded data'; // placeholder
   const refreshPolicy = { type: 'none' };
@@ -2079,6 +2084,8 @@ export async function uploadFDA({
     cached,
     datasourceId,
   );
+
+  logger.debug({ fdaId }, 'FDA record created');
 
   // 2. Process the uploaded file and handle errors
   try {
@@ -2151,6 +2158,7 @@ export async function processUploadFDAJob({
     const storagePath = getFDAStoragePath(fdaId, servicePath);
     tempKey = `tmp/${fdaId}_${Date.now()}`;
 
+    logger.debug({ fdaId, tempKey }, 'Uploading temporary CSV to MinIO');
     // 4. Upload temporary CSV to MinIO (status: fetching)
     await updateFDAStatus(service, fdaId, servicePath, 'fetching', 10);
     await uploadCsvContentToObjectStorage(
@@ -2160,6 +2168,7 @@ export async function processUploadFDAJob({
       csvContent,
     );
 
+    logger.debug({ fdaId }, 'Converting upload file to Parquet');
     // 5. Convert to Parquet (status: transforming)
     await updateFDAStatus(service, fdaId, servicePath, 'transforming', 30);
     const originPath = `${bucketName}/${tempKey}.csv`;
@@ -2186,6 +2195,7 @@ export async function processUploadFDAJob({
     await updateFDAStatus(service, fdaId, servicePath, 'completed', 100);
     await updateFDALastFetch(service, fdaId, servicePath);
 
+    logger.debug({ fdaId }, 'Creating default DataAccess');
     // 8. Create default DA if enabled and cached
     if (defaultDataAccessEnabled && cached) {
       const daDefinition = await buildDefaultDataAccessDefinition(
@@ -2206,7 +2216,10 @@ export async function processUploadFDAJob({
         servicePath,
       );
     }
+
+    logger.info({ fdaId }, 'Upload FDA completed successfully');
   } catch (err) {
+    logger.error({ err, fdaId }, 'Upload FDA failed');
     await updateFDAStatus(
       service,
       fdaId,
