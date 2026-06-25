@@ -23,10 +23,13 @@
 // criminal actions it may exercise to protect its rights.
 
 import xlsx from 'xlsx';
+import { parse as csvParse } from 'csv-parse/sync';
+import { CronExpressionParser } from 'cron-parser';
 
 import { FDAError } from '../fdaError.js';
-import { CronExpressionParser } from 'cron-parser';
 import { normalizeScopedServicePath } from './fdaScope.js';
+import { getBasicLogger } from './logger.js';
+const logger = getBasicLogger();
 
 export const VALID_VISIBILITIES = ['public', 'private'];
 export const VALID_VISIBILITIES_SET = new Set(VALID_VISIBILITIES);
@@ -363,9 +366,112 @@ export function escapeCsvValue(value) {
   return strValue;
 }
 
+/**
+ * Parses a CSV buffer and returns headers and the original CSV content.
+ * Uses csv-parse to robustly extract headers handling quotes and delimiters.
+ */
+function parseCsvBuffer(buffer) {
+  const content = buffer.toString('utf-8');
+  // Use sync parser with columns:true to get header names, limit to 1 row
+  let records;
+  try {
+    records = csvParse(content, {
+      columns: true,
+      skip_empty_lines: true,
+      relax_column_count: true, // allow inconsistent columns (we only need headers)
+      to: 1, // only parse first data row
+    });
+  } catch (err) {
+    throw new Error(`Invalid CSV format: ${err.message}`);
+  }
+  if (records.length === 0) {
+    throw new Error('CSV file has no header row');
+  }
+  const headers = Object.keys(records[0]);
+  if (headers.length === 0) {
+    throw new Error('CSV header row is empty');
+  }
+  return { csvContent: content, headers };
+}
+
+/**
+ * Parses an XLSX buffer (or XLS) and returns a unified CSV content and unified headers.
+ * Processes all sheets, merges column names, and generates a single CSV.
+ */
+function parseXlsxBuffer(buffer) {
+  const workbook = xlsx.read(buffer, { type: 'buffer' });
+  const sheetNames = workbook.SheetNames;
+  if (sheetNames.length === 0) {
+    throw new Error('XLSX file contains no sheets');
+  }
+
+  // 1. Collect all unique headers from all sheets
+  const unifiedHeadersSet = new Set();
+  const allSheetsHeaders = [];
+  for (const sheetName of sheetNames) {
+    const sheet = workbook.Sheets[sheetName];
+    const rows = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: null });
+    if (rows.length === 0) continue;
+    // Assume first row is header
+    const headers = rows[0].map((h) =>
+      h !== undefined && h !== null ? String(h).trim() : '',
+    );
+    // Filter out empty header names
+    const validHeaders = headers.filter((h) => h !== '');
+    if (validHeaders.length === 0) continue;
+    allSheetsHeaders.push(validHeaders);
+    for (const h of validHeaders) {
+      unifiedHeadersSet.add(h);
+    }
+  }
+
+  if (unifiedHeadersSet.size === 0) {
+    throw new Error('No headers found in any sheet');
+  }
+  const unifiedHeaders = Array.from(unifiedHeadersSet);
+
+  // 2. Process each sheet, map rows to unified headers
+  const allRows = [];
+  for (const sheetName of sheetNames) {
+    const sheet = workbook.Sheets[sheetName];
+    const rows = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: null });
+    if (rows.length <= 1) continue; // skip header-only sheets
+    const headers = rows[0].map((h) =>
+      h !== undefined && h !== null ? String(h).trim() : '',
+    );
+    // Build mapping from local header index to unified header index
+    const headerMap = headers.map((h) => unifiedHeaders.indexOf(h));
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+      const obj = {};
+      for (let j = 0; j < row.length; j++) {
+        const unifiedIdx = headerMap[j];
+        if (unifiedIdx !== -1) {
+          const colName = unifiedHeaders[unifiedIdx];
+          obj[colName] = row[j] !== undefined ? row[j] : null;
+        }
+        // If header not in unifiedHeaders (shouldn't happen) ignore
+      }
+      allRows.push(obj);
+    }
+  }
+
+  // 3. Generate CSV from all rows
+  const csvRows = [];
+  csvRows.push(unifiedHeaders.map((h) => escapeCsvValue(h)).join(','));
+  for (const rowObj of allRows) {
+    const line = unifiedHeaders
+      .map((col) => escapeCsvValue(rowObj[col]))
+      .join(',');
+    csvRows.push(line);
+  }
+
+  return { csvContent: csvRows.join('\n'), headers: unifiedHeaders };
+}
+
 export function parseUploadedFile(buffer, mimetype, originalname) {
   let csvContent;
-  let columns;
+  let headers;
 
   const isCsv = mimetype === 'text/csv' || /\.csv$/i.test(originalname);
   const isXls =
@@ -376,36 +482,92 @@ export function parseUploadedFile(buffer, mimetype, originalname) {
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
   if (isCsv) {
-    // We assume the CSV is UTF-8 encoded. If needed, we could add encoding detection here.
-    csvContent = buffer.toString('utf-8');
-    const lines = csvContent.split('\n');
-    const headerLine = lines[0];
-    if (!headerLine) {
-      throw new Error('The CSV file does not contain a header');
-    }
-    columns = headerLine.split(',').map((s) => s.trim());
-    // Validate that all rows have the same number of columns (optional)
-    // We don't do it here to avoid loading the entire file into memory.
+    const result = parseCsvBuffer(buffer);
+    csvContent = result.csvContent;
+    headers = result.headers;
   } else if (isXls || isXlsx) {
-    const workbook = xlsx.read(buffer, { type: 'buffer' });
-    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-    const jsonData = xlsx.utils.sheet_to_json(firstSheet);
-    if (jsonData.length === 0) {
-      throw new Error('The XLS/XLSX file is empty');
-    }
-    columns = Object.keys(jsonData[0]);
-    // Build CSV
-    const csvRows = [columns.join(',')];
-    for (const row of jsonData) {
-      const line = columns.map((col) => escapeCsvValue(row[col])).join(',');
-      csvRows.push(line);
-    }
-    csvContent = csvRows.join('\n');
+    const result = parseXlsxBuffer(buffer);
+    csvContent = result.csvContent;
+    headers = result.headers;
   } else {
-    throw new Error('Unsupported file format. Use CSV, XLS, or XLSX.');
+    throw new FDAError(
+      415,
+      'UnsupportedMediaType',
+      'Only CSV, XLS, or XLSX files are allowed',
+    );
   }
 
-  return { csvContent, columns };
+  return { csvContent, headers };
+}
+
+/**
+ * Validates that a timeColumn exists in the CSV and is of a date/time type.
+ * @param {Object} conn - DuckDB connection
+ * @param {string} bucketName - MinIO bucket
+ * @param {string} tempKey - temporary CSV key (without extension)
+ * @param {string} timeColumn - column name to validate
+ * @throws {FDAError} if validation fails
+ */
+export async function csvValidateTimeColumn(
+  conn,
+  bucketName,
+  tempKey,
+  timeColumn,
+) {
+  const query = `
+    SELECT typeof("${timeColumn}") as col_type 
+    FROM read_csv('s3://${bucketName}/${tempKey}.csv') 
+    LIMIT 1
+  `;
+
+  try {
+    const result = await conn.run(query);
+    const rows = result.getRowObjectsJson();
+
+    if (!rows || rows.length === 0) {
+      throw new FDAError(
+        400,
+        'InvalidTimeColumn',
+        `Column "${timeColumn}" not found in the uploaded file`,
+      );
+    }
+
+    logger.debug(`csvValidateTimeColumn: result=${JSON.stringify(result)}`);
+    logger.debug(`csvValidateTimeColumn: rows=${JSON.stringify(rows)}`);
+    const colType = rows[0].col_type;
+    if (colType === null || colType === undefined) {
+      throw new FDAError(
+        400,
+        'InvalidTimeColumn',
+        `Column "${timeColumn}" not found in the uploaded file`,
+      );
+    }
+
+    // Allowed types: DATE, TIMESTAMP, DATETIME
+    if (!/date|timestamp/i.test(colType)) {
+      throw new FDAError(
+        400,
+        'InvalidTimeColumn',
+        `Column "${timeColumn}" is of type "${colType}", expected a date/time column (DATE, TIMESTAMP, or DATETIME)`,
+      );
+    }
+  } catch (err) {
+    if (err instanceof FDAError) {
+      throw err;
+    }
+    if (err.message && err.message.includes(timeColumn)) {
+      throw new FDAError(
+        400,
+        'InvalidTimeColumn',
+        `Column "${timeColumn}" not found in the uploaded file`,
+      );
+    }
+    throw new FDAError(
+      500,
+      'DuckDBServerError',
+      `Failed to validate timeColumn: ${err.message}`,
+    );
+  }
 }
 
 export function normalizeVisibility(visibility) {

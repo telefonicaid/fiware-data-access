@@ -2071,6 +2071,7 @@ export async function uploadFDA({
   // 1. Create FDA record in MongoDB (if exists, throws error)
   const query = 'uploaded data'; // placeholder
   const refreshPolicy = { type: 'none' };
+  validateScheduledOptions(refreshPolicy, objStgConf);
   await createFDAMongo(
     fdaId,
     query,
