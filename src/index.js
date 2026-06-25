@@ -23,6 +23,7 @@
 // criminal actions it may exercise to protect its rights.
 
 import express from 'express';
+import multer from 'multer';
 
 import { startFetcher } from './fetcher.js';
 import { shutdownAgenda, initAgenda } from './lib/jobs.js';
@@ -37,6 +38,7 @@ import {
   getFDA,
   updateFDA,
   deleteFDA,
+  uploadFDA,
   getDAs,
   getDA,
   putDA,
@@ -428,6 +430,137 @@ app.delete('/:visibility/fdas/:fdaId', async (req, res) => {
 
   await deleteFDA(service, fdaId, visibility, servicePath);
   return res.sendStatus(204);
+});
+
+// Multer configuration for file uploads
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: config.uploadMaxSize || 50 * 1024 * 1024 }, // 50 MB por defecto
+  fileFilter: (req, file, cb) => {
+    const allowedMimes = [
+      'text/csv',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ];
+    const allowedExtensions = /\.(csv|xls|xlsx)$/i;
+    if (
+      allowedMimes.includes(file.mimetype) ||
+      allowedExtensions.test(file.originalname)
+    ) {
+      cb(null, true);
+    } else {
+      cb(
+        new FDAError(
+          415,
+          'UnsupportedMediaType',
+          'Only CSV, XLS, or XLSX files are allowed',
+        ),
+        false,
+      );
+    }
+  },
+}).single('file'); // The form field must be named 'file'
+
+app.post('/:visibility/fdas/upload', (req, res) => {
+  upload(req, res, async (err) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({
+          error: 'PayloadTooLarge',
+          description: 'The file exceeds the maximum allowed size.',
+        });
+      }
+      return res.status(400).json({
+        error: 'BadRequest',
+        description: err.message,
+      });
+    }
+
+    const { visibility } = req.params;
+    const service = req.get('Fiware-Service');
+    const servicePath = req.get('Fiware-ServicePath');
+
+    if (!service || !servicePath) {
+      return res.status(400).json({
+        error: 'BadRequest',
+        description: 'Missing Fiware-Service and Fiware-ServicePath headers',
+      });
+    }
+
+    const {
+      id,
+      description,
+      timeColumn,
+      objStgConf,
+      cached,
+      defaultDataAccess,
+      datasourceId,
+    } = req.body;
+
+    if (!id) {
+      return res.status(400).json({
+        error: 'BadRequest',
+        description: 'Missing "id" field in the form',
+      });
+    }
+    if (!req.file) {
+      return res.status(400).json({
+        error: 'BadRequest',
+        description: 'Missing file (form field "file")',
+      });
+    }
+
+    const cachedBool =
+      cached === undefined
+        ? true
+        : parseBooleanQueryParam(cached, 'cached', true);
+    const defaultDataAccessBool =
+      defaultDataAccess === undefined
+        ? config.defaultDataAccess?.enabled ?? true
+        : parseBooleanQueryParam(defaultDataAccess, 'defaultDataAccess', true);
+
+    let objStgConfParsed = {};
+    if (objStgConf) {
+      try {
+        objStgConfParsed =
+          typeof objStgConf === 'string' ? JSON.parse(objStgConf) : objStgConf;
+      } catch {
+        return res.status(400).json({
+          error: 'BadRequest',
+          description: 'objStgConf must be a valid JSON object',
+        });
+      }
+    }
+
+    try {
+      const result = await uploadFDA({
+        fdaId: id,
+        fileBuffer: req.file.buffer,
+        originalname: req.file.originalname,
+        mimetype: req.file.mimetype,
+        service,
+        visibility,
+        servicePath,
+        description,
+        timeColumn,
+        objStgConf: objStgConfParsed,
+        cached: cachedBool,
+        defaultDataAccessEnabled: defaultDataAccessBool,
+        datasourceId: datasourceId || 'upload',
+      });
+
+      return res.status(200).json({
+        id: result.id,
+        status: result.status,
+      });
+    } catch (error) {
+      const status = error.status || 500;
+      return res.status(status).json({
+        error: error.type || 'InternalServerError',
+        description: error.message,
+      });
+    }
+  });
 });
 
 app.get('/:visibility/fdas/:fdaId/das', async (req, res) => {
