@@ -410,6 +410,14 @@ export async function updateFDAStatus(
   );
 }
 
+export async function updateFDALastFetch(service, fdaId, servicePath) {
+  const collection = await getCollection();
+  await collection.updateOne(
+    { service, fdaId, servicePath },
+    { $set: { lastFetch: new Date() } },
+  );
+}
+
 export async function regenerateFDA(service, fdaId, servicePath) {
   const collection = await getCollection();
 

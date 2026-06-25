@@ -22,8 +22,14 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
+import xlsx from 'xlsx';
+
 import { FDAError } from '../fdaError.js';
 import { CronExpressionParser } from 'cron-parser';
+import { normalizeScopedServicePath } from './fdaScope.js';
+
+export const VALID_VISIBILITIES = ['public', 'private'];
+export const VALID_VISIBILITIES_SET = new Set(VALID_VISIBILITIES);
 
 let activeFreshQueries = 0;
 
@@ -289,4 +295,171 @@ export function getTimeColumnQuery(query, timeColumn) {
   }
 
   return query.slice(0, insertPos) + timeColumn + ', ' + query.slice(insertPos);
+}
+
+export function stringifyCsvValue(value) {
+  const normalizedValue = normalizeForSerialization(value);
+
+  if (normalizedValue === null || normalizedValue === undefined) {
+    return '';
+  }
+
+  if (typeof normalizedValue === 'object') {
+    return JSON.stringify(normalizedValue);
+  }
+
+  return String(normalizedValue);
+}
+
+export async function writeCsvLine(res, line) {
+  const ok = res.write(line);
+  if (!ok) {
+    await new Promise((resolve) => res.once('drain', resolve));
+  }
+}
+
+export async function writeNdjsonLine(res, row) {
+  const safeObj = normalizeForSerialization(row);
+  const ok = res.write(JSON.stringify(safeObj) + '\n');
+  if (!ok) {
+    await new Promise((resolve) => res.once('drain', resolve));
+  }
+}
+
+export async function writeCsvHeader(res, columnNames) {
+  if (columnNames.length === 0) {
+    return;
+  }
+
+  await writeCsvLine(
+    res,
+    columnNames.map((columnName) => escapeCsvValue(columnName)).join(',') +
+      '\n',
+  );
+}
+
+export function toRowObject(row, columnNames) {
+  const rowObj = {};
+
+  for (let i = 0; i < columnNames.length; i++) {
+    rowObj[columnNames[i]] = row[i];
+  }
+
+  return rowObj;
+}
+
+export function escapeCsvValue(value) {
+  const strValue = stringifyCsvValue(value);
+
+  if (
+    strValue.includes(',') ||
+    strValue.includes('"') ||
+    strValue.includes('\n') ||
+    strValue.includes('\r')
+  ) {
+    return '"' + strValue.replace(/"/g, '""') + '"';
+  }
+
+  return strValue;
+}
+
+export function parseUploadedFile(buffer, mimetype, originalname) {
+  let csvContent;
+  let columns;
+
+  const isCsv = mimetype === 'text/csv' || /\.csv$/i.test(originalname);
+  const isXls =
+    /\.xls$/i.test(originalname) || mimetype === 'application/vnd.ms-excel';
+  const isXlsx =
+    /\.xlsx$/i.test(originalname) ||
+    mimetype ===
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+  if (isCsv) {
+    // We assume the CSV is UTF-8 encoded. If needed, we could add encoding detection here.
+    csvContent = buffer.toString('utf-8');
+    const lines = csvContent.split('\n');
+    const headerLine = lines[0];
+    if (!headerLine) {
+      throw new Error('The CSV file does not contain a header');
+    }
+    columns = headerLine.split(',').map((s) => s.trim());
+    // Validate that all rows have the same number of columns (optional)
+    // We don't do it here to avoid loading the entire file into memory.
+  } else if (isXls || isXlsx) {
+    const workbook = xlsx.read(buffer, { type: 'buffer' });
+    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+    const jsonData = xlsx.utils.sheet_to_json(firstSheet);
+    if (jsonData.length === 0) {
+      throw new Error('The XLS/XLSX file is empty');
+    }
+    columns = Object.keys(jsonData[0]);
+    // Build CSV
+    const csvRows = [columns.join(',')];
+    for (const row of jsonData) {
+      const line = columns.map((col) => escapeCsvValue(row[col])).join(',');
+      csvRows.push(line);
+    }
+    csvContent = csvRows.join('\n');
+  } else {
+    throw new Error('Unsupported file format. Use CSV, XLS, or XLSX.');
+  }
+
+  return { csvContent, columns };
+}
+
+export function normalizeVisibility(visibility) {
+  if (!VALID_VISIBILITIES_SET.has(visibility)) {
+    throw new FDAError(
+      400,
+      'InvalidVisibility',
+      'Visibility must be public or private',
+    );
+  }
+
+  return visibility;
+}
+
+export function normalizeServicePath(servicePath) {
+  try {
+    return normalizeScopedServicePath(servicePath);
+  } catch (error) {
+    if (error.message === 'servicePath is required') {
+      throw new FDAError(
+        400,
+        'InvalidServicePath',
+        'Fiware-ServicePath header is required',
+      );
+    }
+
+    throw new FDAError(
+      400,
+      'InvalidServicePath',
+      'Fiware-ServicePath must be a non-root absolute path (e.g. /servicepath)',
+    );
+  }
+}
+
+export function toFDAApiResponse(fda, { includeId }) {
+  if (!fda) {
+    return fda;
+  }
+
+  const response = { ...fda };
+  const fdaId = response.fdaId;
+
+  delete response._id;
+  delete response.fdaId;
+  delete response.service;
+  delete response.visibility;
+  delete response.servicePath;
+
+  if (!includeId) {
+    return response;
+  }
+
+  return {
+    id: fdaId,
+    ...response,
+  };
 }
