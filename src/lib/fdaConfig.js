@@ -119,6 +119,10 @@ const envVarsSchema = {
       type: 'boolean',
       default: true,
     },
+    FDA_MAX_UPLOAD_SIZE: {
+      type: 'number',
+      default: 1048576 * 50, // 50 MB
+    },
   },
 };
 
@@ -169,4 +173,5 @@ export const config = {
   defaultDataAccess: {
     enabled: envVars.FDA_CREATE_DEFAULT_DATA_ACCESS,
   },
+  maxUploadSize: envVars.FDA_MAX_UPLOAD_SIZE,
 };
