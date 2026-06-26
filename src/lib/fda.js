@@ -2224,7 +2224,7 @@ export async function processUploadFDAJob({
       err.message,
     );
     if (s3Client && bucketName && tempKey) {
-      await dropFile(s3Client, bucketName, tempKey).catch(() => {});
+      await dropFile(s3Client, bucketName, `${tempKey}.csv`).catch(() => {});
     }
     throw err;
   }
