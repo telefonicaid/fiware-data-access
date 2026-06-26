@@ -492,7 +492,6 @@ app.post('/:visibility/fdas/upload', (req, res) => {
       description,
       timeColumn,
       objStgConf,
-      cached,
       defaultDataAccess,
       datasourceId,
     } = req.body;
@@ -510,10 +509,6 @@ app.post('/:visibility/fdas/upload', (req, res) => {
       });
     }
 
-    const cachedBool =
-      cached === undefined
-        ? true
-        : parseBooleanQueryParam(cached, 'cached', true);
     const defaultDataAccessBool =
       defaultDataAccess === undefined
         ? config.defaultDataAccess?.enabled ?? true
@@ -544,7 +539,7 @@ app.post('/:visibility/fdas/upload', (req, res) => {
         description,
         timeColumn,
         objStgConf: objStgConfParsed,
-        cached: cachedBool,
+        cached: true,
         defaultDataAccessEnabled: defaultDataAccessBool,
         datasourceId: datasourceId || 'upload',
       });
