@@ -1287,11 +1287,14 @@ async function uploadCsvContentToObjectStorage(s3Client, bucket, path, body) {
 
   try {
     await upload.done();
-  } catch (error) {
+  } catch (e) {
+    if (e instanceof FDAError) {
+      throw e;
+    }
     throw new FDAError(
       503,
       'UploadError',
-      `Error uploading FDA to object storage: ${error.message}`,
+      `Error uploading FDA to object storage: ${e.message}`,
     );
   }
 }

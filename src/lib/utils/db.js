@@ -458,7 +458,7 @@ function isInEnum(value, enumValues) {
   return enumValues.includes(value);
 }
 
-export function toParquet(
+export async function toParquet(
   conn,
   originPath,
   resultPath,
@@ -468,14 +468,36 @@ export function toParquet(
 ) {
   logger.debug({ originPath, resultPath }, '[DEBUG]: toParquet');
 
-  const { cols, partitionBy } = getPartitionConf(partitionType, timeColumn);
-  const compressionString = compression ? `, COMPRESSION ZSTD` : '';
+  try {
+    const { cols, partitionBy } = getPartitionConf(partitionType, timeColumn);
+    const compressionString = compression ? ', COMPRESSION ZSTD' : '';
 
-  return conn.run(
-    `COPY ( SELECT ${cols}
-                FROM read_csv_auto('s3://${originPath}')) 
-      TO 's3://${resultPath}' (FORMAT PARQUET ${partitionBy} ${compressionString});`,
-  );
+    await conn.run(`
+      COPY (
+        SELECT ${cols}
+        FROM read_csv_auto('s3://${originPath}')
+      )
+      TO 's3://${resultPath}'
+      (FORMAT PARQUET ${partitionBy} ${compressionString});
+    `);
+  } catch (e) {
+    logger.error('Error converting CSV to Parquet: ', e);
+    if (e instanceof FDAError) {
+      throw e;
+    }
+    if (
+      e.message?.includes('Conversion Error') &&
+      e.message?.includes('TIMESTAMP')
+    ) {
+      throw new FDAError(
+        400,
+        'InvalidTimeColumn',
+        `Column "${timeColumn}" cannot be interpreted as a timestamp.`,
+      );
+    }
+
+    throw new FDAError(500, 'ParquetError', e.message);
+  }
 }
 
 export const PARTITION_TYPES = ['day', 'week', 'month', 'year', 'none'];
