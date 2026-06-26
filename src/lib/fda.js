@@ -1570,6 +1570,9 @@ async function uploadTableToObjStg(
     }
     await dropFile(s3Client, bucket, `${path}.csv`);
   } catch (e) {
+    if (e instanceof FDAError) {
+      throw e;
+    }
     throw new FDAError(500, 'UploadError', e.message);
   } finally {
     await releaseDBConnection(conn);
@@ -1716,6 +1719,11 @@ async function createOneRowParquetSync(
       objStgConf?.partition,
     );
     await dropFile(s3Client, bucketName, `${storagePath}.csv`);
+  } catch (e) {
+    if (e instanceof FDAError) {
+      throw e;
+    }
+    throw new FDAError(500, 'UploadError', e.message);
   } finally {
     await releaseDBConnection(conn);
   }
@@ -2196,6 +2204,11 @@ export async function processUploadFDAJob({
         objStgConf.partition,
         objStgConf.compression,
       );
+    } catch (e) {
+      if (e instanceof FDAError) {
+        throw e;
+      }
+      throw new FDAError(500, 'UploadError', e.message);
     } finally {
       await releaseDBConnection(conn);
     }
