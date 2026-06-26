@@ -2147,7 +2147,18 @@ export async function processUploadFDAJob({
   try {
     // 2. Parse the uploaded file
     const parsed = parseUploadedFile(fileBuffer, mimetype, originalname);
-    const csvContent = parsed.csvContent;
+    const { headers, csvContent } = parsed;
+
+    // Validate timeColumn if it exists
+    if (timeColumn) {
+      if (!headers.includes(timeColumn)) {
+        throw new FDAError(
+          400,
+          'InvalidTimeColumn',
+          `Column "${timeColumn}" not found in the uploaded file`,
+        );
+      }
+    }
 
     // 3. Get S3 client and bucket
     s3Client = getS3Client(
