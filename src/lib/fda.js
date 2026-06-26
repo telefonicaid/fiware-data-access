@@ -2186,7 +2186,7 @@ export async function processUploadFDAJob({
       await releaseDBConnection(conn);
     }
 
-    await dropFile(s3Client, bucketName, tempKey);
+    await dropFile(s3Client, bucketName, `${tempKey}.csv`);
 
     await updateFDAStatus(service, fdaId, servicePath, 'completed', 100);
     await updateFDALastFetch(service, fdaId, servicePath);
