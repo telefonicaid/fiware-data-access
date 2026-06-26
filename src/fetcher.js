@@ -23,7 +23,11 @@
 // criminal actions it may exercise to protect its rights.
 
 import { getAgenda } from './lib/jobs.js';
-import { cleanPartition, processFDAAsync } from './lib/fda.js';
+import {
+  cleanPartition,
+  processFDAAsync,
+  processUploadFDAJob,
+} from './lib/fda.js';
 import { getBasicLogger } from './lib/utils/logger.js';
 
 const logger = getBasicLogger();
@@ -64,6 +68,44 @@ export async function startFetcher() {
       job.attrs.data;
     try {
       await cleanPartition(service, fdaId, windowSize, objStgConf, servicePath);
+    } catch (e) {
+      logger.error('Fetcher error: ', e);
+    }
+  });
+
+  agenda.define('upload-fda', async (job) => {
+    const {
+      fdaId,
+      service,
+      servicePath,
+      visibility,
+      fileBuffer, // This file can be big, so we should be careful with memory usage
+      originalname,
+      mimetype,
+      description,
+      timeColumn,
+      objStgConf,
+      cached,
+      defaultDataAccessEnabled,
+      datasourceId,
+    } = job.attrs.data;
+
+    try {
+      await processUploadFDAJob({
+        fdaId,
+        service,
+        servicePath,
+        visibility,
+        fileBuffer,
+        originalname,
+        mimetype,
+        description,
+        timeColumn,
+        objStgConf,
+        cached,
+        defaultDataAccessEnabled,
+        datasourceId,
+      });
     } catch (e) {
       logger.error('Fetcher error: ', e);
     }

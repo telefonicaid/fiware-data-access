@@ -544,7 +544,7 @@ app.post('/:visibility/fdas/upload', (req, res) => {
         datasourceId: datasourceId || 'upload',
       });
 
-      return res.status(200).json({
+      return res.status(202).json({
         id: result.id,
         status: result.status,
       });

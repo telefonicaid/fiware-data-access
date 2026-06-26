@@ -2052,13 +2052,6 @@ async function createDefaultDAIfNeeded({
   }
 }
 
-/**
- * Creates an FDA from an uploaded file (CSV or XLS/XLSX) synchronously.
- * First, it creates the record in MongoDB (if it exists, it throws an error).
- * Then, it processes the file: uploads a temporary CSV, converts it to Parquet, deletes the CSV,
- * updates the status, and creates a default DA if applicable.
- * If any step fails, it marks the FDA as 'failed' and rethrows the error.
- */
 export async function uploadFDA({
   fdaId,
   fileBuffer,
@@ -2079,7 +2072,6 @@ export async function uploadFDA({
 
   logger.debug({ fdaId, service }, 'Starting upload FDA');
 
-  // 1. Create FDA record in MongoDB (if exists, throws error)
   const query = 'uploaded data'; // placeholder
   const refreshPolicy = { type: 'none' };
   validateScheduledOptions(refreshPolicy, objStgConf);
@@ -2098,43 +2090,26 @@ export async function uploadFDA({
   );
 
   logger.debug({ fdaId }, 'FDA record created');
+  const agenda = getAgenda();
+  await agenda.now('upload-fda', {
+    fdaId,
+    service,
+    servicePath: normalizedServicePath,
+    visibility: normalizedVisibility,
+    fileBuffer, // Buffer del archivo
+    originalname,
+    mimetype,
+    description,
+    timeColumn,
+    objStgConf,
+    cached,
+    defaultDataAccessEnabled,
+    datasourceId,
+  });
 
-  // 2. Process the uploaded file and handle errors
-  try {
-    await processUploadFDAJob({
-      fdaId,
-      service,
-      servicePath: normalizedServicePath,
-      visibility: normalizedVisibility,
-      fileBuffer,
-      originalname,
-      mimetype,
-      description,
-      timeColumn,
-      objStgConf,
-      cached,
-      defaultDataAccessEnabled,
-      datasourceId,
-    });
-  } catch (err) {
-    await updateFDAStatus(
-      service,
-      fdaId,
-      normalizedServicePath,
-      'failed',
-      0,
-      err.message,
-    );
-    throw err;
-  }
-
-  return { id: fdaId, status: 'completed' };
+  return { id: fdaId, status: 'pending' };
 }
 
-/**
- * Processes the uploaded file (reusable function for asynchronous jobs).
- * Updates the FDA status as it progresses.
- */
 export async function processUploadFDAJob({
   fdaId,
   service,
@@ -2156,11 +2131,9 @@ export async function processUploadFDAJob({
   let conn;
 
   try {
-    // 2. Parse the uploaded file
     const parsed = parseUploadedFile(fileBuffer, mimetype, originalname);
     const { headers, csvContent } = parsed;
 
-    // Validate timeColumn if it exists
     if (timeColumn) {
       if (!headers.includes(timeColumn)) {
         throw new FDAError(
@@ -2171,7 +2144,6 @@ export async function processUploadFDAJob({
       }
     }
 
-    // 3. Get S3 client and bucket
     s3Client = getS3Client(
       `${config.objstg.protocol}://${config.objstg.endpoint}`,
       config.objstg.usr,
@@ -2182,7 +2154,6 @@ export async function processUploadFDAJob({
     tempKey = `tmp/${fdaId}_${Date.now()}`;
 
     logger.debug({ fdaId, tempKey }, 'Uploading temporary CSV to MinIO');
-    // 4. Upload temporary CSV to MinIO (status: fetching)
     await updateFDAStatus(service, fdaId, servicePath, 'fetching', 10);
     await uploadCsvContentToObjectStorage(
       s3Client,
@@ -2192,7 +2163,6 @@ export async function processUploadFDAJob({
     );
 
     logger.debug({ fdaId }, 'Converting upload file to Parquet');
-    // 5. Convert to Parquet (status: transforming)
     await updateFDAStatus(service, fdaId, servicePath, 'transforming', 30);
     const originPath = `${bucketName}/${tempKey}.csv`;
     const resultPath = `${bucketName}/${storagePath}.parquet`;
@@ -2216,15 +2186,12 @@ export async function processUploadFDAJob({
       await releaseDBConnection(conn);
     }
 
-    // 6. Delete temporary CSV
     await dropFile(s3Client, bucketName, tempKey);
 
-    // 7. Update status to 'completed' and lastFetch
     await updateFDAStatus(service, fdaId, servicePath, 'completed', 100);
     await updateFDALastFetch(service, fdaId, servicePath);
 
     logger.debug({ fdaId }, 'Creating default DataAccess');
-    // 8. Create default DA if enabled and cached
     if (defaultDataAccessEnabled && cached) {
       const daDefinition = await buildDefaultDataAccessDefinition(
         service,
