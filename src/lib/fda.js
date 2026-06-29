@@ -2133,6 +2133,7 @@ export async function processUploadFDAJob({
   try {
     const parsed = parseUploadedFile(fileBuffer, mimetype, originalname);
     const { headers, csvContent } = parsed;
+    await updateFDAStatus(service, fdaId, servicePath, 'fetching', 20);
 
     if (timeColumn) {
       if (!headers.includes(timeColumn)) {
@@ -2154,7 +2155,7 @@ export async function processUploadFDAJob({
     tempKey = `tmp/${fdaId}_${Date.now()}`;
 
     logger.debug({ fdaId, tempKey }, 'Uploading temporary CSV to MinIO');
-    await updateFDAStatus(service, fdaId, servicePath, 'fetching', 10);
+    await updateFDAStatus(service, fdaId, servicePath, 'fetching', 40);
     await uploadCsvContentToObjectStorage(
       s3Client,
       bucketName,
@@ -2168,6 +2169,7 @@ export async function processUploadFDAJob({
     const resultPath = `${bucketName}/${storagePath}.parquet`;
     conn = await getDBConnection();
 
+    await updateFDAStatus(service, fdaId, servicePath, 'transforming', 60);
     try {
       await toParquet(
         conn,
