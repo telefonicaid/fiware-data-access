@@ -62,7 +62,7 @@ export async function destroyS3Client() {
 
 export function newUpload(client, bucket, path, body, partSize, queueSize) {
   logger.debug(
-    { bucket, path, body, partSize, queueSize },
+    { bucket, path, bodySize: body.length, partSize, queueSize },
     '[DEBUG]: newUpload',
   );
   return new Upload({

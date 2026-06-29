@@ -596,10 +596,7 @@ export function buildDAQuery(
   partition,
   servicePath,
 ) {
-  logger.debug(
-    { service, fdaId, userQuery, partition },
-    '[DEBUG]: buildDAQuery',
-  );
+  logger.debug({ service, fdaId }, '[DEBUG]: buildDAQuery');
   if (!userQuery || typeof userQuery !== 'string') {
     throw new FDAError(400, 'BadRequest', 'Invalid DA query');
   }

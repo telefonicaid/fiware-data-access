@@ -476,7 +476,7 @@ export async function storeDA(
   params,
 ) {
   logger.debug(
-    { service, fdaId, daId, description, query },
+    { service, fdaId, daId, description, querySize: query.length },
     '[DEBUG]: storeDA',
   );
   const collection = await getCollection();
@@ -608,7 +608,7 @@ export async function updateDA(
   params,
 ) {
   logger.debug(
-    { service, fdaId, daId, description, query, params },
+    { service, fdaId, daId, description, querySize: query.length },
     '[DEBUG]: updateDA',
   );
   const collection = await getCollection();
