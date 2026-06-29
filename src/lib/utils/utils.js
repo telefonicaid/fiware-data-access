@@ -394,32 +394,149 @@ function parseCsvBuffer(buffer) {
   return { csvContent: content, headers };
 }
 
-/**
- * Parses an XLSX buffer (or XLS) and returns a unified CSV content and unified headers.
- * Processes all sheets, merges column names, and generates a single CSV.
- */
+function ensureBuffer(buffer) {
+  if (Buffer.isBuffer(buffer)) {
+    return buffer;
+  }
+
+  if (buffer instanceof ArrayBuffer || buffer instanceof Uint8Array) {
+    return Buffer.from(buffer);
+  }
+
+  if (buffer && typeof buffer === 'object' && buffer.buffer) {
+    return Buffer.from(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+  }
+
+  return Buffer.from(buffer);
+}
+
+function readSheetRows(sheet) {
+  // Strategy 1: Standard read
+  let rows = xlsx.utils.sheet_to_json(sheet, {
+    header: 1,
+    defval: '',
+    blankrows: true,
+    raw: true,
+  });
+
+  if (rows && rows.length > 0) {
+    return rows;
+  }
+
+  // Strategy 2: Manual cell reading (fallback for complex sheets)
+  const range = sheet['!ref'];
+  if (!range) {
+    return [];
+  }
+
+  const decodedRange = xlsx.utils.decode_range(range);
+  const manualRows = [];
+
+  for (let R = decodedRange.s.r; R <= decodedRange.e.r; R++) {
+    const row = [];
+    let hasContent = false;
+
+    for (let C = decodedRange.s.c; C <= decodedRange.e.c; C++) {
+      const cellAddress = xlsx.utils.encode_cell({ r: R, c: C });
+      const cell = sheet[cellAddress];
+      let value = '';
+
+      if (cell) {
+        // Try different value formats
+        if (cell.v !== undefined) {
+          value = cell.v;
+        } else if (cell.w !== undefined) {
+          value = cell.w;
+        } else {
+          value = '';
+        }
+
+        if (value !== '' && value !== null && value !== undefined) {
+          hasContent = true;
+        }
+      }
+
+      row.push(value !== undefined && value !== null ? String(value) : '');
+    }
+
+    if (hasContent) {
+      manualRows.push(row);
+    }
+  }
+
+  return manualRows;
+}
+
+function findHeaderRow(rows) {
+  for (let i = 0; i < rows.length; i++) {
+    const hasContent = rows[i].some(
+      (cell) =>
+        cell !== '' &&
+        cell !== null &&
+        cell !== undefined &&
+        String(cell).trim() !== '',
+    );
+    if (hasContent) {
+      return i;
+    }
+  }
+  return -1;
+}
+
 function parseXlsxBuffer(buffer) {
-  const workbook = xlsx.read(buffer, { type: 'buffer' });
+  const fileBuffer = ensureBuffer(buffer);
+
+  let workbook;
+  try {
+    workbook = xlsx.read(fileBuffer, {
+      type: 'buffer',
+      cellDates: false,
+      cellNF: false,
+      cellText: false,
+      raw: true,
+    });
+  } catch (err) {
+    throw new Error(`Failed to read Excel file: ${err.message}`);
+  }
+
   const sheetNames = workbook.SheetNames;
   if (sheetNames.length === 0) {
     throw new Error('XLSX file contains no sheets');
   }
 
-  // 1. Collect all unique headers from all sheets
   const unifiedHeadersSet = new Set();
-  const allSheetsHeaders = [];
+  const allSheetsData = [];
+
   for (const sheetName of sheetNames) {
     const sheet = workbook.Sheets[sheetName];
-    const rows = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: null });
-    if (rows.length === 0) continue;
-    // Assume first row is header
-    const headers = rows[0].map((h) =>
-      h !== undefined && h !== null ? String(h).trim() : '',
+
+    const rows = readSheetRows(sheet);
+    if (!rows || rows.length === 0) {
+      continue;
+    }
+
+    const headerRowIndex = findHeaderRow(rows);
+    if (headerRowIndex === -1) {
+      continue;
+    }
+
+    const headerRow = rows[headerRowIndex];
+    const headers = headerRow.map((h) =>
+      h !== '' && h !== null && h !== undefined ? String(h).trim() : '',
     );
-    // Filter out empty header names
+
     const validHeaders = headers.filter((h) => h !== '');
-    if (validHeaders.length === 0) continue;
-    allSheetsHeaders.push(validHeaders);
+    if (validHeaders.length === 0) {
+      continue;
+    }
+
+    const dataRows = rows.slice(headerRowIndex + 1);
+    allSheetsData.push({
+      headers,
+      validHeaders,
+      dataRows,
+    });
+
     for (const h of validHeaders) {
       unifiedHeadersSet.add(h);
     }
@@ -428,40 +545,69 @@ function parseXlsxBuffer(buffer) {
   if (unifiedHeadersSet.size === 0) {
     throw new Error('No headers found in any sheet');
   }
+
   const unifiedHeaders = Array.from(unifiedHeadersSet);
 
-  // 2. Process each sheet, map rows to unified headers
   const allRows = [];
-  for (const sheetName of sheetNames) {
-    const sheet = workbook.Sheets[sheetName];
-    const rows = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: null });
-    if (rows.length <= 1) continue; // skip header-only sheets
-    const headers = rows[0].map((h) =>
-      h !== undefined && h !== null ? String(h).trim() : '',
+
+  for (const sheetData of allSheetsData) {
+    const { headers, dataRows } = sheetData;
+
+    const headerMap = headers.map((h) =>
+      h === '' ? -1 : unifiedHeaders.indexOf(h),
     );
-    // Build mapping from local header index to unified header index
-    const headerMap = headers.map((h) => unifiedHeaders.indexOf(h));
-    for (let i = 1; i < rows.length; i++) {
-      const row = rows[i];
+
+    for (const row of dataRows) {
+      const hasContent = row.some(
+        (cell) =>
+          cell !== '' &&
+          cell !== null &&
+          cell !== undefined &&
+          String(cell).trim() !== '',
+      );
+      if (!hasContent) continue;
+
       const obj = {};
-      for (let j = 0; j < row.length; j++) {
-        const unifiedIdx = headerMap[j];
+      let hasValues = false;
+
+      const maxLen = Math.max(row.length, headerMap.length);
+      for (let j = 0; j < maxLen; j++) {
+        const unifiedIdx = j < headerMap.length ? headerMap[j] : -1;
         if (unifiedIdx !== -1) {
           const colName = unifiedHeaders[unifiedIdx];
-          obj[colName] = row[j] !== undefined ? row[j] : null;
+          const value =
+            j < row.length &&
+            row[j] !== '' &&
+            row[j] !== undefined &&
+            row[j] !== null
+              ? row[j]
+              : null;
+          obj[colName] = value;
+          if (value !== null) hasValues = true;
         }
-        // If header not in unifiedHeaders (shouldn't happen) ignore
       }
-      allRows.push(obj);
+
+      if (hasValues) {
+        allRows.push(obj);
+      }
     }
   }
 
-  // 3. Generate CSV from all rows
+  if (allRows.length === 0) {
+    throw new Error('No data rows found in any sheet');
+  }
+
   const csvRows = [];
   csvRows.push(unifiedHeaders.map((h) => escapeCsvValue(h)).join(','));
+
   for (const rowObj of allRows) {
     const line = unifiedHeaders
-      .map((col) => escapeCsvValue(rowObj[col]))
+      .map((col) => {
+        const value = rowObj[col];
+        return escapeCsvValue(
+          value !== undefined && value !== null ? value : '',
+        );
+      })
       .join(',');
     csvRows.push(line);
   }
@@ -470,6 +616,16 @@ function parseXlsxBuffer(buffer) {
 }
 
 export function parseUploadedFile(buffer, mimetype, originalname) {
+  const fileBuffer = ensureBuffer(buffer);
+
+  // Detect file type by magic bytes
+  const isXlsxByMagic =
+    fileBuffer.length >= 4 &&
+    fileBuffer[0] === 0x50 &&
+    fileBuffer[1] === 0x4b &&
+    fileBuffer[2] === 0x03 &&
+    fileBuffer[3] === 0x04;
+
   let csvContent;
   let headers;
 
@@ -479,14 +635,15 @@ export function parseUploadedFile(buffer, mimetype, originalname) {
   const isXlsx =
     /\.xlsx$/i.test(originalname) ||
     mimetype ===
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+    isXlsxByMagic;
 
   if (isCsv) {
-    const result = parseCsvBuffer(buffer);
+    const result = parseCsvBuffer(fileBuffer);
     csvContent = result.csvContent;
     headers = result.headers;
   } else if (isXls || isXlsx) {
-    const result = parseXlsxBuffer(buffer);
+    const result = parseXlsxBuffer(fileBuffer);
     csvContent = result.csvContent;
     headers = result.headers;
   } else {
