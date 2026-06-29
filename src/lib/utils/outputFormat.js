@@ -96,7 +96,7 @@ export function toCdaJson(rows, { pageStart = 0, pageSize } = {}) {
   }
 
   const totalRows =
-    rows[0].__total !== undefined ? Number(rows[0].__total) : rows.length;
+    rows[0].__total === undefined ? rows.length : Number(rows[0].__total);
 
   /* eslint-disable-next-line no-unused-vars */
   const cleanedRows = rows.map(({ __total: _, ...rest }) => rest);
