@@ -898,7 +898,7 @@ describe('index routes - validation and middleware branches', () => {
     expect(res.body).toEqual({
       error: 'NotAcceptable',
       description:
-        'Accept header must allow application/json, application/x-ndjson, text/csv, or application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Accept header must allow application/json, application/x-ndjson, text/csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, or application/vnd.fiware.cda+json',
     });
     expect(fdaMocks.executeFDAQuery).not.toHaveBeenCalled();
     expect(fdaMocks.executeFDAQueryStream).not.toHaveBeenCalled();
@@ -1234,7 +1234,7 @@ describe('index routes - validation and middleware branches', () => {
     expect(res.body).toEqual({
       error: 'NotAcceptable',
       description:
-        'Accept header must allow application/json, application/x-ndjson, text/csv, or application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Accept header must allow application/json, application/x-ndjson, text/csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, or application/vnd.fiware.cda+json',
     });
     expect(fdaMocks.executeQuery).not.toHaveBeenCalled();
     expect(fdaMocks.executeQueryStream).not.toHaveBeenCalled();
