@@ -184,7 +184,7 @@ export function registerQueryStyleDataIntegrationTests({
         ['3', 'carlos', '40'],
       ]);
       expect(res.json.queryInfo.pageStart).toBe(0);
-      expect(res.json.queryInfo.pageSize).toBe(0);
+      expect(res.json.queryInfo.pageSize).toBe(2);
       expect(res.json.queryInfo.totalRows).toBe(2);
     });
 
@@ -324,8 +324,8 @@ export function registerQueryStyleDataIntegrationTests({
       expect(Array.isArray(freshRes.json.resultset)).toBe(true);
       expect(freshRes.json.resultset.length).toBeGreaterThan(0);
       expect(freshRes.json.queryInfo.pageStart).toBe(0);
-      expect(freshRes.json.queryInfo.pageSize).toBe(0);
-      expect(freshRes.json.queryInfo.totalRows).toBeGreaterThan(0);
+      expect(freshRes.json.queryInfo.pageSize).toBe(3);
+      expect(freshRes.json.queryInfo.totalRows).toBe(3);
     });
 
     test('GET /{visibility}/fdas/{fdaId}/data returns 409 when query-style is mixed with legacy headers', async () => {
