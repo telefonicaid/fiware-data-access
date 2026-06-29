@@ -798,7 +798,7 @@ A FDA is represented by a JSON object with the following fields:
 | -------------------------------------------------------- | -------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `id`                                                     |          | string        | FDA unique identifier                                                                                                                                                                      |
 | `description`                                            | ✓        | string        | A free text used by the client to describe the FDA. If omitted, no description is stored.                                                                                                  |
-| `query`                                                  |          | string/object | Source query definition. For `postgres`, a SQL query string. For `mongodb`, a Mongo query definition detailed below.                                   |
+| `query`                                                  |          | string/object | Source query definition. For `postgres`, a SQL query string. For `mongodb`, a Mongo query definition detailed below.                                                                       |
 | `refreshPolicy`                                          | ✓        | object        | Optional policy for automatic refresh.                                                                                                                                                     |
 | [`objStgConf`](#object-storage-configuration-objstgconf) | ✓        | object        | Various options to configure the FDA uploaded in the object storage app.                                                                                                                   |
 | `timeColumn`                                             | ✓        | string        | Required with `refreshPolicy` of type `window` and `partition`. Column in the table indicating when the data was received (date).                                                          |
@@ -828,7 +828,8 @@ details. Nested MongoDB fields can be projected using dot notation:
 
 Projected nested fields are materialized as FDA columns preserving their dot notation (`device.name`).
 
-When generating [defaultDataAccess](AdvancedTopics/default_data_access.md) parameters, dots are replaced by underscores. For example:
+When generating [defaultDataAccess](AdvancedTopics/default_data_access.md) parameters, dots are replaced by underscores.
+For example:
 
 -   Column: `device.name`
 -   Parameter: `device_name`
@@ -1693,12 +1694,12 @@ _**Request query parameters**_
 
 The endpoint supports two request styles:
 
-| Parameter     | Optional | Description                                                                                             | Example                  |
-| ------------- | -------- | ------------------------------------------------------------------------------------------------------- | ------------------------ |
-| `service`     | ✓        | Tenant or service. Required when using query-style context (instead of FIWARE headers).                 | `trantor`                |
-| `servicePath` | ✓        | NGSI hierarchical service path. Required when using query-style context (instead of FIWARE headers).    | `/servicePath`           |
-| `outputType`  | ✓        | Output format for query-style context. Allowed values: `json`, `ndjson`, `csv`, `xls`. Default: `json`. | `csv`                    |
-| DA params     | ✓        | DA-specific parameters declared in `params`.                                                            | `pattern=%25nosignal%25` |
+| Parameter     | Optional | Description                                                                                                    | Example                  |
+| ------------- | -------- | -------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| `service`     | ✓        | Tenant or service. Required when using query-style context (instead of FIWARE headers).                        | `trantor`                |
+| `servicePath` | ✓        | NGSI hierarchical service path. Required when using query-style context (instead of FIWARE headers).           | `/servicePath`           |
+| `outputType`  | ✓        | Output format for query-style context. Allowed values: `json`, `ndjson`, `csv`, `xls`, `cda`. Default: `json`. | `csv`                    |
+| DA params     | ✓        | DA-specific parameters declared in `params`.                                                                   | `pattern=%25nosignal%25` |
 
 _**Request headers**_
 
@@ -1748,12 +1749,28 @@ Depends on `Accept`:
 -   `text/csv`: comma-separated values file. The first row contains column names. Values containing commas,
     double-quotes or newlines are quoted.
 -   spreadsheet MIME types: Excel workbook (`.xlsx` format, Office Open XML). The first row contains column names.
+-   `application/vnd.fiware.cda+json`: CDA-compatible JSON structure:
+
+```json
+{
+    "metadata": [{ "colIndex": 0, "colName": "column1" }, ...],
+    "resultset": [["value1", "value2", ...]],
+    "queryInfo": {
+        "pageStart": 0,
+        "pageSize": 10,
+        "totalRows": 120
+    }
+}
+```
 
 _**Content negotiation and serialization notes**_
 
 -   In header-style context, response format is negotiated through the `Accept` header (using the
     [standard HTTP content negotiation mechanism](https://datatracker.ietf.org/doc/html/rfc2616#section-12)).
 -   In query-style context, response format is controlled by `outputType` query parameter.
+-   The CDA-compatible JSON representation can be requested using `outputType=cda` in query-style context or
+    `Accept: application/vnd.fiware.cda+json` in header-style context. It returns a tabular JSON payload (`metadata`,
+    `resultset`, `queryInfo`).
 -   If `Accept` does not include a supported format in header-style context, the API returns `406 NotAcceptable`.
 -   Unsupported query fields are rejected with `400 BadRequest`.
 -   `fresh` query field is rejected with `400 BadRequest`.
@@ -1814,6 +1831,12 @@ _**Example Request (query-style context):**_
 
 ```bash
 curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_filter_by_name/data?service=trantor&servicePath=%2FservicePath&pattern=%25nosignal%25"
+```
+
+_**Example Request (query-style CDA-compatible JSON):**_
+
+```bash
+curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_filter_by_name/data?service=trantor&servicePath=%2FservicePath&outputType=cda&pattern=%25nosignal%25"
 ```
 
 _**Example Request (CSV output):**_
