@@ -82,7 +82,7 @@ export function rowsToXlsx(rows) {
   return workbook.xlsx.writeBuffer();
 }
 
-export function toCdaJson(rows, { pageStart = 0, pageSize = 0 } = {}) {
+export function toCdaJson(rows, { pageStart = 0, pageSize } = {}) {
   if (!rows.length) {
     return {
       metadata: [],
@@ -115,7 +115,7 @@ export function toCdaJson(rows, { pageStart = 0, pageSize = 0 } = {}) {
     resultset,
     queryInfo: {
       pageStart,
-      pageSize,
+      pageSize: pageSize ?? cleanedRows.length,
       totalRows,
     },
   };
