@@ -1,3 +1,4 @@
+Add: support CDA-compatible JSON output format (`outputType=cda` and `Accept: application/vnd.fiware.cda+json`) for FDA data endpoints (#204)
 Add: MongoDB datasource support as a new datasource type, including connection validation, cached-only FDA support, Mongo-specific contract and full ingestion pipeline integration (#176)
 Fix: updated performance files, added performance and load/stress measurement for special use cases (new npm target "test:performance") (#159)
 Fix: bug preventing the creation of DAs for partitioned FDAs due to incorrect DA query path building (FROM clausule)
