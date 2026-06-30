@@ -24,6 +24,8 @@
 
 import express from 'express';
 import multer from 'multer';
+import fs from 'fs';
+import path from 'path';
 
 import { startFetcher } from './fetcher.js';
 import { shutdownAgenda, initAgenda } from './lib/jobs.js';
@@ -433,9 +435,21 @@ app.delete('/:visibility/fdas/:fdaId', async (req, res) => {
 });
 
 // Multer configuration for file uploads
+const UPLOAD_TMP_DIR = config.fileUpload?.tmpDir || '/tmp/fda_uploads';
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, UPLOAD_TMP_DIR);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    const ext = path.extname(file.originalname);
+    cb(null, file.fieldname + '-' + uniqueSuffix + ext);
+  },
+});
+
 const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: config.uploadMaxSize || 50 * 1024 * 1024 }, // 50 MB por defecto
+  storage: storage,
+  limits: { fileSize: config.fileUpload?.maxSize || 50 * 1024 * 1024 }, // 50 MB by default
   fileFilter: (req, file, cb) => {
     const allowedMimes = [
       'text/csv',
@@ -530,7 +544,7 @@ app.post('/:visibility/fdas/upload', (req, res) => {
     try {
       const result = await uploadFDA({
         fdaId: id,
-        fileBuffer: req.file.buffer,
+        tempFilePath: req.file.path,
         originalname: req.file.originalname,
         mimetype: req.file.mimetype,
         service,
@@ -950,6 +964,40 @@ async function startup() {
 
   if (config.roles.apiServer || config.roles.fetcher) {
     await initAgenda();
+  }
+
+  if (config.roles.apiServer) {
+    try {
+      if (!fs.existsSync(UPLOAD_TMP_DIR)) {
+        fs.mkdirSync(UPLOAD_TMP_DIR, { recursive: true });
+        logger.info(`[INIT] Created upload temp directory: ${UPLOAD_TMP_DIR}`);
+      } else {
+        logger.debug(`[INIT] Upload temp directory exists: ${UPLOAD_TMP_DIR}`);
+      }
+    } catch (err) {
+      logger.error(
+        `[INIT] Failed to create upload temp directory: ${err.message}`,
+      );
+      throw err;
+    }
+    setInterval(() => {
+      try {
+        const files = fs.readdirSync(UPLOAD_TMP_DIR);
+        const now = Date.now();
+        const maxAge = 12 * 60 * 60 * 1000; // 12 hours
+
+        files.forEach((file) => {
+          const filePath = path.join(UPLOAD_TMP_DIR, file);
+          const stats = fs.statSync(filePath);
+          if (now - stats.mtimeMs > maxAge) {
+            fs.unlinkSync(filePath);
+            logger.debug(`[CLEANUP] Removed old temp file: ${file}`);
+          }
+        });
+      } catch (err) {
+        logger.warn('[CLEANUP] Failed to clean temp directory', err);
+      }
+    }, 3600000); // Run cleanup every hour
   }
 
   getInitialLogger(config).fatal('[INIT]: Initializing app');

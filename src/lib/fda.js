@@ -2054,7 +2054,7 @@ async function createDefaultDAIfNeeded({
 
 export async function uploadFDA({
   fdaId,
-  fileBuffer,
+  tempFilePath,
   originalname,
   mimetype,
   service,
@@ -2096,7 +2096,7 @@ export async function uploadFDA({
     service,
     servicePath: normalizedServicePath,
     visibility: normalizedVisibility,
-    fileBuffer, // Buffer del archivo
+    tempFilePath,
     originalname,
     mimetype,
     description,
@@ -2115,7 +2115,7 @@ export async function processUploadFDAJob({
   service,
   servicePath, // already normalized
   visibility,
-  fileBuffer,
+  tempFilePath,
   originalname,
   mimetype,
   description,

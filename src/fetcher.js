@@ -79,7 +79,7 @@ export async function startFetcher() {
       service,
       servicePath,
       visibility,
-      fileBuffer, // This file can be big, so we should be careful with memory usage
+      tempFilePath,
       originalname,
       mimetype,
       description,
@@ -96,7 +96,7 @@ export async function startFetcher() {
         service,
         servicePath,
         visibility,
-        fileBuffer,
+        tempFilePath,
         originalname,
         mimetype,
         description,
