@@ -478,6 +478,11 @@ const upload = multer({
 app.post('/:visibility/fdas/upload', (req, res) => {
   upload(req, res, async (err) => {
     if (err) {
+      if (req.file && req.file.path && fs.existsSync(req.file.path)) {
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (e) {}
+      }
       if (err.code === 'LIMIT_FILE_SIZE') {
         return res.status(413).json({
           error: 'PayloadTooLarge',
@@ -495,6 +500,11 @@ app.post('/:visibility/fdas/upload', (req, res) => {
     const servicePath = req.get('Fiware-ServicePath');
 
     if (!service || !servicePath) {
+      if (req.file && req.file.path && fs.existsSync(req.file.path)) {
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (e) {}
+      }
       return res.status(400).json({
         error: 'BadRequest',
         description: 'Missing Fiware-Service and Fiware-ServicePath headers',
@@ -511,12 +521,22 @@ app.post('/:visibility/fdas/upload', (req, res) => {
     } = req.body;
 
     if (!id) {
+      if (req.file && req.file.path && fs.existsSync(req.file.path)) {
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (e) {}
+      }
       return res.status(400).json({
         error: 'BadRequest',
         description: 'Missing "id" field in the form',
       });
     }
     if (!req.file) {
+      if (req.file && req.file.path && fs.existsSync(req.file.path)) {
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (e) {}
+      }
       return res.status(400).json({
         error: 'BadRequest',
         description: 'Missing file (form field "file")',
@@ -534,6 +554,11 @@ app.post('/:visibility/fdas/upload', (req, res) => {
         objStgConfParsed =
           typeof objStgConf === 'string' ? JSON.parse(objStgConf) : objStgConf;
       } catch {
+        if (req.file && req.file.path && fs.existsSync(req.file.path)) {
+          try {
+            fs.unlinkSync(req.file.path);
+          } catch (e) {}
+        }
         return res.status(400).json({
           error: 'BadRequest',
           description: 'objStgConf must be a valid JSON object',
@@ -563,6 +588,11 @@ app.post('/:visibility/fdas/upload', (req, res) => {
         status: result.status,
       });
     } catch (error) {
+      if (req.file && req.file.path && fs.existsSync(req.file.path)) {
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (e) {}
+      }
       const status = error.status || 500;
       return res.status(status).json({
         error: error.type || 'InternalServerError',

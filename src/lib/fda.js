@@ -22,6 +22,8 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
+import fs from 'fs';
+
 import { getAgenda } from './jobs.js';
 import {
   runPreparedStatement,
@@ -2131,6 +2133,22 @@ export async function processUploadFDAJob({
   let conn;
 
   try {
+    const fileBuffer = fs.readFileSync(tempFilePath);
+    try {
+      if (tempFilePath && fs.existsSync(tempFilePath)) {
+        fs.unlinkSync(tempFilePath);
+        logger.debug(
+          { fdaId, tempFilePath },
+          'Temporary file deleted after reading',
+        );
+      }
+    } catch (cleanupErr) {
+      logger.warn(
+        { fdaId, tempFilePath, error: cleanupErr.message },
+        'Failed to delete temp file immediately',
+      );
+    }
+
     const parsed = parseUploadedFile(fileBuffer, mimetype, originalname);
     const { headers, csvContent } = parsed;
     await updateFDAStatus(service, fdaId, servicePath, 'fetching', 20);
