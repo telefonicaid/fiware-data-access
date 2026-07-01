@@ -1696,7 +1696,7 @@ describe('fetchFDA', () => {
     expect(agenda.create).toHaveBeenCalledWith('refresh-fda-recurring', {
       datasourceId: 'default',
       fdaId: 'fda1',
-      query: 'SELECT timeinstant, 1',
+      query: 'SELECT 1',
       service: 'svc',
       servicePath: '/servicepath',
       timeColumn: 'timeinstant',
@@ -2739,16 +2739,19 @@ describe('fetchFDA with refresh policies', () => {
         timeColumn: 'timeinstant',
         objStgConf: undefined,
       }),
-      {
-        skipImmediate: true,
-        unique: {
-          name: 'refresh-fda',
-          'data.service': 'svc',
-          'data.fdaId': 'fda1',
-          'data.servicePath': '/servicepath',
-        },
-      },
     );
+
+    const refreshJob = agenda.create.mock.results[0].value;
+    expect(refreshJob.unique).toHaveBeenCalledWith({
+      name: 'refresh-fda-recurring',
+      'data.service': 'svc',
+      'data.fdaId': 'fda1',
+      'data.servicePath': '/servicepath',
+    });
+    expect(refreshJob.repeatEvery).toHaveBeenCalledWith('0 0 * * *', {
+      skipImmediate: true,
+    });
+    expect(refreshJob.save).toHaveBeenCalled();
   });
 
   test('fetchFDA with window refresh policy schedules periodic job', async () => {
@@ -2764,18 +2767,6 @@ describe('fetchFDA with refresh policies', () => {
         params: { refreshInterval: '0 0 * * *', fetchSize: 'week' },
       },
       'timeinstant',
-    );
-
-    expect(agenda.every).toHaveBeenCalledWith(
-      '0 0 * * *',
-      'refresh-fda',
-      expect.objectContaining({
-        fdaId: 'fda1',
-        query: 'SELECT timeinstant, 1',
-        service: 'svc',
-        timeColumn: 'timeinstant',
-        objStgConf: undefined,
-      }),
     );
 
     const refreshJob = agenda.create.mock.results[0].value;
@@ -2828,14 +2819,14 @@ describe('fetchFDA with refresh policies', () => {
     expect(refreshCreateCalls[0][1]).toEqual(
       expect.objectContaining({
         fdaId: 'fda1',
-        query: 'SELECT timeinstant, 1',
+        query: 'SELECT 1',
         service: 'svc',
       }),
     );
     expect(refreshCreateCalls[1][1]).toEqual(
       expect.objectContaining({
         fdaId: 'fda2',
-        query: 'SELECT timeinstant, 1',
+        query: 'SELECT 1',
         service: 'svc',
       }),
     );
