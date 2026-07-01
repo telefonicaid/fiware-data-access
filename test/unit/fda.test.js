@@ -998,7 +998,7 @@ describe('fda fresh query execution', () => {
 describe('fetchFDA', () => {
   const agenda = {
     now: jest.fn(),
-    every: jest.fn(),
+    create: jest.fn(),
   };
 
   beforeEach(() => {
@@ -1017,7 +1017,17 @@ describe('fetchFDA', () => {
     pgMocks.uploadTable.mockResolvedValue(undefined);
     jobsMocks.getAgenda.mockReturnValue(agenda);
     agenda.now.mockResolvedValue(undefined);
-    agenda.every.mockResolvedValue(undefined);
+    agenda.create.mockImplementation((name, data) => {
+      const job = {
+        name,
+        data,
+        unique: jest.fn().mockReturnThis(),
+        repeatEvery: jest.fn().mockReturnThis(),
+        save: jest.fn().mockResolvedValue(undefined),
+      };
+
+      return job;
+    });
     dbMocks.refreshIntervalPartitionCheck.mockReturnValue(true);
   });
 
@@ -1085,7 +1095,7 @@ describe('fetchFDA', () => {
       },
       objStgConf: undefined,
     });
-    expect(agenda.every).not.toHaveBeenCalled();
+    expect(agenda.create).not.toHaveBeenCalled();
   });
 
   test('creates default DA with optional filters, time range and pagination params', async () => {
@@ -1683,32 +1693,32 @@ describe('fetchFDA', () => {
       'timeinstant',
     );
 
-    expect(agenda.every).toHaveBeenCalledWith(
-      '10 minutes',
-      'refresh-fda',
-      {
-        datasourceId: 'default',
-        fdaId: 'fda1',
-        query: 'SELECT timeinstant, 1',
-        service: 'svc',
-        servicePath: '/servicepath',
-        timeColumn: 'timeinstant',
-        refreshPolicy: {
-          type: 'interval',
-          params: { refreshInterval: '10 minutes' },
-        },
-        objStgConf: undefined,
+    expect(agenda.create).toHaveBeenCalledWith('refresh-fda-recurring', {
+      datasourceId: 'default',
+      fdaId: 'fda1',
+      query: 'SELECT timeinstant, 1',
+      service: 'svc',
+      servicePath: '/servicepath',
+      timeColumn: 'timeinstant',
+      refreshPolicy: {
+        type: 'interval',
+        params: { refreshInterval: '10 minutes' },
       },
-      {
-        skipImmediate: true,
-        unique: {
-          name: 'refresh-fda',
-          'data.service': 'svc',
-          'data.fdaId': 'fda1',
-          'data.servicePath': '/servicepath',
-        },
-      },
-    );
+      objStgConf: undefined,
+    });
+    const refreshJob = agenda.create.mock.results.find(
+      ({ value }) => value.name === 'refresh-fda-recurring',
+    ).value;
+    expect(refreshJob.unique).toHaveBeenCalledWith({
+      name: 'refresh-fda-recurring',
+      'data.service': 'svc',
+      'data.fdaId': 'fda1',
+      'data.servicePath': '/servicepath',
+    });
+    expect(refreshJob.repeatEvery).toHaveBeenCalledWith('10 minutes', {
+      skipImmediate: true,
+    });
+    expect(refreshJob.save).toHaveBeenCalled();
   });
 
   test('fails when refresh interval is larger than partition size', async () => {
@@ -1736,7 +1746,7 @@ describe('fetchFDA', () => {
         'Refresh interval "2 days" must be smaller or equal than partition size "day".',
     });
 
-    expect(agenda.every).not.toHaveBeenCalled();
+    expect(agenda.create).not.toHaveBeenCalled();
   });
   test('rolls back FDA provisioning and rethrows when parquet creation fails', async () => {
     const uploadError = new Error('S3 unreachable');
@@ -1788,26 +1798,38 @@ describe('fetchFDA', () => {
       true,
     );
 
-    expect(agenda.every).toHaveBeenCalledWith(
-      '1 hour',
-      'clean-partition',
-      {
-        fdaId: 'fda1',
-        service: 'svc',
-        servicePath: '/servicepath',
-        windowSize: 'week',
-        objStgConf: { partition: 'week' },
-      },
-      {
-        skipImmediate: true,
-        unique: {
-          name: 'clean-partition',
-          'data.service': 'svc',
-          'data.fdaId': 'fda1',
-          'data.servicePath': '/servicepath',
-        },
-      },
+    const cleanCreateCalls = agenda.create.mock.calls.filter(
+      ([name]) => name === 'clean-partition-recurring',
     );
+    expect(cleanCreateCalls).toHaveLength(1);
+    expect(cleanCreateCalls[0][1]).toEqual({
+      fdaId: 'fda1',
+      service: 'svc',
+      servicePath: '/servicepath',
+      windowSize: 'week',
+      objStgConf: { partition: 'week' },
+    });
+
+    const cleanJob = agenda.create.mock.results.find(
+      ({ value }) => value.name === 'clean-partition-recurring',
+    ).value;
+    expect(cleanJob.unique).toHaveBeenCalledWith({
+      name: 'clean-partition-recurring',
+      'data.service': 'svc',
+      'data.fdaId': 'fda1',
+      'data.servicePath': '/servicepath',
+    });
+    expect(cleanJob.repeatEvery).toHaveBeenCalledWith('1 hour', {
+      skipImmediate: true,
+    });
+    expect(cleanJob.save).toHaveBeenCalled();
+
+    const refreshJob = agenda.create.mock.results.find(
+      ({ value }) => value.name === 'refresh-fda-recurring',
+    ).value;
+    expect(refreshJob.repeatEvery).toHaveBeenCalledWith('1 hour', {
+      skipImmediate: true,
+    });
   });
 
   test('fetchFDA with window refresh policy schedules cleanup', async () => {
@@ -1832,34 +1854,33 @@ describe('fetchFDA', () => {
       },
     );
 
-    expect(agenda.every).toHaveBeenCalledWith(
-      expect.any(String),
-      'refresh-fda',
-      expect.any(Object),
+    expect(agenda.create).toHaveBeenCalledWith(
+      'refresh-fda-recurring',
       expect.any(Object),
     );
-    expect(agenda.every).toHaveBeenCalledWith(
-      '0 0 * * *',
-      'clean-partition',
-      {
-        fdaId: 'fda1',
-        service: 'svc',
-        servicePath: '/servicepath',
-        windowSize: 'day',
-        objStgConf: {
-          partition: 'day',
-        },
+    expect(agenda.create).toHaveBeenCalledWith('clean-partition-recurring', {
+      fdaId: 'fda1',
+      service: 'svc',
+      servicePath: '/servicepath',
+      windowSize: 'day',
+      objStgConf: {
+        partition: 'day',
       },
-      {
-        skipImmediate: true,
-        unique: {
-          name: 'clean-partition',
-          'data.service': 'svc',
-          'data.fdaId': 'fda1',
-          'data.servicePath': '/servicepath',
-        },
-      },
-    );
+    });
+
+    const refreshJob = agenda.create.mock.results.find(
+      ({ value }) => value.name === 'refresh-fda-recurring',
+    ).value;
+    expect(refreshJob.repeatEvery).toHaveBeenCalledWith('0 0 * * *', {
+      skipImmediate: true,
+    });
+
+    const cleanJob = agenda.create.mock.results.find(
+      ({ value }) => value.name === 'clean-partition-recurring',
+    ).value;
+    expect(cleanJob.repeatEvery).toHaveBeenCalledWith('0 0 * * *', {
+      skipImmediate: true,
+    });
   });
 
   test('fetchFDA throws when servicePath is missing', async () => {
@@ -1965,6 +1986,7 @@ describe('updateFDA', () => {
     expect(agenda.now).toHaveBeenCalledWith('clean-partition', {
       fdaId: 'fda42',
       service: 'svc',
+      servicePath: '/servicepath',
       windowSize: 'day',
       objStgConf: undefined,
     });
@@ -2413,11 +2435,18 @@ describe('deleteFDA', () => {
       '/servicepath',
     );
     expect(agenda.cancel).toHaveBeenCalledWith({
-      name: 'refresh-fda',
+      name: 'refresh-fda-recurring',
       'data.service': 'svc',
       'data.fdaId': 'fdaA',
       'data.servicePath': '/servicepath',
     });
+    expect(agenda.cancel).toHaveBeenCalledWith({
+      name: 'clean-partition-recurring',
+      'data.service': 'svc',
+      'data.fdaId': 'fdaA',
+      'data.servicePath': '/servicepath',
+    });
+    expect(agenda.cancel).toHaveBeenCalledTimes(2);
   });
 
   test('deleteFDA uses normalized bucket name for object storage deletion', async () => {
@@ -2481,11 +2510,18 @@ describe('deleteFDA', () => {
       '/servicepath',
     );
     expect(agenda.cancel).toHaveBeenCalledWith({
-      name: 'refresh-fda',
+      name: 'refresh-fda-recurring',
       'data.service': 'svc',
       'data.fdaId': 'fdaA',
       'data.servicePath': '/servicepath',
     });
+    expect(agenda.cancel).toHaveBeenCalledWith({
+      name: 'clean-partition-recurring',
+      'data.service': 'svc',
+      'data.fdaId': 'fdaA',
+      'data.servicePath': '/servicepath',
+    });
+    expect(agenda.cancel).toHaveBeenCalledTimes(2);
   });
 
   test('throws FDANotFound when FDA does not exist', async () => {
@@ -2643,7 +2679,7 @@ describe('DA access and update helpers', () => {
 describe('fetchFDA with refresh policies', () => {
   const agenda = {
     now: jest.fn(),
-    every: jest.fn(),
+    create: jest.fn(),
   };
 
   beforeEach(() => {
@@ -2651,13 +2687,29 @@ describe('fetchFDA with refresh policies', () => {
     awsMocks.getS3Client.mockReturnValue({});
     awsMocks.dropFile.mockResolvedValue(undefined);
     mongoMocks.createFDAMongo.mockResolvedValue(undefined);
+    mongoMocks.retrieveDatasource.mockResolvedValue({
+      datasourceId: 'default',
+      type: 'postgres',
+      config: {},
+    });
     dbMocks.getDBConnection.mockResolvedValue({});
     dbMocks.releaseDBConnection.mockResolvedValue(undefined);
     dbMocks.toParquet.mockResolvedValue(undefined);
     pgMocks.uploadTable.mockResolvedValue(undefined);
     jobsMocks.getAgenda.mockReturnValue(agenda);
     agenda.now.mockResolvedValue(undefined);
-    agenda.every.mockResolvedValue(undefined);
+    agenda.create.mockImplementation((name, data) => {
+      const job = {
+        name,
+        data,
+        unique: jest.fn().mockReturnThis(),
+        repeatEvery: jest.fn().mockReturnThis(),
+        save: jest.fn().mockResolvedValue(undefined),
+      };
+
+      return job;
+    });
+    dbMocks.refreshIntervalPartitionCheck.mockReturnValue(true);
   });
 
   test('fetchFDA with interval refresh policy schedules periodic job', async () => {
@@ -2675,9 +2727,8 @@ describe('fetchFDA with refresh policies', () => {
       'timeinstant',
     );
 
-    expect(agenda.every).toHaveBeenCalledWith(
-      '0 0 * * *',
-      'refresh-fda',
+    expect(agenda.create).toHaveBeenCalledWith(
+      'refresh-fda-recurring',
       expect.objectContaining({
         fdaId: 'fda1',
         query: 'SELECT timeinstant, 1',
@@ -2685,16 +2736,146 @@ describe('fetchFDA with refresh policies', () => {
         timeColumn: 'timeinstant',
         objStgConf: undefined,
       }),
+    );
+
+    const refreshJob = agenda.create.mock.results[0].value;
+    expect(refreshJob.unique).toHaveBeenCalledWith({
+      name: 'refresh-fda-recurring',
+      'data.service': 'svc',
+      'data.fdaId': 'fda1',
+      'data.servicePath': '/servicepath',
+    });
+    expect(refreshJob.repeatEvery).toHaveBeenCalledWith('0 0 * * *', {
+      skipImmediate: true,
+    });
+    expect(refreshJob.save).toHaveBeenCalled();
+  });
+
+  test('fetchFDA keeps independent refresh jobs when creating multiple FDAs', async () => {
+    await fetchFDA(
+      'fda1',
+      'SELECT 1',
+      'svc',
+      'public',
+      '/servicepath',
+      'desc 1',
       {
-        skipImmediate: true,
-        unique: {
-          name: 'refresh-fda',
-          'data.service': 'svc',
-          'data.fdaId': 'fda1',
-          'data.servicePath': '/servicepath',
+        type: 'interval',
+        params: { refreshInterval: '0 0 * * *' },
+      },
+      'timeinstant',
+    );
+
+    await fetchFDA(
+      'fda2',
+      'SELECT 1',
+      'svc',
+      'public',
+      '/servicepath',
+      'desc 2',
+      {
+        type: 'interval',
+        params: { refreshInterval: '0 0 * * *' },
+      },
+      'timeinstant',
+    );
+
+    const refreshCreateCalls = agenda.create.mock.calls.filter(
+      ([name]) => name === 'refresh-fda-recurring',
+    );
+
+    expect(refreshCreateCalls).toHaveLength(2);
+    expect(refreshCreateCalls[0][1]).toEqual(
+      expect.objectContaining({
+        fdaId: 'fda1',
+        query: 'SELECT timeinstant, 1',
+        service: 'svc',
+      }),
+    );
+    expect(refreshCreateCalls[1][1]).toEqual(
+      expect.objectContaining({
+        fdaId: 'fda2',
+        query: 'SELECT timeinstant, 1',
+        service: 'svc',
+      }),
+    );
+
+    const createdJobs = agenda.create.mock.results.map(({ value }) => value);
+    expect(createdJobs[0].unique).toHaveBeenCalledWith({
+      name: 'refresh-fda-recurring',
+      'data.service': 'svc',
+      'data.fdaId': 'fda1',
+      'data.servicePath': '/servicepath',
+    });
+    expect(createdJobs[1].unique).toHaveBeenCalledWith({
+      name: 'refresh-fda-recurring',
+      'data.service': 'svc',
+      'data.fdaId': 'fda2',
+      'data.servicePath': '/servicepath',
+    });
+  });
+
+  test('fetchFDA keeps independent clean-partition jobs when creating multiple FDAs with window policy', async () => {
+    await fetchFDA(
+      'fda1',
+      'SELECT 1',
+      'svc',
+      'public',
+      '/servicepath',
+      'desc 1',
+      {
+        type: 'window',
+        params: {
+          refreshInterval: '0 0 * * *',
+          fetchSize: 'day',
+          windowSize: 'day',
         },
       },
+      'timeinstant',
+      { partition: 'day' },
     );
+
+    await fetchFDA(
+      'fda2',
+      'SELECT 1',
+      'svc',
+      'public',
+      '/servicepath',
+      'desc 2',
+      {
+        type: 'window',
+        params: {
+          refreshInterval: '0 0 * * *',
+          fetchSize: 'day',
+          windowSize: 'day',
+        },
+      },
+      'timeinstant',
+      { partition: 'day' },
+    );
+
+    const cleanCreateCalls = agenda.create.mock.calls.filter(
+      ([name]) => name === 'clean-partition-recurring',
+    );
+
+    expect(cleanCreateCalls).toHaveLength(2);
+
+    const cleanJobs = agenda.create.mock.results
+      .map(({ value }) => value)
+      .filter((job) => job.name === 'clean-partition-recurring');
+
+    expect(cleanJobs[0].unique).toHaveBeenCalledWith({
+      name: 'clean-partition-recurring',
+      'data.service': 'svc',
+      'data.fdaId': 'fda1',
+      'data.servicePath': '/servicepath',
+    });
+    expect(cleanJobs[1].unique).toHaveBeenCalledWith({
+      name: 'clean-partition-recurring',
+      'data.service': 'svc',
+      'data.fdaId': 'fda2',
+      'data.servicePath': '/servicepath',
+    });
   });
 
   test('fetchFDA with different fetch size and partition', async () => {
@@ -2727,7 +2908,7 @@ describe('fetchFDA with refresh policies', () => {
       message: 'Fetch size "week" must be equal to partition size "day".',
     });
 
-    expect(agenda.every).not.toHaveBeenCalled();
+    expect(agenda.create).not.toHaveBeenCalled();
   });
 
   test('fetchFDA rejects invalid refresh policy types', async () => {
@@ -2751,7 +2932,7 @@ describe('fetchFDA with refresh policies', () => {
       message: 'Invalid refresh policy type "invalid-type".',
     });
 
-    expect(agenda.every).not.toHaveBeenCalled();
+    expect(agenda.create).not.toHaveBeenCalled();
   });
 
   test('fetchFDA throws when servicePath is missing', async () => {
@@ -2791,17 +2972,18 @@ describe('deleteFDA', () => {
     await deleteFDA('svc', 'fda1', 'private', '/servicepath');
 
     expect(agenda.cancel).toHaveBeenNthCalledWith(1, {
-      name: 'refresh-fda',
+      name: 'refresh-fda-recurring',
       'data.service': 'svc',
       'data.fdaId': 'fda1',
       'data.servicePath': '/servicepath',
     });
     expect(agenda.cancel).toHaveBeenNthCalledWith(2, {
-      name: 'clean-partition',
+      name: 'clean-partition-recurring',
       'data.service': 'svc',
       'data.fdaId': 'fda1',
       'data.servicePath': '/servicepath',
     });
+    expect(agenda.cancel).toHaveBeenCalledTimes(2);
   });
 });
 
