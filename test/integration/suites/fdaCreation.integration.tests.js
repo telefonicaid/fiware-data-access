@@ -23,9 +23,13 @@
 // criminal actions it may exercise to protect its rights.
 
 import { test, expect } from '@jest/globals';
+import { MongoClient } from 'mongodb';
 
 export function registerFdaCreationIntegrationTests({
   getBaseUrl,
+  getMongoUri,
+  getPgHost,
+  getPgPort,
   service,
   servicePath,
   visibility,
@@ -58,6 +62,265 @@ export function registerFdaCreationIntegrationTests({
     }
     expect(res.status).toBe(202);
     await waitUntilFDACompleted({ baseUrl, service, fdaId });
+  });
+
+  test('POST /fdas keeps one recurring refresh job per FDA', async () => {
+    const baseUrl = getBaseUrl();
+    const firstFdaId = 'fda_refresh_job_a';
+    const secondFdaId = 'fda_refresh_job_b';
+    const datasourceId = 'refresh-jobs-ds';
+
+    const datasourceRes = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/datasources`,
+      headers: {
+        'Content-Type': 'application/json',
+        'Fiware-Service': service,
+      },
+      body: {
+        datasourceId,
+        type: 'postgres',
+        config: {
+          user: 'postgres',
+          password: 'postgres',
+          host: getPgHost(),
+          port: getPgPort(),
+          database: service,
+        },
+      },
+    });
+
+    expect(datasourceRes.status).toBe(200);
+
+    const createFda = async (id) => {
+      const res = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id,
+          query:
+            'SELECT id, name, age, timeinstant FROM public.users ORDER BY id',
+          description: `refresh job ${id}`,
+          timeColumn: 'timeinstant',
+          datasourceId,
+          refreshPolicy: {
+            type: 'interval',
+            params: {
+              refreshInterval: '1 hour',
+            },
+          },
+        },
+      });
+
+      expect(res.status).toBe(202);
+      await waitUntilFDACompleted({ baseUrl, service, fdaId: id });
+    };
+
+    await createFda(firstFdaId);
+    await createFda(secondFdaId);
+
+    const mongoClient = new MongoClient(getMongoUri(), {
+      serverSelectionTimeoutMS: 10_000,
+    });
+
+    await mongoClient.connect();
+    try {
+      const collection = mongoClient.db().collection('agendaJobs');
+
+      const expectedFilter = {
+        name: 'refresh-fda-recurring',
+        'data.service': service,
+        'data.servicePath': servicePath,
+        'data.fdaId': { $in: [firstFdaId, secondFdaId] },
+      };
+
+      const deadline = Date.now() + 10_000;
+      let totalJobs = 0;
+      while (Date.now() < deadline) {
+        totalJobs = await collection.countDocuments(expectedFilter);
+        if (totalJobs === 2) {
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+
+      expect(totalJobs).toBe(2);
+    } finally {
+      await mongoClient.close();
+    }
+  });
+
+  test('POST /fdas relaunches recurring jobs for multiple FDAs when nextRunAt is forced', async () => {
+    const baseUrl = getBaseUrl();
+    const firstFdaId = 'fda_relaunch_jobs_a';
+    const secondFdaId = 'fda_relaunch_jobs_b';
+    const datasourceId = 'relaunch-jobs-ds';
+
+    const datasourceRes = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/datasources`,
+      headers: {
+        'Content-Type': 'application/json',
+        'Fiware-Service': service,
+      },
+      body: {
+        datasourceId,
+        type: 'postgres',
+        config: {
+          user: 'postgres',
+          password: 'postgres',
+          host: getPgHost(),
+          port: getPgPort(),
+          database: service,
+        },
+      },
+    });
+
+    expect(datasourceRes.status).toBe(200);
+
+    const createFda = async (id) => {
+      const res = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id,
+          query:
+            'SELECT id, name, age, timeinstant FROM public.users ORDER BY id',
+          description: `relaunch job ${id}`,
+          timeColumn: 'timeinstant',
+          datasourceId,
+          refreshPolicy: {
+            type: 'window',
+            params: {
+              refreshInterval: '1 hour',
+              fetchSize: 'day',
+              windowSize: 'day',
+            },
+          },
+          objStgConf: {
+            partition: 'day',
+          },
+        },
+      });
+
+      expect(res.status).toBe(202);
+      await waitUntilFDACompleted({ baseUrl, service, fdaId: id });
+    };
+
+    await createFda(firstFdaId);
+    await createFda(secondFdaId);
+
+    const mongoClient = new MongoClient(getMongoUri(), {
+      serverSelectionTimeoutMS: 10_000,
+    });
+
+    await mongoClient.connect();
+    try {
+      const collection = mongoClient.db().collection('agendaJobs');
+      const trackedNames = [
+        'refresh-fda-recurring',
+        'clean-partition-recurring',
+      ];
+      const trackedFdas = [firstFdaId, secondFdaId];
+
+      const recurringFilter = {
+        name: { $in: trackedNames },
+        'data.service': service,
+        'data.servicePath': servicePath,
+        'data.fdaId': { $in: trackedFdas },
+      };
+
+      const waitForJobsDeadline = Date.now() + 15_000;
+      let jobs = [];
+      while (Date.now() < waitForJobsDeadline) {
+        jobs = await collection
+          .find(recurringFilter, {
+            projection: {
+              _id: 1,
+              name: 1,
+              'data.fdaId': 1,
+              nextRunAt: 1,
+              lastRunAt: 1,
+              lastFinishedAt: 1,
+            },
+          })
+          .toArray();
+
+        if (jobs.length === 4) {
+          break;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+
+      expect(jobs).toHaveLength(4);
+
+      const baseline = new Map(
+        jobs.map((job) => {
+          const key = `${job.name}:${job.data.fdaId}`;
+          const value = job.lastRunAt ? new Date(job.lastRunAt).getTime() : -1;
+          return [key, value];
+        }),
+      );
+
+      await collection.updateMany(recurringFilter, {
+        $set: {
+          nextRunAt: new Date(Date.now() - 60_000),
+          lockedAt: null,
+        },
+      });
+
+      const executionDeadline = Date.now() + 40_000;
+      let relaunched = false;
+
+      while (Date.now() < executionDeadline) {
+        const current = await collection
+          .find(recurringFilter, {
+            projection: {
+              _id: 1,
+              name: 1,
+              'data.fdaId': 1,
+              lastRunAt: 1,
+              lastFinishedAt: 1,
+            },
+          })
+          .toArray();
+
+        if (current.length !== 4) {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+          continue;
+        }
+
+        const allJobsExecuted = current.every((job) => {
+          const key = `${job.name}:${job.data.fdaId}`;
+          const previousLastRun = baseline.get(key) ?? -1;
+          const currentLastRun = job.lastRunAt
+            ? new Date(job.lastRunAt).getTime()
+            : -1;
+
+          return currentLastRun > previousLastRun && job.lastFinishedAt;
+        });
+
+        if (allJobsExecuted) {
+          relaunched = true;
+          break;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 350));
+      }
+
+      expect(relaunched).toBe(true);
+    } finally {
+      await mongoClient.close();
+    }
   });
 
   test('POST /fdas tries to creates an FDA without id and is detected', async () => {
