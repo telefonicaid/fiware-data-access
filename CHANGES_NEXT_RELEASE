@@ -1,5 +1,6 @@
 Add: support CDA-compatible JSON output format (`outputType=cda` and `Accept: application/vnd.fiware.cda+json`) for FDA data endpoints (#204)
 Add: MongoDB datasource support as a new datasource type, including connection validation, cached-only FDA support, Mongo-specific contract and full ingestion pipeline integration (#176)
+Fix: prevent recurring Agenda jobs from being overwritten across FDAs by using per-FDA recurring job identity and scheduling (#206)
 Fix: updated performance files, added performance and load/stress measurement for special use cases (new npm target "test:performance") (#159)
 Fix: bug preventing the creation of DAs for partitioned FDAs due to incorrect DA query path building (FROM clausule)
 Fix: bug deleting an FDA whose id is a prefix of another FDA in the same Fiware-ServicePath (#187)
