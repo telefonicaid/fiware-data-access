@@ -189,7 +189,10 @@ function resetModuleMocks() {
         throw err;
       }
     });
-  utilsMocks.parseBooleanQueryParam.mockReset().mockReturnValue(false);
+  utilsMocks.parseBooleanQueryParam.mockImplementation(
+    (value, _name, defaultValue) =>
+      value === undefined ? defaultValue : value === true || value === 'true',
+  );
 }
 
 async function flushAsyncWork() {
