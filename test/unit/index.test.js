@@ -189,7 +189,10 @@ function resetModuleMocks() {
         throw err;
       }
     });
-  utilsMocks.parseBooleanQueryParam.mockReset().mockReturnValue(false);
+  utilsMocks.parseBooleanQueryParam.mockImplementation(
+    (value, _name, defaultValue) =>
+      value === undefined ? defaultValue : value === true || value === 'true',
+  );
 }
 
 async function flushAsyncWork() {
@@ -400,6 +403,36 @@ describe('index routes - validation and middleware branches', () => {
       .expect(400);
   });
 
+  test('forwards skipBootstrap in POST /:visibility/fdas', async () => {
+    await request(app)
+      .post('/public/fdas')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .send({
+        id: 'fda_skip_bootstrap',
+        query: 'SELECT 1',
+        description: 'skip bootstrap',
+        skipBootstrap: true,
+      })
+      .expect(202);
+
+    expect(fdaMocks.fetchFDA).toHaveBeenCalledWith(
+      'fda_skip_bootstrap',
+      'SELECT 1',
+      'svc',
+      'public',
+      '/servicepath',
+      'skip bootstrap',
+      { type: 'none' },
+      undefined,
+      {},
+      true,
+      true,
+      undefined,
+      true,
+    );
+  });
+
   test('returns 400 when Fiware-Service is missing in GET /:visibility/fdas/:fdaId', async () => {
     await request(app)
       .get('/public/fdas/fda1')
@@ -605,6 +638,7 @@ describe('index routes - validation and middleware branches', () => {
       true,
       true,
       undefined,
+      false,
     );
     expect(fdaMocks.updateFDA).toHaveBeenCalledWith(
       'svc',

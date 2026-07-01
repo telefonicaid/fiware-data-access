@@ -975,6 +975,7 @@ export async function fetchFDA(
   defaultDataAccessEnabled,
   cached = true,
   datasourceId = DEFAULT_DATASOURCE_ID,
+  skipBootstrap = false,
 ) {
   const normalizedVisibility = normalizeVisibility(visibility);
   const normalizedServicePath = normalizeServicePath(servicePath);
@@ -1013,33 +1014,35 @@ export async function fetchFDA(
     datasourceId,
   );
 
-  if (cached) {
-    try {
-      await createOneRowParquetSync(
-        service,
-        fdaId,
-        timeQuery,
-        normalizedServicePath,
-        datasourceId,
-        timeColumn,
-        objStgConf,
-      );
-    } catch (err) {
-      await rollbackFDAProvisioning(service, fdaId, normalizedServicePath);
-      throw err;
+  if (!skipBootstrap) {
+    if (cached) {
+      try {
+        await createOneRowParquetSync(
+          service,
+          fdaId,
+          timeQuery,
+          normalizedServicePath,
+          datasourceId,
+          timeColumn,
+          objStgConf,
+        );
+      } catch (err) {
+        await rollbackFDAProvisioning(service, fdaId, normalizedServicePath);
+        throw err;
+      }
     }
-  }
 
-  await createDefaultDAIfNeeded({
-    cached,
-    defaultDataAccessEnabled,
-    service,
-    fdaId,
-    normalizedServicePath,
-    timeColumn,
-    objStgConf,
-    normalizedVisibility,
-  });
+    await createDefaultDAIfNeeded({
+      cached,
+      defaultDataAccessEnabled,
+      service,
+      fdaId,
+      normalizedServicePath,
+      timeColumn,
+      objStgConf,
+      normalizedVisibility,
+    });
+  }
 
   if (!cached) {
     return;

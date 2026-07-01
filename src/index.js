@@ -315,6 +315,7 @@ app.post('/:visibility/fdas', async (req, res) => {
     'objStgConf',
     'cached',
     'datasourceId',
+    'skipBootstrap',
   ]);
   const {
     id,
@@ -325,6 +326,7 @@ app.post('/:visibility/fdas', async (req, res) => {
     objStgConf,
     cached,
     datasourceId,
+    skipBootstrap,
   } = body;
   const service = req.get('Fiware-Service');
   const servicePath = req.get('Fiware-ServicePath');
@@ -342,6 +344,10 @@ app.post('/:visibility/fdas', async (req, res) => {
     cached === undefined
       ? true
       : parseBooleanQueryParam(cached, 'cached', true);
+  const skipBootstrapEnabled =
+    skipBootstrap === undefined
+      ? false
+      : parseBooleanQueryParam(skipBootstrap, 'skipBootstrap', false);
 
   if (!id || !query || !service || !servicePath || !visibility) {
     return res.status(400).json({
@@ -366,6 +372,7 @@ app.post('/:visibility/fdas', async (req, res) => {
     defaultDataAccessEnabled,
     cachedEnabled,
     datasourceId,
+    skipBootstrapEnabled,
   );
 
   return res.status(202).json({
