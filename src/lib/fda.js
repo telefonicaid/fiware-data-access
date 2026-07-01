@@ -1196,11 +1196,13 @@ export async function updateFDA(service, fdaId, visibility, servicePath) {
   const agenda = getAgenda();
 
   // Execute refresh immediately (when a fetcher is free)
+  const effectiveServicePath = previous.servicePath ?? normalizedServicePath;
+
   await agenda.now('refresh-fda', {
     fdaId,
     query: previous.query,
     service,
-    servicePath: previous.servicePath ?? normalizedServicePath,
+    servicePath: effectiveServicePath,
     timeColumn: previous.timeColumn,
     refreshPolicy: previous.refreshPolicy,
     objStgConf: previous.objStgConf,
@@ -1211,6 +1213,7 @@ export async function updateFDA(service, fdaId, visibility, servicePath) {
     await agenda.now('clean-partition', {
       fdaId,
       service,
+      servicePath: effectiveServicePath,
       windowSize: previous.refreshPolicy.params.windowSize,
       objStgConf: previous.objStgConf,
     });
@@ -1418,10 +1421,20 @@ export async function deleteFDA(service, fdaId, visibility, servicePath) {
 
   const agenda = getAgenda();
   await agenda.cancel(
-    buildFDAJobFilter('refresh-fda', service, fdaId, targetServicePath),
+    buildFDAJobFilter(
+      'refresh-fda-recurring',
+      service,
+      fdaId,
+      targetServicePath,
+    ),
   );
   await agenda.cancel(
-    buildFDAJobFilter('clean-partition', service, fdaId, targetServicePath),
+    buildFDAJobFilter(
+      'clean-partition-recurring',
+      service,
+      fdaId,
+      targetServicePath,
+    ),
   );
 }
 
@@ -2066,46 +2079,42 @@ async function scheduleFDAJobs({
 }) {
   const { refreshInterval, windowSize } = refreshPolicy.params || {};
 
-  await agenda.every(
-    refreshInterval,
-    'refresh-fda',
-    {
-      fdaId,
-      query,
-      service,
-      servicePath,
-      timeColumn,
-      refreshPolicy,
-      objStgConf,
-      datasourceId,
-    },
-    {
-      skipImmediate: true,
-      unique: buildFDAJobFilter('refresh-fda', service, fdaId, servicePath),
-    },
+  const refreshJob = agenda.create('refresh-fda-recurring', {
+    fdaId,
+    query,
+    service,
+    servicePath,
+    timeColumn,
+    refreshPolicy,
+    objStgConf,
+    datasourceId,
+  });
+
+  refreshJob.unique(
+    buildFDAJobFilter('refresh-fda-recurring', service, fdaId, servicePath),
   );
+  refreshJob.repeatEvery(refreshInterval, { skipImmediate: true });
+  await refreshJob.save();
 
   if (windowSize) {
-    await agenda.every(
-      refreshInterval,
-      'clean-partition',
-      {
-        fdaId,
+    const cleanPartitionJob = agenda.create('clean-partition-recurring', {
+      fdaId,
+      service,
+      servicePath,
+      windowSize,
+      objStgConf,
+    });
+
+    cleanPartitionJob.unique(
+      buildFDAJobFilter(
+        'clean-partition-recurring',
         service,
+        fdaId,
         servicePath,
-        windowSize,
-        objStgConf,
-      },
-      {
-        skipImmediate: true,
-        unique: buildFDAJobFilter(
-          'clean-partition',
-          service,
-          fdaId,
-          servicePath,
-        ),
-      },
+      ),
     );
+    cleanPartitionJob.repeatEvery(refreshInterval, { skipImmediate: true });
+    await cleanPartitionJob.save();
   }
 }
 
