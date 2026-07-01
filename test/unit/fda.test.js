@@ -1098,6 +1098,47 @@ describe('fetchFDA', () => {
     expect(agenda.create).not.toHaveBeenCalled();
   });
 
+  test('skipBootstrap=true skips bootstrap path and default DA creation', async () => {
+    await fetchFDA(
+      'fda1',
+      'SELECT id FROM users;',
+      'svc',
+      'public',
+      '/servicepath',
+      'test FDA',
+      {
+        type: 'none',
+      },
+      'timeinstant',
+      undefined,
+      true,
+      true,
+      'default',
+      true,
+    );
+
+    expect(pgMocks.uploadTable).not.toHaveBeenCalled();
+    expect(dbMocks.toParquet).not.toHaveBeenCalled();
+    expect(awsMocks.dropFile).not.toHaveBeenCalled();
+    expect(mongoMocks.storeDA).not.toHaveBeenCalled();
+    expect(mongoMocks.retrieveFDA).not.toHaveBeenCalled();
+    expect(mongoMocks.retrieveDA).not.toHaveBeenCalled();
+
+    expect(agenda.now).toHaveBeenCalledWith('refresh-fda', {
+      datasourceId: 'default',
+      fdaId: 'fda1',
+      query: 'SELECT id FROM users;',
+      service: 'svc',
+      servicePath: '/servicepath',
+      timeColumn: 'timeinstant',
+      refreshPolicy: {
+        type: 'none',
+      },
+      objStgConf: undefined,
+    });
+    expect(agenda.every).not.toHaveBeenCalled();
+  });
+
   test('creates default DA with optional filters, time range and pagination params', async () => {
     const describeRun = jest.fn().mockResolvedValue({
       getRowObjectsJson: () => [

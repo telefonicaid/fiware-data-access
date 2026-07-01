@@ -221,6 +221,50 @@ export function registerFdaVariantsIntegrationTests({
       }
     });
 
+    test('POST /fdas with skipBootstrap=true does not create default DA even when defaultDataAccess=true', async () => {
+      const baseUrl = getBaseUrl();
+      const skipBootstrapFdaId = 'fda_skip_bootstrap';
+
+      try {
+        const createFda = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas?defaultDataAccess=true`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: skipBootstrapFdaId,
+            query:
+              'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+            description: 'skip bootstrap integration test',
+            skipBootstrap: true,
+            cached: true,
+          },
+        });
+
+        expect(createFda.status).toBe(202);
+
+        const completedFDA = await waitUntilFDACompleted({
+          baseUrl,
+          service,
+          fdaId: skipBootstrapFdaId,
+        });
+
+        expect(completedFDA?.cached).toBe(true);
+        expect(completedFDA?.das || {}).toEqual({});
+      } finally {
+        await httpReq({
+          method: 'DELETE',
+          url: `${baseUrl}/${visibility}/fdas/${skipBootstrapFdaId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+      }
+    });
+
     test('POST /fdas with cached=false creates an only-fresh FDA without DAs', async () => {
       const baseUrl = getBaseUrl();
       const onlyFreshFdaId = 'fda_only_fresh';
