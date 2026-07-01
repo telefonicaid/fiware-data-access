@@ -1136,7 +1136,7 @@ describe('fetchFDA', () => {
       },
       objStgConf: undefined,
     });
-    expect(agenda.every).not.toHaveBeenCalled();
+    expect(agenda.create).not.toHaveBeenCalled();
   });
 
   test('creates default DA with optional filters, time range and pagination params', async () => {
