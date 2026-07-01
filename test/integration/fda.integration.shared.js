@@ -333,6 +333,9 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
     registerFdaCreationIntegrationTests({
       getBaseUrl: () => baseUrl,
+      getMongoUri: () => mongoUri,
+      getPgHost: () => pgHost,
+      getPgPort: () => pgPort,
       service,
       servicePath,
       visibility,
