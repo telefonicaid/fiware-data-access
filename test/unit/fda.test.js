@@ -1706,9 +1706,11 @@ describe('fetchFDA', () => {
       },
       objStgConf: undefined,
     });
+
     const refreshJob = agenda.create.mock.results.find(
       ({ value }) => value.name === 'refresh-fda-recurring',
     ).value;
+
     expect(refreshJob.unique).toHaveBeenCalledWith({
       name: 'refresh-fda-recurring',
       'data.service': 'svc',
@@ -1718,6 +1720,7 @@ describe('fetchFDA', () => {
     expect(refreshJob.repeatEvery).toHaveBeenCalledWith('10 minutes', {
       skipImmediate: true,
     });
+    expect(refreshJob.save).toHaveBeenCalled();
     expect(refreshJob.save).toHaveBeenCalled();
   });
 
@@ -2731,6 +2734,43 @@ describe('fetchFDA with refresh policies', () => {
       'refresh-fda-recurring',
       expect.objectContaining({
         fdaId: 'fda1',
+        query: 'SELECT 1',
+        service: 'svc',
+        timeColumn: 'timeinstant',
+        objStgConf: undefined,
+      }),
+      {
+        skipImmediate: true,
+        unique: {
+          name: 'refresh-fda',
+          'data.service': 'svc',
+          'data.fdaId': 'fda1',
+          'data.servicePath': '/servicepath',
+        },
+      },
+    );
+  });
+
+  test('fetchFDA with window refresh policy schedules periodic job', async () => {
+    await fetchFDA(
+      'fda1',
+      'SELECT 1',
+      'svc',
+      'public',
+      '/servicepath',
+      'desc',
+      {
+        type: 'window',
+        params: { refreshInterval: '0 0 * * *', fetchSize: 'week' },
+      },
+      'timeinstant',
+    );
+
+    expect(agenda.every).toHaveBeenCalledWith(
+      '0 0 * * *',
+      'refresh-fda',
+      expect.objectContaining({
+        fdaId: 'fda1',
         query: 'SELECT timeinstant, 1',
         service: 'svc',
         timeColumn: 'timeinstant',
@@ -2943,6 +2983,18 @@ describe('fetchFDA with refresh policies', () => {
     ).rejects.toMatchObject({
       status: 400,
       type: 'InvalidServicePath',
+    });
+  });
+
+  test('fetchFDA throws when refresh policy window and no timecolumn', async () => {
+    await expect(
+      fetchFDA('fda1', 'SELECT 1', 'svc', 'public', '/servicepath', 'desc', {
+        type: 'window',
+        params: { refreshInterval: '0 0 * * *', fetchSize: 'week' },
+      }),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidParam',
     });
   });
 });

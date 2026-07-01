@@ -995,7 +995,7 @@ export async function fetchFDA(
 
   const timeQuery =
     datasource.type === 'postgres' &&
-    (refreshPolicy?.type !== 'none' || objStgConf?.partition)
+    (refreshPolicy?.type === 'window' || objStgConf?.partition)
       ? getTimeColumnQuery(query, timeColumn)
       : query;
 
