@@ -1445,6 +1445,10 @@ async function resolveFDAAgendaJobIds(agenda, fda, servicePath) {
     return storedJobIds;
   }
 
+  if (typeof agenda.queryJobs !== 'function') {
+    return [];
+  }
+
   const trackedJobs = await Promise.all(
     ['refresh-fda-recurring', 'clean-partition-recurring'].map(async (name) => {
       const result = await agenda.queryJobs({ names: [name] });
@@ -2123,8 +2127,9 @@ async function scheduleFDAJobs({
   );
   refreshJob.repeatEvery(refreshInterval, { skipImmediate: true });
   await refreshJob.save();
-  if (refreshJob.attrs._id) {
-    agendaJobIds.push(refreshJob.attrs._id.toString());
+  const refreshJobId = refreshJob.attrs?._id ?? refreshJob._id;
+  if (refreshJobId) {
+    agendaJobIds.push(refreshJobId.toString());
   }
 
   if (windowSize) {
@@ -2146,8 +2151,10 @@ async function scheduleFDAJobs({
     );
     cleanPartitionJob.repeatEvery(refreshInterval, { skipImmediate: true });
     await cleanPartitionJob.save();
-    if (cleanPartitionJob.attrs._id) {
-      agendaJobIds.push(cleanPartitionJob.attrs._id.toString());
+    const cleanPartitionJobId =
+      cleanPartitionJob.attrs?._id ?? cleanPartitionJob._id;
+    if (cleanPartitionJobId) {
+      agendaJobIds.push(cleanPartitionJobId.toString());
     }
   }
 
