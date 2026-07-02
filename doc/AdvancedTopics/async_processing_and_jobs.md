@@ -277,6 +277,21 @@ This means:
 -   Survives restarts
 -   Can be modified dynamically
 
+### Recurring Job Lifecycle
+
+Recurring jobs are created using `agenda.create()`, configured with `repeatEvery()`, and persisted via `save()`. A
+`unique()` filter prevents duplicate recurring jobs from being created for the same FDA.
+
+When an FDA is deleted, recurring jobs are cancelled by their stored Agenda job IDs rather than by filtering on nested
+`data.*` fields.
+
+> **Compatibility note:** This project currently uses `agenda` 6.2.3 with `@agendajs/mongo-backend` 3.2.0. These
+> versions do not support partial matching on nested `data.*` fields in `agenda.cancel()`. This limitation has been
+> fixed upstream (Agenda PR #1679) and should be checked. Job IDs are therefore persisted to ensure precise cancellation
+> until the dependency is upgraded.
+>
+> -   [Agenda PR #1679 – Partial matching on data subdocuments](https://github.com/agenda/agenda/pull/1679)
+
 ---
 
 ## 9. Failure Handling & Backoff Strategies
@@ -363,9 +378,11 @@ PUT /{visibility}/fdas/:fdaId
 Flow:
 
 1. FDA metadata saved in Mongo
-2. Agenda job scheduled (`agenda.now()` for immediate fetch, `agenda.every()` for recurring)
+2. Agenda jobs scheduled:
+    - `agenda.now()` for the initial fetch
+    - recurring jobs created with `agenda.create()`, `repeatEvery()` and `unique()`
 3. HTTP `202 Accepted` returned
-4. Fetcher picks up job
+4. Fetcher picks up the job
 5. Mongo updated throughout lifecycle
 
 ### Query availability during first fetch
