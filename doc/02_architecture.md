@@ -165,6 +165,7 @@ Each document corresponds to one FDA:
 -   **progress**: execution progress percentage (0–100)
 -   **lastFetch**: timestamp of the last fetch (ISO date)
 -   **datasourceId**: datasource identifier used to resolve source credentials (default `default` when omitted)
+-   **agendaJobIds**: array of scheduled job IDs for refresh tasks
 
 Each DA contains:
 
@@ -183,6 +184,7 @@ Each DA contains:
     "service": "fiwareService",
     "progress": 10,
     "lastFetch": null,
+    "agendaJobIds": ["6a4647d198863226b8001614"],
     "visibility": "public",
     "refreshPolicy": {
         "type": "interval",
