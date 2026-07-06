@@ -41,6 +41,7 @@ import {
   runPgQuery,
   createPgCursorReader,
   validatePostgresDatasourceConnection,
+  validatePostgresQuery,
 } from './utils/pg.js';
 import {
   getS3Client,
