@@ -81,6 +81,7 @@ import {
 } from './utils/utils.js';
 import {
   buildFDAJobFilter,
+  buildFDAJobCancelFilter,
   getBucketNameFromService,
   getFDAStoragePath,
   normalizeScopedServicePath,
@@ -1424,7 +1425,7 @@ export async function deleteFDA(service, fdaId, visibility, servicePath) {
 
   const agenda = getAgenda();
   await agenda.cancel(
-    buildFDAJoblFilter(
+    buildFDAJobCancelFilter(
       'refresh-fda-recurring',
       service,
       fdaId,
@@ -1432,7 +1433,7 @@ export async function deleteFDA(service, fdaId, visibility, servicePath) {
     ),
   );
   await agenda.cancel(
-    buildFDAJoblFilter(
+    buildFDAJobCancelFilter(
       'clean-partition-recurring',
       service,
       fdaId,
