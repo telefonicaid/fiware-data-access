@@ -1001,6 +1001,10 @@ export async function fetchFDA(
       ? getTimeColumnQuery(query, timeColumn)
       : query;
 
+  if (datasource.type === 'postgres') {
+    await validatePostgresQuery(datasource.config, timeQuery, { timeColumn });
+  }
+
   await createFDAMongo(
     fdaId,
     timeQuery,

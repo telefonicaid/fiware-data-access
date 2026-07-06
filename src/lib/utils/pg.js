@@ -220,6 +220,52 @@ export async function runPgQuery(pgCredentials, text, values) {
   }
 }
 
+export async function validatePostgresQuery(
+  pgCredentials,
+  query,
+  { timeColumn } = {},
+) {
+  const { user, password, host, port, database } = pgCredentials;
+  const key = getPoolKey(user, password, host, port, database);
+  const pgPool = getPgPool(user, password, host, port, database);
+  const pgClient = await pgPool.connect();
+
+  const normalizedQuery = query.trim().replace(/;+\s*$/, '');
+  const validationQuery = `SELECT * FROM (${normalizedQuery}) AS fda_validation LIMIT 0`;
+
+  try {
+    const result = await pgClient.query(validationQuery);
+
+    if (typeof timeColumn === 'string' && timeColumn.length > 0) {
+      const hasTimeColumn = result.fields.some(
+        (field) =>
+          typeof field?.name === 'string' &&
+          field.name.toLowerCase() === timeColumn.toLowerCase(),
+      );
+
+      if (!hasTimeColumn) {
+        throw new FDAError(
+          400,
+          'InvalidParam',
+          `Time column "${timeColumn}" is not present in the FDA query schema.`,
+        );
+      }
+    }
+  } catch (e) {
+    if (e instanceof FDAError) {
+      throw e;
+    }
+
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Invalid Postgres FDA query: ${e.message}`,
+    );
+  } finally {
+    releasePgClient(key, pgClient);
+  }
+}
+
 export async function createPgCursorReader(
   pgCredentials,
   text,
