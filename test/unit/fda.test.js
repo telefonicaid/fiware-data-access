@@ -68,7 +68,6 @@ const mongoMocks = {
   updateDA: jest.fn(),
   removeDA: jest.fn(),
   updateFDAStatus: jest.fn(),
-  updateFDAAgendaJobIds: jest.fn(),
   createDatasource: jest.fn(),
   retrieveDatasources: jest.fn(),
   retrieveDatasource: jest.fn(),
@@ -130,7 +129,6 @@ await jest.unstable_mockModule('../../src/lib/utils/mongo.js', () => ({
   updateDA: mongoMocks.updateDA,
   removeDA: mongoMocks.removeDA,
   updateFDAStatus: mongoMocks.updateFDAStatus,
-  updateFDAAgendaJobIds: mongoMocks.updateFDAAgendaJobIds,
   createDatasource: mongoMocks.createDatasource,
   retrieveDatasources: mongoMocks.retrieveDatasources,
   retrieveDatasource: mongoMocks.retrieveDatasource,
@@ -1011,7 +1009,6 @@ describe('fetchFDA', () => {
       done: jest.fn().mockResolvedValue(undefined),
     });
     mongoMocks.createFDAMongo.mockResolvedValue(undefined);
-    mongoMocks.updateFDAAgendaJobIds.mockResolvedValue(undefined);
     mongoMocks.removeFDA.mockResolvedValue(undefined);
     mongoMocks.readMongoDatasourceRows.mockResolvedValue([]);
     dbMocks.getDBConnection.mockResolvedValue({});
@@ -1024,13 +1021,9 @@ describe('fetchFDA', () => {
       const job = {
         name,
         data,
-        attrs: {},
         unique: jest.fn().mockReturnThis(),
         repeatEvery: jest.fn().mockReturnThis(),
-        save: jest.fn().mockImplementation(async () => {
-          job.attrs._id = `${name}-id`;
-          return job;
-        }),
+        save: jest.fn().mockResolvedValue(undefined),
       };
 
       return job;
@@ -1769,12 +1762,7 @@ describe('fetchFDA', () => {
       skipImmediate: true,
     });
     expect(refreshJob.save).toHaveBeenCalled();
-    expect(mongoMocks.updateFDAAgendaJobIds).toHaveBeenCalledWith(
-      'svc',
-      'fda1',
-      '/servicepath',
-      ['refresh-fda-recurring-id'],
-    );
+    expect(refreshJob.save).toHaveBeenCalled();
   });
 
   test('fails when refresh interval is larger than partition size', async () => {
@@ -1879,12 +1867,6 @@ describe('fetchFDA', () => {
       skipImmediate: true,
     });
     expect(cleanJob.save).toHaveBeenCalled();
-    expect(mongoMocks.updateFDAAgendaJobIds).toHaveBeenCalledWith(
-      'svc',
-      'fda1',
-      '/servicepath',
-      ['refresh-fda-recurring-id', 'clean-partition-recurring-id'],
-    );
 
     const refreshJob = agenda.create.mock.results.find(
       ({ value }) => value.name === 'refresh-fda-recurring',
@@ -2483,7 +2465,6 @@ describe('deleteFDA', () => {
       _id: 'mongo-id',
       visibility: 'private',
       servicePath: '/servicepath',
-      agendaJobIds: ['refresh-job-id', 'clean-job-id'],
     });
     awsMocks.listObjects.mockResolvedValue(['servicepath/fdaA.parquet']);
 
@@ -2498,9 +2479,22 @@ describe('deleteFDA', () => {
       '/servicepath',
     );
     expect(agenda.cancel).toHaveBeenCalledWith({
-      ids: ['refresh-job-id', 'clean-job-id'],
+      name: 'refresh-fda-recurring',
+      data: {
+        service: 'svc',
+        fdaId: 'fdaA',
+        servicePath: '/servicepath',
+      },
     });
-    expect(agenda.cancel).toHaveBeenCalledTimes(1);
+    expect(agenda.cancel).toHaveBeenCalledWith({
+      name: 'clean-partition-recurring',
+      data: {
+        service: 'svc',
+        fdaId: 'fdaA',
+        servicePath: '/servicepath',
+      },
+    });
+    expect(agenda.cancel).toHaveBeenCalledTimes(2);
   });
 
   test('deleteFDA uses normalized bucket name for object storage deletion', async () => {
@@ -2508,7 +2502,6 @@ describe('deleteFDA', () => {
       _id: 'mongo-id',
       visibility: 'private',
       servicePath: '/servicepath',
-      agendaJobIds: ['refresh-job-id', 'clean-job-id'],
     });
     awsMocks.listObjects.mockResolvedValue(['servicepath/fdaA.parquet']);
 
@@ -2529,7 +2522,6 @@ describe('deleteFDA', () => {
       _id: 'mongo-id',
       visibility: 'private',
       servicePath: '/test',
-      agendaJobIds: ['refresh-job-id', 'clean-job-id'],
     });
     // listObjects returns objects for both fda_test and fda_test_1 because S3
     // prefix listing matches any key starting with "test/fda_test"
@@ -2554,7 +2546,6 @@ describe('deleteFDA', () => {
       _id: 'mongo-id',
       visibility: 'private',
       servicePath: '/servicepath',
-      agendaJobIds: ['refresh-job-id', 'clean-job-id'],
     });
     awsMocks.listObjects.mockResolvedValue([]);
 
@@ -2567,9 +2558,22 @@ describe('deleteFDA', () => {
       '/servicepath',
     );
     expect(agenda.cancel).toHaveBeenCalledWith({
-      ids: ['refresh-job-id', 'clean-job-id'],
+      name: 'refresh-fda-recurring',
+      data: {
+        service: 'svc',
+        fdaId: 'fdaA',
+        servicePath: '/servicepath',
+      },
     });
-    expect(agenda.cancel).toHaveBeenCalledTimes(1);
+    expect(agenda.cancel).toHaveBeenCalledWith({
+      name: 'clean-partition-recurring',
+      data: {
+        service: 'svc',
+        fdaId: 'fdaA',
+        servicePath: '/servicepath',
+      },
+    });
+    expect(agenda.cancel).toHaveBeenCalledTimes(2);
   });
 
   test('throws FDANotFound when FDA does not exist', async () => {
@@ -2750,13 +2754,9 @@ describe('fetchFDA with refresh policies', () => {
       const job = {
         name,
         data,
-        attrs: {},
         unique: jest.fn().mockReturnThis(),
         repeatEvery: jest.fn().mockReturnThis(),
-        save: jest.fn().mockImplementation(async () => {
-          job.attrs._id = `${name}-id`;
-          return job;
-        }),
+        save: jest.fn().mockResolvedValue(undefined),
       };
 
       return job;
@@ -3058,16 +3058,28 @@ describe('deleteFDA', () => {
       _id: 'mongo-id',
       visibility: 'private',
       servicePath: '/servicepath',
-      agendaJobIds: ['refresh-job-id', 'clean-job-id'],
     });
     awsMocks.listObjects.mockResolvedValue(['fda1.parquet']);
 
     await deleteFDA('svc', 'fda1', 'private', '/servicepath');
 
-    expect(agenda.cancel).toHaveBeenCalledWith({
-      ids: ['refresh-job-id', 'clean-job-id'],
+    expect(agenda.cancel).toHaveBeenNthCalledWith(1, {
+      name: 'refresh-fda-recurring',
+      data: {
+        service: 'svc',
+        fdaId: 'fda1',
+        servicePath: '/servicepath',
+      },
     });
-    expect(agenda.cancel).toHaveBeenCalledTimes(1);
+    expect(agenda.cancel).toHaveBeenNthCalledWith(2, {
+      name: 'clean-partition-recurring',
+      data: {
+        service: 'svc',
+        fdaId: 'fda1',
+        servicePath: '/servicepath',
+      },
+    });
+    expect(agenda.cancel).toHaveBeenCalledTimes(2);
   });
 });
 

@@ -63,3 +63,14 @@ export function buildFDAJobFilter(name, service, fdaId, servicePath) {
     'data.servicePath': servicePath,
   };
 }
+
+export function buildFDAJobCancelFilter(name, service, fdaId, servicePath) {
+  return {
+    name,
+    data: {
+      service,
+      fdaId,
+      servicePath,
+    },
+  };
+}

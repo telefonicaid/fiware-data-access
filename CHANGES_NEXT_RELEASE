@@ -1,1 +1,2 @@
+- Fix: removed agendaJobIds workaround after upgrading Agenda backend partial data filter support; recurring job cancellation is now scoped by name plus data service, fdaId and servicePath (#206)
 
