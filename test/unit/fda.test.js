@@ -2480,15 +2480,19 @@ describe('deleteFDA', () => {
     );
     expect(agenda.cancel).toHaveBeenCalledWith({
       name: 'refresh-fda-recurring',
-      'data.service': 'svc',
-      'data.fdaId': 'fdaA',
-      'data.servicePath': '/servicepath',
+      data: {
+        service: 'svc',
+        fdaId: 'fdaA',
+        servicePath: '/servicepath',
+      },
     });
     expect(agenda.cancel).toHaveBeenCalledWith({
       name: 'clean-partition-recurring',
-      'data.service': 'svc',
-      'data.fdaId': 'fdaA',
-      'data.servicePath': '/servicepath',
+      data: {
+        service: 'svc',
+        fdaId: 'fdaA',
+        servicePath: '/servicepath',
+      },
     });
     expect(agenda.cancel).toHaveBeenCalledTimes(2);
   });
@@ -2555,15 +2559,19 @@ describe('deleteFDA', () => {
     );
     expect(agenda.cancel).toHaveBeenCalledWith({
       name: 'refresh-fda-recurring',
-      'data.service': 'svc',
-      'data.fdaId': 'fdaA',
-      'data.servicePath': '/servicepath',
+      data: {
+        service: 'svc',
+        fdaId: 'fdaA',
+        servicePath: '/servicepath',
+      },
     });
     expect(agenda.cancel).toHaveBeenCalledWith({
       name: 'clean-partition-recurring',
-      'data.service': 'svc',
-      'data.fdaId': 'fdaA',
-      'data.servicePath': '/servicepath',
+      data: {
+        service: 'svc',
+        fdaId: 'fdaA',
+        servicePath: '/servicepath',
+      },
     });
     expect(agenda.cancel).toHaveBeenCalledTimes(2);
   });
@@ -3057,15 +3065,19 @@ describe('deleteFDA', () => {
 
     expect(agenda.cancel).toHaveBeenNthCalledWith(1, {
       name: 'refresh-fda-recurring',
-      'data.service': 'svc',
-      'data.fdaId': 'fda1',
-      'data.servicePath': '/servicepath',
+      data: {
+        service: 'svc',
+        fdaId: 'fda1',
+        servicePath: '/servicepath',
+      },
     });
     expect(agenda.cancel).toHaveBeenNthCalledWith(2, {
       name: 'clean-partition-recurring',
-      'data.service': 'svc',
-      'data.fdaId': 'fda1',
-      'data.servicePath': '/servicepath',
+      data: {
+        service: 'svc',
+        fdaId: 'fda1',
+        servicePath: '/servicepath',
+      },
     });
     expect(agenda.cancel).toHaveBeenCalledTimes(2);
   });
