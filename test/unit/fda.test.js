@@ -44,6 +44,7 @@ const pgMocks = {
   runPgQuery: jest.fn(),
   createPgCursorReader: jest.fn(),
   validatePostgresDatasourceConnection: jest.fn(),
+  validatePostgresQuery: jest.fn(),
 };
 
 const awsMocks = {
@@ -105,6 +106,7 @@ await jest.unstable_mockModule('../../src/lib/utils/pg.js', () => ({
   createPgCursorReader: pgMocks.createPgCursorReader,
   validatePostgresDatasourceConnection:
     pgMocks.validatePostgresDatasourceConnection,
+  validatePostgresQuery: pgMocks.validatePostgresQuery,
 }));
 
 await jest.unstable_mockModule('../../src/lib/utils/aws.js', () => ({

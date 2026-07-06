@@ -97,8 +97,13 @@ await jest.unstable_mockModule('../../src/lib/fdaConfig.js', () => ({
   },
 }));
 
-const { getPgClient, uploadTable, runPgQuery, createPgCursorReader } =
-  await import('../../src/lib/utils/pg.js');
+const {
+  getPgClient,
+  uploadTable,
+  runPgQuery,
+  createPgCursorReader,
+  validatePostgresQuery,
+} = await import('../../src/lib/utils/pg.js');
 const { closePgPools } = await import('../../src/lib/utils/pg.js');
 const { config } = await import('../../src/lib/fdaConfig.js');
 
@@ -187,6 +192,80 @@ describe('pg utils', () => {
       database: 'svc_db',
     };
     await expect(runPgQuery(creds, 'SELECT 1', [])).rejects.toBe(fdaError);
+
+    expect(currentClient.release).toHaveBeenCalledTimes(1);
+  });
+
+  test('validatePostgresQuery validates a query and allows a declared timeColumn', async () => {
+    currentClient.query.mockResolvedValue({
+      fields: [{ name: 'id' }, { name: 'timeinstant' }],
+    });
+
+    const creds = {
+      user: 'u',
+      password: 'p',
+      host: 'h',
+      port: 5432,
+      database: 'svc_db',
+    };
+
+    await expect(
+      validatePostgresQuery(creds, 'SELECT id, timeinstant FROM users', {
+        timeColumn: 'timeinstant',
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(currentClient.query).toHaveBeenCalledWith(
+      'SELECT * FROM (SELECT id, timeinstant FROM users) AS fda_validation LIMIT 0',
+    );
+    expect(currentClient.release).toHaveBeenCalledTimes(1);
+  });
+
+  test('validatePostgresQuery rejects when the declared timeColumn is not in the schema', async () => {
+    currentClient.query.mockResolvedValue({
+      fields: [{ name: 'id' }, { name: 'name' }],
+    });
+
+    const creds = {
+      user: 'u',
+      password: 'p',
+      host: 'h',
+      port: 5432,
+      database: 'svc_db',
+    };
+
+    await expect(
+      validatePostgresQuery(creds, 'SELECT id, name FROM users', {
+        timeColumn: 'timeinstant',
+      }),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidParam',
+      message:
+        'Time column "timeinstant" is not present in the FDA query schema.',
+    });
+
+    expect(currentClient.release).toHaveBeenCalledTimes(1);
+  });
+
+  test('validatePostgresQuery wraps SQL errors as FDAError', async () => {
+    currentClient.query.mockRejectedValue(new Error('syntax exploded'));
+
+    const creds = {
+      user: 'u',
+      password: 'p',
+      host: 'h',
+      port: 5432,
+      database: 'svc_db',
+    };
+
+    await expect(
+      validatePostgresQuery(creds, 'SELECT bad(', { timeColumn: 'ts' }),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidParam',
+      message: 'Invalid Postgres FDA query: syntax exploded',
+    });
 
     expect(currentClient.release).toHaveBeenCalledTimes(1);
   });
