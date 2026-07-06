@@ -161,7 +161,7 @@ export async function readMongoDatasourceRows(dsConfig, query, { limit } = {}) {
         .collection(collection)
         .find(filter ?? {}, {
           ...(projection ? { projection } : {}),
-          ...(limit ? { limit } : {}),
+          ...(Number.isFinite(limit) && limit > 0 ? { limit } : {}),
         })
         .toArray();
     } else if (hasAggregation) {

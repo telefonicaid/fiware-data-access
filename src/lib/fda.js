@@ -1808,7 +1808,7 @@ async function createOneRowParquetSync(
   const datasource = await resolveDatasource(service, datasourceId);
 
   if (datasource.type === 'postgres') {
-    const oneRowQuery = buildOneRowQuery(query, timeColumn);
+    const oneRowQuery = buildOneRowQuery(query);
     await uploadTable(
       s3Client,
       bucketName,
@@ -1849,11 +1849,11 @@ async function createOneRowParquetSync(
   }
 }
 
-function buildOneRowQuery(query, timeColumn) {
+function buildOneRowQuery(query) {
   const normalizedQuery = query.trim().replace(/;+\s*$/, '');
-  const orderBy = timeColumn ? ` ORDER BY ${timeColumn} DESC NULLS LAST` : '';
 
-  return `SELECT * FROM (${normalizedQuery}) AS fda_one_row ${orderBy} LIMIT 1`;
+  // Schema-only bootstrap keeps creation validation synchronous without row materialization.
+  return `SELECT * FROM (${normalizedQuery}) AS fda_one_row LIMIT 0`;
 }
 
 async function buildDefaultDataAccessDefinition(
