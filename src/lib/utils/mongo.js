@@ -362,7 +362,6 @@ export async function createFDAMongo(
       status: initialStatus,
       progress: initialProgress,
       lastFetch: null,
-      agendaJobIds: [],
       refreshPolicy: refreshPolicy ?? { type: 'none' },
       ...(servicePath && { servicePath }),
       ...(description && { description }),
@@ -386,24 +385,6 @@ export async function createFDAMongo(
       );
     }
   }
-}
-
-export async function updateFDAAgendaJobIds(
-  service,
-  fdaId,
-  servicePath,
-  agendaJobIds,
-) {
-  const collection = await getCollection();
-
-  await collection.updateOne(
-    { service, fdaId, servicePath },
-    {
-      $set: {
-        agendaJobIds,
-      },
-    },
-  );
 }
 
 export async function updateFDAStatus(
