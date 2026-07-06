@@ -64,6 +64,114 @@ export function registerFdaCreationIntegrationTests({
     await waitUntilFDACompleted({ baseUrl, service, fdaId });
   });
 
+  test('POST /fdas creates an FDA and defaultDataAccess on an empty source query (includes timeColumn and partition case)', async () => {
+    const baseUrl = getBaseUrl();
+    const emptySourceFdaId = 'fda_empty_source_default_da';
+
+    try {
+      // Basic case
+      const res = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: emptySourceFdaId,
+          query:
+            'SELECT id, name, age, timeinstant, authorized FROM public.users WHERE 1 = 0 ORDER BY id',
+          description: 'empty source default DA test',
+          timeColumn: 'timeinstant',
+        },
+      });
+
+      if (res.status >= 400) {
+        console.error(
+          'POST /fdas failed for empty-source FDA:',
+          res.status,
+          res.json ?? res.text,
+        );
+      }
+
+      expect(res.status).toBe(202);
+
+      const completedFDA = await waitUntilFDACompleted({
+        baseUrl,
+        service,
+        fdaId: emptySourceFdaId,
+      });
+
+      expect(completedFDA.status).toBe('completed');
+      const defaultDa = completedFDA?.das?.defaultDataAccess;
+      expect(defaultDa).toBeDefined();
+      expect(defaultDa.query).toContain('COUNT(*) OVER() as __total');
+      expect(defaultDa.query).toContain('LIMIT CAST($pageSize AS BIGINT)');
+      expect(defaultDa.params.some((p) => p.name === 'pageSize')).toBe(true);
+      expect(defaultDa.params.some((p) => p.name === 'pageStart')).toBe(true);
+
+      // Case with partitioning and timeColumn, the default DA should include a filter on the partition column
+      const res = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: emptySourceFdaId,
+          query:
+            'SELECT id, name, age, timeinstant, authorized FROM public.users WHERE 1 = 0 ORDER BY id',
+          description: 'empty source default DA test',
+          timeColumn: 'timeinstant',
+          refreshPolicy: {
+            type: 'window',
+            params: {
+              refreshInterval: '1 day',
+              fetchSize: 'year',
+              windowSize: 'year',
+            },
+          },
+          objStgConf: {
+            partition: 'year',
+          },
+        },
+      });
+
+      if (res.status >= 400) {
+        console.error(
+          'POST /fdas failed for empty-source FDA:',
+          res.status,
+          res.json ?? res.text,
+        );
+      }
+
+      expect(res.status).toBe(202);
+
+      const completedFDA = await waitUntilFDACompleted({
+        baseUrl,
+        service,
+        fdaId: emptySourceFdaId,
+      });
+
+      const defaultDa = completedFDA?.das?.defaultDataAccess;
+      expect(defaultDa).toBeDefined();
+      expect(defaultDa.query).toContain('COUNT(*) OVER() as __total');
+      expect(defaultDa.query).toContain('LIMIT CAST($pageSize AS BIGINT)');
+      expect(defaultDa.params.some((p) => p.name === 'pageSize')).toBe(true);
+      expect(defaultDa.params.some((p) => p.name === 'pageStart')).toBe(true);
+    } finally {
+      await httpReq({
+        method: 'DELETE',
+        url: `${baseUrl}/${visibility}/fdas/${emptySourceFdaId}`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+      });
+    }
+  });
+
   test('POST /fdas keeps one recurring refresh job per FDA', async () => {
     const baseUrl = getBaseUrl();
     const firstFdaId = 'fda_refresh_job_a';
