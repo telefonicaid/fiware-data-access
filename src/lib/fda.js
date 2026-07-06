@@ -2004,7 +2004,7 @@ async function getFDAColumnNamesFromParquet(
     const parquetPath = objStgConf?.partition
       ? `s3://${bucketName}/${storagePath}.parquet/**/*.parquet`
       : `s3://${bucketName}/${storagePath}.parquet`;
-    const safeParquetPath = parquetPath.replace(/'/g, "''");
+    const safeParquetPath = parquetPath.replaceAll("'", "''");
 
     const describeResult = await conn.run(
       `DESCRIBE SELECT * FROM read_parquet('${safeParquetPath}')`,
@@ -2034,7 +2034,7 @@ async function createSchemaParquetForEmptyPartitionedFDA(
   const normalizedQuery = query.trim().replace(/;+\s*$/, '');
   const schemaPartitionPath = getSchemaPartitionPath(partitionType);
   const schemaParquetPath = `${bucketName}/${storagePath}.parquet/${schemaPartitionPath}/schema.parquet`;
-  const safeSchemaParquetPath = schemaParquetPath.replace(/'/g, "''");
+  const safeSchemaParquetPath = schemaParquetPath.replaceAll("'", "''");
 
   await conn.run(
     `COPY (SELECT * FROM (${normalizedQuery}) AS fda_schema LIMIT 0) TO '${safeSchemaParquetPath}' (FORMAT PARQUET);`,
