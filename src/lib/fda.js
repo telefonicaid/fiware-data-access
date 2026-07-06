@@ -1851,8 +1851,14 @@ async function createOneRowParquetSync(
 
     if (datasource.type === 'postgres' && objStgConf?.partition) {
       const parquetFiles = await listObjects(s3Client, bucketName, storagePath);
+      const normalizedParquetFiles = Array.isArray(parquetFiles)
+        ? parquetFiles
+        : [];
 
-      if (!parquetFiles.some((key) => key.endsWith('.parquet'))) {
+      if (
+        !normalizedParquetFiles.some((key) => key.endsWith('.parquet')) &&
+        typeof conn?.run === 'function'
+      ) {
         await createSchemaParquetForEmptyPartitionedFDA(
           conn,
           bucketName,
