@@ -70,7 +70,7 @@ export function registerFdaCreationIntegrationTests({
 
     try {
       // Basic case
-      const res = await httpReq({
+      const resBasic = await httpReq({
         method: 'POST',
         url: `${baseUrl}/${visibility}/fdas`,
         headers: {
@@ -86,32 +86,36 @@ export function registerFdaCreationIntegrationTests({
         },
       });
 
-      if (res.status >= 400) {
+      if (resBasic.status >= 400) {
         console.error(
           'POST /fdas failed for empty-source FDA:',
-          res.status,
-          res.json ?? res.text,
+          resBasic.status,
+          resBasic.json ?? resBasic.text,
         );
       }
 
-      expect(res.status).toBe(202);
+      expect(resBasic.status).toBe(202);
 
-      const completedFDA = await waitUntilFDACompleted({
+      const completedFDABasic = await waitUntilFDACompleted({
         baseUrl,
         service,
         fdaId: emptySourceFdaId,
       });
 
-      expect(completedFDA.status).toBe('completed');
-      const defaultDa = completedFDA?.das?.defaultDataAccess;
-      expect(defaultDa).toBeDefined();
-      expect(defaultDa.query).toContain('COUNT(*) OVER() as __total');
-      expect(defaultDa.query).toContain('LIMIT CAST($pageSize AS BIGINT)');
-      expect(defaultDa.params.some((p) => p.name === 'pageSize')).toBe(true);
-      expect(defaultDa.params.some((p) => p.name === 'pageStart')).toBe(true);
+      expect(completedFDABasic.status).toBe('completed');
+      const defaultDaBasic = completedFDABasic?.das?.defaultDataAccess;
+      expect(defaultDaBasic).toBeDefined();
+      expect(defaultDaBasic.query).toContain('COUNT(*) OVER() as __total');
+      expect(defaultDaBasic.query).toContain('LIMIT CAST($pageSize AS BIGINT)');
+      expect(defaultDaBasic.params.some((p) => p.name === 'pageSize')).toBe(
+        true,
+      );
+      expect(defaultDaBasic.params.some((p) => p.name === 'pageStart')).toBe(
+        true,
+      );
 
-      // Case with partitioning and timeColumn, the default DA should include a filter on the partition column
-      const res = await httpReq({
+      // Partitioned case
+      const resPartitioned = await httpReq({
         method: 'POST',
         url: `${baseUrl}/${visibility}/fdas`,
         headers: {
@@ -119,7 +123,7 @@ export function registerFdaCreationIntegrationTests({
           'Fiware-ServicePath': servicePath,
         },
         body: {
-          id: emptySourceFdaId,
+          id: `${emptySourceFdaId}_partitioned`,
           query:
             'SELECT id, name, age, timeinstant, authorized FROM public.users WHERE 1 = 0 ORDER BY id',
           description: 'empty source default DA test',
@@ -138,32 +142,50 @@ export function registerFdaCreationIntegrationTests({
         },
       });
 
-      if (res.status >= 400) {
+      if (resPartitioned.status >= 400) {
         console.error(
-          'POST /fdas failed for empty-source FDA:',
-          res.status,
-          res.json ?? res.text,
+          'POST /fdas failed for empty-source FDA (partitioned):',
+          resPartitioned.status,
+          resPartitioned.json ?? resPartitioned.text,
         );
       }
 
-      expect(res.status).toBe(202);
+      expect(resPartitioned.status).toBe(202);
 
-      const completedFDA = await waitUntilFDACompleted({
+      const completedFDAPartitioned = await waitUntilFDACompleted({
         baseUrl,
         service,
-        fdaId: emptySourceFdaId,
+        fdaId: `${emptySourceFdaId}_partitioned`,
       });
 
-      const defaultDa = completedFDA?.das?.defaultDataAccess;
-      expect(defaultDa).toBeDefined();
-      expect(defaultDa.query).toContain('COUNT(*) OVER() as __total');
-      expect(defaultDa.query).toContain('LIMIT CAST($pageSize AS BIGINT)');
-      expect(defaultDa.params.some((p) => p.name === 'pageSize')).toBe(true);
-      expect(defaultDa.params.some((p) => p.name === 'pageStart')).toBe(true);
+      const defaultDaPartitioned =
+        completedFDAPartitioned?.das?.defaultDataAccess;
+      expect(defaultDaPartitioned).toBeDefined();
+      expect(defaultDaPartitioned.query).toContain(
+        'COUNT(*) OVER() as __total',
+      );
+      expect(defaultDaPartitioned.query).toContain(
+        'LIMIT CAST($pageSize AS BIGINT)',
+      );
+      expect(
+        defaultDaPartitioned.params.some((p) => p.name === 'pageSize'),
+      ).toBe(true);
+      expect(
+        defaultDaPartitioned.params.some((p) => p.name === 'pageStart'),
+      ).toBe(true);
     } finally {
       await httpReq({
         method: 'DELETE',
         url: `${baseUrl}/${visibility}/fdas/${emptySourceFdaId}`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+      });
+
+      await httpReq({
+        method: 'DELETE',
+        url: `${baseUrl}/${visibility}/fdas/${emptySourceFdaId}_partitioned`,
         headers: {
           'Fiware-Service': service,
           'Fiware-ServicePath': servicePath,
