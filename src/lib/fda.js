@@ -1848,6 +1848,21 @@ async function createOneRowParquetSync(
       timeColumn,
       objStgConf?.partition,
     );
+
+    if (datasource.type === 'postgres' && objStgConf?.partition) {
+      const parquetFiles = await listObjects(s3Client, bucketName, storagePath);
+
+      if (!parquetFiles.some((key) => key.endsWith('.parquet'))) {
+        await createSchemaParquetForEmptyPartitionedFDA(
+          conn,
+          bucketName,
+          storagePath,
+          query,
+          objStgConf.partition,
+        );
+      }
+    }
+
     await dropFile(s3Client, bucketName, `${storagePath}.csv`);
   } finally {
     await releaseDBConnection(conn);
@@ -2001,6 +2016,34 @@ async function getFDAColumnNamesFromParquet(
   } finally {
     await releaseDBConnection(conn);
   }
+}
+
+async function createSchemaParquetForEmptyPartitionedFDA(
+  conn,
+  bucketName,
+  storagePath,
+  query,
+  partitionType,
+) {
+  const normalizedQuery = query.trim().replace(/;+\s*$/, '');
+  const schemaPartitionPath = getSchemaPartitionPath(partitionType);
+  const schemaParquetPath = `${bucketName}/${storagePath}.parquet/${schemaPartitionPath}/schema.parquet`;
+  const safeSchemaParquetPath = schemaParquetPath.replace(/'/g, "''");
+
+  await conn.run(
+    `COPY (SELECT * FROM (${normalizedQuery}) AS fda_schema LIMIT 0) TO '${safeSchemaParquetPath}' (FORMAT PARQUET);`,
+  );
+}
+
+function getSchemaPartitionPath(partitionType) {
+  const partitionPaths = {
+    day: 'year=9999/month=12/day=31',
+    week: 'year=9999/week=9999-52',
+    month: 'year=9999/month=12',
+    year: 'year=9999',
+  };
+
+  return partitionPaths[partitionType] ?? partitionPaths.year;
 }
 
 function quoteDuckDBIdentifier(identifier) {
