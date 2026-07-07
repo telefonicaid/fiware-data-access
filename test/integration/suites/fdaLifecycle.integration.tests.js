@@ -166,7 +166,6 @@ export function registerFdaLifecycleIntegrationTests({
         id: fdaId2,
         query: 'SELECT id, name, age FROM public.users ORDER BY id',
         description: 'users dataset',
-        timeColumn: 'timeinstant',
         refreshPolicy: {
           type: 'interval',
           params: {
@@ -192,7 +191,7 @@ export function registerFdaLifecycleIntegrationTests({
     });
 
     expect(completedFDA).toMatchObject({
-      query: 'SELECT timeinstant, id, name, age FROM public.users ORDER BY id',
+      query: 'SELECT id, name, age FROM public.users ORDER BY id',
       description: 'users dataset',
       status: 'completed',
       progress: 100,

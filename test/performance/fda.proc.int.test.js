@@ -22,58 +22,17 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
-import { getAgenda } from './lib/jobs.js';
-import { cleanPartition, processFDAAsync } from './lib/fda.js';
-import { getBasicLogger } from './lib/utils/logger.js';
+import {
+  EXECUTION_MODES,
+  runFDAIntegrationSuite,
+} from './fda.integration.shared.js';
 
-const logger = getBasicLogger();
+runFDAIntegrationSuite({
+  mode: EXECUTION_MODES.COMBINED,
+  label: 'combined roles',
+});
 
-export async function startFetcher() {
-  const agenda = getAgenda();
-
-  const refreshFDA = async (job) => {
-    const {
-      fdaId,
-      query,
-      service,
-      servicePath,
-      timeColumn,
-      refreshPolicy,
-      objStgConf,
-      datasourceId,
-    } = job.attrs.data;
-    // Should agenda also log errors?
-    try {
-      await processFDAAsync(
-        fdaId,
-        query,
-        service,
-        servicePath,
-        timeColumn,
-        refreshPolicy,
-        objStgConf,
-        datasourceId,
-      );
-    } catch (e) {
-      logger.error('Fetcher error: ', e);
-    }
-  };
-
-  const cleanPartitionFDA = async (job) => {
-    const { fdaId, service, servicePath, windowSize, objStgConf } =
-      job.attrs.data;
-    try {
-      await cleanPartition(service, fdaId, windowSize, objStgConf, servicePath);
-    } catch (e) {
-      logger.error('Fetcher error: ', e);
-    }
-  };
-
-  agenda.define('refresh-fda', refreshFDA);
-  agenda.define('refresh-fda-recurring', refreshFDA);
-  agenda.define('clean-partition', cleanPartitionFDA);
-  agenda.define('clean-partition-recurring', cleanPartitionFDA);
-
-  await agenda.start();
-  logger.info('[Fetcher] Agenda started');
-}
+runFDAIntegrationSuite({
+  mode: EXECUTION_MODES.SEPARATED,
+  label: 'separated roles',
+});

@@ -67,6 +67,7 @@ import {
   DEFAULT_OUTPUT_TYPE,
   rowsToCsv,
   rowsToXlsx,
+  toCdaJson,
 } from './lib/utils/outputFormat.js';
 import {
   onRequestStart,
@@ -88,6 +89,7 @@ const DATA_CONTENT_TYPES = [
   'text/csv',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/vnd.ms-excel',
+  'application/vnd.fiware.cda+json',
 ];
 
 const DATA_ACCEPT_CONTENT_TYPE_TO_OUTPUT = {
@@ -96,9 +98,10 @@ const DATA_ACCEPT_CONTENT_TYPE_TO_OUTPUT = {
   'text/csv': 'csv',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xls',
   'application/vnd.ms-excel': 'xls',
+  'application/vnd.fiware.cda+json': 'cda',
 };
 
-const QUERY_STYLE_OUTPUT_TYPES = ['json', 'ndjson', 'csv', 'xls'];
+const QUERY_STYLE_OUTPUT_TYPES = ['json', 'ndjson', 'csv', 'xls', 'cda'];
 
 function throwRequestStyleConflictIfMixed(hasHeaderContext, hasQueryContext) {
   if (hasHeaderContext && hasQueryContext) {
@@ -116,7 +119,7 @@ function getOutputTypeFromAcceptHeader(req) {
     throw new FDAError(
       406,
       'NotAcceptable',
-      'Accept header must allow application/json, application/x-ndjson, text/csv, or application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Accept header must allow application/json, application/x-ndjson, text/csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, or application/vnd.fiware.cda+json',
     );
   }
 
@@ -312,6 +315,7 @@ app.post('/:visibility/fdas', async (req, res) => {
     'objStgConf',
     'cached',
     'datasourceId',
+    'skipBootstrap',
   ]);
   const {
     id,
@@ -322,6 +326,7 @@ app.post('/:visibility/fdas', async (req, res) => {
     objStgConf,
     cached,
     datasourceId,
+    skipBootstrap,
   } = body;
   const service = req.get('Fiware-Service');
   const servicePath = req.get('Fiware-ServicePath');
@@ -339,6 +344,10 @@ app.post('/:visibility/fdas', async (req, res) => {
     cached === undefined
       ? true
       : parseBooleanQueryParam(cached, 'cached', true);
+  const skipBootstrapEnabled =
+    skipBootstrap === undefined
+      ? false
+      : parseBooleanQueryParam(skipBootstrap, 'skipBootstrap', false);
 
   if (!id || !query || !service || !servicePath || !visibility) {
     return res.status(400).json({
@@ -363,6 +372,7 @@ app.post('/:visibility/fdas', async (req, res) => {
     defaultDataAccessEnabled,
     cachedEnabled,
     datasourceId,
+    skipBootstrapEnabled,
   );
 
   return res.status(202).json({
@@ -584,7 +594,10 @@ app.get('/:visibility/fdas/:fdaId/das/:daId/data', async (req, res) => {
     params,
   });
 
-  return sendRowsByOutputType(res, rows, outputType);
+  const responseRows =
+    outputType === 'cda' ? toCdaJson(rows, queryParams) : rows;
+
+  return sendRowsByOutputType(res, responseRows, outputType);
 });
 
 app.get('/:visibility/fdas/:fdaId/data', async (req, res) => {
@@ -645,7 +658,9 @@ app.get('/:visibility/fdas/:fdaId/data', async (req, res) => {
     fdaId,
   });
 
-  return sendRowsByOutputType(res, rows, outputType);
+  const responseRows = outputType === 'cda' ? toCdaJson(rows) : rows;
+
+  return sendRowsByOutputType(res, responseRows, outputType);
 });
 
 app.post('/datasources', async (req, res) => {

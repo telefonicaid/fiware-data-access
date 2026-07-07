@@ -62,6 +62,16 @@ async function getDatasourcesCollection() {
   return db.collection('datasources');
 }
 
+function getNestedMongoValue(doc, fieldPath) {
+  return fieldPath.split('.').reduce((current, segment) => {
+    if (current === null || current === undefined) {
+      return undefined;
+    }
+
+    return current[segment];
+  }, doc);
+}
+
 export async function createIndex() {
   const fdasCollection = await getCollection();
   await fdasCollection.createIndex(
@@ -99,6 +109,103 @@ export async function createDatasource(service, datasourceId, type, dsConfig) {
       'MongoDBServerError',
       `Error creating datasource ${datasourceId} for service ${service}: ${e}`,
     );
+  }
+}
+
+export async function validateMongoDatasourceConnection(dsConfig) {
+  const uri = dsConfig?.uri;
+  const database = dsConfig?.database;
+
+  if (!uri || !database) {
+    throw new FDAError(
+      400,
+      'InvalidDatasourceConnection',
+      'Mongo datasource config must include uri and database',
+    );
+  }
+
+  const validationClient = new MongoClient(uri, {
+    serverSelectionTimeoutMS: 5000,
+  });
+
+  try {
+    await validationClient.db(database).command({ ping: 1 });
+  } catch (error) {
+    throw new FDAError(
+      400,
+      'InvalidDatasourceConnection',
+      `Could not connect to datasource: ${error.message}`,
+    );
+  } finally {
+    await validationClient.close().catch(() => {});
+  }
+}
+
+export async function readMongoDatasourceRows(dsConfig, query, { limit } = {}) {
+  const { collection, filter, projection, aggregation } = query;
+
+  const client = new MongoClient(dsConfig.uri, {
+    serverSelectionTimeoutMS: 5000,
+  });
+
+  try {
+    await client.connect();
+
+    let rows;
+    const hasFilter = filter !== undefined && Object.keys(filter).length > 0;
+    const hasAggregation = aggregation !== undefined && aggregation.length > 0;
+
+    if (hasFilter) {
+      rows = await client
+        .db(dsConfig.database)
+        .collection(collection)
+        .find(filter ?? {}, {
+          ...(projection ? { projection } : {}),
+          ...(limit ? { limit } : {}),
+        })
+        .toArray();
+    } else if (hasAggregation) {
+      throw new FDAError(
+        400,
+        'NotImplemented',
+        'Mongo aggregation queries are not supported yet',
+      );
+    } else {
+      throw new FDAError(
+        400,
+        'InvalidMongoFDAContract',
+        'Mongo query must define either filter or aggregation',
+      );
+    }
+
+    const hasProjection =
+      projection &&
+      typeof projection === 'object' &&
+      !Array.isArray(projection);
+    const columns = hasProjection
+      ? Object.keys(projection).filter((column) => projection[column])
+      : Object.keys(rows[0] ?? {}).filter((column) => column !== '_id');
+
+    return rows.map((row) => {
+      const mappedRow = {};
+
+      for (const column of columns) {
+        mappedRow[column] = getNestedMongoValue(row, column);
+      }
+
+      return mappedRow;
+    });
+  } catch (error) {
+    if (error instanceof FDAError) {
+      throw error;
+    }
+    throw new FDAError(
+      500,
+      'MongoDBServerError',
+      `Error reading datasource collection ${collection}: ${error.message}`,
+    );
+  } finally {
+    await client.close().catch(() => {});
   }
 }
 
@@ -241,12 +348,12 @@ export async function createFDAMongo(
   datasourceId = DEFAULT_DATASOURCE_ID,
 ) {
   logger.debug({ fdaId, query, service, description }, '[DEBUG]: createFDA');
-  const collection = await getCollection();
+  const fdasCollection = await getCollection();
   const initialStatus = cached ? 'fetching' : 'completed';
   const initialProgress = cached ? 0 : 100;
   try {
     // As there is a unique index on (service, servicePath, fdaId), this throws an error when the same scoped FDA already exists.
-    await collection.insertOne({
+    await fdasCollection.insertOne({
       fdaId,
       query,
       das: {},

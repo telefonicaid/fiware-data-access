@@ -43,10 +43,12 @@ const pgMocks = {
   uploadTable: jest.fn(),
   runPgQuery: jest.fn(),
   createPgCursorReader: jest.fn(),
+  validatePostgresDatasourceConnection: jest.fn(),
 };
 
 const awsMocks = {
   getS3Client: jest.fn(),
+  newUpload: jest.fn(),
   dropFile: jest.fn(),
   dropFiles: jest.fn(),
   moveObject: jest.fn(),
@@ -71,6 +73,8 @@ const mongoMocks = {
   retrieveDatasource: jest.fn(),
   updateDatasource: jest.fn(),
   removeDatasource: jest.fn(),
+  validateMongoDatasourceConnection: jest.fn(),
+  readMongoDatasourceRows: jest.fn(),
 };
 
 const jobsMocks = {
@@ -99,10 +103,13 @@ await jest.unstable_mockModule('../../src/lib/utils/pg.js', () => ({
   uploadTable: pgMocks.uploadTable,
   runPgQuery: pgMocks.runPgQuery,
   createPgCursorReader: pgMocks.createPgCursorReader,
+  validatePostgresDatasourceConnection:
+    pgMocks.validatePostgresDatasourceConnection,
 }));
 
 await jest.unstable_mockModule('../../src/lib/utils/aws.js', () => ({
   getS3Client: awsMocks.getS3Client,
+  newUpload: awsMocks.newUpload,
   dropFile: awsMocks.dropFile,
   dropFiles: awsMocks.dropFiles,
   moveObject: awsMocks.moveObject,
@@ -127,6 +134,9 @@ await jest.unstable_mockModule('../../src/lib/utils/mongo.js', () => ({
   retrieveDatasource: mongoMocks.retrieveDatasource,
   updateDatasource: mongoMocks.updateDatasource,
   removeDatasource: mongoMocks.removeDatasource,
+  validateMongoDatasourceConnection:
+    mongoMocks.validateMongoDatasourceConnection,
+  readMongoDatasourceRows: mongoMocks.readMongoDatasourceRows,
 }));
 
 await jest.unstable_mockModule('../../src/lib/fdaConfig.js', () => ({
@@ -157,6 +167,7 @@ const {
   deleteDatasourceForService,
   fetchFDA,
   getFDA,
+  getStoredFDA,
   updateFDA,
   processFDAAsync,
   deleteFDA,
@@ -188,6 +199,13 @@ function createReqRes() {
   };
 
   return { req, res, reqHandlers };
+}
+
+async function loadFdaModule() {
+  jest.resetModules();
+
+  const mod = await import('../../src/lib/fda.js');
+  return mod;
 }
 
 describe('fda fresh query execution', () => {
@@ -407,11 +425,11 @@ describe('fda fresh query execution', () => {
       visibility: 'private',
       servicePath: '/servicepath',
       cached: false,
-      datasourceId: 'mongo-ds',
+      datasourceId: 'legacy-ds',
     });
     mongoMocks.retrieveDatasource.mockResolvedValue({
-      datasourceId: 'mongo-ds',
-      type: 'mongodb',
+      datasourceId: 'legacy-ds',
+      type: 'mysql',
       config: {},
     });
 
@@ -980,22 +998,36 @@ describe('fda fresh query execution', () => {
 describe('fetchFDA', () => {
   const agenda = {
     now: jest.fn(),
-    every: jest.fn(),
+    create: jest.fn(),
   };
 
   beforeEach(() => {
     jest.clearAllMocks();
     awsMocks.getS3Client.mockReturnValue({});
     awsMocks.dropFile.mockResolvedValue(undefined);
+    awsMocks.newUpload.mockReturnValue({
+      done: jest.fn().mockResolvedValue(undefined),
+    });
     mongoMocks.createFDAMongo.mockResolvedValue(undefined);
     mongoMocks.removeFDA.mockResolvedValue(undefined);
+    mongoMocks.readMongoDatasourceRows.mockResolvedValue([]);
     dbMocks.getDBConnection.mockResolvedValue({});
     dbMocks.releaseDBConnection.mockResolvedValue(undefined);
     dbMocks.toParquet.mockResolvedValue(undefined);
     pgMocks.uploadTable.mockResolvedValue(undefined);
     jobsMocks.getAgenda.mockReturnValue(agenda);
     agenda.now.mockResolvedValue(undefined);
-    agenda.every.mockResolvedValue(undefined);
+    agenda.create.mockImplementation((name, data) => {
+      const job = {
+        name,
+        data,
+        unique: jest.fn().mockReturnThis(),
+        repeatEvery: jest.fn().mockReturnThis(),
+        save: jest.fn().mockResolvedValue(undefined),
+      };
+
+      return job;
+    });
     dbMocks.refreshIntervalPartitionCheck.mockReturnValue(true);
   });
 
@@ -1036,13 +1068,15 @@ describe('fetchFDA', () => {
         port: 5432,
         database: 'svc',
       },
-      'SELECT * FROM (SELECT id FROM users) AS fda_one_row LIMIT 1',
+      'SELECT * FROM (SELECT id FROM users) AS fda_one_row  ORDER BY timeinstant DESC NULLS LAST LIMIT 1',
       'servicepath/fda1',
     );
     expect(dbMocks.toParquet).toHaveBeenCalledWith(
       {},
       'svc/servicepath/fda1.csv',
       'svc/servicepath/fda1.parquet',
+      'timeinstant',
+      undefined,
     );
     expect(awsMocks.dropFile).toHaveBeenCalledWith(
       {},
@@ -1061,7 +1095,48 @@ describe('fetchFDA', () => {
       },
       objStgConf: undefined,
     });
-    expect(agenda.every).not.toHaveBeenCalled();
+    expect(agenda.create).not.toHaveBeenCalled();
+  });
+
+  test('skipBootstrap=true skips bootstrap path and default DA creation', async () => {
+    await fetchFDA(
+      'fda1',
+      'SELECT id FROM users;',
+      'svc',
+      'public',
+      '/servicepath',
+      'test FDA',
+      {
+        type: 'none',
+      },
+      'timeinstant',
+      undefined,
+      true,
+      true,
+      'default',
+      true,
+    );
+
+    expect(pgMocks.uploadTable).not.toHaveBeenCalled();
+    expect(dbMocks.toParquet).not.toHaveBeenCalled();
+    expect(awsMocks.dropFile).not.toHaveBeenCalled();
+    expect(mongoMocks.storeDA).not.toHaveBeenCalled();
+    expect(mongoMocks.retrieveFDA).not.toHaveBeenCalled();
+    expect(mongoMocks.retrieveDA).not.toHaveBeenCalled();
+
+    expect(agenda.now).toHaveBeenCalledWith('refresh-fda', {
+      datasourceId: 'default',
+      fdaId: 'fda1',
+      query: 'SELECT id FROM users;',
+      service: 'svc',
+      servicePath: '/servicepath',
+      timeColumn: 'timeinstant',
+      refreshPolicy: {
+        type: 'none',
+      },
+      objStgConf: undefined,
+    });
+    expect(agenda.create).not.toHaveBeenCalled();
   });
 
   test('creates default DA with optional filters, time range and pagination params', async () => {
@@ -1122,6 +1197,136 @@ describe('fetchFDA', () => {
         { name: 'pageStart', default: 0 },
       ],
     );
+  });
+
+  test('rejects mongodb FDA creation when collection is missing', async () => {
+    mongoMocks.retrieveDatasource.mockResolvedValueOnce({
+      datasourceId: 'mongo-ds',
+      type: 'mongodb',
+      config: {
+        uri: 'mongodb://mongo:27017',
+        database: 'svc',
+      },
+    });
+
+    await expect(
+      fetchFDA(
+        'fda_mongo_1',
+        { status: 'ok' },
+        'svc',
+        'public',
+        '/servicepath',
+        'mongo fda',
+        { type: 'none' },
+        undefined,
+        undefined,
+        false,
+        false,
+        'mongo-ds',
+      ),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidMongoFDAContract',
+    });
+  });
+
+  test('rejects mongodb FDA creation when attrs are invalid', async () => {
+    mongoMocks.retrieveDatasource.mockResolvedValueOnce({
+      datasourceId: 'mongo-ds',
+      type: 'mongodb',
+      config: {
+        uri: 'mongodb://mongo:27017',
+        database: 'svc',
+      },
+    });
+
+    await expect(
+      fetchFDA(
+        'fda_mongo_2',
+        { status: 'ok' },
+        'svc',
+        'public',
+        '/servicepath',
+        'mongo fda',
+        { type: 'none' },
+        undefined,
+        undefined,
+        false,
+        false,
+        'mongo-ds',
+        'events',
+        [],
+      ),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidMongoFDAContract',
+    });
+  });
+
+  test('rejects mongodb FDA creation when query is not an object', async () => {
+    mongoMocks.retrieveDatasource.mockResolvedValueOnce({
+      datasourceId: 'mongo-ds',
+      type: 'mongodb',
+      config: {
+        uri: 'mongodb://mongo:27017',
+        database: 'svc',
+      },
+    });
+
+    await expect(
+      fetchFDA(
+        'fda_mongo_3',
+        'status = ok',
+        'svc',
+        'public',
+        '/servicepath',
+        'mongo fda',
+        { type: 'none' },
+        undefined,
+        undefined,
+        false,
+        false,
+        'mongo-ds',
+        'events',
+        ['name'],
+      ),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidMongoFDAContract',
+    });
+  });
+
+  test('rejects mongodb FDA creation when cached is false', async () => {
+    mongoMocks.retrieveDatasource.mockResolvedValueOnce({
+      datasourceId: 'mongo-ds',
+      type: 'mongodb',
+      config: {
+        uri: 'mongodb://mongo:27017',
+        database: 'svc',
+      },
+    });
+
+    await expect(
+      fetchFDA(
+        'fda_mongo_4',
+        { status: 'ok' },
+        'svc',
+        'public',
+        '/servicepath',
+        'mongo fda',
+        { type: 'none' },
+        undefined,
+        undefined,
+        true,
+        false,
+        'mongo-ds',
+        'events',
+        ['name'],
+      ),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidMongoFDAContract',
+    });
   });
 
   test('creates default DA without time filters when FDA has no timeColumn', async () => {
@@ -1529,32 +1734,35 @@ describe('fetchFDA', () => {
       'timeinstant',
     );
 
-    expect(agenda.every).toHaveBeenCalledWith(
-      '10 minutes',
-      'refresh-fda',
-      {
-        datasourceId: 'default',
-        fdaId: 'fda1',
-        query: 'SELECT timeinstant, 1',
-        service: 'svc',
-        servicePath: '/servicepath',
-        timeColumn: 'timeinstant',
-        refreshPolicy: {
-          type: 'interval',
-          params: { refreshInterval: '10 minutes' },
-        },
-        objStgConf: undefined,
+    expect(agenda.create).toHaveBeenCalledWith('refresh-fda-recurring', {
+      datasourceId: 'default',
+      fdaId: 'fda1',
+      query: 'SELECT 1',
+      service: 'svc',
+      servicePath: '/servicepath',
+      timeColumn: 'timeinstant',
+      refreshPolicy: {
+        type: 'interval',
+        params: { refreshInterval: '10 minutes' },
       },
-      {
-        skipImmediate: true,
-        unique: {
-          name: 'refresh-fda',
-          'data.service': 'svc',
-          'data.fdaId': 'fda1',
-          'data.servicePath': '/servicepath',
-        },
-      },
-    );
+      objStgConf: undefined,
+    });
+
+    const refreshJob = agenda.create.mock.results.find(
+      ({ value }) => value.name === 'refresh-fda-recurring',
+    ).value;
+
+    expect(refreshJob.unique).toHaveBeenCalledWith({
+      name: 'refresh-fda-recurring',
+      'data.service': 'svc',
+      'data.fdaId': 'fda1',
+      'data.servicePath': '/servicepath',
+    });
+    expect(refreshJob.repeatEvery).toHaveBeenCalledWith('10 minutes', {
+      skipImmediate: true,
+    });
+    expect(refreshJob.save).toHaveBeenCalled();
+    expect(refreshJob.save).toHaveBeenCalled();
   });
 
   test('fails when refresh interval is larger than partition size', async () => {
@@ -1582,7 +1790,7 @@ describe('fetchFDA', () => {
         'Refresh interval "2 days" must be smaller or equal than partition size "day".',
     });
 
-    expect(agenda.every).not.toHaveBeenCalled();
+    expect(agenda.create).not.toHaveBeenCalled();
   });
   test('rolls back FDA provisioning and rethrows when parquet creation fails', async () => {
     const uploadError = new Error('S3 unreachable');
@@ -1634,26 +1842,38 @@ describe('fetchFDA', () => {
       true,
     );
 
-    expect(agenda.every).toHaveBeenCalledWith(
-      '1 hour',
-      'clean-partition',
-      {
-        fdaId: 'fda1',
-        service: 'svc',
-        servicePath: '/servicepath',
-        windowSize: 'week',
-        objStgConf: { partition: 'week' },
-      },
-      {
-        skipImmediate: true,
-        unique: {
-          name: 'clean-partition',
-          'data.service': 'svc',
-          'data.fdaId': 'fda1',
-          'data.servicePath': '/servicepath',
-        },
-      },
+    const cleanCreateCalls = agenda.create.mock.calls.filter(
+      ([name]) => name === 'clean-partition-recurring',
     );
+    expect(cleanCreateCalls).toHaveLength(1);
+    expect(cleanCreateCalls[0][1]).toEqual({
+      fdaId: 'fda1',
+      service: 'svc',
+      servicePath: '/servicepath',
+      windowSize: 'week',
+      objStgConf: { partition: 'week' },
+    });
+
+    const cleanJob = agenda.create.mock.results.find(
+      ({ value }) => value.name === 'clean-partition-recurring',
+    ).value;
+    expect(cleanJob.unique).toHaveBeenCalledWith({
+      name: 'clean-partition-recurring',
+      'data.service': 'svc',
+      'data.fdaId': 'fda1',
+      'data.servicePath': '/servicepath',
+    });
+    expect(cleanJob.repeatEvery).toHaveBeenCalledWith('1 hour', {
+      skipImmediate: true,
+    });
+    expect(cleanJob.save).toHaveBeenCalled();
+
+    const refreshJob = agenda.create.mock.results.find(
+      ({ value }) => value.name === 'refresh-fda-recurring',
+    ).value;
+    expect(refreshJob.repeatEvery).toHaveBeenCalledWith('1 hour', {
+      skipImmediate: true,
+    });
   });
 
   test('fetchFDA with window refresh policy schedules cleanup', async () => {
@@ -1678,34 +1898,33 @@ describe('fetchFDA', () => {
       },
     );
 
-    expect(agenda.every).toHaveBeenCalledWith(
-      expect.any(String),
-      'refresh-fda',
-      expect.any(Object),
+    expect(agenda.create).toHaveBeenCalledWith(
+      'refresh-fda-recurring',
       expect.any(Object),
     );
-    expect(agenda.every).toHaveBeenCalledWith(
-      '0 0 * * *',
-      'clean-partition',
-      {
-        fdaId: 'fda1',
-        service: 'svc',
-        servicePath: '/servicepath',
-        windowSize: 'day',
-        objStgConf: {
-          partition: 'day',
-        },
+    expect(agenda.create).toHaveBeenCalledWith('clean-partition-recurring', {
+      fdaId: 'fda1',
+      service: 'svc',
+      servicePath: '/servicepath',
+      windowSize: 'day',
+      objStgConf: {
+        partition: 'day',
       },
-      {
-        skipImmediate: true,
-        unique: {
-          name: 'clean-partition',
-          'data.service': 'svc',
-          'data.fdaId': 'fda1',
-          'data.servicePath': '/servicepath',
-        },
-      },
-    );
+    });
+
+    const refreshJob = agenda.create.mock.results.find(
+      ({ value }) => value.name === 'refresh-fda-recurring',
+    ).value;
+    expect(refreshJob.repeatEvery).toHaveBeenCalledWith('0 0 * * *', {
+      skipImmediate: true,
+    });
+
+    const cleanJob = agenda.create.mock.results.find(
+      ({ value }) => value.name === 'clean-partition-recurring',
+    ).value;
+    expect(cleanJob.repeatEvery).toHaveBeenCalledWith('0 0 * * *', {
+      skipImmediate: true,
+    });
   });
 
   test('fetchFDA throws when servicePath is missing', async () => {
@@ -1768,7 +1987,6 @@ describe('updateFDA', () => {
       timeColumn: undefined,
       refreshPolicy: undefined,
       objStgConf: undefined,
-      partitionFlag: true,
     });
   });
 
@@ -1807,12 +2025,12 @@ describe('updateFDA', () => {
         },
       },
       objStgConf: undefined,
-      partitionFlag: true,
     });
 
     expect(agenda.now).toHaveBeenCalledWith('clean-partition', {
       fdaId: 'fda42',
       service: 'svc',
+      servicePath: '/servicepath',
       windowSize: 'day',
       objStgConf: undefined,
     });
@@ -1864,6 +2082,20 @@ describe('datasource service helpers', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     pgMocks.runPgQuery.mockResolvedValue([{ ok: 1 }]);
+    pgMocks.validatePostgresDatasourceConnection.mockImplementation(
+      async (dsConfig) => {
+        try {
+          await pgMocks.runPgQuery(dsConfig, 'SELECT 1', []);
+        } catch (error) {
+          throw new FDAError(
+            400,
+            'InvalidDatasourceConnection',
+            `Could not connect to datasource: ${error.message}`,
+          );
+        }
+      },
+    );
+    mongoMocks.validateMongoDatasourceConnection.mockResolvedValue(undefined);
     mongoMocks.retrieveDatasource.mockResolvedValue({
       datasourceId: 'default',
       type: 'postgres',
@@ -1917,6 +2149,26 @@ describe('datasource service helpers', () => {
     expect(mongoMocks.createDatasource).not.toHaveBeenCalled();
   });
 
+  test('validates mongodb datasource connection before creating datasource', async () => {
+    const dsConfig = {
+      uri: 'mongodb://mongo:27017',
+      database: 'svc',
+    };
+
+    await createDatasourceForService('svc', 'mongo-ds', 'mongodb', dsConfig);
+
+    expect(mongoMocks.validateMongoDatasourceConnection).toHaveBeenCalledWith(
+      dsConfig,
+    );
+    expect(pgMocks.runPgQuery).not.toHaveBeenCalled();
+    expect(mongoMocks.createDatasource).toHaveBeenCalledWith(
+      'svc',
+      'mongo-ds',
+      'mongodb',
+      dsConfig,
+    );
+  });
+
   test('validates merged datasource config before updating datasource', async () => {
     const nextConfig = {
       user: 'u2',
@@ -1957,11 +2209,15 @@ describe('processFDAAsync', () => {
     jest.clearAllMocks();
     awsMocks.getS3Client.mockReturnValue({});
     awsMocks.dropFile.mockResolvedValue(undefined);
+    awsMocks.newUpload.mockReturnValue({
+      done: jest.fn().mockResolvedValue(undefined),
+    });
     dbMocks.getDBConnection.mockResolvedValue({});
     dbMocks.releaseDBConnection.mockResolvedValue(undefined);
     dbMocks.toParquet.mockResolvedValue(undefined);
     pgMocks.uploadTable.mockResolvedValue(undefined);
     mongoMocks.updateFDAStatus.mockResolvedValue(undefined);
+    mongoMocks.readMongoDatasourceRows.mockResolvedValue([]);
     mongoMocks.retrieveDatasource.mockResolvedValue({
       datasourceId: 'default',
       type: 'postgres',
@@ -2090,6 +2346,104 @@ describe('processFDAAsync', () => {
       'upload failed',
     );
   });
+
+  test('uploads Mongo datasource rows as CSV before parquet conversion', async () => {
+    mongoMocks.retrieveDatasource.mockResolvedValue({
+      datasourceId: 'mongo-ds',
+      type: 'mongodb',
+      config: {
+        uri: 'mongodb://mongo:27017',
+        database: 'svc',
+      },
+    });
+    mongoMocks.retrieveFDA.mockResolvedValueOnce({
+      fdaId: 'fda_mongo_cached',
+      query: {
+        collection: 'events',
+        filter: {},
+        projection: {
+          device: 1,
+          status: 1,
+        },
+      },
+      cached: true,
+      servicePath: '/servicepath',
+    });
+    mongoMocks.readMongoDatasourceRows.mockResolvedValueOnce([
+      { device: 'dev-1', status: 'ok' },
+      { device: 'dev-2', status: 'warn' },
+    ]);
+
+    await processFDAAsync(
+      'fda_mongo_cached',
+      {
+        collection: 'events',
+        filter: { status: 'ok' },
+        projection: {
+          device: 1,
+          status: 1,
+        },
+      },
+      'svc',
+      '/servicepath',
+      undefined,
+      { type: 'none' },
+      undefined,
+      false,
+      'mongo-ds',
+    );
+
+    expect(awsMocks.newUpload).toHaveBeenCalledWith(
+      {},
+      'svc',
+      'servicepath/fda_mongo_cached.csv',
+      'device,status\ndev-1,ok\ndev-2,warn\n',
+      5,
+      1,
+    );
+    expect(dbMocks.toParquet).toHaveBeenCalledWith(
+      {},
+      'svc/servicepath/fda_mongo_cached.csv',
+      'svc/servicepath/fda_mongo_cached.parquet',
+      undefined,
+      undefined,
+      undefined,
+    );
+  });
+
+  test('rejects Mongo window refresh during async processing', async () => {
+    mongoMocks.retrieveDatasource.mockResolvedValueOnce({
+      datasourceId: 'mongo-ds',
+      type: 'mongodb',
+      config: {
+        uri: 'mongodb://mongo:27017',
+        database: 'svc',
+      },
+    });
+
+    await expect(
+      processFDAAsync(
+        'fda_mongo_cached',
+        { status: 'ok' },
+        'svc',
+        '/servicepath',
+        'timeinstant',
+        {
+          type: 'window',
+          params: {
+            refreshInterval: '1 hour',
+            fetchSize: 'hour',
+          },
+        },
+        undefined,
+        false,
+        'mongo-ds',
+      ),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidMongoFDAContract',
+    });
+  });
 });
 
 describe('deleteFDA', () => {
@@ -2112,12 +2466,12 @@ describe('deleteFDA', () => {
       visibility: 'private',
       servicePath: '/servicepath',
     });
-    awsMocks.listObjects.mockResolvedValue(['routeTo/fdaA.parquet']);
+    awsMocks.listObjects.mockResolvedValue(['servicepath/fdaA.parquet']);
 
     await deleteFDA('svc', 'fdaA', 'private', '/servicepath');
 
     expect(awsMocks.dropFiles).toHaveBeenCalledWith({}, 'svc', [
-      'routeTo/fdaA.parquet',
+      'servicepath/fdaA.parquet',
     ]);
     expect(mongoMocks.removeFDA).toHaveBeenCalledWith(
       'svc',
@@ -2125,11 +2479,18 @@ describe('deleteFDA', () => {
       '/servicepath',
     );
     expect(agenda.cancel).toHaveBeenCalledWith({
-      name: 'refresh-fda',
+      name: 'refresh-fda-recurring',
       'data.service': 'svc',
       'data.fdaId': 'fdaA',
       'data.servicePath': '/servicepath',
     });
+    expect(agenda.cancel).toHaveBeenCalledWith({
+      name: 'clean-partition-recurring',
+      'data.service': 'svc',
+      'data.fdaId': 'fdaA',
+      'data.servicePath': '/servicepath',
+    });
+    expect(agenda.cancel).toHaveBeenCalledTimes(2);
   });
 
   test('deleteFDA uses normalized bucket name for object storage deletion', async () => {
@@ -2138,7 +2499,7 @@ describe('deleteFDA', () => {
       visibility: 'private',
       servicePath: '/servicepath',
     });
-    awsMocks.listObjects.mockResolvedValue(['routeTo/fdaA.parquet']);
+    awsMocks.listObjects.mockResolvedValue(['servicepath/fdaA.parquet']);
 
     await deleteFDA('service_name', 'fdaA', 'private', '/servicepath');
 
@@ -2148,7 +2509,31 @@ describe('deleteFDA', () => {
       'servicepath/fdaA',
     );
     expect(awsMocks.dropFiles).toHaveBeenCalledWith({}, 'service-name', [
-      'routeTo/fdaA.parquet',
+      'servicepath/fdaA.parquet',
+    ]);
+  });
+
+  test('deleteFDA only removes objects belonging to the target FDA, not sibling FDAs sharing a prefix', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      _id: 'mongo-id',
+      visibility: 'private',
+      servicePath: '/test',
+    });
+    // listObjects returns objects for both fda_test and fda_test_1 because S3
+    // prefix listing matches any key starting with "test/fda_test"
+    awsMocks.listObjects.mockResolvedValue([
+      'test/fda_test.parquet',
+      'test/fda_test_1.parquet',
+      'test/fda_test/year=2024/data.parquet',
+      'test/fda_test_1/year=2024/data.parquet',
+    ]);
+
+    await deleteFDA('svc', 'fda_test', 'private', '/test');
+
+    // Only objects belonging to fda_test must be dropped
+    expect(awsMocks.dropFiles).toHaveBeenCalledWith({}, 'svc', [
+      'test/fda_test.parquet',
+      'test/fda_test/year=2024/data.parquet',
     ]);
   });
 
@@ -2169,11 +2554,18 @@ describe('deleteFDA', () => {
       '/servicepath',
     );
     expect(agenda.cancel).toHaveBeenCalledWith({
-      name: 'refresh-fda',
+      name: 'refresh-fda-recurring',
       'data.service': 'svc',
       'data.fdaId': 'fdaA',
       'data.servicePath': '/servicepath',
     });
+    expect(agenda.cancel).toHaveBeenCalledWith({
+      name: 'clean-partition-recurring',
+      'data.service': 'svc',
+      'data.fdaId': 'fdaA',
+      'data.servicePath': '/servicepath',
+    });
+    expect(agenda.cancel).toHaveBeenCalledTimes(2);
   });
 
   test('throws FDANotFound when FDA does not exist', async () => {
@@ -2331,7 +2723,7 @@ describe('DA access and update helpers', () => {
 describe('fetchFDA with refresh policies', () => {
   const agenda = {
     now: jest.fn(),
-    every: jest.fn(),
+    create: jest.fn(),
   };
 
   beforeEach(() => {
@@ -2339,13 +2731,29 @@ describe('fetchFDA with refresh policies', () => {
     awsMocks.getS3Client.mockReturnValue({});
     awsMocks.dropFile.mockResolvedValue(undefined);
     mongoMocks.createFDAMongo.mockResolvedValue(undefined);
+    mongoMocks.retrieveDatasource.mockResolvedValue({
+      datasourceId: 'default',
+      type: 'postgres',
+      config: {},
+    });
     dbMocks.getDBConnection.mockResolvedValue({});
     dbMocks.releaseDBConnection.mockResolvedValue(undefined);
     dbMocks.toParquet.mockResolvedValue(undefined);
     pgMocks.uploadTable.mockResolvedValue(undefined);
     jobsMocks.getAgenda.mockReturnValue(agenda);
     agenda.now.mockResolvedValue(undefined);
-    agenda.every.mockResolvedValue(undefined);
+    agenda.create.mockImplementation((name, data) => {
+      const job = {
+        name,
+        data,
+        unique: jest.fn().mockReturnThis(),
+        repeatEvery: jest.fn().mockReturnThis(),
+        save: jest.fn().mockResolvedValue(undefined),
+      };
+
+      return job;
+    });
+    dbMocks.refreshIntervalPartitionCheck.mockReturnValue(true);
   });
 
   test('fetchFDA with interval refresh policy schedules periodic job', async () => {
@@ -2363,26 +2771,183 @@ describe('fetchFDA with refresh policies', () => {
       'timeinstant',
     );
 
-    expect(agenda.every).toHaveBeenCalledWith(
-      '0 0 * * *',
-      'refresh-fda',
+    expect(agenda.create).toHaveBeenCalledWith(
+      'refresh-fda-recurring',
       expect.objectContaining({
         fdaId: 'fda1',
-        query: 'SELECT timeinstant, 1',
+        query: 'SELECT 1',
         service: 'svc',
         timeColumn: 'timeinstant',
         objStgConf: undefined,
       }),
+    );
+
+    const refreshJob = agenda.create.mock.results[0].value;
+    expect(refreshJob.unique).toHaveBeenCalledWith({
+      name: 'refresh-fda-recurring',
+      'data.service': 'svc',
+      'data.fdaId': 'fda1',
+      'data.servicePath': '/servicepath',
+    });
+    expect(refreshJob.repeatEvery).toHaveBeenCalledWith('0 0 * * *', {
+      skipImmediate: true,
+    });
+    expect(refreshJob.save).toHaveBeenCalled();
+  });
+
+  test('fetchFDA with window refresh policy schedules periodic job', async () => {
+    await fetchFDA(
+      'fda1',
+      'SELECT 1',
+      'svc',
+      'public',
+      '/servicepath',
+      'desc',
       {
-        skipImmediate: true,
-        unique: {
-          name: 'refresh-fda',
-          'data.service': 'svc',
-          'data.fdaId': 'fda1',
-          'data.servicePath': '/servicepath',
+        type: 'window',
+        params: { refreshInterval: '0 0 * * *', fetchSize: 'week' },
+      },
+      'timeinstant',
+    );
+
+    const refreshJob = agenda.create.mock.results[0].value;
+    expect(refreshJob.unique).toHaveBeenCalledWith({
+      name: 'refresh-fda-recurring',
+      'data.service': 'svc',
+      'data.fdaId': 'fda1',
+      'data.servicePath': '/servicepath',
+    });
+    expect(refreshJob.repeatEvery).toHaveBeenCalledWith('0 0 * * *', {
+      skipImmediate: true,
+    });
+    expect(refreshJob.save).toHaveBeenCalled();
+  });
+
+  test('fetchFDA keeps independent refresh jobs when creating multiple FDAs', async () => {
+    await fetchFDA(
+      'fda1',
+      'SELECT 1',
+      'svc',
+      'public',
+      '/servicepath',
+      'desc 1',
+      {
+        type: 'interval',
+        params: { refreshInterval: '0 0 * * *' },
+      },
+      'timeinstant',
+    );
+
+    await fetchFDA(
+      'fda2',
+      'SELECT 1',
+      'svc',
+      'public',
+      '/servicepath',
+      'desc 2',
+      {
+        type: 'interval',
+        params: { refreshInterval: '0 0 * * *' },
+      },
+      'timeinstant',
+    );
+
+    const refreshCreateCalls = agenda.create.mock.calls.filter(
+      ([name]) => name === 'refresh-fda-recurring',
+    );
+
+    expect(refreshCreateCalls).toHaveLength(2);
+    expect(refreshCreateCalls[0][1]).toEqual(
+      expect.objectContaining({
+        fdaId: 'fda1',
+        query: 'SELECT 1',
+        service: 'svc',
+      }),
+    );
+    expect(refreshCreateCalls[1][1]).toEqual(
+      expect.objectContaining({
+        fdaId: 'fda2',
+        query: 'SELECT 1',
+        service: 'svc',
+      }),
+    );
+
+    const createdJobs = agenda.create.mock.results.map(({ value }) => value);
+    expect(createdJobs[0].unique).toHaveBeenCalledWith({
+      name: 'refresh-fda-recurring',
+      'data.service': 'svc',
+      'data.fdaId': 'fda1',
+      'data.servicePath': '/servicepath',
+    });
+    expect(createdJobs[1].unique).toHaveBeenCalledWith({
+      name: 'refresh-fda-recurring',
+      'data.service': 'svc',
+      'data.fdaId': 'fda2',
+      'data.servicePath': '/servicepath',
+    });
+  });
+
+  test('fetchFDA keeps independent clean-partition jobs when creating multiple FDAs with window policy', async () => {
+    await fetchFDA(
+      'fda1',
+      'SELECT 1',
+      'svc',
+      'public',
+      '/servicepath',
+      'desc 1',
+      {
+        type: 'window',
+        params: {
+          refreshInterval: '0 0 * * *',
+          fetchSize: 'day',
+          windowSize: 'day',
         },
       },
+      'timeinstant',
+      { partition: 'day' },
     );
+
+    await fetchFDA(
+      'fda2',
+      'SELECT 1',
+      'svc',
+      'public',
+      '/servicepath',
+      'desc 2',
+      {
+        type: 'window',
+        params: {
+          refreshInterval: '0 0 * * *',
+          fetchSize: 'day',
+          windowSize: 'day',
+        },
+      },
+      'timeinstant',
+      { partition: 'day' },
+    );
+
+    const cleanCreateCalls = agenda.create.mock.calls.filter(
+      ([name]) => name === 'clean-partition-recurring',
+    );
+
+    expect(cleanCreateCalls).toHaveLength(2);
+
+    const cleanJobs = agenda.create.mock.results
+      .map(({ value }) => value)
+      .filter((job) => job.name === 'clean-partition-recurring');
+
+    expect(cleanJobs[0].unique).toHaveBeenCalledWith({
+      name: 'clean-partition-recurring',
+      'data.service': 'svc',
+      'data.fdaId': 'fda1',
+      'data.servicePath': '/servicepath',
+    });
+    expect(cleanJobs[1].unique).toHaveBeenCalledWith({
+      name: 'clean-partition-recurring',
+      'data.service': 'svc',
+      'data.fdaId': 'fda2',
+      'data.servicePath': '/servicepath',
+    });
   });
 
   test('fetchFDA with different fetch size and partition', async () => {
@@ -2415,7 +2980,7 @@ describe('fetchFDA with refresh policies', () => {
       message: 'Fetch size "week" must be equal to partition size "day".',
     });
 
-    expect(agenda.every).not.toHaveBeenCalled();
+    expect(agenda.create).not.toHaveBeenCalled();
   });
 
   test('fetchFDA rejects invalid refresh policy types', async () => {
@@ -2439,7 +3004,7 @@ describe('fetchFDA with refresh policies', () => {
       message: 'Invalid refresh policy type "invalid-type".',
     });
 
-    expect(agenda.every).not.toHaveBeenCalled();
+    expect(agenda.create).not.toHaveBeenCalled();
   });
 
   test('fetchFDA throws when servicePath is missing', async () => {
@@ -2450,6 +3015,18 @@ describe('fetchFDA with refresh policies', () => {
     ).rejects.toMatchObject({
       status: 400,
       type: 'InvalidServicePath',
+    });
+  });
+
+  test('fetchFDA throws when refresh policy window and no timecolumn', async () => {
+    await expect(
+      fetchFDA('fda1', 'SELECT 1', 'svc', 'public', '/servicepath', 'desc', {
+        type: 'window',
+        params: { refreshInterval: '0 0 * * *', fetchSize: 'week' },
+      }),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidParam',
     });
   });
 });
@@ -2479,17 +3056,18 @@ describe('deleteFDA', () => {
     await deleteFDA('svc', 'fda1', 'private', '/servicepath');
 
     expect(agenda.cancel).toHaveBeenNthCalledWith(1, {
-      name: 'refresh-fda',
+      name: 'refresh-fda-recurring',
       'data.service': 'svc',
       'data.fdaId': 'fda1',
       'data.servicePath': '/servicepath',
     });
     expect(agenda.cancel).toHaveBeenNthCalledWith(2, {
-      name: 'clean-partition',
+      name: 'clean-partition-recurring',
       'data.service': 'svc',
       'data.fdaId': 'fda1',
       'data.servicePath': '/servicepath',
     });
+    expect(agenda.cancel).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -2647,8 +3225,8 @@ describe('cleanPartition', () => {
     jest.clearAllMocks();
     awsMocks.getS3Client.mockReturnValue({});
     awsMocks.listObjects.mockResolvedValue([
-      'svc/fdaA/2020-01-01.parquet',
-      'svc/fdaA/2099-01-01.parquet',
+      'public/fdaA/2020-01-01.parquet',
+      'public/fdaA/2099-01-01.parquet',
     ]);
     awsMocks.dropFiles.mockResolvedValue(undefined);
   });
@@ -2671,7 +3249,7 @@ describe('cleanPartition', () => {
     expect(awsMocks.listObjects).toHaveBeenCalledWith({}, 'svc', 'public/fdaA');
 
     expect(awsMocks.dropFiles).toHaveBeenCalledWith({}, 'svc', [
-      'svc/fdaA/2020-01-01.parquet',
+      'public/fdaA/2020-01-01.parquet',
     ]);
   });
 
@@ -2725,7 +3303,7 @@ describe('cleanPartition', () => {
     );
 
     expect(awsMocks.dropFiles).toHaveBeenCalledWith({}, 'svc', [
-      'svc/fdaA/2020-01-01.parquet',
+      'public/fdaA/2020-01-01.parquet',
     ]);
   });
 
@@ -2764,5 +3342,58 @@ describe('cleanPartition', () => {
       expect(err.type).toContain('CleaningError');
       expect(err.status).toBe(400);
     }
+  });
+});
+
+describe('mongo utils extra coverage', () => {
+  test('getStoredFDA returns FDA when exists', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValueOnce({
+      fdaId: 'fdaA',
+    });
+
+    const result = await getStoredFDA('svc', 'fdaA', '/sp');
+
+    expect(result).toEqual({ fdaId: 'fdaA' });
+  });
+
+  test('getStoredFDA throws 404 when FDA does not exist', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValueOnce(null);
+
+    await expect(getStoredFDA('svc', 'missing', '/sp')).rejects.toMatchObject({
+      status: 404,
+      type: 'FDANotFound',
+    });
+  });
+
+  test('validateMongoFDAContract throws when attrs contain invalid strings', async () => {
+    const { validateMongoFDAContract } = await loadFdaModule();
+
+    expect(() =>
+      validateMongoFDAContract({}, 'col', ['ok', ''], 'time', true),
+    ).toThrow();
+  });
+
+  test('validateMongoFDAContract throws when query is invalid', async () => {
+    const { validateMongoFDAContract } = await loadFdaModule();
+
+    expect(() =>
+      validateMongoFDAContract([], 'col', ['a'], 'time', true),
+    ).toThrow();
+  });
+
+  test('validateMongoFDAContract throws when timeColumn not in attrs', async () => {
+    const { validateMongoFDAContract } = await loadFdaModule();
+
+    expect(() =>
+      validateMongoFDAContract({ a: 1 }, 'col', ['a'], 'missing_time', true),
+    ).toThrow();
+  });
+
+  test('validateMongoFDAContract throws when cached is false', async () => {
+    const { validateMongoFDAContract } = await loadFdaModule();
+
+    expect(() =>
+      validateMongoFDAContract({ a: 1 }, 'col', ['a'], 'a', false),
+    ).toThrow();
   });
 });

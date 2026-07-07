@@ -274,3 +274,15 @@ export async function createPgCursorReader(
     );
   }
 }
+
+export async function validatePostgresDatasourceConnection(dsConfig) {
+  try {
+    await runPgQuery(dsConfig, 'SELECT 1', []);
+  } catch (error) {
+    throw new FDAError(
+      400,
+      'InvalidDatasourceConnection',
+      `Could not connect to datasource: ${error.message}`,
+    );
+  }
+}

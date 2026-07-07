@@ -34,35 +34,72 @@ import pg from 'pg';
 import { MongoClient } from 'mongodb';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
-import { registerDatasourcesIntegrationTests } from './suites/datasources.integration.tests.js';
-import { registerPlatformIntegrationTests } from './suites/platform.integration.tests.js';
-import { registerSlidingWindowsIntegrationTests } from './suites/slidingWindows.integration.tests.js';
-import { registerFdaCreationIntegrationTests } from './suites/fdaCreation.integration.tests.js';
-import { registerDefaultDataAccessIntegrationTests } from './suites/defaultDataAccess.integration.tests.js';
-import { registerDaDataQueriesIntegrationTests } from './suites/daDataQueries.integration.tests.js';
-import { registerDaParamsIntegrationTests } from './suites/daParams.integration.tests.js';
-import { registerFdaVariantsIntegrationTests } from './suites/fdaVariants.integration.tests.js';
-import { registerDaCrudIntegrationTests } from './suites/daCrud.integration.tests.js';
-import { registerFreshQueriesIntegrationTests } from './suites/freshQueries.integration.tests.js';
-import { registerQueryStyleDataIntegrationTests } from './suites/queryStyleData.integration.tests.js';
-import { registerVisibilityConstraintsIntegrationTests } from './suites/visibilityConstraints.integration.tests.js';
-import { registerCdaCompatibilityIntegrationTests } from './suites/cdaCompatibility.integration.tests.js';
-import { registerFdaLifecycleIntegrationTests } from './suites/fdaLifecycle.integration.tests.js';
-import { registerMongoFdasIntegrationTests } from './suites/mongoFdas.integration.tests.js';
+import { registerFdaCreationPerformanceTests } from './suites/fdaCreation.performance.tests.js';
+import { registerFdaLoadPerformanceTests } from './suites/fdaLoad.performance.tests.js';
+import { registerFdaQueryPerformanceTests } from './suites/fdaQuery.performance.tests.js';
 import {
   httpReq,
-  httpFormReq,
-  httpReqRaw,
-  buildDaDataUrl,
-  buildFdaDataUrl,
   getFreePort,
   connectWithRetry,
   waitUntilFDACompleted,
-} from './utils/integrationTestUtils.js';
+  buildDaDataUrl,
+} from '../integration/utils/integrationTestUtils.js';
+import {
+  parsePerformanceTableRows,
+  parseMaxTimeoutMs,
+  parseFdaLoadTestCount,
+  parseFdaQueryLoadTestCount,
+  parseFdaLoadRampUpMs,
+  PERFORMANCE_TABLE_ROWS_ARG,
+  MAX_TIMEOUT_MS_ARG,
+  FDA_LOAD_TEST_COUNT_ARG,
+  FDA_QUERY_LOAD_TEST_COUNT_ARG,
+  FDA_LOAD_RAMP_UP_MS_ARG,
+  httpReqNoBody,
+} from './utils/performanceTestUtils.js';
+
+const performanceTableRows = parsePerformanceTableRows(
+  process.env.PERFORMANCE_TABLE_ROWS ??
+    process.env.npm_config_performanceTableRows ??
+    process.argv
+      .find((arg) => arg.startsWith(PERFORMANCE_TABLE_ROWS_ARG))
+      ?.slice(PERFORMANCE_TABLE_ROWS_ARG.length) ??
+    process.argv.slice(2).find((arg) => /^\d+$/.test(arg)),
+);
+const maxTimeoutMs = parseMaxTimeoutMs(
+  process.env.maxTimeOutMs ??
+    process.env.npm_config_maxTimeOutMs ??
+    process.argv
+      .find((arg) => arg.startsWith(MAX_TIMEOUT_MS_ARG))
+      ?.slice(MAX_TIMEOUT_MS_ARG.length),
+);
+
+const loadFdaCount = parseFdaLoadTestCount(
+  process.env.FDA_LOAD_TEST_COUNT ??
+    process.env.npm_config_fdaLoadTestCount ??
+    process.argv
+      .find((arg) => arg.startsWith(FDA_LOAD_TEST_COUNT_ARG))
+      ?.slice(FDA_LOAD_TEST_COUNT_ARG.length),
+);
+const loadFdaRampUpMs = parseFdaLoadRampUpMs(
+  process.env.FDA_LOAD_RAMP_UP_MS ??
+    process.env.npm_config_fdaLoadRampUpMs ??
+    process.argv
+      .find((arg) => arg.startsWith(FDA_LOAD_RAMP_UP_MS_ARG))
+      ?.slice(FDA_LOAD_RAMP_UP_MS_ARG.length),
+);
+
+const queryLoadFdaCount = parseFdaQueryLoadTestCount(
+  process.env.FDA_QUERY_LOAD_TEST_COUNT ??
+    process.env.npm_config_fdaQueryLoadTestCount ??
+    process.argv
+      .find((arg) => arg.startsWith(FDA_QUERY_LOAD_TEST_COUNT_ARG))
+      ?.slice(FDA_QUERY_LOAD_TEST_COUNT_ARG.length),
+);
 
 const { Client } = pg;
 
-jest.setTimeout(240_000);
+jest.setTimeout(maxTimeoutMs);
 
 export const EXECUTION_MODES = Object.freeze({
   COMBINED: 'combined',
@@ -87,11 +124,8 @@ export function runFDAIntegrationSuite({ mode, label }) {
     let baseUrl;
 
     const service = 'myservice';
-    const servicePath = '/public';
-    const visibility = 'public';
-    const fdaId = 'fda1';
-    const fdaId3 = 'fda3';
-    const daId = 'da1';
+
+    let tableSize;
 
     beforeAll(async () => {
       // Containers
@@ -176,28 +210,73 @@ export function runFDAIntegrationSuite({ mode, label }) {
           name TEXT,
           age INT,
           timeinstant TIMESTAMP,
-          authorized BOOLEAN
+          authorized BOOLEAN,
+          country TEXT,
+          score INT
         );
       `);
         await pgClient.query(`
-        INSERT INTO public.users (id, name, age, timeinstant, authorized)
-        VALUES (1,'ana',30, '2020-08-17T18:25:28.332Z', true), (2,'bob',20, '2020-08-17T18:25:28.332Z', true), (3,'carlos',40, '2020-08-17T18:25:28.332Z', true);
+        INSERT INTO public.users (id, name, age, timeinstant, authorized, country, score)
+        SELECT
+          i,
+          'user_' || i,
+          (i % 80) + 18,
+          now() - ((i % 365) || ' days')::interval,
+          (i % 2 = 0),
+          (ARRAY['ES','FR','DE','IT','UK','PT','NL'])[(i % 7) + 1],
+          (i % 1000)
+        FROM generate_series(1, ${performanceTableRows}) AS s(i);
       `);
+
+        const sizeResult = await pgClient.query(
+          `SELECT pg_size_pretty(pg_total_relation_size('public.users')) as size`,
+        );
+        tableSize = sizeResult.rows[0].size;
 
         await pgClient.end();
         console.log('[TEST] Postgres OK');
       }
 
       await startApp();
+
+      await createDefaultDS({
+        getBaseUrl: () => baseUrl,
+        getPgHost: () => pgHost,
+        getPgPort: () => pgPort,
+      });
     });
 
     afterAll(async () => {
       await stopApp();
       await Promise.allSettled([minio?.stop(), mongo?.stop(), postgis?.stop()]);
+      printPerformanceStats();
     });
 
     function wait(ms) {
       return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    function printPerformanceStats() {
+      const data = {
+        'Rows in table': performanceTableRows,
+        'PostgreSQL table size': tableSize,
+        'Concurrent FDAs created': loadFdaCount,
+        'Concurrent query load requests': queryLoadFdaCount,
+        'Max timeout (ms)': maxTimeoutMs,
+        'Load ramp-up (ms)': loadFdaRampUpMs,
+      };
+      console.log('\n');
+      console.table(data);
+
+      // Performance table
+      const measures = performance.getEntriesByType('measure');
+      if (measures.length > 0) {
+        const data = Object.fromEntries(
+          measures.map((m) => [m.name, `${m.duration.toFixed(2)} ms`]),
+        );
+        console.log('\n');
+        console.table(data);
+      }
     }
 
     function buildCommonEnv(overrides = {}) {
@@ -315,175 +394,101 @@ export function runFDAIntegrationSuite({ mode, label }) {
       appProc = undefined;
     }
 
-    registerDatasourcesIntegrationTests({
+    async function createDefaultDS({ getBaseUrl, getPgHost, getPgPort }) {
+      const baseUrl = getBaseUrl();
+
+      const deleteExisting = await httpReq({
+        method: 'DELETE',
+        url: `${baseUrl}/datasources/default`,
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect([204, 404]).toContain(deleteExisting.status);
+
+      const createRes = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/datasources`,
+        headers: {
+          'Content-Type': 'application/json',
+          'Fiware-Service': service,
+        },
+        body: {
+          datasourceId: 'default',
+          type: 'postgres',
+          config: {
+            user: 'postgres',
+            password: 'postgres',
+            host: getPgHost(),
+            port: getPgPort(),
+            database: service,
+          },
+        },
+      });
+
+      if (createRes.status >= 400) {
+        console.error(
+          'POST /datasources default failed:',
+          createRes.status,
+          createRes.json ?? createRes.text,
+        );
+      }
+
+      expect(createRes.status).toBe(200);
+
+      const getRes = await httpReq({
+        method: 'GET',
+        url: `${baseUrl}/datasources/default`,
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect(getRes.status).toBe(200);
+      expect(getRes.json).toMatchObject({
+        datasourceId: 'default',
+        type: 'postgres',
+        config: {
+          user: 'postgres',
+          password: 'postgres',
+          host: getPgHost(),
+          port: getPgPort(),
+          database: service,
+        },
+      });
+    }
+
+    registerFdaCreationPerformanceTests({
       getBaseUrl: () => baseUrl,
       service,
-      servicePath,
-      visibility,
-      getPgHost: () => pgHost,
-      getPgPort: () => pgPort,
+      servicePath: '/public',
+      visibility: 'public',
+      fdaId: `perf-test`,
       httpReq,
       waitUntilFDACompleted,
+      maxWaitMs: () => maxTimeoutMs,
     });
 
-    registerPlatformIntegrationTests({
-      getAppPort: () => appPort,
-      httpReq,
-    });
-
-    registerFdaCreationIntegrationTests({
-      getBaseUrl: () => baseUrl,
-      getMongoUri: () => mongoUri,
-      getPgHost: () => pgHost,
-      getPgPort: () => pgPort,
-      service,
-      servicePath,
-      visibility,
-      fdaId,
-      fdaId3,
-      httpReq,
-      waitUntilFDACompleted,
-      buildDaDataUrl,
-    });
-
-    registerSlidingWindowsIntegrationTests({
+    registerFdaQueryPerformanceTests({
       getBaseUrl: () => baseUrl,
       service,
-      servicePath,
-      visibility,
+      servicePath: '/public',
+      visibility: 'public',
+      fdaId: `perf-test`,
       httpReq,
-      waitUntilFDACompleted,
-      buildDaDataUrl,
-      getPgHost: () => pgHost,
-      getPgPort: () => pgPort,
-    });
-
-    registerDefaultDataAccessIntegrationTests({
-      getBaseUrl: () => baseUrl,
-      service,
-      servicePath,
-      visibility,
-      httpReq,
-      waitUntilFDACompleted,
-      buildDaDataUrl,
-    });
-
-    registerDaParamsIntegrationTests({
-      getBaseUrl: () => baseUrl,
-      service,
-      servicePath,
-      visibility,
-      httpReq,
-      waitUntilFDACompleted,
-      buildDaDataUrl,
-    });
-
-    registerDaDataQueriesIntegrationTests({
-      getBaseUrl: () => baseUrl,
-      service,
-      servicePath,
-      visibility,
-      httpReq,
-      httpReqRaw,
-      waitUntilFDACompleted,
-      buildDaDataUrl,
-    });
-
-    registerQueryStyleDataIntegrationTests({
-      getBaseUrl: () => baseUrl,
-      service,
-      servicePath,
-      visibility,
-      getPgHost: () => pgHost,
-      getPgPort: () => pgPort,
-      httpReq,
-      httpReqRaw,
-      buildDaDataUrl,
-      buildFdaDataUrl,
-      waitUntilFDACompleted,
-    });
-
-    registerFdaVariantsIntegrationTests({
-      getBaseUrl: () => baseUrl,
-      service,
-      servicePath,
-      visibility,
-      httpReq,
-      waitUntilFDACompleted,
-      buildFdaDataUrl,
-    });
-
-    registerDaCrudIntegrationTests({
-      getBaseUrl: () => baseUrl,
-      service,
-      servicePath,
-      visibility,
-      httpReq,
-      buildDaDataUrl,
-      fdaId,
-      daId,
-    });
-
-    registerFreshQueriesIntegrationTests({
-      getBaseUrl: () => baseUrl,
-      service,
-      servicePath,
-      visibility,
-      httpReq,
-      httpReqRaw,
       waitUntilFDACompleted,
       buildDaDataUrl,
-      buildFdaDataUrl,
-      fdaId,
-      getPgHost: () => pgHost,
-      getPgPort: () => pgPort,
     });
 
-    registerVisibilityConstraintsIntegrationTests({
+    registerFdaLoadPerformanceTests({
       getBaseUrl: () => baseUrl,
       service,
+      servicePath: '/public',
+      visibility: 'public',
       httpReq,
-      fdaId,
-      daId,
-    });
-
-    registerCdaCompatibilityIntegrationTests({
-      getBaseUrl: () => baseUrl,
-      service,
-      servicePath,
-      visibility,
-      httpReq,
-      httpFormReq,
-      httpReqRaw,
+      httpReqNoBody,
       waitUntilFDACompleted,
-      fdaId,
-      daId,
-      getPgHost: () => pgHost,
-      getPgPort: () => pgPort,
-    });
-
-    registerFdaLifecycleIntegrationTests({
-      getBaseUrl: () => baseUrl,
-      service,
-      servicePath,
-      visibility,
-      fdaId,
-      fdaId2: 'fda2',
-      fdaId3,
-      httpReq,
-      waitUntilFDACompleted,
-      getMongoUri: () => mongoUri,
-    });
-
-    registerMongoFdasIntegrationTests({
-      getBaseUrl: () => baseUrl,
-      getMongoUri: () => mongoUri,
-      service,
-      servicePath,
-      visibility,
-      httpReq,
-      httpReqRaw,
-      waitUntilFDACompleted,
+      maxWaitMs: () => maxTimeoutMs,
+      loadFdaCount,
+      queryLoadFdaCount,
+      loadFdaRampUpMs,
       buildDaDataUrl,
     });
   });

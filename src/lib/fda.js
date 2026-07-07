@@ -36,9 +36,15 @@ import {
   PARTITION_TYPES,
   refreshIntervalPartitionCheck,
 } from './utils/db.js';
-import { uploadTable, runPgQuery, createPgCursorReader } from './utils/pg.js';
+import {
+  uploadTable,
+  runPgQuery,
+  createPgCursorReader,
+  validatePostgresDatasourceConnection,
+} from './utils/pg.js';
 import {
   getS3Client,
+  newUpload,
   dropFile,
   moveObject,
   listObjects,
@@ -62,6 +68,8 @@ import {
   updateDatasource,
   removeDatasource,
   countFDAsUsingDatasource,
+  validateMongoDatasourceConnection,
+  readMongoDatasourceRows,
 } from './utils/mongo.js';
 import {
   normalizeForSerialization,
@@ -83,9 +91,10 @@ import { FDAError } from './fdaError.js';
 const FRESH_CURSOR_BATCH_SIZE = 250;
 
 const DEFAULT_DATASOURCE_ID = 'default';
+const SUPPORTED_DATASOURCE_TYPES = new Set(['postgres', 'mongodb']);
 
 function assertSupportedDatasourceType(type) {
-  if (type !== 'postgres') {
+  if (!SUPPORTED_DATASOURCE_TYPES.has(type)) {
     throw new FDAError(
       400,
       'UnsupportedDatasourceType',
@@ -94,7 +103,126 @@ function assertSupportedDatasourceType(type) {
   }
 }
 
-async function resolveDatasourceCredentials(service, datasourceId) {
+function validateMongoFDAContract(query, timeColumn, cached) {
+  validateBasicQueryStructure(query);
+
+  const { collection, filter, projection, aggregation } = query;
+  validateCollection(collection);
+
+  const queryType = determineQueryType(filter, aggregation);
+
+  if (queryType === 'find') {
+    validateFindQuery(filter, projection, timeColumn);
+  } else if (queryType === 'aggregation') {
+    validateAggregationQuery(aggregation);
+  }
+
+  validateCacheSupport(cached);
+}
+
+// Helper functions to reduce complexity
+function validateBasicQueryStructure(query) {
+  if (!query || typeof query !== 'object' || Array.isArray(query)) {
+    throw new FDAError(
+      400,
+      'InvalidMongoFDAContract',
+      'Mongo FDA query must be a JSON object',
+    );
+  }
+}
+
+function validateCollection(collection) {
+  if (!collection || typeof collection !== 'string') {
+    throw new FDAError(
+      400,
+      'InvalidMongoFDAContract',
+      'Mongo FDA query requires a non-empty collection field',
+    );
+  }
+}
+
+function determineQueryType(filter, aggregation) {
+  const hasFindQuery = filter !== undefined;
+  const hasAggregationQuery = aggregation !== undefined;
+
+  if (hasFindQuery === hasAggregationQuery) {
+    throw new FDAError(
+      400,
+      'InvalidMongoFDAContract',
+      'Mongo FDA query must define either filter or aggregation',
+    );
+  }
+
+  return hasFindQuery ? 'find' : 'aggregation';
+}
+
+function validateFindQuery(filter, projection, timeColumn) {
+  validateFilter(filter);
+  validateProjection(projection);
+  validateTimeColumnInProjection(timeColumn, projection);
+}
+
+function validateFilter(filter) {
+  if (filter === null || typeof filter !== 'object' || Array.isArray(filter)) {
+    throw new FDAError(
+      400,
+      'InvalidMongoFDAContract',
+      'Mongo FDA filter must be a JSON object',
+    );
+  }
+}
+
+function validateProjection(projection) {
+  if (
+    projection !== undefined &&
+    (projection === null ||
+      typeof projection !== 'object' ||
+      Array.isArray(projection))
+  ) {
+    throw new FDAError(
+      400,
+      'InvalidMongoFDAContract',
+      'Mongo FDA projection must be an object',
+    );
+  }
+}
+
+function validateTimeColumnInProjection(timeColumn, projection) {
+  if (timeColumn && projection && !(timeColumn in projection)) {
+    throw new FDAError(
+      400,
+      'InvalidMongoFDAContract',
+      'Mongo FDA timeColumn must be included in projection',
+    );
+  }
+}
+
+function validateAggregationQuery(aggregation) {
+  if (!Array.isArray(aggregation) || aggregation.length === 0) {
+    throw new FDAError(
+      400,
+      'InvalidMongoFDAContract',
+      'Mongo FDA aggregation must be a non-empty array',
+    );
+  }
+  throw new FDAError(
+    400,
+    'MongoAggregationNotSupported',
+    'Aggregation pipelines are not supported yet',
+  );
+}
+
+function validateCacheSupport(cached) {
+  if (cached === false) {
+    throw new FDAError(
+      400,
+      'InvalidMongoFDAContract',
+      'Mongo datasource only supports cached FDAs',
+    );
+  }
+}
+
+async function resolveDatasource(service, datasourceId) {
   const ds = await retrieveDatasource(service, datasourceId);
   if (!ds) {
     throw new FDAError(
@@ -105,21 +233,21 @@ async function resolveDatasourceCredentials(service, datasourceId) {
   }
 
   assertSupportedDatasourceType(ds.type);
+  return ds;
+}
 
+async function resolveDatasourceCredentials(service, datasourceId) {
+  const ds = await resolveDatasource(service, datasourceId);
   return ds.config;
 }
 
 async function validateDatasourceConnection(type, dsConfig) {
   assertSupportedDatasourceType(type);
 
-  try {
-    await runPgQuery(dsConfig, 'SELECT 1', []);
-  } catch (error) {
-    throw new FDAError(
-      400,
-      'InvalidDatasourceConnection',
-      `Could not connect to datasource: ${error.message}`,
-    );
+  if (type === 'postgres') {
+    await validatePostgresDatasourceConnection(dsConfig);
+  } else {
+    await validateMongoDatasourceConnection(dsConfig);
   }
 }
 
@@ -847,16 +975,30 @@ export async function fetchFDA(
   defaultDataAccessEnabled,
   cached = true,
   datasourceId = DEFAULT_DATASOURCE_ID,
+  skipBootstrap = false,
 ) {
-  validateScheduledOptions(refreshPolicy, objStgConf);
-  const timeQuery =
-    refreshPolicy?.type !== 'none' || objStgConf?.partition
-      ? getTimeColumnQuery(query, timeColumn)
-      : query;
   const normalizedVisibility = normalizeVisibility(visibility);
   const normalizedServicePath = normalizeServicePath(servicePath);
   const datasource = await getDatasourceForService(service, datasourceId);
-  assertSupportedDatasourceType(datasource.type);
+  validateScheduledOptions(refreshPolicy, objStgConf);
+
+  if (datasource.type === 'mongodb') {
+    validateMongoFDAContract(query, timeColumn, cached);
+
+    if (refreshPolicy?.type === 'window') {
+      throw new FDAError(
+        400,
+        'InvalidMongoFDAContract',
+        'Mongo datasource does not support window refresh policy',
+      );
+    }
+  }
+
+  const timeQuery =
+    datasource.type === 'postgres' &&
+    (refreshPolicy?.type === 'window' || objStgConf?.partition)
+      ? getTimeColumnQuery(query, timeColumn)
+      : query;
 
   await createFDAMongo(
     fdaId,
@@ -872,49 +1014,34 @@ export async function fetchFDA(
     datasourceId,
   );
 
-  if (cached) {
-    try {
-      await createOneRowParquetSync(
-        service,
-        fdaId,
-        timeQuery,
-        normalizedServicePath,
-        datasourceId,
-      );
-    } catch (err) {
-      await rollbackFDAProvisioning(service, fdaId, normalizedServicePath);
-      throw err;
+  if (!skipBootstrap) {
+    if (cached) {
+      try {
+        await createOneRowParquetSync(
+          service,
+          fdaId,
+          timeQuery,
+          normalizedServicePath,
+          datasourceId,
+          timeColumn,
+          objStgConf,
+        );
+      } catch (err) {
+        await rollbackFDAProvisioning(service, fdaId, normalizedServicePath);
+        throw err;
+      }
     }
-  }
 
-  if (cached && defaultDataAccessEnabled) {
-    try {
-      const defaultDA = await buildDefaultDataAccessDefinition(
-        service,
-        fdaId,
-        normalizedServicePath,
-        timeColumn,
-      );
-
-      await createDA(
-        service,
-        fdaId,
-        'defaultDataAccess',
-        'Default Data Access providing access to whole FDA data. It has parameters for all columns in the FDA.',
-        defaultDA.query,
-        defaultDA.params,
-        normalizedVisibility,
-        normalizedServicePath,
-      );
-    } catch (err) {
-      // If default DA creation fails, rollback the entire FDA
-      await rollbackFDAProvisioning(service, fdaId, normalizedServicePath);
-      throw new FDAError(
-        500,
-        'DefaultDataAccessCreationError',
-        `Failed to create default Data Access for FDA ${fdaId}: ${err.message}`,
-      );
-    }
+    await createDefaultDAIfNeeded({
+      cached,
+      defaultDataAccessEnabled,
+      service,
+      fdaId,
+      normalizedServicePath,
+      timeColumn,
+      objStgConf,
+      normalizedVisibility,
+    });
   }
 
   if (!cached) {
@@ -936,109 +1063,18 @@ export async function fetchFDA(
   });
 
   // Schedule refreshes according to policy
-  if (refreshPolicy?.type === 'interval') {
-    const { refreshInterval, windowSize } = refreshPolicy.params || {};
-
-    // unique is not really needed since we check existence before, but it adds an extra layer of safety in case of duplicate calls
-    await agenda.every(
-      refreshInterval,
-      'refresh-fda',
-      {
-        fdaId,
-        query: timeQuery,
-        service,
-        servicePath: normalizedServicePath,
-        timeColumn,
-        refreshPolicy,
-        objStgConf,
-        datasourceId,
-      },
-      {
-        skipImmediate: true,
-        unique: buildFDAJobFilter(
-          'refresh-fda',
-          service,
-          fdaId,
-          normalizedServicePath,
-        ),
-      },
-    );
-
-    if (windowSize) {
-      await agenda.every(
-        refreshInterval,
-        'clean-partition',
-        {
-          fdaId,
-          service,
-          servicePath: normalizedServicePath,
-          windowSize,
-          objStgConf,
-        },
-        {
-          skipImmediate: true,
-          unique: buildFDAJobFilter(
-            'clean-partition',
-            service,
-            fdaId,
-            normalizedServicePath,
-          ),
-        },
-      );
-    }
-  }
-
-  if (refreshPolicy?.type === 'window') {
-    const { refreshInterval, windowSize } = refreshPolicy.params || {};
-
-    // partitionFlag lets us know we are refreshing already existing partitioned files for performance purposes
-    await agenda.every(
-      refreshInterval,
-      'refresh-fda',
-      {
-        fdaId,
-        query: timeQuery,
-        service,
-        servicePath: normalizedServicePath,
-        timeColumn,
-        refreshPolicy,
-        objStgConf,
-        partitionFlag: true,
-        datasourceId,
-      },
-      {
-        skipImmediate: true,
-        unique: buildFDAJobFilter(
-          'refresh-fda',
-          service,
-          fdaId,
-          normalizedServicePath,
-        ),
-      },
-    );
-
-    if (windowSize) {
-      await agenda.every(
-        refreshInterval,
-        'clean-partition',
-        {
-          fdaId,
-          service,
-          servicePath: normalizedServicePath,
-          windowSize,
-          objStgConf,
-        },
-        {
-          skipImmediate: true,
-          unique: buildFDAJobFilter(
-            'clean-partition',
-            service,
-            fdaId,
-            normalizedServicePath,
-          ),
-        },
-      );
-    }
+  if (refreshPolicy?.type === 'interval' || refreshPolicy?.type === 'window') {
+    await scheduleFDAJobs({
+      agenda,
+      fdaId,
+      query: timeQuery,
+      service,
+      servicePath: normalizedServicePath,
+      timeColumn,
+      refreshPolicy,
+      objStgConf,
+      datasourceId,
+    });
   }
 }
 
@@ -1163,15 +1199,16 @@ export async function updateFDA(service, fdaId, visibility, servicePath) {
   const agenda = getAgenda();
 
   // Execute refresh immediately (when a fetcher is free)
+  const effectiveServicePath = previous.servicePath ?? normalizedServicePath;
+
   await agenda.now('refresh-fda', {
     fdaId,
     query: previous.query,
     service,
-    servicePath: previous.servicePath ?? normalizedServicePath,
+    servicePath: effectiveServicePath,
     timeColumn: previous.timeColumn,
     refreshPolicy: previous.refreshPolicy,
     objStgConf: previous.objStgConf,
-    partitionFlag: true,
     datasourceId: previous.datasourceId ?? DEFAULT_DATASOURCE_ID,
   });
 
@@ -1179,6 +1216,7 @@ export async function updateFDA(service, fdaId, visibility, servicePath) {
     await agenda.now('clean-partition', {
       fdaId,
       service,
+      servicePath: effectiveServicePath,
       windowSize: previous.refreshPolicy.params.windowSize,
       objStgConf: previous.objStgConf,
     });
@@ -1193,20 +1231,29 @@ export async function processFDAAsync(
   timeColumn,
   refreshPolicy,
   objStgConf,
-  partitionFlag,
   datasourceId = DEFAULT_DATASOURCE_ID,
 ) {
   const storagePath = getFDAStoragePath(fdaId, servicePath);
   const bucketName = getBucketNameFromService(service);
+  const datasource = await getDatasourceForService(service, datasourceId);
 
   try {
     await updateFDAStatus(service, fdaId, servicePath, 'fetching', 10);
 
     let finalQuery = query;
-    if (refreshPolicy?.type === 'window') {
+    if (datasource.type === 'postgres' && refreshPolicy?.type === 'window') {
       const { params = {} } = refreshPolicy;
       const prevWindowStartDate = getPreviousWindowStartDate(params.fetchSize);
       finalQuery = getUpdateWindowQuery(query, timeColumn, prevWindowStartDate);
+    } else if (
+      datasource.type === 'mongodb' &&
+      refreshPolicy?.type === 'window'
+    ) {
+      throw new FDAError(
+        400,
+        'InvalidMongoFDAContract',
+        'Mongo datasource does not support window refresh policy',
+      );
     }
 
     await uploadTableToObjStg(
@@ -1219,7 +1266,6 @@ export async function processFDAAsync(
       servicePath,
       timeColumn,
       objStgConf,
-      partitionFlag,
     );
 
     await updateFDAStatus(service, fdaId, servicePath, 'completed', 100);
@@ -1283,6 +1329,62 @@ function getUpdateWindowQuery(query, timeColumn, latestFetchStartDate) {
   return `SELECT * FROM (${query}) q WHERE ${timeColumn} >= TIMESTAMP '${latestFetchStartDate}' AND ${timeColumn} < NOW()`;
 }
 
+function buildCsvContentFromRows(rows, columns) {
+  const header = columns.map((column) => escapeCsvValue(column)).join(',');
+
+  if (rows.length === 0) {
+    return `${header}\n`;
+  }
+
+  const dataLines = rows.map((row) =>
+    columns.map((column) => escapeCsvValue(row[column])).join(','),
+  );
+
+  return `${header}\n${dataLines.join('\n')}\n`;
+}
+
+async function uploadCsvContentToObjectStorage(s3Client, bucket, path, body) {
+  const upload = newUpload(s3Client, bucket, `${path}.csv`, body, 5, 1);
+
+  try {
+    await upload.done();
+  } catch (error) {
+    throw new FDAError(
+      503,
+      'UploadError',
+      `Error uploading FDA to object storage: ${error.message}`,
+    );
+  }
+}
+
+async function getMongoFDAStorageRows(
+  service,
+  datasourceId,
+  fdaId,
+  servicePath,
+  { limit } = {},
+) {
+  const datasource = await resolveDatasource(service, datasourceId);
+  const fda = await retrieveFDA(service, fdaId, servicePath);
+
+  if (!fda) {
+    throw new FDAError(
+      404,
+      'FDANotFound',
+      `FDA ${fdaId} not found in service ${service}`,
+    );
+  }
+
+  validateMongoFDAContract(fda.query, fda.timeColumn, fda.cached);
+
+  return {
+    columns: Object.keys(fda.query.projection),
+    rows: await readMongoDatasourceRows(datasource.config, fda.query, {
+      limit,
+    }),
+  };
+}
+
 export async function deleteFDA(service, fdaId, visibility, servicePath) {
   let targetServicePath = normalizeServicePath(servicePath);
 
@@ -1307,10 +1409,14 @@ export async function deleteFDA(service, fdaId, visibility, servicePath) {
     config.objstg.pass,
   );
   // This way we remove FDAs independently of if theyre partitioned or not
-  const objPaths = await listObjects(
-    s3Client,
-    bucketName,
-    getFDAStoragePath(fdaId, targetServicePath),
+  const storagePath = getFDAStoragePath(fdaId, targetServicePath);
+  const allObjPaths = await listObjects(s3Client, bucketName, storagePath);
+  // Filter strictly to objects belonging to this FDA only, preventing
+  // accidental deletion of sibling FDAs whose IDs share a common prefix
+  // (e.g. fda_test and fda_test_1 both match the prefix "fda_test").
+  const objPaths = allObjPaths.filter(
+    (key) =>
+      key.startsWith(`${storagePath}/`) || key.startsWith(`${storagePath}.`),
   );
   await dropFiles(s3Client, bucketName, objPaths);
 
@@ -1318,10 +1424,20 @@ export async function deleteFDA(service, fdaId, visibility, servicePath) {
 
   const agenda = getAgenda();
   await agenda.cancel(
-    buildFDAJobFilter('refresh-fda', service, fdaId, targetServicePath),
+    buildFDAJobFilter(
+      'refresh-fda-recurring',
+      service,
+      fdaId,
+      targetServicePath,
+    ),
   );
   await agenda.cancel(
-    buildFDAJobFilter('clean-partition', service, fdaId, targetServicePath),
+    buildFDAJobFilter(
+      'clean-partition-recurring',
+      service,
+      fdaId,
+      targetServicePath,
+    ),
   );
 }
 
@@ -1427,11 +1543,16 @@ export async function cleanPartition(
   );
   const bucketName = getBucketNameFromService(service);
 
-  /* c8 ignore next 6 */
-  const objPaths = await listObjects(
+  /* c8 ignore next 10 */
+  const cleanPartitionStoragePath = getFDAStoragePath(fdaId, servicePath);
+  const allPartitionPaths = await listObjects(
     s3Client,
     bucketName,
-    getFDAStoragePath(fdaId, servicePath),
+    cleanPartitionStoragePath,
+  );
+  // Filter strictly to objects belonging to this FDA only (same prefix-collision guard as deleteFDA)
+  const objPaths = allPartitionPaths.filter((key) =>
+    key.startsWith(`${cleanPartitionStoragePath}/`),
   );
 
   const partitionsToRemove = [];
@@ -1455,27 +1576,35 @@ async function uploadTableToObjStg(
   servicePath,
   timeColumn,
   objStgConf,
-  partitionFlag,
 ) {
   const s3Client = getS3Client(
     `${config.objstg.protocol}://${config.objstg.endpoint}`,
     config.objstg.usr,
     config.objstg.pass,
   );
-  const pgCredentials = await resolveDatasourceCredentials(
-    service,
-    datasourceId,
-  );
+  const datasource = await resolveDatasource(service, datasourceId);
   await updateFDAStatus(service, fdaId, servicePath, 'fetching', 20);
-  await uploadTable(s3Client, bucket, pgCredentials, query, path);
+
+  if (datasource.type === 'postgres') {
+    await uploadTable(s3Client, bucket, datasource.config, query, path);
+  } else {
+    const { columns, rows } = await getMongoFDAStorageRows(
+      service,
+      datasourceId,
+      fdaId,
+      servicePath,
+    );
+    const csvContent = buildCsvContentFromRows(rows, columns);
+    await uploadCsvContentToObjectStorage(s3Client, bucket, path, csvContent);
+  }
 
   const conn = await getDBConnection();
   try {
     await updateFDAStatus(service, fdaId, servicePath, 'transforming', 60);
 
     // DuckDB cant overwrite files in Minio, so for partitioned files we upload them in a tmp file and the move them
-    // We only do this for files that already exist (partitionFlag=true) so upload performance on partitions doesnt get affected
-    const parquetPath = partitionFlag
+    // This includes first upload because the one row parquet is also partitioned
+    const parquetPath = objStgConf?.partition
       ? getPath(bucket, 'tmp/' + path, '.parquet')
       : getPath(bucket, path, '.parquet');
 
@@ -1488,7 +1617,7 @@ async function uploadTableToObjStg(
       objStgConf?.compression,
     );
 
-    if (partitionFlag) {
+    if (objStgConf?.partition) {
       const objectsList = await listObjects(
         s3Client,
         bucket,
@@ -1532,7 +1661,7 @@ async function ensureFDAReadyForQuery(service, fdaId, visibility, servicePath) {
   }
 }
 
-async function getStoredFDA(service, fdaId, servicePath) {
+export async function getStoredFDA(service, fdaId, servicePath) {
   const fda = await retrieveFDA(service, fdaId, servicePath);
 
   if (!fda) {
@@ -1665,6 +1794,8 @@ async function createOneRowParquetSync(
   query,
   servicePath,
   datasourceId,
+  timeColumn,
+  objStgConf,
 ) {
   const s3Client = getS3Client(
     `${config.objstg.protocol}://${config.objstg.endpoint}`,
@@ -1673,19 +1804,33 @@ async function createOneRowParquetSync(
   );
   const storagePath = getFDAStoragePath(fdaId, servicePath);
   const bucketName = getBucketNameFromService(service);
-  const pgCredentials = await resolveDatasourceCredentials(
-    service,
-    datasourceId,
-  );
+  const datasource = await resolveDatasource(service, datasourceId);
 
-  const oneRowQuery = buildOneRowQuery(query);
-  await uploadTable(
-    s3Client,
-    bucketName,
-    pgCredentials,
-    oneRowQuery,
-    storagePath,
-  );
+  if (datasource.type === 'postgres') {
+    const oneRowQuery = buildOneRowQuery(query, timeColumn);
+    await uploadTable(
+      s3Client,
+      bucketName,
+      datasource.config,
+      oneRowQuery,
+      storagePath,
+    );
+  } else {
+    const { columns, rows } = await getMongoFDAStorageRows(
+      service,
+      datasourceId,
+      fdaId,
+      servicePath,
+      { limit: 1 },
+    );
+    const csvContent = buildCsvContentFromRows(rows, columns);
+    await uploadCsvContentToObjectStorage(
+      s3Client,
+      bucketName,
+      storagePath,
+      csvContent,
+    );
+  }
 
   const conn = await getDBConnection();
   try {
@@ -1694,6 +1839,8 @@ async function createOneRowParquetSync(
       conn,
       getPath(bucketName, storagePath, '.csv'),
       parquetPath,
+      timeColumn,
+      objStgConf?.partition,
     );
     await dropFile(s3Client, bucketName, `${storagePath}.csv`);
   } finally {
@@ -1701,9 +1848,11 @@ async function createOneRowParquetSync(
   }
 }
 
-function buildOneRowQuery(query) {
+function buildOneRowQuery(query, timeColumn) {
   const normalizedQuery = query.trim().replace(/;+\s*$/, '');
-  return `SELECT * FROM (${normalizedQuery}) AS fda_one_row LIMIT 1`;
+  const orderBy = timeColumn ? ` ORDER BY ${timeColumn} DESC NULLS LAST` : '';
+
+  return `SELECT * FROM (${normalizedQuery}) AS fda_one_row ${orderBy} LIMIT 1`;
 }
 
 async function buildDefaultDataAccessDefinition(
@@ -1711,11 +1860,13 @@ async function buildDefaultDataAccessDefinition(
   fdaId,
   servicePath,
   timeColumn,
+  objStgConf,
 ) {
   const columns = await getFDAColumnNamesFromParquet(
     service,
     fdaId,
     servicePath,
+    objStgConf,
   );
 
   const resolvedTimeColumn = resolveDefaultDATimeColumnName(
@@ -1813,12 +1964,19 @@ function resolveDefaultDATimeColumnName(timeColumn, columns) {
   );
 }
 
-async function getFDAColumnNamesFromParquet(service, fdaId, servicePath) {
+async function getFDAColumnNamesFromParquet(
+  service,
+  fdaId,
+  servicePath,
+  objStgConf,
+) {
   const conn = await getDBConnection();
   try {
     const storagePath = getFDAStoragePath(fdaId, servicePath);
     const bucketName = getBucketNameFromService(service);
-    const parquetPath = `s3://${bucketName}/${storagePath}.parquet`;
+    const parquetPath = objStgConf?.partition
+      ? `s3://${bucketName}/${storagePath}.parquet/**/*.parquet`
+      : `s3://${bucketName}/${storagePath}.parquet`;
     const safeParquetPath = parquetPath.replace(/'/g, "''");
 
     const describeResult = await conn.run(
@@ -1910,3 +2068,98 @@ const getPath = (bucket, path, extension) => {
   const cleanPath = path?.startsWith('/') ? path.slice(1) : path;
   return `${cleanBucket}/${cleanPath}${extension}`;
 };
+
+async function scheduleFDAJobs({
+  agenda,
+  fdaId,
+  query,
+  service,
+  servicePath,
+  timeColumn,
+  refreshPolicy,
+  objStgConf,
+  datasourceId,
+}) {
+  const { refreshInterval, windowSize } = refreshPolicy.params || {};
+
+  const refreshJob = agenda.create('refresh-fda-recurring', {
+    fdaId,
+    query,
+    service,
+    servicePath,
+    timeColumn,
+    refreshPolicy,
+    objStgConf,
+    datasourceId,
+  });
+
+  refreshJob.unique(
+    buildFDAJobFilter('refresh-fda-recurring', service, fdaId, servicePath),
+  );
+  refreshJob.repeatEvery(refreshInterval, { skipImmediate: true });
+  await refreshJob.save();
+
+  if (windowSize) {
+    const cleanPartitionJob = agenda.create('clean-partition-recurring', {
+      fdaId,
+      service,
+      servicePath,
+      windowSize,
+      objStgConf,
+    });
+
+    cleanPartitionJob.unique(
+      buildFDAJobFilter(
+        'clean-partition-recurring',
+        service,
+        fdaId,
+        servicePath,
+      ),
+    );
+    cleanPartitionJob.repeatEvery(refreshInterval, { skipImmediate: true });
+    await cleanPartitionJob.save();
+  }
+}
+
+async function createDefaultDAIfNeeded({
+  cached,
+  defaultDataAccessEnabled,
+  service,
+  fdaId,
+  normalizedServicePath,
+  timeColumn,
+  objStgConf,
+  normalizedVisibility,
+}) {
+  if (!cached || !defaultDataAccessEnabled) {
+    return;
+  }
+
+  try {
+    const defaultDA = await buildDefaultDataAccessDefinition(
+      service,
+      fdaId,
+      normalizedServicePath,
+      timeColumn,
+      objStgConf,
+    );
+
+    await createDA(
+      service,
+      fdaId,
+      'defaultDataAccess',
+      'Default Data Access providing access to whole FDA data. It has parameters for all columns in the FDA.',
+      defaultDA.query,
+      defaultDA.params,
+      normalizedVisibility,
+      normalizedServicePath,
+    );
+  } catch (err) {
+    await rollbackFDAProvisioning(service, fdaId, normalizedServicePath);
+    throw new FDAError(
+      500,
+      'DefaultDataAccessCreationError',
+      `Failed to create default Data Access for FDA ${fdaId}: ${err.message}`,
+    );
+  }
+}

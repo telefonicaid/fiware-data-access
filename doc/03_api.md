@@ -31,7 +31,8 @@
         -   [Update DA](#update-da-put-visibilityfdasfdaiddasdaid)
         -   [Delete DA](#delete-da-delete-visibilityfdasfdaiddasdaid)
     -   [Data operations](#data-operations)
-        -   [Data query](#data-query-get-visibilityfdasfdaiddasdaiddata)
+        -   [FDA data query](#fda-data-query-get-visibilityfdasfdaiddata)
+        -   [Data Access query](#data-access-query-get-visibilityfdasfdaiddasdaiddata)
         -   [Query (Pentaho CDA legacy support)](#query-plugincdaapidoquery-pentaho-cda-legacy-support)
 -   [Navigation](#-navigation)
 
@@ -101,7 +102,8 @@ All error responses follow this structure:
 | 500  | Internal Server Error | `S3ServerError`             | An error occurred in the S3 object storage component.                                                                                                                                                                                                                                                              |
 | 500  | Internal Server Error | `DuckDBServerError`         | An error occurred in the DuckDB component.                                                                                                                                                                                                                                                                         |
 | 500  | Internal Server Error | `MongoDBServerError`        | An error occurred in the MongoDB component.                                                                                                                                                                                                                                                                        |
-| 400  | Bad Request           | `UnsupportedDatasourceType` | The referenced datasource type is not supported by the operation (currently only `postgres`).                                                                                                                                                                                                                      |
+| 400  | Bad Request           | `UnsupportedDatasourceType` | The referenced datasource type is not supported by the operation (supported types are `postgres` and `mongodb`).                                                                                                                                                                                                   |
+| 400  | Bad Request           | `InvalidMongoFDAContract`   | Invalid Mongo-specific FDA payload. Mongo FDAs require a Mongo query definition inside `query`, support only cached mode (`cached=true`), and do not support `refreshPolicy.type=window`.                                                                                                                          |
 | 503  | Service Unavailable   | `UploadError`               | Connection error with the PostgreSQL database component.                                                                                                                                                                                                                                                           |
 | 503  | Service Unavailable   | `SyncQueriesDisabled`       | A direct FDA query was sent but the API instance is running with `FDA_ROLE_SYNCQUERIES=false`.                                                                                                                                                                                                                     |
 | 503  | Service Unavailable   | `MongoConnectionError`      | Connection error with the MongoDB component.                                                                                                                                                                                                                                                                       |
@@ -486,11 +488,11 @@ fda_jobs_agenda_total 7
 
 A datasource is represented by a JSON object with the following fields:
 
-| Parameter      | Optional | Type   | Description                                                                                                      |
-| -------------- | -------- | ------ | ---------------------------------------------------------------------------------------------------------------- |
-| `datasourceId` |          | string | Datasource identifier, unique within a given `Fiware-Service`.                                                   |
-| `type`         |          | string | Datasource type. Currently supported: `postgres`.                                                                |
-| `config`       |          | object | Datasource connection configuration. For `postgres`, it includes `user`, `password`, `host`, `port`, `database`. |
+| Parameter      | Optional | Type   | Description                                                                                                                            |
+| -------------- | -------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `datasourceId` |          | string | Datasource identifier, unique within a given `Fiware-Service`.                                                                         |
+| `type`         |          | string | Datasource type. Currently supported: `postgres`, `mongodb`.                                                                           |
+| `config`       |          | object | Datasource connection configuration. For `postgres`: `user`, `password`, `host`, `port`, `database`. For `mongodb`: `uri`, `database`. |
 
 ### Datasources operations
 
@@ -583,6 +585,11 @@ Required body fields: `datasourceId`, `type`, `config`.
 
 Datasource creation validates the connection before persisting the datasource.
 
+Validation is datasource-specific:
+
+-   `postgres`: validates by opening a PostgreSQL connection.
+-   `mongodb`: validates by opening a MongoDB connection.
+
 _**Response code**_
 
 -   Successful operation uses `200 OK`.
@@ -610,6 +617,22 @@ curl -i -X POST http://localhost:8080/datasources \
             "password": "postgres",
             "host": "localhost",
             "port": 5432,
+            "database": "trantor"
+        }
+    }'
+```
+
+_**Example Request (MongoDB datasource):**_
+
+```bash
+curl -i -X POST http://localhost:8080/datasources \
+    -H "Content-Type: application/json" \
+    -H "Fiware-Service: trantor" \
+    -d '{
+        "datasourceId": "mongo-default",
+        "type": "mongodb",
+        "config": {
+            "uri": "mongodb://localhost:27017",
             "database": "trantor"
         }
     }'
@@ -684,8 +707,7 @@ _**Request payload**_
 
 Allowed body fields: `type`, `config`.
 
-When present, the resulting datasource configuration is validated by opening a PostgreSQL connection before the update
-is stored.
+When present, the resulting datasource configuration is validated before the update is stored.
 
 _**Response code**_
 
@@ -772,16 +794,53 @@ fail later if datasource resolution is required.
 
 A FDA is represented by a JSON object with the following fields:
 
-| Parameter                                                | Optional | Type    | Description                                                                                                                                                                                |
-| -------------------------------------------------------- | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `id`                                                     |          | string  | FDA unique identifier                                                                                                                                                                      |
-| `description`                                            | ✓        | string  | A free text used by the client to describe the FDA. If omitted, no description is stored.                                                                                                  |
-| `query`                                                  |          | string  | Base `postgreSQL` query to create the file in the bucket-based storage system                                                                                                              |
-| `refreshPolicy`                                          | ✓        | object  | Optional policy for automatic refresh.                                                                                                                                                     |
-| [`objStgConf`](#object-storage-configuration-objstgconf) | ✓        | object  | Various options to configure the FDA uploaded in the object storage app.                                                                                                                   |
-| `timeColumn`                                             | ✓        | string  | Required with `refreshPolicy` of type `window` and `partition`. Column in the table indicating when the data was received (date).                                                          |
-| `cached`                                                 | ✓        | boolean | If `false`, the FDA is created as only-fresh: no parquet snapshot is maintained, no DAs are allowed, and the FDA is queried through `GET /{visibility}/fdas/{fdaId}/data`. Default `true`. |
-| `datasourceId`                                           | ✓        | string  | Datasource id used to resolve DB credentials for this FDA. If omitted, FDA uses `default`.                                                                                                 |
+| Parameter                                                | Optional | Type          | Description                                                                                                                                                                                |
+| -------------------------------------------------------- | -------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`                                                     |          | string        | FDA unique identifier                                                                                                                                                                      |
+| `description`                                            | ✓        | string        | A free text used by the client to describe the FDA. If omitted, no description is stored.                                                                                                  |
+| `query`                                                  |          | string/object | Source query definition. For `postgres`, a SQL query string. For `mongodb`, a Mongo query definition detailed below.                                                                       |
+| `refreshPolicy`                                          | ✓        | object        | Optional policy for automatic refresh.                                                                                                                                                     |
+| [`objStgConf`](#object-storage-configuration-objstgconf) | ✓        | object        | Various options to configure the FDA uploaded in the object storage app.                                                                                                                   |
+| `timeColumn`                                             | ✓        | string        | Required with `refreshPolicy` of type `window` and `partition`. Column in the table indicating when the data was received (date).                                                          |
+| `cached`                                                 | ✓        | boolean       | If `false`, the FDA is created as only-fresh: no parquet snapshot is maintained, no DAs are allowed, and the FDA is queried through `GET /{visibility}/fdas/{fdaId}/data`. Default `true`. |
+| `datasourceId`                                           | ✓        | string        | Datasource id used to resolve DB credentials for this FDA. If omitted, FDA uses `default`.                                                                                                 |
+| `skipBootstrap`                                          | ✓        | boolean       | If `true`, skips synchronous bootstrap during creation (one-row parquet + default DA creation). First refresh job is still scheduled. Default `false`.                                     |
+
+For MongoDB datasources, `query` is an object with the following keys:
+
+| Field        | Type   | Description                                                                |
+| ------------ | ------ | -------------------------------------------------------------------------- |
+| `collection` | string | MongoDB collection name.                                                   |
+| `filter`     | object | MongoDB filter document.                                                   |
+| `projection` | object | MongoDB projection document defining the fields materialized into the FDA. |
+
+In MongoDB, projection can include more complex operators like `$slice` or `$elemMatch`. See the
+[MongoDB projection documentation](https://www.mongodb.com/docs/manual/tutorial/project-fields-from-query-results/) for
+details. Nested MongoDB fields can be projected using dot notation:
+
+```json
+{
+    "projection": {
+        "device.name": 1,
+        "status": 1
+    }
+}
+```
+
+Projected nested fields are materialized as FDA columns preserving their dot notation (`device.name`).
+
+When generating [defaultDataAccess](AdvancedTopics/default_data_access.md) parameters, dots are replaced by underscores.
+For example:
+
+-   Column: `device.name`
+-   Parameter: `device_name`
+
+Datasource-specific constraints:
+
+-   Mongo datasource FDAs are currently cached-only (`cached=true`).
+-   Mongo datasource FDAs do not support `refreshPolicy.type=window`.
+-   If `timeColumn` is provided for Mongo FDAs, it must be included in `query.projection` (or the `query.projection`
+    omitted at all as in this case no projection is done and all fields are retrieved).
 
 #### Refresh Policy object
 
@@ -920,6 +979,9 @@ _**Request query parameters**_
 | ------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
 | `defaultDataAccess` | ✓        | Overrides the instance default and enables or disables automatic `defaultDataAccess` creation for this FDA. The default value is taken from `FDA_CREATE_DEFAULT_DATA_ACCESS`; if that env var is not set, the default is `true`. | `false` |
 
+When `skipBootstrap=true` is sent in the request body, it has priority during creation and initial `defaultDataAccess`
+generation is skipped even if this query parameter is enabled.
+
 _**Request headers**_
 
 | Header               | Optional | Description                                                          | Example            |
@@ -932,6 +994,9 @@ _**Request payload**_
 
 The payload is a JSON object containing a FDA that follows the JSON FDA representation format (described in
 [FDA payload datamodel](#fda-payload-datamodel) section).
+
+`skipBootstrap=true` is useful for heavy queries where synchronous bootstrap could delay creation. In this mode FDA
+creation returns normally and first fetch is delegated to the background job.
 
 _**Example Request:**_
 
@@ -979,6 +1044,48 @@ curl -i -X POST http://localhost:8080/public/fdas \
         "query": "SELECT * FROM public.alarms",
         "description": "Only-fresh FDA",
         "cached": false
+    }'
+```
+
+_**Example Request with bootstrap skip:**_
+
+```bash
+curl -i -X POST "http://localhost:8080/public/fdas?defaultDataAccess=true" \
+    -H "Content-Type: application/json" \
+    -H "Fiware-Service: trantor" \
+    -H "Fiware-ServicePath: /servicePath" \
+    -d '{
+        "id": "fda_heavy_query",
+        "query": "SELECT * FROM public.very_large_table",
+        "description": "Create without synchronous bootstrap",
+        "skipBootstrap": true,
+        "cached": true
+    }'
+```
+
+_**Example Request for a cached Mongo FDA:**_
+
+```bash
+curl -i -X POST http://localhost:8080/public/fdas \
+    -H "Content-Type: application/json" \
+    -H "Fiware-Service: trantor" \
+    -H "Fiware-ServicePath: /servicePath" \
+    -d '{
+        "id": "fda_mongo_events",
+        "datasourceId": "mongo-default",
+        "query": {
+            "collection": "events",
+            "filter": {
+            "site": "lab"
+            },
+            "projection": {
+            "device": 1,
+            "status": 1,
+            "reading": 1
+            }
+        },
+        "description": "Mongo cached FDA",
+        "cached": true
     }'
 ```
 
@@ -1610,12 +1717,12 @@ _**Request query parameters**_
 
 The endpoint supports two request styles:
 
-| Parameter     | Optional | Description                                                                                             | Example                  |
-| ------------- | -------- | ------------------------------------------------------------------------------------------------------- | ------------------------ |
-| `service`     | ✓        | Tenant or service. Required when using query-style context (instead of FIWARE headers).                 | `trantor`                |
-| `servicePath` | ✓        | NGSI hierarchical service path. Required when using query-style context (instead of FIWARE headers).    | `/servicePath`           |
-| `outputType`  | ✓        | Output format for query-style context. Allowed values: `json`, `ndjson`, `csv`, `xls`. Default: `json`. | `csv`                    |
-| DA params     | ✓        | DA-specific parameters declared in `params`.                                                            | `pattern=%25nosignal%25` |
+| Parameter     | Optional | Description                                                                                                    | Example                  |
+| ------------- | -------- | -------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| `service`     | ✓        | Tenant or service. Required when using query-style context (instead of FIWARE headers).                        | `trantor`                |
+| `servicePath` | ✓        | NGSI hierarchical service path. Required when using query-style context (instead of FIWARE headers).           | `/servicePath`           |
+| `outputType`  | ✓        | Output format for query-style context. Allowed values: `json`, `ndjson`, `csv`, `xls`, `cda`. Default: `json`. | `csv`                    |
+| DA params     | ✓        | DA-specific parameters declared in `params`.                                                                   | `pattern=%25nosignal%25` |
 
 _**Request headers**_
 
@@ -1665,12 +1772,28 @@ Depends on `Accept`:
 -   `text/csv`: comma-separated values file. The first row contains column names. Values containing commas,
     double-quotes or newlines are quoted.
 -   spreadsheet MIME types: Excel workbook (`.xlsx` format, Office Open XML). The first row contains column names.
+-   `application/vnd.fiware.cda+json`: CDA-compatible JSON structure:
+
+```json
+{
+    "metadata": [{ "colIndex": 0, "colName": "column1" }, ...],
+    "resultset": [["value1", "value2", ...]],
+    "queryInfo": {
+        "pageStart": 0,
+        "pageSize": 10,
+        "totalRows": 120
+    }
+}
+```
 
 _**Content negotiation and serialization notes**_
 
 -   In header-style context, response format is negotiated through the `Accept` header (using the
     [standard HTTP content negotiation mechanism](https://datatracker.ietf.org/doc/html/rfc2616#section-12)).
 -   In query-style context, response format is controlled by `outputType` query parameter.
+-   The CDA-compatible JSON representation can be requested using `outputType=cda` in query-style context or
+    `Accept: application/vnd.fiware.cda+json` in header-style context. It returns a tabular JSON payload (`metadata`,
+    `resultset`, `queryInfo`).
 -   If `Accept` does not include a supported format in header-style context, the API returns `406 NotAcceptable`.
 -   Unsupported query fields are rejected with `400 BadRequest`.
 -   `fresh` query field is rejected with `400 BadRequest`.
@@ -1731,6 +1854,12 @@ _**Example Request (query-style context):**_
 
 ```bash
 curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_filter_by_name/data?service=trantor&servicePath=%2FservicePath&pattern=%25nosignal%25"
+```
+
+_**Example Request (query-style CDA-compatible JSON):**_
+
+```bash
+curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_filter_by_name/data?service=trantor&servicePath=%2FservicePath&outputType=cda&pattern=%25nosignal%25"
 ```
 
 _**Example Request (CSV output):**_
