@@ -141,27 +141,59 @@ export async function runPreparedStatement(
     storedServicePath ?? servicePath,
   );
 
-  const stmt = await conn.prepare(query);
+  let stmt;
 
   try {
     const resolvedParams = applyParams(paramValues || {}, da.params);
     const boundParams = normalizeParamsForDuckDB(resolvedParams);
-    await stmt.bind(boundParams);
+    const executeStatement = async () => {
+      await stmt.bind(boundParams);
 
-    if (streaming) {
-      const stream = await stmt.stream();
-      const close = async () => {
-        if (typeof stmt.close === 'function') {
-          await stmt.close();
-        }
-      };
-      return { stream, close };
+      if (streaming) {
+        const stream = await stmt.stream();
+        const close = async () => {
+          if (typeof stmt.close === 'function') {
+            await stmt.close();
+          }
+        };
+        return { stream, close };
+      }
+
+      const result = await stmt.run();
+      return result.getRowObjectsJson();
+    };
+
+    stmt = await conn.prepare(query);
+    try {
+      return await executeStatement();
+    } catch (executionError) {
+      const message = String(executionError?.message ?? executionError);
+      const canFallbackToSchemaParquet =
+        objStgConf?.partition &&
+        message.includes('No files found that match the pattern');
+
+      if (!canFallbackToSchemaParquet) {
+        throw executionError;
+      }
+
+      if (stmt && typeof stmt.close === 'function') {
+        await stmt.close();
+      }
+
+      const objectKey = getFDAStoragePath(
+        fdaId,
+        storedServicePath ?? servicePath,
+      );
+      const bucketName = getBucketNameFromService(service);
+      const schemaParquetPath = `s3://${bucketName}/${objectKey}.__schema__.parquet`;
+      const safeSchemaParquetPath = schemaParquetPath.replaceAll("'", "''");
+      const fallbackQuery = `FROM read_parquet('${safeSchemaParquetPath}') ${da.query.trim()}`;
+
+      stmt = await conn.prepare(fallbackQuery);
+      return await executeStatement();
     }
-
-    const result = await stmt.run();
-    return result.getRowObjectsJson();
   } catch (e) {
-    if (streaming && typeof stmt.close === 'function') {
+    if (streaming && stmt && typeof stmt.close === 'function') {
       await stmt.close();
     }
 
