@@ -235,12 +235,13 @@ export async function validatePostgresQuery(
 
   try {
     const result = await pgClient.query(validationQuery);
+    const columns = result.fields
+      .map((field) => field?.name)
+      .filter((name) => typeof name === 'string' && name.length > 0);
 
     if (typeof timeColumn === 'string' && timeColumn.length > 0) {
-      const hasTimeColumn = result.fields.some(
-        (field) =>
-          typeof field?.name === 'string' &&
-          field.name.toLowerCase() === timeColumn.toLowerCase(),
+      const hasTimeColumn = columns.some(
+        (field) => field.toLowerCase() === timeColumn.toLowerCase(),
       );
 
       if (!hasTimeColumn) {
@@ -251,6 +252,8 @@ export async function validatePostgresQuery(
         );
       }
     }
+
+    return columns;
   } catch (e) {
     if (e instanceof FDAError) {
       throw e;

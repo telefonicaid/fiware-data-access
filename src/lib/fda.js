@@ -1002,8 +1002,12 @@ export async function fetchFDA(
       ? getTimeColumnQuery(query, timeColumn)
       : query;
 
+  let sourceColumns;
+
   if (datasource.type === 'postgres') {
-    await validatePostgresQuery(datasource.config, timeQuery, { timeColumn });
+    sourceColumns = await validatePostgresQuery(datasource.config, timeQuery, {
+      timeColumn,
+    });
   }
 
   await createFDAMongo(
@@ -1047,6 +1051,7 @@ export async function fetchFDA(
       timeColumn,
       objStgConf,
       normalizedVisibility,
+      sourceColumns,
     });
   }
 
@@ -1904,13 +1909,23 @@ async function buildDefaultDataAccessDefinition(
   servicePath,
   timeColumn,
   objStgConf,
+  columnsOverride,
 ) {
-  const columns = await getFDAColumnNamesFromParquet(
-    service,
-    fdaId,
-    servicePath,
-    objStgConf,
-  );
+  const normalizedOverrideColumns = Array.isArray(columnsOverride)
+    ? columnsOverride.filter(
+        (name) => typeof name === 'string' && name.length > 0,
+      )
+    : [];
+
+  const columns =
+    normalizedOverrideColumns.length > 0
+      ? normalizedOverrideColumns
+      : await getFDAColumnNamesFromParquet(
+          service,
+          fdaId,
+          servicePath,
+          objStgConf,
+        );
 
   const resolvedTimeColumn = resolveDefaultDATimeColumnName(
     timeColumn,
@@ -2220,6 +2235,7 @@ async function createDefaultDAIfNeeded({
   timeColumn,
   objStgConf,
   normalizedVisibility,
+  sourceColumns,
 }) {
   if (!cached || !defaultDataAccessEnabled) {
     return;
@@ -2232,6 +2248,7 @@ async function createDefaultDAIfNeeded({
       normalizedServicePath,
       timeColumn,
       objStgConf,
+      sourceColumns,
     );
 
     await createDA(
