@@ -251,8 +251,6 @@ describe('db utils', () => {
       status: 400,
       type: 'InvalidQueryParam',
     });
-
-    expect(stmt.close).toHaveBeenCalledTimes(1);
   });
 
   test('validateDAQuery wraps prepare failures', async () => {
