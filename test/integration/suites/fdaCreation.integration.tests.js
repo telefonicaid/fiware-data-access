@@ -323,6 +323,143 @@ export function registerFdaCreationIntegrationTests({
     }
   });
 
+  test('DELETE /fdas only removes the target FDA recurring jobs', async () => {
+    const baseUrl = getBaseUrl();
+    const firstFdaId = 'fda_delete_jobs_a';
+    const secondFdaId = 'fda_delete_jobs_b';
+    const datasourceId = 'delete-jobs-ds';
+
+    const datasourceRes = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/datasources`,
+      headers: {
+        'Content-Type': 'application/json',
+        'Fiware-Service': service,
+      },
+      body: {
+        datasourceId,
+        type: 'postgres',
+        config: {
+          user: 'postgres',
+          password: 'postgres',
+          host: getPgHost(),
+          port: getPgPort(),
+          database: service,
+        },
+      },
+    });
+
+    expect(datasourceRes.status).toBe(200);
+
+    const createFda = async (id) => {
+      const res = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id,
+          query:
+            'SELECT id, name, age, timeinstant FROM public.users ORDER BY id',
+          description: `delete job ${id}`,
+          timeColumn: 'timeinstant',
+          datasourceId,
+          refreshPolicy: {
+            type: 'window',
+            params: {
+              refreshInterval: '1 hour',
+              fetchSize: 'day',
+              windowSize: 'day',
+            },
+          },
+          objStgConf: {
+            partition: 'day',
+          },
+        },
+      });
+
+      expect(res.status).toBe(202);
+      await waitUntilFDACompleted({ baseUrl, service, fdaId: id });
+    };
+
+    await createFda(firstFdaId);
+    await createFda(secondFdaId);
+
+    const mongoClient = new MongoClient(getMongoUri(), {
+      serverSelectionTimeoutMS: 10_000,
+    });
+
+    await mongoClient.connect();
+    try {
+      const collection = mongoClient.db().collection('agendaJobs');
+      const trackedNames = [
+        'refresh-fda-recurring',
+        'clean-partition-recurring',
+      ];
+      const recurringFilter = (fdaId) => ({
+        name: { $in: trackedNames },
+        'data.service': service,
+        'data.servicePath': servicePath,
+        'data.fdaId': fdaId,
+      });
+
+      const deadline = Date.now() + 10_000;
+      let firstJobs = 0;
+      let secondJobs = 0;
+      while (Date.now() < deadline) {
+        firstJobs = await collection.countDocuments(
+          recurringFilter(firstFdaId),
+        );
+        secondJobs = await collection.countDocuments(
+          recurringFilter(secondFdaId),
+        );
+        if (firstJobs === 2 && secondJobs === 2) {
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+
+      expect(firstJobs).toBe(2);
+      expect(secondJobs).toBe(2);
+
+      const deleteRes = await httpReq({
+        method: 'DELETE',
+        url: `${baseUrl}/${visibility}/fdas/${firstFdaId}`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+      });
+
+      expect(deleteRes.status).toBe(204);
+
+      const finalDeadline = Date.now() + 10_000;
+      let remainingFirstJobs = 0;
+      let remainingSecondJobs = 0;
+      while (Date.now() < finalDeadline) {
+        remainingFirstJobs = await collection.countDocuments(
+          recurringFilter(firstFdaId),
+        );
+        remainingSecondJobs = await collection.countDocuments(
+          recurringFilter(secondFdaId),
+        );
+
+        if (remainingFirstJobs === 0 && remainingSecondJobs === 2) {
+          break;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+
+      expect(remainingFirstJobs).toBe(0);
+      expect(remainingSecondJobs).toBe(2);
+    } finally {
+      await mongoClient.close();
+    }
+  });
+
   test('POST /fdas tries to creates an FDA without id and is detected', async () => {
     const baseUrl = getBaseUrl();
     const res = await httpReq({

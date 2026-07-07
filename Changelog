@@ -1,3 +1,8 @@
+1.1.2 (July 2nd, 2026)
+
+- Fix: FDA scheduled job cleanup now cancels Agenda jobs by persisted IDs (`agendaJobIds`) to prevent deleting jobs from other FDAs with the same recurring job name.
+- Migration: FDA documents now include `agendaJobIds` (`string[]`). Legacy FDAs without this field can still be deleted, but cleanup relies on runtime job lookup fallback; to guarantee deterministic cleanup in all environments, backfill `agendaJobIds` or recreate those FDAs.
+
 1.1.1 (July 1st, 2026)
 
 - Fix: add skipBootstrap for FDA creation to bypass synchronous bootstrap (`createOneRowParquetSync`) and initial defaultDataAccess creation on heavy queries (#209)

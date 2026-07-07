@@ -62,6 +62,7 @@ import {
   updateDA,
   removeDA,
   updateFDAStatus,
+  updateFDAAgendaJobIds,
   createDatasource,
   retrieveDatasources,
   retrieveDatasource,
@@ -1393,7 +1394,8 @@ export async function deleteFDA(service, fdaId, visibility, servicePath) {
     targetServicePath = fda.servicePath;
   }
 
-  const { _id } = (await retrieveFDA(service, fdaId, targetServicePath)) ?? {};
+  const fda = await retrieveFDA(service, fdaId, targetServicePath);
+  const { _id } = fda ?? {};
 
   if (!service || !_id) {
     throw new FDAError(
@@ -1420,25 +1422,50 @@ export async function deleteFDA(service, fdaId, visibility, servicePath) {
   );
   await dropFiles(s3Client, bucketName, objPaths);
 
-  await removeFDA(service, fdaId, targetServicePath);
-
   const agenda = getAgenda();
-  await agenda.cancel(
-    buildFDAJobFilter(
-      'refresh-fda-recurring',
-      service,
-      fdaId,
-      targetServicePath,
-    ),
+  const agendaJobIds = await resolveFDAAgendaJobIds(
+    agenda,
+    fda,
+    targetServicePath,
   );
-  await agenda.cancel(
-    buildFDAJobFilter(
-      'clean-partition-recurring',
-      service,
-      fdaId,
-      targetServicePath,
-    ),
+
+  if (agendaJobIds.length > 0) {
+    await agenda.cancel({ ids: agendaJobIds });
+  }
+
+  await removeFDA(service, fdaId, targetServicePath);
+}
+
+async function resolveFDAAgendaJobIds(agenda, fda, servicePath) {
+  const storedJobIds = Array.isArray(fda?.agendaJobIds)
+    ? fda.agendaJobIds.filter(Boolean).map((jobId) => jobId.toString())
+    : [];
+
+  if (storedJobIds.length > 0) {
+    return storedJobIds;
+  }
+
+  if (typeof agenda.queryJobs !== 'function') {
+    return [];
+  }
+
+  const trackedJobs = await Promise.all(
+    ['refresh-fda-recurring', 'clean-partition-recurring'].map(async (name) => {
+      const result = await agenda.queryJobs({ names: [name] });
+      return result.jobs ?? [];
+    }),
   );
+
+  return trackedJobs
+    .flat()
+    .filter(
+      (job) =>
+        job.data?.service === fda.service &&
+        job.data?.fdaId === fda.fdaId &&
+        job.data?.servicePath === servicePath,
+    )
+    .map((job) => job._id?.toString())
+    .filter(Boolean);
 }
 
 export async function getDAs(service, fdaId, visibility, servicePath) {
@@ -1777,6 +1804,7 @@ function toFDAApiResponse(fda, { includeId }) {
   delete response.service;
   delete response.visibility;
   delete response.servicePath;
+  delete response.agendaJobIds;
 
   if (!includeId) {
     return response;
@@ -2081,6 +2109,7 @@ async function scheduleFDAJobs({
   datasourceId,
 }) {
   const { refreshInterval, windowSize } = refreshPolicy.params || {};
+  const agendaJobIds = [];
 
   const refreshJob = agenda.create('refresh-fda-recurring', {
     fdaId,
@@ -2098,6 +2127,10 @@ async function scheduleFDAJobs({
   );
   refreshJob.repeatEvery(refreshInterval, { skipImmediate: true });
   await refreshJob.save();
+  const refreshJobId = refreshJob.attrs?._id ?? refreshJob._id;
+  if (refreshJobId) {
+    agendaJobIds.push(refreshJobId.toString());
+  }
 
   if (windowSize) {
     const cleanPartitionJob = agenda.create('clean-partition-recurring', {
@@ -2118,6 +2151,20 @@ async function scheduleFDAJobs({
     );
     cleanPartitionJob.repeatEvery(refreshInterval, { skipImmediate: true });
     await cleanPartitionJob.save();
+    const cleanPartitionJobId =
+      cleanPartitionJob.attrs?._id ?? cleanPartitionJob._id;
+    if (cleanPartitionJobId) {
+      agendaJobIds.push(cleanPartitionJobId.toString());
+    }
+  }
+
+  try {
+    await updateFDAAgendaJobIds(service, fdaId, servicePath, agendaJobIds);
+  } catch (error) {
+    if (agendaJobIds.length > 0) {
+      await agenda.cancel({ ids: agendaJobIds }).catch(() => {});
+    }
+    throw error;
   }
 }
 
