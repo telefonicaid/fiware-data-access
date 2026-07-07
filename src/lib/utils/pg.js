@@ -223,7 +223,7 @@ export async function runPgQuery(pgCredentials, text, values) {
 export async function validatePostgresQuery(
   pgCredentials,
   query,
-  { timeColumn } = {},
+  { timeColumn, returnColumns = false } = {},
 ) {
   const { user, password, host, port, database } = pgCredentials;
   const key = getPoolKey(user, password, host, port, database);
@@ -253,7 +253,11 @@ export async function validatePostgresQuery(
       }
     }
 
-    return columns;
+    if (returnColumns) {
+      return columns;
+    }
+
+    return;
   } catch (e) {
     if (e instanceof FDAError) {
       throw e;

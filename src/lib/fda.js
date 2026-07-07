@@ -1007,6 +1007,7 @@ export async function fetchFDA(
   if (datasource.type === 'postgres') {
     sourceColumns = await validatePostgresQuery(datasource.config, timeQuery, {
       timeColumn,
+      returnColumns: true,
     });
   }
 

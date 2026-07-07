@@ -163,17 +163,17 @@ export async function runPreparedStatement(
       return result.getRowObjectsJson();
     };
 
-    stmt = await conn.prepare(query);
     try {
+      stmt = await conn.prepare(query);
       return await executeStatement();
-    } catch (executionError) {
-      const message = String(executionError?.message ?? executionError);
+    } catch (primaryError) {
+      const message = String(primaryError?.message ?? primaryError);
       const canFallbackToSchemaParquet =
         objStgConf?.partition &&
         message.includes('No files found that match the pattern');
 
       if (!canFallbackToSchemaParquet) {
-        throw executionError;
+        throw primaryError;
       }
 
       if (stmt && typeof stmt.close === 'function') {
@@ -208,7 +208,7 @@ export async function runPreparedStatement(
       `Error ${action} the prepared statement: ${e}`,
     );
   } finally {
-    if (!streaming && typeof stmt.close === 'function') {
+    if (!streaming && stmt && typeof stmt.close === 'function') {
       await stmt.close();
     }
   }
