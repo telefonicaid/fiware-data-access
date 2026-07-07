@@ -1886,7 +1886,6 @@ async function createOneRowParquetSync(
           conn,
           bucketName,
           storagePath,
-          objStgConf.partition,
         );
       }
     }
@@ -2079,13 +2078,12 @@ async function createSchemaParquetForEmptyPartitionedFDA(
   conn,
   bucketName,
   storagePath,
-  partitionType,
 ) {
-  void partitionType;
+  const toSafeDuckDBLiteral = (value) => String(value).replaceAll("'", "''");
   const sourceCsvPath = `s3://${bucketName}/${storagePath}.csv`;
   const schemaParquetPath = `s3://${bucketName}/${storagePath}.__schema__.parquet`;
-  const safeSourceCsvPath = sourceCsvPath.replaceAll("'", "''");
-  const safeSchemaParquetPath = schemaParquetPath.replaceAll("'", "''");
+  const safeSourceCsvPath = toSafeDuckDBLiteral(sourceCsvPath);
+  const safeSchemaParquetPath = toSafeDuckDBLiteral(schemaParquetPath);
 
   await conn.run(
     `COPY (SELECT * FROM read_csv_auto('${safeSourceCsvPath}') LIMIT 0) TO '${safeSchemaParquetPath}' (FORMAT PARQUET);`,

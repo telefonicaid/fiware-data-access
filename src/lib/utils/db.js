@@ -100,6 +100,70 @@ async function initDuckDB() {
   return instance;
 }
 
+async function closePreparedStatement(stmt) {
+  if (stmt && typeof stmt.close === 'function') {
+    await stmt.close();
+  }
+}
+
+function shouldFallbackToSchemaParquet(error, partitionType) {
+  const message = String(error?.message ?? error);
+  return (
+    Boolean(partitionType) &&
+    message.includes('No files found that match the pattern')
+  );
+}
+
+function buildSchemaParquetFallbackQuery(service, fdaId, servicePath, daQuery) {
+  const objectKey = getFDAStoragePath(fdaId, servicePath);
+  const bucketName = getBucketNameFromService(service);
+  const schemaParquetPath = `s3://${bucketName}/${objectKey}.__schema__.parquet`;
+  const safeSchemaParquetPath = schemaParquetPath.replaceAll("'", "''");
+  return `FROM read_parquet('${safeSchemaParquetPath}') ${daQuery.trim()}`;
+}
+
+async function executePreparedStatement(stmt, boundParams, streaming) {
+  await stmt.bind(boundParams);
+
+  if (streaming) {
+    const stream = await stmt.stream();
+    const close = async () => {
+      await closePreparedStatement(stmt);
+    };
+    return { stream, close };
+  }
+
+  const result = await stmt.run();
+  return result.getRowObjectsJson();
+}
+
+async function prepareAndRunStatementWithFallback(
+  conn,
+  query,
+  boundParams,
+  { streaming, partitionType, service, fdaId, servicePath, daQuery },
+) {
+  let stmt;
+
+  try {
+    stmt = await conn.prepare(query);
+    const result = await executePreparedStatement(stmt, boundParams, streaming);
+    return { stmt, result };
+  } catch (primaryError) {
+    if (!shouldFallbackToSchemaParquet(primaryError, partitionType)) {
+      throw primaryError;
+    }
+
+    await closePreparedStatement(stmt);
+    stmt = await conn.prepare(
+      buildSchemaParquetFallbackQuery(service, fdaId, servicePath, daQuery),
+    );
+
+    const result = await executePreparedStatement(stmt, boundParams, streaming);
+    return { stmt, result };
+  }
+}
+
 export async function runPreparedStatement(
   conn,
   service,
@@ -140,61 +204,32 @@ export async function runPreparedStatement(
     objStgConf?.partition,
     storedServicePath ?? servicePath,
   );
+  const effectiveServicePath = storedServicePath ?? servicePath;
 
   let stmt;
 
   try {
     const resolvedParams = applyParams(paramValues || {}, da.params);
     const boundParams = normalizeParamsForDuckDB(resolvedParams);
-    const executeStatement = async () => {
-      await stmt.bind(boundParams);
-
-      if (streaming) {
-        const stream = await stmt.stream();
-        const close = async () => {
-          if (typeof stmt.close === 'function') {
-            await stmt.close();
-          }
-        };
-        return { stream, close };
-      }
-
-      const result = await stmt.run();
-      return result.getRowObjectsJson();
-    };
-
-    try {
-      stmt = await conn.prepare(query);
-      return await executeStatement();
-    } catch (primaryError) {
-      const message = String(primaryError?.message ?? primaryError);
-      const canFallbackToSchemaParquet =
-        objStgConf?.partition &&
-        message.includes('No files found that match the pattern');
-
-      if (!canFallbackToSchemaParquet) {
-        throw primaryError;
-      }
-
-      if (stmt && typeof stmt.close === 'function') {
-        await stmt.close();
-      }
-
-      const objectKey = getFDAStoragePath(
+    const prepared = await prepareAndRunStatementWithFallback(
+      conn,
+      query,
+      boundParams,
+      {
+        streaming,
+        partitionType: objStgConf?.partition,
+        service,
         fdaId,
-        storedServicePath ?? servicePath,
-      );
-      const bucketName = getBucketNameFromService(service);
-      const schemaParquetPath = `s3://${bucketName}/${objectKey}.__schema__.parquet`;
-      const safeSchemaParquetPath = schemaParquetPath.replaceAll("'", "''");
-      const fallbackQuery = `FROM read_parquet('${safeSchemaParquetPath}') ${da.query.trim()}`;
+        servicePath: effectiveServicePath,
+        daQuery: da.query,
+      },
+    );
 
-      stmt = await conn.prepare(fallbackQuery);
-      return await executeStatement();
-    }
+    stmt = prepared.stmt;
+    return prepared.result;
   } catch (e) {
-    if (streaming && stmt && typeof stmt.close === 'function') {
-      await stmt.close();
+    if (streaming) {
+      await closePreparedStatement(stmt);
     }
 
     if (e instanceof FDAError) {
@@ -208,8 +243,8 @@ export async function runPreparedStatement(
       `Error ${action} the prepared statement: ${e}`,
     );
   } finally {
-    if (!streaming && stmt && typeof stmt.close === 'function') {
-      await stmt.close();
+    if (!streaming) {
+      await closePreparedStatement(stmt);
     }
   }
 }

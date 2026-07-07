@@ -253,11 +253,7 @@ export async function validatePostgresQuery(
       }
     }
 
-    if (returnColumns) {
-      return columns;
-    }
-
-    return;
+    return returnColumns ? columns : null;
   } catch (e) {
     if (e instanceof FDAError) {
       throw e;
