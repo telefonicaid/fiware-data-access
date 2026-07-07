@@ -1629,6 +1629,9 @@ async function uploadTableToObjStg(
         bucket,
         `tmp/${path}.parquet`,
       );
+      const hasRealPartitionedParquet = objectsList.some((key) =>
+        key.endsWith('.parquet'),
+      );
       for (const tempPartition of objectsList) {
         await moveObject(
           s3Client,
@@ -1637,6 +1640,14 @@ async function uploadTableToObjStg(
           tempPartition.replace('tmp/', ''),
         );
         await dropFile(s3Client, bucket, tempPartition);
+      }
+
+      if (hasRealPartitionedParquet) {
+        await dropFile(
+          s3Client,
+          bucket,
+          `${path}.parquet/${getSchemaPartitionPath(objStgConf.partition)}/schema.parquet`,
+        );
       }
     }
 
@@ -1850,20 +1861,25 @@ async function createOneRowParquetSync(
     );
 
     if (datasource.type === 'postgres' && objStgConf?.partition) {
-      const parquetFiles = await listObjects(s3Client, bucketName, storagePath);
+      const partitionPrefix = `${storagePath}.parquet`;
+      const parquetFiles = await listObjects(
+        s3Client,
+        bucketName,
+        partitionPrefix,
+      );
       const normalizedParquetFiles = Array.isArray(parquetFiles)
         ? parquetFiles
         : [];
+      const hasPartitionedDataParquet = normalizedParquetFiles.some(
+        (key) =>
+          key.startsWith(`${partitionPrefix}/`) && key.endsWith('.parquet'),
+      );
 
-      if (
-        !normalizedParquetFiles.some((key) => key.endsWith('.parquet')) &&
-        typeof conn?.run === 'function'
-      ) {
+      if (!hasPartitionedDataParquet && typeof conn?.run === 'function') {
         await createSchemaParquetForEmptyPartitionedFDA(
           conn,
           bucketName,
           storagePath,
-          query,
           objStgConf.partition,
         );
       }
@@ -2004,11 +2020,30 @@ async function getFDAColumnNamesFromParquet(
     const parquetPath = objStgConf?.partition
       ? `s3://${bucketName}/${storagePath}.parquet/**/*.parquet`
       : `s3://${bucketName}/${storagePath}.parquet`;
+    const schemaBootstrapParquetPath = `s3://${bucketName}/${storagePath}.__schema__.parquet`;
     const safeParquetPath = parquetPath.replaceAll("'", "''");
+    const safeSchemaBootstrapParquetPath =
+      schemaBootstrapParquetPath.replaceAll("'", "''");
 
-    const describeResult = await conn.run(
-      `DESCRIBE SELECT * FROM read_parquet('${safeParquetPath}')`,
-    );
+    let describeResult;
+    try {
+      describeResult = await conn.run(
+        `DESCRIBE SELECT * FROM read_parquet('${safeParquetPath}')`,
+      );
+    } catch (error) {
+      const message = String(error?.message ?? error);
+      if (
+        objStgConf?.partition &&
+        message.includes('No files found that match the pattern')
+      ) {
+        describeResult = await conn.run(
+          `DESCRIBE SELECT * FROM read_parquet('${safeSchemaBootstrapParquetPath}')`,
+        );
+      } else {
+        throw error;
+      }
+    }
+
     const describeRows = await Promise.resolve(
       describeResult.getRowObjectsJson(),
     );
@@ -2028,16 +2063,16 @@ async function createSchemaParquetForEmptyPartitionedFDA(
   conn,
   bucketName,
   storagePath,
-  query,
   partitionType,
 ) {
-  const normalizedQuery = query.trim().replace(/;+\s*$/, '');
-  const schemaPartitionPath = getSchemaPartitionPath(partitionType);
-  const schemaParquetPath = `${bucketName}/${storagePath}.parquet/${schemaPartitionPath}/schema.parquet`;
+  void partitionType;
+  const sourceCsvPath = `s3://${bucketName}/${storagePath}.csv`;
+  const schemaParquetPath = `s3://${bucketName}/${storagePath}.__schema__.parquet`;
+  const safeSourceCsvPath = sourceCsvPath.replaceAll("'", "''");
   const safeSchemaParquetPath = schemaParquetPath.replaceAll("'", "''");
 
   await conn.run(
-    `COPY (SELECT * FROM (${normalizedQuery}) AS fda_schema LIMIT 0) TO '${safeSchemaParquetPath}' (FORMAT PARQUET);`,
+    `COPY (SELECT * FROM read_csv_auto('${safeSourceCsvPath}') LIMIT 0) TO '${safeSchemaParquetPath}' (FORMAT PARQUET);`,
   );
 }
 

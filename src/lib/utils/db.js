@@ -650,6 +650,30 @@ export async function validateDAQuery(
   try {
     stmt = await conn.prepare(query);
   } catch (e) {
+    const message = String(e?.message ?? e);
+
+    if (
+      objStgConf?.partition &&
+      message.includes('No files found that match the pattern')
+    ) {
+      const objectKey = getFDAStoragePath(fdaId, servicePath);
+      const bucketName = getBucketNameFromService(service);
+      const schemaParquetPath = `s3://${bucketName}/${objectKey}.__schema__.parquet`;
+      const safeSchemaParquetPath = schemaParquetPath.replaceAll("'", "''");
+      const fallbackQuery = `FROM read_parquet('${safeSchemaParquetPath}') ${userQuery.trim()}`;
+
+      try {
+        stmt = await conn.prepare(fallbackQuery);
+        return;
+      } catch (fallbackError) {
+        throw new FDAError(
+          400,
+          'InvalidDAQuery',
+          `DA query is not compatible with FDA ${fdaId}: ${fallbackError.message || fallbackError}`,
+        );
+      }
+    }
+
     throw new FDAError(
       400,
       'InvalidDAQuery',
