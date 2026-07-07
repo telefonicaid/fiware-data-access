@@ -9,6 +9,7 @@
 - Fix: updated performance files, added performance and load/stress measurement for special use cases (new npm target "test:performance") (#159) (*)
 - Fix: bug preventing the creation of DAs for partitioned FDAs due to incorrect DA query path building (FROM clausule) (*)
 - Fix: bug deleting an FDA whose id is a prefix of another FDA in the same Fiware-ServicePath (#187) (*)
+- Fix: timeColumn should not be required for interval refreshPolicy without partitions (*)
 
 (*) Also in 1.1.1 hotfix
 (**) Also in 1.1.2 hotfix
