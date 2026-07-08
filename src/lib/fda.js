@@ -895,7 +895,7 @@ function replaceNamedParamsWithPositional(query, params) {
   const indexes = new Map();
   const values = [];
 
-  const text = query.replace(/\$([A-Za-z_]\w*)/g, (_m, name) => {
+  const text = query.replaceAll(/\$([A-Za-z_]\w*)/g, (_m, name) => {
     if (!Object.prototype.hasOwnProperty.call(params, name)) {
       /* c8 ignore next 5 */
       throw new FDAError(
