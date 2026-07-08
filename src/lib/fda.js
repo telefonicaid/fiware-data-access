@@ -30,6 +30,7 @@ import {
   releaseDBConnection,
   toParquet,
   checkParams,
+  validateDAParamBindings,
   resolveDAParams,
   validateDAQuery,
   extractDate,
@@ -949,6 +950,7 @@ export async function createDA(
     }
 
     const normalizedParams = checkParams(params);
+    validateDAParamBindings(userQuery, normalizedParams || []);
     await validateDAQuery(conn, service, fdaId, userQuery, servicePath);
     await storeDA(
       service,
@@ -1002,10 +1004,10 @@ export async function fetchFDA(
       ? getTimeColumnQuery(query, timeColumn)
       : query;
 
-  let sourceColumns;
+  let sourceSchema;
 
   if (datasource.type === 'postgres') {
-    sourceColumns = await validatePostgresQuery(datasource.config, timeQuery, {
+    sourceSchema = await validatePostgresQuery(datasource.config, timeQuery, {
       timeColumn,
       returnColumns: true,
     });
@@ -1036,6 +1038,7 @@ export async function fetchFDA(
           datasourceId,
           timeColumn,
           objStgConf,
+          sourceSchema,
         );
       } catch (err) {
         await rollbackFDAProvisioning(service, fdaId, normalizedServicePath);
@@ -1052,7 +1055,7 @@ export async function fetchFDA(
       timeColumn,
       objStgConf,
       normalizedVisibility,
-      sourceColumns,
+      sourceSchema,
     });
   }
 
@@ -1498,6 +1501,7 @@ export async function putDA(
     }
 
     const normalizedParams = checkParams(params);
+    validateDAParamBindings(userQuery, normalizedParams || []);
     await validateDAQuery(conn, service, fdaId, userQuery, servicePath);
     await updateDA(
       service,
@@ -1819,6 +1823,7 @@ async function createOneRowParquetSync(
   datasourceId,
   timeColumn,
   objStgConf,
+  sourceSchema,
 ) {
   const s3Client = getS3Client(
     `${config.objstg.protocol}://${config.objstg.endpoint}`,
@@ -1886,6 +1891,7 @@ async function createOneRowParquetSync(
           conn,
           bucketName,
           storagePath,
+          sourceSchema,
         );
       }
     }
@@ -1909,13 +1915,17 @@ async function buildDefaultDataAccessDefinition(
   servicePath,
   timeColumn,
   objStgConf,
-  columnsOverride,
+  schemaOverride,
 ) {
-  const normalizedOverrideColumns = Array.isArray(columnsOverride)
-    ? columnsOverride.filter(
-        (name) => typeof name === 'string' && name.length > 0,
-      )
-    : [];
+  const overrideColumns = Array.isArray(schemaOverride?.columns)
+    ? schemaOverride.columns
+    : Array.isArray(schemaOverride)
+      ? schemaOverride
+      : [];
+
+  const normalizedOverrideColumns = overrideColumns.filter(
+    (name) => typeof name === 'string' && name.length > 0,
+  );
 
   const columns =
     normalizedOverrideColumns.length > 0
@@ -2078,15 +2088,33 @@ async function createSchemaParquetForEmptyPartitionedFDA(
   conn,
   bucketName,
   storagePath,
+  sourceSchema,
 ) {
-  const toSafeDuckDBLiteral = (value) => String(value).replaceAll("'", "''");
-  const sourceCsvPath = `s3://${bucketName}/${storagePath}.csv`;
   const schemaParquetPath = `s3://${bucketName}/${storagePath}.__schema__.parquet`;
-  const safeSourceCsvPath = toSafeDuckDBLiteral(sourceCsvPath);
-  const safeSchemaParquetPath = toSafeDuckDBLiteral(schemaParquetPath);
+  const safeSchemaParquetPath = schemaParquetPath.replaceAll("'", "''");
+  const schemaFields = Array.isArray(sourceSchema?.fields)
+    ? sourceSchema.fields.filter(
+        (field) =>
+          typeof field?.name === 'string' &&
+          field.name.length > 0 &&
+          typeof field?.duckdbType === 'string' &&
+          field.duckdbType.length > 0,
+      )
+    : [];
+
+  if (schemaFields.length === 0) {
+    return;
+  }
+
+  const selectList = schemaFields
+    .map(
+      ({ name, duckdbType }) =>
+        `CAST(NULL AS ${duckdbType}) AS ${quoteDuckDBIdentifier(name)}`,
+    )
+    .join(', ');
 
   await conn.run(
-    `COPY (SELECT * FROM read_csv_auto('${safeSourceCsvPath}') LIMIT 0) TO '${safeSchemaParquetPath}' (FORMAT PARQUET);`,
+    `COPY (SELECT ${selectList} LIMIT 0) TO '${safeSchemaParquetPath}' (FORMAT PARQUET);`,
   );
 }
 
@@ -2234,7 +2262,7 @@ async function createDefaultDAIfNeeded({
   timeColumn,
   objStgConf,
   normalizedVisibility,
-  sourceColumns,
+  sourceSchema,
 }) {
   if (!cached || !defaultDataAccessEnabled) {
     return;
@@ -2247,7 +2275,7 @@ async function createDefaultDAIfNeeded({
       normalizedServicePath,
       timeColumn,
       objStgConf,
-      sourceColumns,
+      sourceSchema,
     );
 
     await createDA(

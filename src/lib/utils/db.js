@@ -114,7 +114,28 @@ function shouldFallbackToSchemaParquet(error, partitionType) {
   );
 }
 
-function createEmptyPreparedStatementStreamResult() {
+function getSchemaBootstrapParquetPath(service, fdaId, servicePath) {
+  const objectKey = getFDAStoragePath(fdaId, servicePath);
+  const bucketName = getBucketNameFromService(service);
+  return `s3://${bucketName}/${objectKey}.__schema__.parquet`;
+}
+
+function buildSchemaBootstrapQuery(service, fdaId, userQuery, servicePath) {
+  const schemaParquetPath = getSchemaBootstrapParquetPath(
+    service,
+    fdaId,
+    servicePath,
+  );
+  const safeSchemaParquetPath = schemaParquetPath.replaceAll("'", "''");
+
+  return `FROM read_parquet('${safeSchemaParquetPath}') ${userQuery.trim()}`;
+}
+
+function createEmptyPreparedStatementResult(streaming) {
+  if (!streaming) {
+    return [];
+  }
+
   return {
     stream: {
       columnNames: () => [],
@@ -147,7 +168,7 @@ async function prepareAndRunStatementWithFallback(
   conn,
   query,
   boundParams,
-  { streaming, partitionType },
+  { streaming, partitionType, fallbackQuery },
 ) {
   let stmt;
 
@@ -156,17 +177,33 @@ async function prepareAndRunStatementWithFallback(
     const result = await executePreparedStatement(stmt, boundParams, streaming);
     return { stmt, result };
   } catch (primaryError) {
-    if (!shouldFallbackToSchemaParquet(primaryError, partitionType)) {
+    if (
+      !fallbackQuery ||
+      !shouldFallbackToSchemaParquet(primaryError, partitionType)
+    ) {
       throw primaryError;
     }
 
     await closePreparedStatement(stmt);
 
-    // No partition files means no data available for DA execution.
-    return {
-      stmt: null,
-      result: streaming ? createEmptyPreparedStatementStreamResult() : [],
-    };
+    try {
+      stmt = await conn.prepare(fallbackQuery);
+      const result = await executePreparedStatement(
+        stmt,
+        boundParams,
+        streaming,
+      );
+      return { stmt, result };
+    } catch (fallbackError) {
+      if (shouldFallbackToSchemaParquet(fallbackError, partitionType)) {
+        return {
+          stmt: null,
+          result: createEmptyPreparedStatementResult(streaming),
+        };
+      }
+
+      throw fallbackError;
+    }
   }
 }
 
@@ -214,6 +251,7 @@ export async function runPreparedStatement(
   let stmt;
 
   try {
+    validateDAParamBindings(da.query, da.params || []);
     const resolvedParams = applyParams(paramValues || {}, da.params);
     const boundParams = normalizeParamsForDuckDB(resolvedParams);
     const prepared = await prepareAndRunStatementWithFallback(
@@ -223,6 +261,14 @@ export async function runPreparedStatement(
       {
         streaming,
         partitionType: objStgConf?.partition,
+        fallbackQuery: objStgConf?.partition
+          ? buildSchemaBootstrapQuery(
+              service,
+              fdaId,
+              da.query,
+              storedServicePath ?? servicePath,
+            )
+          : null,
       },
     );
 
@@ -358,6 +404,37 @@ export function checkParams(params) {
 
     return normalizedParam;
   });
+}
+
+export function getNamedParamsFromQuery(query) {
+  if (typeof query !== 'string' || query.length === 0) {
+    return [];
+  }
+
+  return [...query.matchAll(/\$([A-Za-z_][A-Za-z0-9_]*)/g)].map(
+    (match) => match[1],
+  );
+}
+
+export function validateDAParamBindings(query, params) {
+  const queryParamNames = new Set(getNamedParamsFromQuery(query));
+  const declaredParamNames = new Set(
+    Array.isArray(params)
+      ? params
+          .map((param) => param?.name)
+          .filter((name) => typeof name === 'string' && name.length > 0)
+      : [],
+  );
+
+  for (const queryParamName of queryParamNames) {
+    if (!declaredParamNames.has(queryParamName)) {
+      throw new FDAError(
+        400,
+        'InvalidQueryParam',
+        `Query param "${queryParamName}" must be declared in DA params.`,
+      );
+    }
+  }
 }
 
 function normalizeParamDefaultForStorage(value) {
@@ -724,11 +801,12 @@ export async function validateDAQuery(
       objStgConf?.partition &&
       message.includes('No files found that match the pattern')
     ) {
-      const objectKey = getFDAStoragePath(fdaId, servicePath);
-      const bucketName = getBucketNameFromService(service);
-      const schemaParquetPath = `s3://${bucketName}/${objectKey}.__schema__.parquet`;
-      const safeSchemaParquetPath = schemaParquetPath.replaceAll("'", "''");
-      const fallbackQuery = `FROM read_parquet('${safeSchemaParquetPath}') ${userQuery.trim()}`;
+      const fallbackQuery = buildSchemaBootstrapQuery(
+        service,
+        fdaId,
+        userQuery,
+        servicePath,
+      );
 
       try {
         stmt = await conn.prepare(fallbackQuery);

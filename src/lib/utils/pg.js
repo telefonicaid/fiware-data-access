@@ -128,6 +128,69 @@ function releasePgClient(key, pgClient) {
   }
 }
 
+function getDuckDBTypeFromPostgresField(field) {
+  const typeId = field?.dataTypeID;
+
+  switch (typeId) {
+    case pg.types.builtins.BOOL:
+      return 'BOOLEAN';
+    case pg.types.builtins.INT2:
+      return 'SMALLINT';
+    case pg.types.builtins.INT4:
+      return 'INTEGER';
+    case pg.types.builtins.INT8:
+      return 'BIGINT';
+    case pg.types.builtins.FLOAT4:
+      return 'REAL';
+    case pg.types.builtins.FLOAT8:
+      return 'DOUBLE';
+    case pg.types.builtins.NUMERIC:
+      return 'DOUBLE';
+    case pg.types.builtins.DATE:
+      return 'DATE';
+    case pg.types.builtins.TIME:
+    case pg.types.builtins.TIMETZ:
+      return 'TIME';
+    case pg.types.builtins.TIMESTAMP:
+      return 'TIMESTAMP';
+    case pg.types.builtins.TIMESTAMPTZ:
+      return 'TIMESTAMPTZ';
+    case pg.types.builtins.JSON:
+    case pg.types.builtins.JSONB:
+      return 'JSON';
+    case pg.types.builtins.UUID:
+      return 'UUID';
+    case pg.types.builtins.BYTEA:
+      return 'BLOB';
+    default:
+      return 'VARCHAR';
+  }
+}
+
+function buildPostgresSchemaInfo(result) {
+  const fields = Array.isArray(result?.fields)
+    ? result.fields
+        .map((field) => {
+          const name = field?.name;
+          if (typeof name !== 'string' || name.length === 0) {
+            return null;
+          }
+
+          return {
+            name,
+            postgresTypeId: field?.dataTypeID ?? null,
+            duckdbType: getDuckDBTypeFromPostgresField(field),
+          };
+        })
+        .filter(Boolean)
+    : [];
+
+  return {
+    columns: fields.map((field) => field.name),
+    fields,
+  };
+}
+
 export async function closePgPools() {
   const closePromises = [];
 
@@ -235,9 +298,8 @@ export async function validatePostgresQuery(
 
   try {
     const result = await pgClient.query(validationQuery);
-    const columns = result.fields
-      .map((field) => field?.name)
-      .filter((name) => typeof name === 'string' && name.length > 0);
+    const schemaInfo = buildPostgresSchemaInfo(result);
+    const columns = schemaInfo.columns;
 
     if (typeof timeColumn === 'string' && timeColumn.length > 0) {
       const hasTimeColumn = columns.some(
@@ -253,7 +315,7 @@ export async function validatePostgresQuery(
       }
     }
 
-    return returnColumns ? columns : null;
+    return returnColumns ? schemaInfo : null;
   } catch (e) {
     if (e instanceof FDAError) {
       throw e;
