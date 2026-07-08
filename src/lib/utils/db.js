@@ -118,10 +118,11 @@ function createEmptyPreparedStatementStreamResult() {
   return {
     stream: {
       columnNames: () => [],
-      fetchChunk: async () => ({
-        rowCount: 0,
-        getRows: () => [],
-      }),
+      fetchChunk: async () =>
+        await Promise.resolve({
+          rowCount: 0,
+          getRows: () => [],
+        }),
     },
     close: async () => {},
   };
