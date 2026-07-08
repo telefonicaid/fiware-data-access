@@ -103,6 +103,7 @@ const {
   runPgQuery,
   createPgCursorReader,
   validatePostgresQuery,
+  getDuckDBTypeFromPostgresField,
 } = await import('../../src/lib/utils/pg.js');
 const { closePgPools } = await import('../../src/lib/utils/pg.js');
 const { config } = await import('../../src/lib/fdaConfig.js');
@@ -219,6 +220,59 @@ describe('pg utils', () => {
       'SELECT * FROM (SELECT id, timeinstant FROM users) AS fda_validation LIMIT 0',
     );
     expect(currentClient.release).toHaveBeenCalledTimes(1);
+  });
+
+  test('validatePostgresQuery returns typed schema metadata when requested', async () => {
+    currentClient.query.mockResolvedValue({
+      fields: [
+        { name: 'id', dataTypeID: 23 },
+        { name: 'timeinstant', dataTypeID: 1184 },
+        { name: 'payload', dataTypeID: 999999 },
+      ],
+    });
+
+    const creds = {
+      user: 'u',
+      password: 'p',
+      host: 'h',
+      port: 5432,
+      database: 'svc_db',
+    };
+
+    await expect(
+      validatePostgresQuery(
+        creds,
+        'SELECT id, timeinstant, payload FROM users',
+        {
+          returnColumns: true,
+        },
+      ),
+    ).resolves.toEqual({
+      columns: ['id', 'timeinstant', 'payload'],
+      fields: [
+        { name: 'id', postgresTypeId: 23, duckdbType: 'INTEGER' },
+        {
+          name: 'timeinstant',
+          postgresTypeId: 1184,
+          duckdbType: 'TIMESTAMPTZ',
+        },
+        { name: 'payload', postgresTypeId: 999999, duckdbType: 'VARCHAR' },
+      ],
+    });
+
+    expect(currentClient.release).toHaveBeenCalledTimes(1);
+  });
+
+  test('getDuckDBTypeFromPostgresField maps PostgreSQL field types to DuckDB types', () => {
+    expect(getDuckDBTypeFromPostgresField({ dataTypeID: 16 })).toBe('BOOLEAN');
+    expect(getDuckDBTypeFromPostgresField({ dataTypeID: 20 })).toBe('BIGINT');
+    expect(getDuckDBTypeFromPostgresField({ dataTypeID: 1700 })).toBe('DOUBLE');
+    expect(getDuckDBTypeFromPostgresField({ dataTypeID: 1184 })).toBe(
+      'TIMESTAMPTZ',
+    );
+    expect(getDuckDBTypeFromPostgresField({ dataTypeID: 999999 })).toBe(
+      'VARCHAR',
+    );
   });
 
   test('validatePostgresQuery rejects when the declared timeColumn is not in the schema', async () => {

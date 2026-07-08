@@ -128,7 +128,7 @@ function releasePgClient(key, pgClient) {
   }
 }
 
-function getDuckDBTypeFromPostgresField(field) {
+export function getDuckDBTypeFromPostgresField(field) {
   const typeId = field?.dataTypeID;
 
   switch (typeId) {
