@@ -114,12 +114,17 @@ function shouldFallbackToSchemaParquet(error, partitionType) {
   );
 }
 
-function buildSchemaParquetFallbackQuery(service, fdaId, servicePath, daQuery) {
-  const objectKey = getFDAStoragePath(fdaId, servicePath);
-  const bucketName = getBucketNameFromService(service);
-  const schemaParquetPath = `s3://${bucketName}/${objectKey}.__schema__.parquet`;
-  const safeSchemaParquetPath = schemaParquetPath.replaceAll("'", "''");
-  return `FROM read_parquet('${safeSchemaParquetPath}') ${daQuery.trim()}`;
+function createEmptyPreparedStatementStreamResult() {
+  return {
+    stream: {
+      columnNames: () => [],
+      fetchChunk: async () => ({
+        rowCount: 0,
+        getRows: () => [],
+      }),
+    },
+    close: async () => {},
+  };
 }
 
 async function executePreparedStatement(stmt, boundParams, streaming) {
@@ -141,7 +146,7 @@ async function prepareAndRunStatementWithFallback(
   conn,
   query,
   boundParams,
-  { streaming, partitionType, service, fdaId, servicePath, daQuery },
+  { streaming, partitionType },
 ) {
   let stmt;
 
@@ -155,12 +160,12 @@ async function prepareAndRunStatementWithFallback(
     }
 
     await closePreparedStatement(stmt);
-    stmt = await conn.prepare(
-      buildSchemaParquetFallbackQuery(service, fdaId, servicePath, daQuery),
-    );
 
-    const result = await executePreparedStatement(stmt, boundParams, streaming);
-    return { stmt, result };
+    // No partition files means no data available for DA execution.
+    return {
+      stmt: null,
+      result: streaming ? createEmptyPreparedStatementStreamResult() : [],
+    };
   }
 }
 
@@ -204,7 +209,6 @@ export async function runPreparedStatement(
     objStgConf?.partition,
     storedServicePath ?? servicePath,
   );
-  const effectiveServicePath = storedServicePath ?? servicePath;
 
   let stmt;
 
@@ -218,10 +222,6 @@ export async function runPreparedStatement(
       {
         streaming,
         partitionType: objStgConf?.partition,
-        service,
-        fdaId,
-        servicePath: effectiveServicePath,
-        daQuery: da.query,
       },
     );
 
