@@ -1104,6 +1104,9 @@ export async function fetchFDA(
 }
 
 function getWindowQuery(query, timeColumn, startDate) {
+  if (!startDate) {
+    return query;
+  }
   const prevWindowStartDate = getPreviousWindowStartDate(startDate);
   return getUpdateWindowQuery(query, timeColumn, prevWindowStartDate);
 }
@@ -1231,9 +1234,17 @@ export async function updateFDA(service, fdaId, visibility, servicePath) {
   // Execute refresh immediately (when a fetcher is free)
   const effectiveServicePath = previous.servicePath ?? normalizedServicePath;
 
+  let firstQuery = previous.query;
+  if (previous.refreshPolicy?.type === 'window') {
+    firstQuery = getWindowQuery(
+      previous.query,
+      previous.timeColumn,
+      previous.refreshPolicy?.params?.windowSize,
+    );
+  }
   await agenda.now('refresh-fda', {
     fdaId,
-    query: previous.query,
+    query: firstQuery,
     service,
     servicePath: effectiveServicePath,
     timeColumn: previous.timeColumn,
