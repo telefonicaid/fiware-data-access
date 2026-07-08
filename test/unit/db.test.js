@@ -227,6 +227,11 @@ describe('db utils', () => {
       },
     });
 
+    retrieveFDAMock.mockResolvedValue({
+      objStgConf: { partition: 'day' },
+      servicePath: '/sp',
+    });
+
     runtimeConn.prepare
       .mockRejectedValueOnce(new Error('No files found that match the pattern'))
       .mockRejectedValueOnce(
@@ -252,6 +257,11 @@ describe('db utils', () => {
         query: 'SELECT id WHERE id = $id',
         params: [{ name: 'id', type: 'Number' }],
       },
+    });
+
+    retrieveFDAMock.mockResolvedValue({
+      objStgConf: { partition: 'day' },
+      servicePath: '/sp',
     });
 
     runtimeConn.prepare
@@ -717,14 +727,14 @@ describe('db utils', () => {
   test('extractDate parses year, month and week partitions and returns null for invalid paths', async () => {
     const { extractDate } = await loadDbModule();
 
-    expect(extractDate('bucket/fda/year=2026')).toEqual(
-      new Date('2026-01-01T00:00:00.000Z'),
+    expect(extractDate('bucket/fda/year=2026/month=7/day=3')).toEqual(
+      new Date('2026-07-03T00:00:00.000Z'),
     );
     expect(extractDate('bucket/fda/year=2026/month=7')).toEqual(
       new Date('2026-07-01T00:00:00.000Z'),
     );
-    expect(extractDate('bucket/fda/year=2026/week=2026-02')).toBeInstanceOf(
-      Date,
+    expect(extractDate('bucket/fda/year=2026/week=2026-02')).toEqual(
+      new Date('2026-01-08T00:00:00.000Z'),
     );
     expect(extractDate('bucket/fda/no-partition')).toBeNull();
   });
