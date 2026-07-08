@@ -2056,11 +2056,7 @@ async function getFDAColumnNamesFromParquet(
         `DESCRIBE SELECT * FROM read_parquet('${safeParquetPath}')`,
       );
     } catch (error) {
-      const message = String(error?.message ?? error);
-      if (
-        objStgConf?.partition &&
-        message.includes('No files found that match the pattern')
-      ) {
+      if (objStgConf?.partition && isParquetFilesMissingError(error)) {
         describeResult = await conn.run(
           `DESCRIBE SELECT * FROM read_parquet('${safeSchemaBootstrapParquetPath}')`,
         );
@@ -2082,6 +2078,12 @@ async function getFDAColumnNamesFromParquet(
   } finally {
     await releaseDBConnection(conn);
   }
+}
+
+function isParquetFilesMissingError(error) {
+  return String(error?.message ?? error).includes(
+    'No files found that match the pattern',
+  );
 }
 
 async function createSchemaParquetForEmptyPartitionedFDA(

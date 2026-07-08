@@ -32,6 +32,7 @@ import { convertRefreshIntervalToMs } from './utils.js';
 let instance = null;
 
 const logger = getBasicLogger();
+const NO_PARQUET_FILES_MATCH_ERROR = 'No files found that match the pattern';
 
 const connectionPool = [];
 
@@ -109,8 +110,7 @@ async function closePreparedStatement(stmt) {
 function shouldFallbackToSchemaParquet(error, partitionType) {
   const message = String(error?.message ?? error);
   return (
-    Boolean(partitionType) &&
-    message.includes('No files found that match the pattern')
+    Boolean(partitionType) && message.includes(NO_PARQUET_FILES_MATCH_ERROR)
   );
 }
 

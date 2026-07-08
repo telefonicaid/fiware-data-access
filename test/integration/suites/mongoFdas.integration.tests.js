@@ -283,5 +283,107 @@ export function registerMongoFdasIntegrationTests({
       expect(res.text).toContain('device,status,reading');
       expect(res.text).toContain('sensor-b,warn,19.2');
     });
+
+    test('Mongo cached FDA with no matching source rows keeps DA creation/query working with empty results', async () => {
+      const baseUrl = getBaseUrl();
+      const emptyFdaId = 'mongo_cached_fda_empty';
+      const emptyDaId = 'mongo_cached_da_empty';
+
+      try {
+        const createFdaRes = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Content-Type': 'application/json',
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: emptyFdaId,
+            query: {
+              collection: collectionName,
+              filter: { site: 'missing-site' },
+              projection: {
+                device: 1,
+                status: 1,
+                reading: 1,
+              },
+            },
+            description: 'mongo cached empty fda integration fixture',
+            cached: true,
+            datasourceId,
+          },
+        });
+
+        if (createFdaRes.status >= 400) {
+          console.error(
+            'Failed creating empty Mongo FDA fixture:',
+            createFdaRes.status,
+            createFdaRes.json ?? createFdaRes.text,
+          );
+        }
+        expect(createFdaRes.status).toBe(202);
+
+        await waitUntilFDACompleted({
+          baseUrl,
+          service,
+          fdaId: emptyFdaId,
+          visibility,
+        });
+
+        const createDaRes = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas/${emptyFdaId}/das`,
+          headers: { 'Fiware-Service': service },
+          body: {
+            id: emptyDaId,
+            description: 'mongo cached empty da integration fixture',
+            query: `
+              SELECT device, status, reading
+              WHERE status = $status
+              ORDER BY device
+            `,
+            params: [{ name: 'status', type: 'Text', required: true }],
+          },
+        });
+
+        if (createDaRes.status >= 400) {
+          console.error(
+            'Failed creating empty Mongo DA fixture:',
+            createDaRes.status,
+            createDaRes.json ?? createDaRes.text,
+          );
+        }
+        expect(createDaRes.status).toBe(200);
+
+        const queryRes = await httpReq({
+          method: 'GET',
+          url: buildDaDataUrl(baseUrl, servicePath, emptyFdaId, emptyDaId, {
+            status: 'ok',
+          }),
+          headers: { 'Fiware-Service': service },
+        });
+
+        if (queryRes.status >= 400) {
+          console.error(
+            'Mongo cached empty DA JSON query failed:',
+            queryRes.status,
+            queryRes.json ?? queryRes.text,
+          );
+        }
+
+        expect(queryRes.status).toBe(200);
+        expect(queryRes.json).toEqual([]);
+      } finally {
+        await httpReq({
+          method: 'DELETE',
+          url: `${baseUrl}/${visibility}/fdas/${emptyFdaId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+      }
+    });
   });
 }
