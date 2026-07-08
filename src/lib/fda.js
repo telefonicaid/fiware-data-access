@@ -895,7 +895,7 @@ function replaceNamedParamsWithPositional(query, params) {
   const indexes = new Map();
   const values = [];
 
-  const text = query.replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (_m, name) => {
+  const text = query.replace(/\$([A-Za-z_]\w*)/g, (_m, name) => {
     if (!Object.prototype.hasOwnProperty.call(params, name)) {
       /* c8 ignore next 5 */
       throw new FDAError(
@@ -1917,11 +1917,13 @@ async function buildDefaultDataAccessDefinition(
   objStgConf,
   schemaOverride,
 ) {
-  const overrideColumns = Array.isArray(schemaOverride?.columns)
-    ? schemaOverride.columns
-    : Array.isArray(schemaOverride)
-      ? schemaOverride
-      : [];
+  let overrideColumns = [];
+
+  if (Array.isArray(schemaOverride?.columns)) {
+    overrideColumns = schemaOverride.columns;
+  } else if (Array.isArray(schemaOverride)) {
+    overrideColumns = schemaOverride;
+  }
 
   const normalizedOverrideColumns = overrideColumns.filter(
     (name) => typeof name === 'string' && name.length > 0,

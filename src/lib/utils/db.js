@@ -131,21 +131,20 @@ function buildSchemaBootstrapQuery(service, fdaId, userQuery, servicePath) {
   return `FROM read_parquet('${safeSchemaParquetPath}') ${userQuery.trim()}`;
 }
 
-function createEmptyPreparedStatementResult(streaming) {
-  if (!streaming) {
-    return [];
-  }
-
+function createEmptyPreparedStatementResult() {
   return {
-    stream: {
-      columnNames: () => [],
-      fetchChunk: async () =>
-        await Promise.resolve({
-          rowCount: 0,
-          getRows: () => [],
-        }),
+    rows: [],
+    streamResult: {
+      stream: {
+        columnNames: () => [],
+        fetchChunk: async () =>
+          await Promise.resolve({
+            rowCount: 0,
+            getRows: () => [],
+          }),
+      },
+      close: async () => {},
     },
-    close: async () => {},
   };
 }
 
@@ -196,9 +195,10 @@ async function prepareAndRunStatementWithFallback(
       return { stmt, result };
     } catch (fallbackError) {
       if (shouldFallbackToSchemaParquet(fallbackError, partitionType)) {
+        const emptyResult = createEmptyPreparedStatementResult();
         return {
           stmt: null,
-          result: createEmptyPreparedStatementResult(streaming),
+          result: streaming ? emptyResult.streamResult : emptyResult.rows,
         };
       }
 
@@ -411,9 +411,7 @@ export function getNamedParamsFromQuery(query) {
     return [];
   }
 
-  return [...query.matchAll(/\$([A-Za-z_][A-Za-z0-9_]*)/g)].map(
-    (match) => match[1],
-  );
+  return [...query.matchAll(/\$([A-Za-z_]\w*)/g)].map((match) => match[1]);
 }
 
 export function validateDAParamBindings(query, params) {
