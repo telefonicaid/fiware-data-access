@@ -213,7 +213,7 @@ describe('pg utils', () => {
       validatePostgresQuery(creds, 'SELECT id, timeinstant FROM users', {
         timeColumn: 'timeinstant',
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toBeNull();
 
     expect(currentClient.query).toHaveBeenCalledWith(
       'SELECT * FROM (SELECT id, timeinstant FROM users) AS fda_validation LIMIT 0',

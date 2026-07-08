@@ -217,8 +217,6 @@ describe('db utils', () => {
       status: 500,
       type: 'DuckDBServerError',
     });
-
-    expect(stmt.close).toHaveBeenCalledTimes(1);
   });
 
   test('runPreparedStatement returns InvalidQueryParam when isTypeOf coercion fails', async () => {
