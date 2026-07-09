@@ -32,6 +32,7 @@ import { convertRefreshIntervalToMs } from './utils.js';
 let instance = null;
 
 const logger = getBasicLogger();
+const NO_PARQUET_FILES_MATCH_ERROR = 'No files found that match the pattern';
 
 const connectionPool = [];
 
@@ -100,6 +101,112 @@ async function initDuckDB() {
   return instance;
 }
 
+async function closePreparedStatement(stmt) {
+  if (stmt && typeof stmt.close === 'function') {
+    await stmt.close();
+  }
+}
+
+function shouldFallbackToSchemaParquet(error, partitionType) {
+  const message = String(error?.message ?? error);
+  return (
+    Boolean(partitionType) && message.includes(NO_PARQUET_FILES_MATCH_ERROR)
+  );
+}
+
+function getSchemaBootstrapParquetPath(service, fdaId, servicePath) {
+  const objectKey = getFDAStoragePath(fdaId, servicePath);
+  const bucketName = getBucketNameFromService(service);
+  return `s3://${bucketName}/${objectKey}.__schema__.parquet`;
+}
+
+function buildSchemaBootstrapQuery(service, fdaId, userQuery, servicePath) {
+  const schemaParquetPath = getSchemaBootstrapParquetPath(
+    service,
+    fdaId,
+    servicePath,
+  );
+  const safeSchemaParquetPath = schemaParquetPath.replaceAll("'", "''");
+
+  return `FROM read_parquet('${safeSchemaParquetPath}') ${userQuery.trim()}`;
+}
+
+function createEmptyPreparedStatementResult() {
+  return {
+    rows: [],
+    streamResult: {
+      stream: {
+        columnNames: () => [],
+        fetchChunk: async () =>
+          await Promise.resolve({
+            rowCount: 0,
+            getRows: () => [],
+          }),
+      },
+      close: async () => {},
+    },
+  };
+}
+
+async function executePreparedStatement(stmt, boundParams, streaming) {
+  await stmt.bind(boundParams);
+
+  if (streaming) {
+    const stream = await stmt.stream();
+    const close = async () => {
+      await closePreparedStatement(stmt);
+    };
+    return { stream, close };
+  }
+
+  const result = await stmt.run();
+  return result.getRowObjectsJson();
+}
+
+async function prepareAndRunStatementWithFallback(
+  conn,
+  query,
+  boundParams,
+  { streaming, partitionType, fallbackQuery },
+) {
+  let stmt;
+
+  try {
+    stmt = await conn.prepare(query);
+    const result = await executePreparedStatement(stmt, boundParams, streaming);
+    return { stmt, result };
+  } catch (primaryError) {
+    if (
+      !fallbackQuery ||
+      !shouldFallbackToSchemaParquet(primaryError, partitionType)
+    ) {
+      throw primaryError;
+    }
+
+    await closePreparedStatement(stmt);
+
+    try {
+      stmt = await conn.prepare(fallbackQuery);
+      const result = await executePreparedStatement(
+        stmt,
+        boundParams,
+        streaming,
+      );
+      return { stmt, result };
+    } catch (fallbackError) {
+      if (shouldFallbackToSchemaParquet(fallbackError, partitionType)) {
+        const emptyResult = createEmptyPreparedStatementResult();
+        return {
+          stmt: null,
+          result: streaming ? emptyResult.streamResult : emptyResult.rows,
+        };
+      }
+
+      throw fallbackError;
+    }
+  }
+}
+
 export async function runPreparedStatement(
   conn,
   service,
@@ -141,28 +248,35 @@ export async function runPreparedStatement(
     storedServicePath ?? servicePath,
   );
 
-  const stmt = await conn.prepare(query);
+  let stmt;
 
   try {
+    validateDAParamBindings(da.query, da.params || []);
     const resolvedParams = applyParams(paramValues || {}, da.params);
     const boundParams = normalizeParamsForDuckDB(resolvedParams);
-    await stmt.bind(boundParams);
+    const prepared = await prepareAndRunStatementWithFallback(
+      conn,
+      query,
+      boundParams,
+      {
+        streaming,
+        partitionType: objStgConf?.partition,
+        fallbackQuery: objStgConf?.partition
+          ? buildSchemaBootstrapQuery(
+              service,
+              fdaId,
+              da.query,
+              storedServicePath ?? servicePath,
+            )
+          : null,
+      },
+    );
 
-    if (streaming) {
-      const stream = await stmt.stream();
-      const close = async () => {
-        if (typeof stmt.close === 'function') {
-          await stmt.close();
-        }
-      };
-      return { stream, close };
-    }
-
-    const result = await stmt.run();
-    return result.getRowObjectsJson();
+    stmt = prepared.stmt;
+    return prepared.result;
   } catch (e) {
-    if (streaming && typeof stmt.close === 'function') {
-      await stmt.close();
+    if (streaming) {
+      await closePreparedStatement(stmt);
     }
 
     if (e instanceof FDAError) {
@@ -176,8 +290,8 @@ export async function runPreparedStatement(
       `Error ${action} the prepared statement: ${e}`,
     );
   } finally {
-    if (!streaming && typeof stmt.close === 'function') {
-      await stmt.close();
+    if (!streaming) {
+      await closePreparedStatement(stmt);
     }
   }
 }
@@ -290,6 +404,35 @@ export function checkParams(params) {
 
     return normalizedParam;
   });
+}
+
+export function getNamedParamsFromQuery(query) {
+  if (typeof query !== 'string' || query.length === 0) {
+    return [];
+  }
+
+  return [...query.matchAll(/\$([A-Za-z_]\w*)/g)].map((match) => match[1]);
+}
+
+export function validateDAParamBindings(query, params) {
+  const queryParamNames = new Set(getNamedParamsFromQuery(query));
+  const declaredParamNames = new Set(
+    Array.isArray(params)
+      ? params
+          .map((param) => param?.name)
+          .filter((name) => typeof name === 'string' && name.length > 0)
+      : [],
+  );
+
+  for (const queryParamName of queryParamNames) {
+    if (!declaredParamNames.has(queryParamName)) {
+      throw new FDAError(
+        400,
+        'InvalidQueryParam',
+        `Query param "${queryParamName}" must be declared in DA params.`,
+      );
+    }
+  }
 }
 
 function normalizeParamDefaultForStorage(value) {
@@ -650,6 +793,31 @@ export async function validateDAQuery(
   try {
     stmt = await conn.prepare(query);
   } catch (e) {
+    const message = String(e?.message ?? e);
+
+    if (
+      objStgConf?.partition &&
+      message.includes('No files found that match the pattern')
+    ) {
+      const fallbackQuery = buildSchemaBootstrapQuery(
+        service,
+        fdaId,
+        userQuery,
+        servicePath,
+      );
+
+      try {
+        stmt = await conn.prepare(fallbackQuery);
+        return;
+      } catch (fallbackError) {
+        throw new FDAError(
+          400,
+          'InvalidDAQuery',
+          `DA query is not compatible with FDA ${fdaId}: ${fallbackError.message || fallbackError}`,
+        );
+      }
+    }
+
     throw new FDAError(
       400,
       'InvalidDAQuery',

@@ -30,6 +30,7 @@ import {
   releaseDBConnection,
   toParquet,
   checkParams,
+  validateDAParamBindings,
   resolveDAParams,
   validateDAQuery,
   extractDate,
@@ -41,6 +42,7 @@ import {
   runPgQuery,
   createPgCursorReader,
   validatePostgresDatasourceConnection,
+  validatePostgresQuery,
 } from './utils/pg.js';
 import {
   getS3Client,
@@ -893,7 +895,7 @@ function replaceNamedParamsWithPositional(query, params) {
   const indexes = new Map();
   const values = [];
 
-  const text = query.replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (_m, name) => {
+  const text = query.replaceAll(/\$([A-Za-z_]\w*)/g, (_m, name) => {
     if (!Object.prototype.hasOwnProperty.call(params, name)) {
       /* c8 ignore next 5 */
       throw new FDAError(
@@ -948,6 +950,7 @@ export async function createDA(
     }
 
     const normalizedParams = checkParams(params);
+    validateDAParamBindings(userQuery, normalizedParams || []);
     await validateDAQuery(conn, service, fdaId, userQuery, servicePath);
     await storeDA(
       service,
@@ -1001,6 +1004,15 @@ export async function fetchFDA(
       ? getTimeColumnQuery(query, timeColumn)
       : query;
 
+  let sourceSchema;
+
+  if (datasource.type === 'postgres') {
+    sourceSchema = await validatePostgresQuery(datasource.config, timeQuery, {
+      timeColumn,
+      returnColumns: true,
+    });
+  }
+
   await createFDAMongo(
     fdaId,
     timeQuery,
@@ -1026,6 +1038,7 @@ export async function fetchFDA(
           datasourceId,
           timeColumn,
           objStgConf,
+          sourceSchema,
         );
       } catch (err) {
         await rollbackFDAProvisioning(service, fdaId, normalizedServicePath);
@@ -1042,6 +1055,7 @@ export async function fetchFDA(
       timeColumn,
       objStgConf,
       normalizedVisibility,
+      sourceSchema,
     });
   }
 
@@ -1510,6 +1524,7 @@ export async function putDA(
     }
 
     const normalizedParams = checkParams(params);
+    validateDAParamBindings(userQuery, normalizedParams || []);
     await validateDAQuery(conn, service, fdaId, userQuery, servicePath);
     await updateDA(
       service,
@@ -1647,6 +1662,9 @@ async function uploadTableToObjStg(
         bucket,
         `tmp/${path}.parquet`,
       );
+      const hasRealPartitionedParquet = objectsList.some((key) =>
+        key.endsWith('.parquet'),
+      );
       for (const tempPartition of objectsList) {
         await moveObject(
           s3Client,
@@ -1655,6 +1673,14 @@ async function uploadTableToObjStg(
           tempPartition.replace('tmp/', ''),
         );
         await dropFile(s3Client, bucket, tempPartition);
+      }
+
+      if (hasRealPartitionedParquet) {
+        await dropFile(
+          s3Client,
+          bucket,
+          `${path}.parquet/${getSchemaPartitionPath(objStgConf.partition)}/schema.parquet`,
+        );
       }
     }
 
@@ -1820,6 +1846,7 @@ async function createOneRowParquetSync(
   datasourceId,
   timeColumn,
   objStgConf,
+  sourceSchema,
 ) {
   const s3Client = getS3Client(
     `${config.objstg.protocol}://${config.objstg.endpoint}`,
@@ -1831,7 +1858,7 @@ async function createOneRowParquetSync(
   const datasource = await resolveDatasource(service, datasourceId);
 
   if (datasource.type === 'postgres') {
-    const oneRowQuery = buildOneRowQuery(query, timeColumn);
+    const oneRowQuery = buildOneRowQuery(query);
     await uploadTable(
       s3Client,
       bucketName,
@@ -1866,17 +1893,43 @@ async function createOneRowParquetSync(
       timeColumn,
       objStgConf?.partition,
     );
+
+    if (datasource.type === 'postgres' && objStgConf?.partition) {
+      const partitionPrefix = `${storagePath}.parquet`;
+      const parquetFiles = await listObjects(
+        s3Client,
+        bucketName,
+        partitionPrefix,
+      );
+      const normalizedParquetFiles = Array.isArray(parquetFiles)
+        ? parquetFiles
+        : [];
+      const hasPartitionedDataParquet = normalizedParquetFiles.some(
+        (key) =>
+          key.startsWith(`${partitionPrefix}/`) && key.endsWith('.parquet'),
+      );
+
+      if (!hasPartitionedDataParquet && typeof conn?.run === 'function') {
+        await createSchemaParquetForEmptyPartitionedFDA(
+          conn,
+          bucketName,
+          storagePath,
+          sourceSchema,
+        );
+      }
+    }
+
     await dropFile(s3Client, bucketName, `${storagePath}.csv`);
   } finally {
     await releaseDBConnection(conn);
   }
 }
 
-function buildOneRowQuery(query, timeColumn) {
+function buildOneRowQuery(query) {
   const normalizedQuery = query.trim().replace(/;+\s*$/, '');
-  const orderBy = timeColumn ? ` ORDER BY ${timeColumn} DESC NULLS LAST` : '';
 
-  return `SELECT * FROM (${normalizedQuery}) AS fda_one_row ${orderBy} LIMIT 1`;
+  // Schema-only bootstrap keeps creation validation synchronous without row materialization.
+  return `SELECT * FROM (${normalizedQuery}) AS fda_one_row LIMIT 0`;
 }
 
 async function buildDefaultDataAccessDefinition(
@@ -1885,13 +1938,29 @@ async function buildDefaultDataAccessDefinition(
   servicePath,
   timeColumn,
   objStgConf,
+  schemaOverride,
 ) {
-  const columns = await getFDAColumnNamesFromParquet(
-    service,
-    fdaId,
-    servicePath,
-    objStgConf,
+  let overrideColumns = [];
+
+  if (Array.isArray(schemaOverride?.columns)) {
+    overrideColumns = schemaOverride.columns;
+  } else if (Array.isArray(schemaOverride)) {
+    overrideColumns = schemaOverride;
+  }
+
+  const normalizedOverrideColumns = overrideColumns.filter(
+    (name) => typeof name === 'string' && name.length > 0,
   );
+
+  const columns =
+    normalizedOverrideColumns.length > 0
+      ? normalizedOverrideColumns
+      : await getFDAColumnNamesFromParquet(
+          service,
+          fdaId,
+          servicePath,
+          objStgConf,
+        );
 
   const resolvedTimeColumn = resolveDefaultDATimeColumnName(
     timeColumn,
@@ -2001,11 +2070,26 @@ async function getFDAColumnNamesFromParquet(
     const parquetPath = objStgConf?.partition
       ? `s3://${bucketName}/${storagePath}.parquet/**/*.parquet`
       : `s3://${bucketName}/${storagePath}.parquet`;
-    const safeParquetPath = parquetPath.replace(/'/g, "''");
+    const schemaBootstrapParquetPath = `s3://${bucketName}/${storagePath}.__schema__.parquet`;
+    const safeParquetPath = parquetPath.replaceAll("'", "''");
+    const safeSchemaBootstrapParquetPath =
+      schemaBootstrapParquetPath.replaceAll("'", "''");
 
-    const describeResult = await conn.run(
-      `DESCRIBE SELECT * FROM read_parquet('${safeParquetPath}')`,
-    );
+    let describeResult;
+    try {
+      describeResult = await conn.run(
+        `DESCRIBE SELECT * FROM read_parquet('${safeParquetPath}')`,
+      );
+    } catch (error) {
+      if (objStgConf?.partition && isParquetFilesMissingError(error)) {
+        describeResult = await conn.run(
+          `DESCRIBE SELECT * FROM read_parquet('${safeSchemaBootstrapParquetPath}')`,
+        );
+      } else {
+        throw error;
+      }
+    }
+
     const describeRows = await Promise.resolve(
       describeResult.getRowObjectsJson(),
     );
@@ -2019,6 +2103,57 @@ async function getFDAColumnNamesFromParquet(
   } finally {
     await releaseDBConnection(conn);
   }
+}
+
+function isParquetFilesMissingError(error) {
+  return String(error?.message ?? error).includes(
+    'No files found that match the pattern',
+  );
+}
+
+async function createSchemaParquetForEmptyPartitionedFDA(
+  conn,
+  bucketName,
+  storagePath,
+  sourceSchema,
+) {
+  const schemaParquetPath = `s3://${bucketName}/${storagePath}.__schema__.parquet`;
+  const safeSchemaParquetPath = schemaParquetPath.replaceAll("'", "''");
+  const schemaFields = Array.isArray(sourceSchema?.fields)
+    ? sourceSchema.fields.filter(
+        (field) =>
+          typeof field?.name === 'string' &&
+          field.name.length > 0 &&
+          typeof field?.duckdbType === 'string' &&
+          field.duckdbType.length > 0,
+      )
+    : [];
+
+  if (schemaFields.length === 0) {
+    return;
+  }
+
+  const selectList = schemaFields
+    .map(
+      ({ name, duckdbType }) =>
+        `CAST(NULL AS ${duckdbType}) AS ${quoteDuckDBIdentifier(name)}`,
+    )
+    .join(', ');
+
+  await conn.run(
+    `COPY (SELECT ${selectList} LIMIT 0) TO '${safeSchemaParquetPath}' (FORMAT PARQUET);`,
+  );
+}
+
+function getSchemaPartitionPath(partitionType) {
+  const partitionPaths = {
+    day: 'year=9999/month=12/day=31',
+    week: 'year=9999/week=9999-52',
+    month: 'year=9999/month=12',
+    year: 'year=9999',
+  };
+
+  return partitionPaths[partitionType] ?? partitionPaths.year;
 }
 
 function quoteDuckDBIdentifier(identifier) {
@@ -2154,6 +2289,7 @@ async function createDefaultDAIfNeeded({
   timeColumn,
   objStgConf,
   normalizedVisibility,
+  sourceSchema,
 }) {
   if (!cached || !defaultDataAccessEnabled) {
     return;
@@ -2166,6 +2302,7 @@ async function createDefaultDAIfNeeded({
       normalizedServicePath,
       timeColumn,
       objStgConf,
+      sourceSchema,
     );
 
     await createDA(

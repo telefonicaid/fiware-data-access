@@ -183,6 +183,61 @@ export function registerDaParamsIntegrationTests({
       );
     });
 
+    test('POST /fdas/:fdaId/das rejects query params not declared in DA params', async () => {
+      const baseUrl = getBaseUrl();
+      const fdaBindingsId = 'fda_bad_bindings';
+
+      const createFda = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: fdaBindingsId,
+          description: 'invalid da query bindings test fda',
+          query:
+            'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+        },
+      });
+
+      expect(createFda.status).toBe(202);
+      await waitUntilFDACompleted({
+        baseUrl,
+        service,
+        fdaId: fdaBindingsId,
+      });
+
+      const createDa = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas/${fdaBindingsId}/das`,
+        headers: { 'Fiware-Service': service },
+        body: {
+          id: 'da_bad_bindings',
+          description: 'should reject undeclared query placeholders',
+          query: `
+            SELECT id, name
+            WHERE age > $minAge
+            ORDER BY id
+          `,
+          params: [
+            {
+              name: 'otherParam',
+              type: 'Number',
+              required: true,
+            },
+          ],
+        },
+      });
+
+      expect(createDa.status).toBe(400);
+      expect(createDa.json.error).toBe('InvalidQueryParam');
+      expect(createDa.json.description).toContain(
+        'Query param "minAge" must be declared in DA params.',
+      );
+    });
+
     test('POST /fdas/:fdaId/das rejects empty body', async () => {
       const baseUrl = getBaseUrl();
       const fdaBadDefaultId = 'fda_bad_body';

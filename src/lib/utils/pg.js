@@ -128,6 +128,69 @@ function releasePgClient(key, pgClient) {
   }
 }
 
+export function getDuckDBTypeFromPostgresField(field) {
+  const typeId = field?.dataTypeID;
+
+  switch (typeId) {
+    case pg.types.builtins.BOOL:
+      return 'BOOLEAN';
+    case pg.types.builtins.INT2:
+      return 'SMALLINT';
+    case pg.types.builtins.INT4:
+      return 'INTEGER';
+    case pg.types.builtins.INT8:
+      return 'BIGINT';
+    case pg.types.builtins.FLOAT4:
+      return 'REAL';
+    case pg.types.builtins.FLOAT8:
+      return 'DOUBLE';
+    case pg.types.builtins.NUMERIC:
+      return 'DOUBLE';
+    case pg.types.builtins.DATE:
+      return 'DATE';
+    case pg.types.builtins.TIME:
+    case pg.types.builtins.TIMETZ:
+      return 'TIME';
+    case pg.types.builtins.TIMESTAMP:
+      return 'TIMESTAMP';
+    case pg.types.builtins.TIMESTAMPTZ:
+      return 'TIMESTAMPTZ';
+    case pg.types.builtins.JSON:
+    case pg.types.builtins.JSONB:
+      return 'JSON';
+    case pg.types.builtins.UUID:
+      return 'UUID';
+    case pg.types.builtins.BYTEA:
+      return 'BLOB';
+    default:
+      return 'VARCHAR';
+  }
+}
+
+function buildPostgresSchemaInfo(result) {
+  const fields = Array.isArray(result?.fields)
+    ? result.fields
+        .map((field) => {
+          const name = field?.name;
+          if (typeof name !== 'string' || name.length === 0) {
+            return null;
+          }
+
+          return {
+            name,
+            postgresTypeId: field?.dataTypeID ?? null,
+            duckdbType: getDuckDBTypeFromPostgresField(field),
+          };
+        })
+        .filter(Boolean)
+    : [];
+
+  return {
+    columns: fields.map((field) => field.name),
+    fields,
+  };
+}
+
 export async function closePgPools() {
   const closePromises = [];
 
@@ -214,6 +277,54 @@ export async function runPgQuery(pgCredentials, text, values) {
       500,
       'PostgresServerError',
       `Error running fresh query: ${e.message}`,
+    );
+  } finally {
+    releasePgClient(key, pgClient);
+  }
+}
+
+export async function validatePostgresQuery(
+  pgCredentials,
+  query,
+  { timeColumn, returnColumns = false } = {},
+) {
+  const { user, password, host, port, database } = pgCredentials;
+  const key = getPoolKey(user, password, host, port, database);
+  const pgPool = getPgPool(user, password, host, port, database);
+  const pgClient = await pgPool.connect();
+
+  const normalizedQuery = query.trim().replace(/;+\s*$/, '');
+  const validationQuery = `SELECT * FROM (${normalizedQuery}) AS fda_validation LIMIT 0`;
+
+  try {
+    const result = await pgClient.query(validationQuery);
+    const schemaInfo = buildPostgresSchemaInfo(result);
+    const columns = schemaInfo.columns;
+
+    if (typeof timeColumn === 'string' && timeColumn.length > 0) {
+      const hasTimeColumn = columns.some(
+        (field) => field.toLowerCase() === timeColumn.toLowerCase(),
+      );
+
+      if (!hasTimeColumn) {
+        throw new FDAError(
+          400,
+          'InvalidParam',
+          `Time column "${timeColumn}" is not present in the FDA query schema.`,
+        );
+      }
+    }
+
+    return returnColumns ? schemaInfo : null;
+  } catch (e) {
+    if (e instanceof FDAError) {
+      throw e;
+    }
+
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Invalid Postgres FDA query: ${e.message}`,
     );
   } finally {
     releasePgClient(key, pgClient);

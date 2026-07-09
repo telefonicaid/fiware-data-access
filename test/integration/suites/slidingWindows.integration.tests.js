@@ -278,6 +278,41 @@ export function registerSlidingWindowsIntegrationTests({
     expect(res4.status).toBe(400);
   });
 
+  test('POST /fdas rejects partitioned FDA when timeColumn is not present in the source query', async () => {
+    const baseUrl = getBaseUrl();
+
+    const res = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/${visibility}/fdas`,
+      headers: {
+        'Fiware-Service': service,
+        'Fiware-ServicePath': servicePath,
+      },
+      body: {
+        id: 'fda_sw_missing_time_column',
+        query: 'SELECT id, name, age FROM public.users ORDER BY id',
+        description: 'partitioned fda with missing time column',
+        refreshPolicy: {
+          type: 'window',
+          params: {
+            refreshInterval: '1 day',
+            fetchSize: 'day',
+            windowSize: 'week',
+          },
+        },
+        timeColumn: 'created_at',
+        objStgConf: {
+          partition: 'day',
+          compression: false,
+        },
+      },
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.json.error).toBe('InvalidParam');
+    expect(res.json.description).toContain('created_at');
+  });
+
   test('POST /fdas accepts sliding window with day partition (realistic daily setup)', async () => {
     const baseUrl = getBaseUrl();
     const fdaId = 'fda_sw_daily_partition';
