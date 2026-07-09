@@ -2016,7 +2016,9 @@ describe('updateFDA', () => {
     expect(agenda.now).toHaveBeenCalledWith('refresh-fda', {
       datasourceId: 'default',
       fdaId: 'fda42',
-      query: `SELECT * FROM (SELECT id FROM users) q WHERE undefined >= TIMESTAMP '2026-07-07T00:00:00.000Z' AND undefined < NOW()`,
+      query: expect.stringMatching(
+        /^SELECT \* FROM \(SELECT id FROM users\) q WHERE undefined >= TIMESTAMP '.*' AND undefined < NOW\(\)$/,
+      ),
       service: 'svc',
       servicePath: '/servicepath',
       timeColumn: undefined,
@@ -2028,6 +2030,13 @@ describe('updateFDA', () => {
           windowSize: 'day',
         },
       },
+      objStgConf: undefined,
+    });
+    expect(agenda.now).toHaveBeenNthCalledWith(2, 'clean-partition', {
+      fdaId: 'fda42',
+      service: 'svc',
+      servicePath: '/servicepath',
+      windowSize: 'day',
       objStgConf: undefined,
     });
 
