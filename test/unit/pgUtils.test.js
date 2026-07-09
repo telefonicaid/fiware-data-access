@@ -63,7 +63,24 @@ await jest.unstable_mockModule('pg', () => ({
     Pool: poolCtorMock,
     types: {
       setTypeParser: jest.fn(),
-      builtins: { INT8: 20 },
+      builtins: {
+        BOOL: 16,
+        INT2: 21,
+        INT4: 23,
+        INT8: 20,
+        FLOAT4: 700,
+        FLOAT8: 701,
+        NUMERIC: 1700,
+        DATE: 1082,
+        TIME: 1083,
+        TIMETZ: 1266,
+        TIMESTAMP: 1114,
+        TIMESTAMPTZ: 1184,
+        JSON: 114,
+        JSONB: 3802,
+        UUID: 2950,
+        BYTEA: 17,
+      },
     },
   },
 }));
@@ -97,8 +114,14 @@ await jest.unstable_mockModule('../../src/lib/fdaConfig.js', () => ({
   },
 }));
 
-const { getPgClient, uploadTable, runPgQuery, createPgCursorReader } =
-  await import('../../src/lib/utils/pg.js');
+const {
+  getPgClient,
+  uploadTable,
+  runPgQuery,
+  createPgCursorReader,
+  validatePostgresQuery,
+  getDuckDBTypeFromPostgresField,
+} = await import('../../src/lib/utils/pg.js');
 const { closePgPools } = await import('../../src/lib/utils/pg.js');
 const { config } = await import('../../src/lib/fdaConfig.js');
 
@@ -187,6 +210,133 @@ describe('pg utils', () => {
       database: 'svc_db',
     };
     await expect(runPgQuery(creds, 'SELECT 1', [])).rejects.toBe(fdaError);
+
+    expect(currentClient.release).toHaveBeenCalledTimes(1);
+  });
+
+  test('validatePostgresQuery validates a query and allows a declared timeColumn', async () => {
+    currentClient.query.mockResolvedValue({
+      fields: [{ name: 'id' }, { name: 'timeinstant' }],
+    });
+
+    const creds = {
+      user: 'u',
+      password: 'p',
+      host: 'h',
+      port: 5432,
+      database: 'svc_db',
+    };
+
+    await expect(
+      validatePostgresQuery(creds, 'SELECT id, timeinstant FROM users', {
+        timeColumn: 'timeinstant',
+      }),
+    ).resolves.toBeNull();
+
+    expect(currentClient.query).toHaveBeenCalledWith(
+      'SELECT * FROM (SELECT id, timeinstant FROM users) AS fda_validation LIMIT 0',
+    );
+    expect(currentClient.release).toHaveBeenCalledTimes(1);
+  });
+
+  test('validatePostgresQuery returns typed schema metadata when requested', async () => {
+    currentClient.query.mockResolvedValue({
+      fields: [
+        { name: 'id', dataTypeID: 23 },
+        { name: 'timeinstant', dataTypeID: 1184 },
+        { name: 'payload', dataTypeID: 999999 },
+      ],
+    });
+
+    const creds = {
+      user: 'u',
+      password: 'p',
+      host: 'h',
+      port: 5432,
+      database: 'svc_db',
+    };
+
+    await expect(
+      validatePostgresQuery(
+        creds,
+        'SELECT id, timeinstant, payload FROM users',
+        {
+          returnColumns: true,
+        },
+      ),
+    ).resolves.toEqual({
+      columns: ['id', 'timeinstant', 'payload'],
+      fields: [
+        { name: 'id', postgresTypeId: 23, duckdbType: 'INTEGER' },
+        {
+          name: 'timeinstant',
+          postgresTypeId: 1184,
+          duckdbType: 'TIMESTAMPTZ',
+        },
+        { name: 'payload', postgresTypeId: 999999, duckdbType: 'VARCHAR' },
+      ],
+    });
+
+    expect(currentClient.release).toHaveBeenCalledTimes(1);
+  });
+
+  test('getDuckDBTypeFromPostgresField maps PostgreSQL field types to DuckDB types', () => {
+    expect(getDuckDBTypeFromPostgresField({ dataTypeID: 16 })).toBe('BOOLEAN');
+    expect(getDuckDBTypeFromPostgresField({ dataTypeID: 20 })).toBe('BIGINT');
+    expect(getDuckDBTypeFromPostgresField({ dataTypeID: 1700 })).toBe('DOUBLE');
+    expect(getDuckDBTypeFromPostgresField({ dataTypeID: 1184 })).toBe(
+      'TIMESTAMPTZ',
+    );
+    expect(getDuckDBTypeFromPostgresField({ dataTypeID: 999999 })).toBe(
+      'VARCHAR',
+    );
+  });
+
+  test('validatePostgresQuery rejects when the declared timeColumn is not in the schema', async () => {
+    currentClient.query.mockResolvedValue({
+      fields: [{ name: 'id' }, { name: 'name' }],
+    });
+
+    const creds = {
+      user: 'u',
+      password: 'p',
+      host: 'h',
+      port: 5432,
+      database: 'svc_db',
+    };
+
+    await expect(
+      validatePostgresQuery(creds, 'SELECT id, name FROM users', {
+        timeColumn: 'timeinstant',
+      }),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidParam',
+      message:
+        'Time column "timeinstant" is not present in the FDA query schema.',
+    });
+
+    expect(currentClient.release).toHaveBeenCalledTimes(1);
+  });
+
+  test('validatePostgresQuery wraps SQL errors as FDAError', async () => {
+    currentClient.query.mockRejectedValue(new Error('syntax exploded'));
+
+    const creds = {
+      user: 'u',
+      password: 'p',
+      host: 'h',
+      port: 5432,
+      database: 'svc_db',
+    };
+
+    await expect(
+      validatePostgresQuery(creds, 'SELECT bad(', { timeColumn: 'ts' }),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidParam',
+      message: 'Invalid Postgres FDA query: syntax exploded',
+    });
 
     expect(currentClient.release).toHaveBeenCalledTimes(1);
   });

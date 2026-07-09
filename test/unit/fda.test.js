@@ -32,6 +32,7 @@ const dbMocks = {
   releaseDBConnection: jest.fn(),
   toParquet: jest.fn(),
   checkParams: jest.fn(),
+  validateDAParamBindings: jest.fn(),
   resolveDAParams: jest.fn(),
   validateDAQuery: jest.fn(),
   extractDate: jest.fn(),
@@ -44,6 +45,7 @@ const pgMocks = {
   runPgQuery: jest.fn(),
   createPgCursorReader: jest.fn(),
   validatePostgresDatasourceConnection: jest.fn(),
+  validatePostgresQuery: jest.fn(),
 };
 
 const awsMocks = {
@@ -92,6 +94,7 @@ await jest.unstable_mockModule('../../src/lib/utils/db.js', () => ({
   releaseDBConnection: dbMocks.releaseDBConnection,
   toParquet: dbMocks.toParquet,
   checkParams: dbMocks.checkParams,
+  validateDAParamBindings: dbMocks.validateDAParamBindings,
   resolveDAParams: dbMocks.resolveDAParams,
   validateDAQuery: dbMocks.validateDAQuery,
   extractDate: dbMocks.extractDate,
@@ -105,6 +108,7 @@ await jest.unstable_mockModule('../../src/lib/utils/pg.js', () => ({
   createPgCursorReader: pgMocks.createPgCursorReader,
   validatePostgresDatasourceConnection:
     pgMocks.validatePostgresDatasourceConnection,
+  validatePostgresQuery: pgMocks.validatePostgresQuery,
 }));
 
 await jest.unstable_mockModule('../../src/lib/utils/aws.js', () => ({
@@ -1068,7 +1072,7 @@ describe('fetchFDA', () => {
         port: 5432,
         database: 'svc',
       },
-      'SELECT * FROM (SELECT id FROM users) AS fda_one_row  ORDER BY timeinstant DESC NULLS LAST LIMIT 1',
+      'SELECT * FROM (SELECT id FROM users) AS fda_one_row LIMIT 0',
       'servicepath/fda1',
     );
     expect(dbMocks.toParquet).toHaveBeenCalledWith(
