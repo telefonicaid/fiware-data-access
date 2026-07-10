@@ -1065,10 +1065,34 @@ export async function fetchFDA(
 
   const agenda = getAgenda();
 
+  let firstQuery = timeQuery;
+  let recurringQuery = timeQuery;
+  if (datasource.type === 'postgres' && refreshPolicy?.type === 'window') {
+    firstQuery = getWindowQuery(
+      timeQuery,
+      timeColumn,
+      refreshPolicy?.params?.windowSize,
+    );
+    recurringQuery = getWindowQuery(
+      timeQuery,
+      timeColumn,
+      refreshPolicy?.params?.fetchSize,
+    );
+  } else if (
+    datasource.type === 'mongodb' &&
+    refreshPolicy?.type === 'window'
+  ) {
+    throw new FDAError(
+      400,
+      'InvalidMongoFDAContract',
+      'Mongo datasource does not support window refresh policy',
+    );
+  }
+
   // Execute first fetch immediately (when a fetcher is free)
   await agenda.now('refresh-fda', {
     fdaId,
-    query: timeQuery,
+    query: firstQuery,
     service,
     servicePath: normalizedServicePath,
     timeColumn,
@@ -1082,7 +1106,7 @@ export async function fetchFDA(
     await scheduleFDAJobs({
       agenda,
       fdaId,
-      query: timeQuery,
+      query: recurringQuery,
       service,
       servicePath: normalizedServicePath,
       timeColumn,
@@ -1091,6 +1115,14 @@ export async function fetchFDA(
       datasourceId,
     });
   }
+}
+
+function getWindowQuery(query, timeColumn, startDate) {
+  if (!startDate) {
+    return query;
+  }
+  const prevWindowStartDate = getPreviousWindowStartDate(startDate);
+  return getUpdateWindowQuery(query, timeColumn, prevWindowStartDate);
 }
 
 function validateScheduledOptions(refreshPolicy, objStgConf) {
@@ -1216,9 +1248,17 @@ export async function updateFDA(service, fdaId, visibility, servicePath) {
   // Execute refresh immediately (when a fetcher is free)
   const effectiveServicePath = previous.servicePath ?? normalizedServicePath;
 
+  let firstQuery = previous.query;
+  if (previous.refreshPolicy?.type === 'window') {
+    firstQuery = getWindowQuery(
+      previous.query,
+      previous.timeColumn,
+      previous.refreshPolicy?.params?.windowSize,
+    );
+  }
   await agenda.now('refresh-fda', {
     fdaId,
-    query: previous.query,
+    query: firstQuery,
     service,
     servicePath: effectiveServicePath,
     timeColumn: previous.timeColumn,
@@ -1250,31 +1290,14 @@ export async function processFDAAsync(
 ) {
   const storagePath = getFDAStoragePath(fdaId, servicePath);
   const bucketName = getBucketNameFromService(service);
-  const datasource = await getDatasourceForService(service, datasourceId);
 
   try {
     await updateFDAStatus(service, fdaId, servicePath, 'fetching', 10);
 
-    let finalQuery = query;
-    if (datasource.type === 'postgres' && refreshPolicy?.type === 'window') {
-      const { params = {} } = refreshPolicy;
-      const prevWindowStartDate = getPreviousWindowStartDate(params.fetchSize);
-      finalQuery = getUpdateWindowQuery(query, timeColumn, prevWindowStartDate);
-    } else if (
-      datasource.type === 'mongodb' &&
-      refreshPolicy?.type === 'window'
-    ) {
-      throw new FDAError(
-        400,
-        'InvalidMongoFDAContract',
-        'Mongo datasource does not support window refresh policy',
-      );
-    }
-
     await uploadTableToObjStg(
       service,
       datasourceId,
-      finalQuery,
+      query,
       bucketName,
       storagePath,
       fdaId,

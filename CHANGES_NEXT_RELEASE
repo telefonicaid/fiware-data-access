@@ -1,4 +1,4 @@
+- Fix: first fetch in sliding window FDAs now uses windowSize, recurring fetches use fetchSize (#221)
 - Fix: validate PostgreSQL FDA schemas at creation time and preserve typed schema metadata for empty partitioned FDA bootstrap, generating schema-only parquet fallback in MinIO and using it for DA validation/execution when partition files are absent (#217)
 - Fix: reject DA definitions when query placeholders are not declared in params to prevent runtime bind errors and 500 responses (#225)
 - Fix: removed agendaJobIds workaround after upgrading Agenda backend partial data filter support; recurring job cancellation is now scoped by name plus data service, fdaId and servicePath (#206)
-

@@ -2016,7 +2016,9 @@ describe('updateFDA', () => {
     expect(agenda.now).toHaveBeenCalledWith('refresh-fda', {
       datasourceId: 'default',
       fdaId: 'fda42',
-      query: 'SELECT id FROM users',
+      query: expect.stringMatching(
+        /^SELECT \* FROM \(SELECT id FROM users\) q WHERE undefined >= TIMESTAMP '.*' AND undefined < NOW\(\)$/,
+      ),
       service: 'svc',
       servicePath: '/servicepath',
       timeColumn: undefined,
@@ -2028,6 +2030,13 @@ describe('updateFDA', () => {
           windowSize: 'day',
         },
       },
+      objStgConf: undefined,
+    });
+    expect(agenda.now).toHaveBeenNthCalledWith(2, 'clean-partition', {
+      fdaId: 'fda42',
+      service: 'svc',
+      servicePath: '/servicepath',
+      windowSize: 'day',
       objStgConf: undefined,
     });
 
@@ -2298,7 +2307,7 @@ describe('processFDAAsync', () => {
     );
   });
 
-  test('builds hourly sliding-window query when fetchSize is hour', async () => {
+  test('uses query as received', async () => {
     await processFDAAsync(
       'fda1',
       'SELECT id, observed_at FROM public.events',
@@ -2324,13 +2333,11 @@ describe('processFDAAsync', () => {
         port: 5432,
         database: 'svc',
       },
-      expect.stringContaining(
-        "SELECT * FROM (SELECT id, observed_at FROM public.events) q WHERE observed_at >= TIMESTAMP '",
-      ),
+      expect.stringContaining('SELECT id, observed_at FROM public.events'),
       'servicepath/fda1',
     );
     expect(pgMocks.uploadTable.mock.calls[0][3]).toContain(
-      'AND observed_at < NOW()',
+      'SELECT id, observed_at FROM public.events',
     );
   });
 

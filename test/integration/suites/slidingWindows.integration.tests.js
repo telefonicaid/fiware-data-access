@@ -554,7 +554,86 @@ export function registerSlidingWindowsIntegrationTests({
     expect(res.json.description).toContain('windowSize');
   });
 
-  test('POST /fdas accepts hourly sliding window without partition', async () => {
+  test('POST /fdas sliding window FDA makes first fetch using windowSize', async () => {
+    const baseUrl = getBaseUrl();
+    const suffix = `${Date.now()}`;
+    const fixtureTable = `sw_hour_fixture_${suffix}`;
+    const fdaId = `fda_sw_hour_${suffix}`;
+
+    const pgClient = createPgClient();
+    await pgClient.connect();
+
+    try {
+      await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
+      await pgClient.query(`
+        CREATE TABLE public.${fixtureTable} (
+          id INT PRIMARY KEY,
+          label TEXT NOT NULL,
+          observed_at TIMESTAMPTZ NOT NULL
+        )
+      `);
+
+      await pgClient.query(`
+        INSERT INTO public.${fixtureTable} (id, label, observed_at)
+        VALUES
+          (1, 'outside_week_window', date_trunc('week', NOW()) - INTERVAL '2 weeks'),
+          (2, 'inside_week_window', date_trunc('hour', NOW()) - INTERVAL '15 minutes')
+      `);
+
+      const createFda = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: fdaId,
+          query: `
+            SELECT id, label, observed_at
+            FROM public.${fixtureTable}
+            ORDER BY id
+          `,
+          description: 'daily sliding window test',
+          refreshPolicy: {
+            type: 'window',
+            params: {
+              refreshInterval: '1 hour',
+              fetchSize: 'day',
+              windowSize: 'week',
+            },
+          },
+          objStgConf: {
+            partition: 'day',
+          },
+          timeColumn: 'observed_at',
+        },
+      });
+
+      expect(createFda.status).toBe(202);
+
+      await waitUntilFDACompleted({ baseUrl, service, fdaId });
+
+      const readRes = await httpReq({
+        method: 'GET',
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, 'defaultDataAccess', {
+          pageSize: 100,
+          pageStart: 0,
+        }),
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect(readRes.status).toBe(200);
+      expect(readRes.json.map((row) => row.label)).toEqual([
+        'inside_week_window',
+      ]);
+    } finally {
+      await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
+      await pgClient.end();
+    }
+  });
+
+  test('POST /fdas window FDA without windowSize makes first fetch without time restriction', async () => {
     const baseUrl = getBaseUrl();
     const suffix = `${Date.now()}`;
     const fixtureTable = `sw_hour_fixture_${suffix}`;
@@ -620,6 +699,7 @@ export function registerSlidingWindowsIntegrationTests({
 
       expect(readRes.status).toBe(200);
       expect(readRes.json.map((row) => row.label)).toEqual([
+        'outside_hour_window',
         'inside_hour_window',
       ]);
     } finally {
@@ -628,7 +708,7 @@ export function registerSlidingWindowsIntegrationTests({
     }
   });
 
-  test('POST /fdas hourly sliding window keeps recent rows and excludes older rows', async () => {
+  test('POST /fdas sliding window keeps recent rows and excludes older rows', async () => {
     const baseUrl = getBaseUrl();
     const suffix = `${Date.now()}`;
     const fixtureTable = `sw_hour_boundary_${suffix}`;
@@ -650,9 +730,9 @@ export function registerSlidingWindowsIntegrationTests({
       await pgClient.query(`
         INSERT INTO public.${fixtureTable} (id, label, observed_at)
         VALUES
-          (1, 'outside_window_old', date_trunc('hour', NOW()) - INTERVAL '2 hours'),
-          (2, 'inside_window_50m', NOW() - INTERVAL '50 minutes'),
-          (3, 'inside_window_5m', NOW() - INTERVAL '5 minutes')
+          (1, 'outside_window_old', date_trunc('day', NOW()) - INTERVAL '8 days'),
+          (2, 'inside_window_20h', NOW() - INTERVAL '20 hours'),
+          (3, 'inside_window_2h', NOW() - INTERVAL '2 hours')
       `);
 
       const createFda = await httpReq({
@@ -674,8 +754,12 @@ export function registerSlidingWindowsIntegrationTests({
             type: 'window',
             params: {
               refreshInterval: '1 hour',
-              fetchSize: 'hour',
+              fetchSize: 'day',
+              windowSize: 'week',
             },
+          },
+          objStgConf: {
+            partition: 'day',
           },
           timeColumn: 'observed_at',
         },
@@ -695,8 +779,8 @@ export function registerSlidingWindowsIntegrationTests({
 
       expect(readRes.status).toBe(200);
       expect(readRes.json.map((row) => row.label)).toEqual([
-        'inside_window_50m',
-        'inside_window_5m',
+        'inside_window_2h',
+        'inside_window_20h',
       ]);
     } finally {
       await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
