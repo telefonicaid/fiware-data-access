@@ -1320,10 +1320,38 @@ export async function processFDAAsync(
   }
 }
 
+//
 function getPreviousWindowStartDate(fetchSize) {
   const now = new Date();
+  //1 year
+  //4 weeks
+  const timeSize = fetchSize.split(' ');
 
-  switch (fetchSize) {
+  let unit;
+  let amount;
+  if (timeSize.length > 2 || timeSize.length === 0) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Invalid time size: "${timeSize}".`,
+    );
+  } else if (timeSize.length === 1) {
+    amount = 1;
+    unit = timeSize[0];
+  } else {
+    unit = timeSize[1];
+    amount = Number(timeSize[0]);
+  }
+
+  if (!Number.isInteger(amount)) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Invalid unit in time size: "${amount}".`,
+    );
+  }
+
+  switch (unit) {
     case 'hour': {
       const d = new Date(now);
       d.setUTCHours(d.getUTCHours() - 1, 0, 0, 0);
