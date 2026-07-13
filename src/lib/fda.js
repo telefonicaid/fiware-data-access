@@ -80,6 +80,7 @@ import {
   acquireFreshQuerySlot,
   convertRefreshIntervalToMs,
   getTimeColumnQuery,
+  processFetchSize,
 } from './utils/utils.js';
 import {
   buildFDAJobFilter,
@@ -1191,15 +1192,15 @@ function validateScheduledOptions(refreshPolicy, objStgConf) {
     );
   }
 
-  if (
-    refreshPolicy.params?.windowSize &&
-    !getWindowDate(refreshPolicy.params.windowSize)
-  ) {
-    throw new FDAError(
-      400,
-      'InvalidParam',
-      `Invalid windowSize "${refreshPolicy.params.windowSize}".`,
-    );
+  if (refreshPolicy.params?.windowSize) {
+    const { unit } = processFetchSize(refreshPolicy.params.windowSize);
+    if (!getWindowDate(unit)) {
+      throw new FDAError(
+        400,
+        'InvalidParam',
+        `Invalid windowSize "${refreshPolicy.params.windowSize}".`,
+      );
+    }
   }
 
   if (
@@ -1320,74 +1321,51 @@ export async function processFDAAsync(
   }
 }
 
-//
 function getPreviousWindowStartDate(fetchSize) {
   const now = new Date();
-  //1 year
-  //4 weeks
-  const timeSize = fetchSize.split(' ');
-
-  let unit;
-  let amount;
-  if (timeSize.length > 2 || timeSize.length === 0) {
-    throw new FDAError(
-      400,
-      'InvalidParam',
-      `Invalid time size: "${timeSize}".`,
-    );
-  } else if (timeSize.length === 1) {
-    amount = 1;
-    unit = timeSize[0];
-  } else {
-    unit = timeSize[1];
-    amount = Number(timeSize[0]);
-  }
-
-  if (!Number.isInteger(amount)) {
-    throw new FDAError(
-      400,
-      'InvalidParam',
-      `Invalid unit in time size: "${amount}".`,
-    );
-  }
+  const { amount, unit } = processFetchSize(fetchSize);
 
   switch (unit) {
     case 'hour': {
       const d = new Date(now);
-      d.setUTCHours(d.getUTCHours() - 1, 0, 0, 0);
+      d.setUTCHours(d.getUTCHours() - amount, 0, 0, 0);
       return d.toISOString();
     }
 
     case 'day': {
       const d = new Date(now);
-      d.setUTCDate(d.getUTCDate() - 1);
+      d.setUTCDate(d.getUTCDate() - amount);
       d.setUTCHours(0, 0, 0, 0);
       return d.toISOString();
     }
 
     case 'week': {
       const d = new Date(now);
-      d.setUTCDate(d.getUTCDate() - 7);
+      d.setUTCDate(d.getUTCDate() - 7 * amount);
       d.setUTCHours(0, 0, 0, 0);
       return d.toISOString();
     }
 
     case 'month': {
       const d = new Date(now);
-      d.setUTCMonth(d.getUTCMonth() - 1);
+      d.setUTCMonth(d.getUTCMonth() - amount);
       d.setUTCHours(0, 0, 0, 0);
       return d.toISOString();
     }
 
     case 'year': {
       const d = new Date(now);
-      d.setUTCFullYear(d.getUTCFullYear() - 1);
+      d.setUTCFullYear(d.getUTCFullYear() - amount);
       d.setUTCHours(0, 0, 0, 0);
       return d.toISOString();
     }
 
     default:
-      throw new FDAError(400, 'InvalidParam', `Missing param fetchSize.`);
+      throw new FDAError(
+        400,
+        'InvalidParam',
+        `Invalid param fetchSize: ${fetchSize}.`,
+      );
   }
 }
 
