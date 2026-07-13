@@ -1308,7 +1308,13 @@ export async function processFDAAsync(
   const bucketName = getBucketNameFromService(service);
 
   try {
-    await updateFDAStatus(service, fdaId, servicePath, 'fetching', 10);
+    await updateFDAStatus({
+      service,
+      fdaId,
+      servicePath,
+      status: 'fetching',
+      progress: 10,
+    });
 
     await uploadTableToObjStg(
       service,
@@ -1322,16 +1328,22 @@ export async function processFDAAsync(
       objStgConf,
     );
 
-    await updateFDAStatus(service, fdaId, servicePath, 'completed', 100);
-  } catch (err) {
-    await updateFDAStatus(
+    await updateFDAStatus({
       service,
       fdaId,
       servicePath,
-      'failed',
-      0,
-      err.message,
-    );
+      status: 'completed',
+      progress: 100,
+    });
+  } catch (err) {
+    await updateFDAStatus({
+      service,
+      fdaId,
+      servicePath,
+      status: 'failed',
+      progress: 0,
+      error: err.message,
+    });
     throw err;
   }
 }
@@ -1672,7 +1684,7 @@ async function uploadTableToObjStg(
     config.objstg.pass,
   );
   const datasource = await resolveDatasource(service, datasourceId);
-  await updateFDAStatus(service, fdaId, servicePath, 'fetching', 20);
+  await updateFDAStatus({ service, fdaId, servicePath, progress: 20 });
 
   if (datasource.type === 'postgres') {
     await uploadTable(s3Client, bucket, datasource.config, query, path);
@@ -1689,7 +1701,13 @@ async function uploadTableToObjStg(
 
   const conn = await getDBConnection();
   try {
-    await updateFDAStatus(service, fdaId, servicePath, 'transforming', 60);
+    await updateFDAStatus({
+      service,
+      fdaId,
+      servicePath,
+      status: 'transforming',
+      progress: 60,
+    });
 
     // DuckDB cant overwrite files in Minio, so for partitioned files we upload them in a tmp file and the move them
     // This includes first upload because the one row parquet is also partitioned
@@ -1734,7 +1752,13 @@ async function uploadTableToObjStg(
       }
     }
 
-    await updateFDAStatus(service, fdaId, servicePath, 'uploading', 80);
+    await updateFDAStatus({
+      service,
+      fdaId,
+      servicePath,
+      status: 'uploading',
+      progress: 80,
+    });
     // DuckDb doesn't replace one row parquet snippet with partitioned file, so we remove it by hand
     if (objStgConf?.partition) {
       await dropFile(s3Client, bucket, `${path}.parquet`);

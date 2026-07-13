@@ -363,7 +363,7 @@ export async function createFDAMongo(
       visibility,
       status: initialStatus,
       progress: initialProgress,
-      initialFetch: null,
+      initFetch: null,
       lastFetch: null,
       refreshPolicy: refreshPolicy ?? { type: 'none' },
       ...(servicePath && { servicePath }),
@@ -392,38 +392,23 @@ export async function createFDAMongo(
   }
 }
 
-export async function updateFDAStatus(
+export async function updateFDAStatus({
   service,
   fdaId,
   servicePath,
   status,
   progress,
   error = null,
-) {
+}) {
   const collection = await getCollection();
-
-  if (status === 'fetching') {
-    await collection.updateOne(
-      {
-        service,
-        fdaId,
-        servicePath,
-        $or: [{ initialFetch: null }, { initialFetch: { $exists: false } }],
-      },
-      {
-        $set: {
-          initialFetch: new Date(),
-        },
-      },
-    );
-  }
 
   await collection.updateOne(
     { service, fdaId, servicePath },
     {
       $set: {
-        status,
         progress,
+        ...(status !== undefined && { status }),
+        ...(status === 'fetching' && { initFetch: new Date() }),
         ...(status === 'completed' && { lastFetch: new Date() }),
         ...(error && { error }),
       },
