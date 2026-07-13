@@ -114,6 +114,41 @@ function shouldFallbackToSchemaParquet(error, partitionType) {
   );
 }
 
+function shouldFallbackToSchemaSource(error) {
+  const message = String(error?.message ?? error);
+  return message.includes(NO_PARQUET_FILES_MATCH_ERROR);
+}
+
+function normalizeStoredSchema(schema) {
+  if (!Array.isArray(schema)) {
+    return [];
+  }
+
+  return schema.filter(
+    (field) =>
+      typeof field?.name === 'string' &&
+      field.name.length > 0 &&
+      typeof field?.type === 'string' &&
+      field.type.length > 0,
+  );
+}
+
+function buildStoredSchemaQuery(schema, userQuery) {
+  const schemaFields = normalizeStoredSchema(schema);
+  if (schemaFields.length === 0) {
+    return null;
+  }
+
+  const selectList = schemaFields
+    .map(
+      ({ name, type }) =>
+        `CAST(NULL AS ${type}) AS "${String(name).replace(/"/g, '""')}"`,
+    )
+    .join(', ');
+
+  return `FROM (SELECT ${selectList} LIMIT 0) AS fda_schema ${userQuery.trim()}`;
+}
+
 function getSchemaBootstrapParquetPath(service, fdaId, servicePath) {
   const objectKey = getFDAStoragePath(fdaId, servicePath);
   const bucketName = getBucketNameFromService(service);
@@ -178,7 +213,10 @@ async function prepareAndRunStatementWithFallback(
   } catch (primaryError) {
     if (
       !fallbackQuery ||
-      !shouldFallbackToSchemaParquet(primaryError, partitionType)
+      !(
+        shouldFallbackToSchemaSource(primaryError) ||
+        shouldFallbackToSchemaParquet(primaryError, partitionType)
+      )
     ) {
       throw primaryError;
     }
@@ -194,7 +232,10 @@ async function prepareAndRunStatementWithFallback(
       );
       return { stmt, result };
     } catch (fallbackError) {
-      if (shouldFallbackToSchemaParquet(fallbackError, partitionType)) {
+      if (
+        shouldFallbackToSchemaSource(fallbackError) ||
+        shouldFallbackToSchemaParquet(fallbackError, partitionType)
+      ) {
         const emptyResult = createEmptyPreparedStatementResult();
         return {
           stmt: null,
@@ -235,11 +276,11 @@ export async function runPreparedStatement(
     );
   }
 
-  const { objStgConf, servicePath: storedServicePath } = await retrieveFDA(
-    service,
-    fdaId,
-    servicePath,
-  );
+  const {
+    objStgConf,
+    servicePath: storedServicePath,
+    schema,
+  } = await retrieveFDA(service, fdaId, servicePath);
   const query = buildDAQuery(
     service,
     fdaId,
@@ -261,14 +302,16 @@ export async function runPreparedStatement(
       {
         streaming,
         partitionType: objStgConf?.partition,
-        fallbackQuery: objStgConf?.partition
-          ? buildSchemaBootstrapQuery(
-              service,
-              fdaId,
-              da.query,
-              storedServicePath ?? servicePath,
-            )
-          : null,
+        fallbackQuery:
+          buildStoredSchemaQuery(schema, da.query) ||
+          (objStgConf?.partition
+            ? buildSchemaBootstrapQuery(
+                service,
+                fdaId,
+                da.query,
+                storedServicePath ?? servicePath,
+              )
+            : null),
       },
     );
 
@@ -779,8 +822,28 @@ export async function validateDAQuery(
   userQuery,
   servicePath,
 ) {
-  const { objStgConf = {} } =
+  const { objStgConf = {}, schema } =
     (await retrieveFDA(service, fdaId, servicePath)) || {};
+  const schemaQuery = buildStoredSchemaQuery(schema, userQuery);
+
+  if (schemaQuery) {
+    let schemaStmt;
+    try {
+      schemaStmt = await conn.prepare(schemaQuery);
+      return;
+    } catch (schemaError) {
+      throw new FDAError(
+        400,
+        'InvalidDAQuery',
+        `DA query is not compatible with FDA ${fdaId}: ${schemaError.message || schemaError}`,
+      );
+    } finally {
+      if (schemaStmt && typeof schemaStmt.close === 'function') {
+        await schemaStmt.close();
+      }
+    }
+  }
+
   const query = buildDAQuery(
     service,
     fdaId,

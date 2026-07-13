@@ -91,6 +91,9 @@ import {
 import { config } from './fdaConfig.js';
 import { FDAError } from './fdaError.js';
 
+const FDA_VALIDATION_MODE_STRICT = 'strict';
+const FDA_VALIDATION_MODE_UNCHECKED = 'unchecked';
+
 const FRESH_CURSOR_BATCH_SIZE = 250;
 
 const DEFAULT_DATASOURCE_ID = 'default';
@@ -939,6 +942,10 @@ export async function createDA(
       assertFDAIsCached(fda, fdaId);
     }
 
+    if (!fda) {
+      fda = await retrieveFDA(service, fdaId, servicePath);
+    }
+
     const existing = await retrieveDA(service, fdaId, daId, servicePath);
 
     if (existing) {
@@ -951,7 +958,9 @@ export async function createDA(
 
     const normalizedParams = checkParams(params);
     validateDAParamBindings(userQuery, normalizedParams || []);
-    await validateDAQuery(conn, service, fdaId, userQuery, servicePath);
+    if (shouldValidateDACompatibility(fda)) {
+      await validateDAQuery(conn, service, fdaId, userQuery, servicePath);
+    }
     await storeDA(
       service,
       fdaId,
@@ -979,7 +988,7 @@ export async function fetchFDA(
   defaultDataAccessEnabled,
   cached = true,
   datasourceId = DEFAULT_DATASOURCE_ID,
-  skipBootstrap = false,
+  validationMode = FDA_VALIDATION_MODE_STRICT,
 ) {
   const normalizedVisibility = normalizeVisibility(visibility);
   const normalizedServicePath = normalizeServicePath(servicePath);
@@ -1006,7 +1015,10 @@ export async function fetchFDA(
 
   let sourceSchema;
 
-  if (datasource.type === 'postgres') {
+  if (
+    datasource.type === 'postgres' &&
+    validationMode === FDA_VALIDATION_MODE_STRICT
+  ) {
     sourceSchema = await validatePostgresQuery(datasource.config, timeQuery, {
       timeColumn,
       returnColumns: true,
@@ -1027,9 +1039,11 @@ export async function fetchFDA(
     objStgConf,
     cached,
     datasourceId,
+    validationMode,
+    persistedSchema,
   );
 
-  if (!skipBootstrap) {
+  if (validationMode === FDA_VALIDATION_MODE_STRICT) {
     if (cached) {
       try {
         await createOneRowParquetSync(
@@ -1404,6 +1418,12 @@ function buildPersistedSchema(sourceSchema) {
   }));
 }
 
+function shouldValidateDACompatibility(fda) {
+  return (
+    (fda?.validationMode ?? FDA_VALIDATION_MODE_STRICT) !==
+    FDA_VALIDATION_MODE_UNCHECKED
+  );
+}
 async function uploadCsvContentToObjectStorage(s3Client, bucket, path, body) {
   const upload = newUpload(s3Client, bucket, `${path}.csv`, body, 5, 1);
 
@@ -1543,12 +1563,19 @@ export async function putDA(
 
   try {
     if (visibility !== undefined || servicePath !== undefined) {
-      await getAccessibleFDA(service, fdaId, visibility, servicePath);
+      let fda;
+      fda = await getAccessibleFDA(service, fdaId, visibility, servicePath);
+    }
+
+    if (!fda) {
+      fda = await retrieveFDA(service, fdaId, servicePath);
     }
 
     const normalizedParams = checkParams(params);
     validateDAParamBindings(userQuery, normalizedParams || []);
-    await validateDAQuery(conn, service, fdaId, userQuery, servicePath);
+    if (shouldValidateDACompatibility(fda)) {
+      await validateDAQuery(conn, service, fdaId, userQuery, servicePath);
+    }
     await updateDA(
       service,
       fdaId,
