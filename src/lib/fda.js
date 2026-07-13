@@ -1013,6 +1013,8 @@ export async function fetchFDA(
     });
   }
 
+  const persistedSchema = buildPersistedSchema(sourceSchema);
+
   await createFDAMongo(
     fdaId,
     timeQuery,
@@ -1379,6 +1381,27 @@ function buildCsvContentFromRows(rows, columns) {
   );
 
   return `${header}\n${dataLines.join('\n')}\n`;
+}
+
+function buildPersistedSchema(sourceSchema) {
+  const schemaFields = Array.isArray(sourceSchema?.fields)
+    ? sourceSchema.fields.filter(
+        (field) =>
+          typeof field?.name === 'string' &&
+          field.name.length > 0 &&
+          typeof field?.duckdbType === 'string' &&
+          field.duckdbType.length > 0,
+      )
+    : [];
+
+  if (schemaFields.length === 0) {
+    return null;
+  }
+
+  return schemaFields.map(({ name, duckdbType }) => ({
+    name,
+    type: duckdbType,
+  }));
 }
 
 async function uploadCsvContentToObjectStorage(s3Client, bucket, path, body) {
@@ -1945,7 +1968,9 @@ async function buildDefaultDataAccessDefinition(
   if (Array.isArray(schemaOverride?.columns)) {
     overrideColumns = schemaOverride.columns;
   } else if (Array.isArray(schemaOverride)) {
-    overrideColumns = schemaOverride;
+    overrideColumns = schemaOverride
+      .map((column) => (typeof column === 'string' ? column : column?.name))
+      .filter((column) => typeof column === 'string');
   }
 
   const normalizedOverrideColumns = overrideColumns.filter(

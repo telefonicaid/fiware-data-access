@@ -346,6 +346,8 @@ export async function createFDAMongo(
   objStgConf,
   cached = true,
   datasourceId = DEFAULT_DATASOURCE_ID,
+  validationMode = 'strict',
+  schema = null,
 ) {
   logger.debug({ fdaId, query, service, description }, '[DEBUG]: createFDA');
   const fdasCollection = await getCollection();
@@ -370,6 +372,8 @@ export async function createFDAMongo(
       objStgConf,
       cached,
       datasourceId,
+      validationMode,
+      ...(schema && { schema }),
     });
   } catch (e) {
     if (e.code === 11000) {
