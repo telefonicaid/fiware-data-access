@@ -1054,7 +1054,6 @@ export async function fetchFDA(
           datasourceId,
           timeColumn,
           objStgConf,
-          sourceSchema,
         );
       } catch (err) {
         await rollbackFDAProvisioning(service, fdaId, normalizedServicePath);
@@ -1920,7 +1919,6 @@ async function createOneRowParquetSync(
   datasourceId,
   timeColumn,
   objStgConf,
-  sourceSchema,
 ) {
   const s3Client = getS3Client(
     `${config.objstg.protocol}://${config.objstg.endpoint}`,
@@ -1967,31 +1965,6 @@ async function createOneRowParquetSync(
       timeColumn,
       objStgConf?.partition,
     );
-
-    if (datasource.type === 'postgres' && objStgConf?.partition) {
-      const partitionPrefix = `${storagePath}.parquet`;
-      const parquetFiles = await listObjects(
-        s3Client,
-        bucketName,
-        partitionPrefix,
-      );
-      const normalizedParquetFiles = Array.isArray(parquetFiles)
-        ? parquetFiles
-        : [];
-      const hasPartitionedDataParquet = normalizedParquetFiles.some(
-        (key) =>
-          key.startsWith(`${partitionPrefix}/`) && key.endsWith('.parquet'),
-      );
-
-      if (!hasPartitionedDataParquet && typeof conn?.run === 'function') {
-        await createSchemaParquetForEmptyPartitionedFDA(
-          conn,
-          bucketName,
-          storagePath,
-          sourceSchema,
-        );
-      }
-    }
 
     await dropFile(s3Client, bucketName, `${storagePath}.csv`);
   } finally {
@@ -2146,25 +2119,10 @@ async function getFDAColumnNamesFromParquet(
     const parquetPath = objStgConf?.partition
       ? `s3://${bucketName}/${storagePath}.parquet/**/*.parquet`
       : `s3://${bucketName}/${storagePath}.parquet`;
-    const schemaBootstrapParquetPath = `s3://${bucketName}/${storagePath}.__schema__.parquet`;
     const safeParquetPath = parquetPath.replaceAll("'", "''");
-    const safeSchemaBootstrapParquetPath =
-      schemaBootstrapParquetPath.replaceAll("'", "''");
-
-    let describeResult;
-    try {
-      describeResult = await conn.run(
-        `DESCRIBE SELECT * FROM read_parquet('${safeParquetPath}')`,
-      );
-    } catch (error) {
-      if (objStgConf?.partition && isParquetFilesMissingError(error)) {
-        describeResult = await conn.run(
-          `DESCRIBE SELECT * FROM read_parquet('${safeSchemaBootstrapParquetPath}')`,
-        );
-      } else {
-        throw error;
-      }
-    }
+    const describeResult = await conn.run(
+      `DESCRIBE SELECT * FROM read_parquet('${safeParquetPath}')`,
+    );
 
     const describeRows = await Promise.resolve(
       describeResult.getRowObjectsJson(),
@@ -2179,46 +2137,6 @@ async function getFDAColumnNamesFromParquet(
   } finally {
     await releaseDBConnection(conn);
   }
-}
-
-function isParquetFilesMissingError(error) {
-  return String(error?.message ?? error).includes(
-    'No files found that match the pattern',
-  );
-}
-
-async function createSchemaParquetForEmptyPartitionedFDA(
-  conn,
-  bucketName,
-  storagePath,
-  sourceSchema,
-) {
-  const schemaParquetPath = `s3://${bucketName}/${storagePath}.__schema__.parquet`;
-  const safeSchemaParquetPath = schemaParquetPath.replaceAll("'", "''");
-  const schemaFields = Array.isArray(sourceSchema?.fields)
-    ? sourceSchema.fields.filter(
-        (field) =>
-          typeof field?.name === 'string' &&
-          field.name.length > 0 &&
-          typeof field?.duckdbType === 'string' &&
-          field.duckdbType.length > 0,
-      )
-    : [];
-
-  if (schemaFields.length === 0) {
-    return;
-  }
-
-  const selectList = schemaFields
-    .map(
-      ({ name, duckdbType }) =>
-        `CAST(NULL AS ${duckdbType}) AS ${quoteDuckDBIdentifier(name)}`,
-    )
-    .join(', ');
-
-  await conn.run(
-    `COPY (SELECT ${selectList} LIMIT 0) TO '${safeSchemaParquetPath}' (FORMAT PARQUET);`,
-  );
 }
 
 function getSchemaPartitionPath(partitionType) {
