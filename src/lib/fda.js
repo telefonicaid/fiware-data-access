@@ -1573,8 +1573,9 @@ export async function putDA(
   const conn = await getDBConnection();
 
   try {
+    let fda;
+
     if (visibility !== undefined || servicePath !== undefined) {
-      let fda;
       fda = await getAccessibleFDA(service, fdaId, visibility, servicePath);
     }
 
