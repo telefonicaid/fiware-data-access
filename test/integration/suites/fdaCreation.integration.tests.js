@@ -62,6 +62,10 @@ export function registerFdaCreationIntegrationTests({
     }
     expect(res.status).toBe(202);
     await waitUntilFDACompleted({ baseUrl, service, fdaId });
+
+    expect(completedFDA.validationMode).toBe('strict');
+    expect(Array.isArray(completedFDA.schema)).toBe(true);
+    expect(completedFDA.schema.length).toBeGreaterThan(0);
   });
 
   test('POST /fdas creates an FDA and defaultDataAccess on an empty source query (includes timeColumn and partition case)', async () => {
