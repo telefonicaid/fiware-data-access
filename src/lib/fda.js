@@ -1039,7 +1039,7 @@ export async function fetchFDA(
   );
 
   if (cached && validationMode === FDA_VALIDATION_MODE_STRICT) {
-    await bootstrapCachedFDA({
+    await prepareCachedFDA({
       service,
       fdaId,
       query: timeQuery,
@@ -1112,7 +1112,7 @@ async function validateAndGetSourceSchema(
   });
 }
 
-async function bootstrapCachedFDA({
+async function prepareCachedFDA({
   service,
   fdaId,
   query,
@@ -1125,7 +1125,7 @@ async function bootstrapCachedFDA({
   sourceSchema,
 }) {
   try {
-    await createOneRowParquetSync(
+    await createParquet(
       service,
       fdaId,
       query,
@@ -1962,7 +1962,7 @@ function toFDAApiResponse(fda, { includeId }) {
   };
 }
 
-async function createOneRowParquetSync(
+async function createParquet(
   service,
   fdaId,
   query,
@@ -1981,7 +1981,7 @@ async function createOneRowParquetSync(
   const datasource = await resolveDatasource(service, datasourceId);
 
   if (datasource.type === 'postgres') {
-    const oneRowQuery = buildOneRowQuery(query);
+    const oneRowQuery = buildZeroRowQuery(query);
     await uploadTable(
       s3Client,
       bucketName,
@@ -2023,7 +2023,7 @@ async function createOneRowParquetSync(
   }
 }
 
-function buildOneRowQuery(query) {
+function buildZeroRowQuery(query) {
   const normalizedQuery = query.trim().replace(/;+\s*$/, '');
 
   // Schema-only bootstrap keeps creation validation synchronous without row materialization.
@@ -2055,7 +2055,7 @@ async function buildDefaultDataAccessDefinition(
   const columns =
     normalizedOverrideColumns.length > 0
       ? normalizedOverrideColumns
-      : await getFDAColumnNamesFromParquet(
+      : await getFDAColumnNamesFromStorage(
           service,
           fdaId,
           servicePath,
@@ -2157,7 +2157,7 @@ function resolveDefaultDATimeColumnName(timeColumn, columns) {
   );
 }
 
-async function getFDAColumnNamesFromParquet(
+async function getFDAColumnNamesFromStorage(
   service,
   fdaId,
   servicePath,
