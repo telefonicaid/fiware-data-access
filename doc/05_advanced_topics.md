@@ -71,8 +71,8 @@ Full documentation available at: [`Default Data Access`](/doc/AdvancedTopics/def
 
 ## FDA Execution Lifecycle
 
-Each `FDA` has **operational fields** (`status`, `progress`, `lastFetch`) that are **read-only** for clients and reflect
-its asynchronous processing state.
+Each `FDA` has **operational fields** (`status`, `progress`, `initFetch`, `lastFetch`) that are **read-only** for
+clients and reflect its asynchronous processing state.
 
 ### Status & Progress
 
@@ -86,7 +86,8 @@ its asynchronous processing state.
 
 ### Last Execution
 
-`lastFetch` records the timestamp of the last completed attempt in ISO format.
+`initFetch` records when the current/last fetch cycle started, and `lastFetch` records when the last successful cycle
+completed. The execution time for each cycle can be estimated as `lastFetch - initFetch`.
 
 ### Flow
 

@@ -47,7 +47,7 @@ Key characteristics:
 -   Associated with a `visibility` level (`public` or `private`) that controls access authorization
 -   Can be regenerated (manually or configured) to refresh the data
 -   Parent resource of one or more DAs
--   Has status, progress and lastFetch fields, and an optional refreshPolicy.
+-   Has status, progress, initFetch and lastFetch fields, and an optional refreshPolicy.
 
 #### Example FDA
 
@@ -163,7 +163,8 @@ Each document corresponds to one FDA:
 -   **refreshPolicy**: object defining automatic refresh behaviour (`none`, `interval`, or `window`)
 -   **status**: current execution status (`fetching`, `transforming`, `uploading`, `completed`, `failed`)
 -   **progress**: execution progress percentage (0–100)
--   **lastFetch**: timestamp of the last fetch (ISO date)
+-   **initFetch**: timestamp of the current/last fetch start (ISO date)
+-   **lastFetch**: timestamp of the last successful fetch completion (ISO date)
 -   **datasourceId**: datasource identifier used to resolve source credentials (default `default` when omitted)
 -   **agendaJobIds**: array of scheduled job IDs for refresh tasks
 
@@ -183,6 +184,7 @@ Each DA contains:
     "servicePath": "/servicePath",
     "service": "fiwareService",
     "progress": 10,
+    "initFetch": "2026-02-19T07:37:52.084Z",
     "lastFetch": null,
     "agendaJobIds": ["6a4647d198863226b8001614"],
     "visibility": "public",

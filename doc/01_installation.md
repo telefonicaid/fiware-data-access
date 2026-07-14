@@ -485,6 +485,7 @@ Content-Type: application/json; charset=utf-8
     "das": {},
     "status": "fetching",
     "progress": 10,
+    "initFetch": "2026-02-19T07:37:52.084Z",
     "lastFetch": null,
     "refreshPolicy": {
       "type": "none"

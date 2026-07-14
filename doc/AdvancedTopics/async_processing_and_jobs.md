@@ -402,7 +402,7 @@ To keep early DA validation without waiting for the first asynchronous job compl
 
 MongoDB stores:
 
--   FDA metadata & operational fields (`status`, `progress`, `lastFetch`)
+-   FDA metadata & operational fields (`status`, `progress`, `initFetch`, `lastFetch`)
 -   Agenda job metadata (`lockedAt`, `failCount`, `nextRunAt`)
 
 This guarantees:

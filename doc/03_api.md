@@ -884,7 +884,8 @@ These fields are **provided in responses** but **cannot be included or modified*
 | ----------- | -------- | ------ | --------------------------------------------------------------------------------------------- |
 | `status`    |          | string | Current FDA execution status (`fetching`, `transforming`, `uploading`, `completed`, `failed`) |
 | `progress`  |          | number | Execution progress percentage (0–100)                                                         |
-| `lastFetch` |          | string | Timestamp of the last fetch (ISO date format)                                                 |
+| `initFetch` |          | string | Timestamp of the current/last fetch start (ISO date format)                                   |
+| `lastFetch` |          | string | Timestamp of the last completed fetch (ISO date format)                                       |
 
 > Note: Including operational fields like `progress` or `status` in POST/PUT requests is ignored by the server. Requests
 > including these fields are rejected with `400 BadRequest`.
@@ -953,6 +954,7 @@ _**Example Response:**_
         "das": {},
         "status": "completed",
         "progress": 100,
+        "initFetch": "2026-02-19T07:37:52.084Z",
         "lastFetch": "2026-02-19T07:38:21.263Z",
         "refreshPolicy": {
             "type": "interval",
@@ -1179,6 +1181,7 @@ _**Example Response:**_
     "das": {},
     "status": "completed",
     "progress": 100,
+    "initFetch": "2026-02-19T07:37:52.084Z",
     "lastFetch": "2026-02-19T07:38:21.263Z",
     "refreshPolicy": {
         "type": "interval",
