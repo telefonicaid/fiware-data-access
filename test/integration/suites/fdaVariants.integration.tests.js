@@ -290,6 +290,11 @@ export function registerFdaVariantsIntegrationTests({
         });
 
         expect(createFda.status).toBe(202);
+        await waitUntilFDACompleted({
+          baseUrl,
+          service,
+          fdaId: fdaUncheckedId,
+        });
 
         const daRes = await httpReq({
           method: 'POST',

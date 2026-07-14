@@ -61,7 +61,11 @@ export function registerFdaCreationIntegrationTests({
       console.error('POST /fdas failed:', res.status, res.json ?? res.text);
     }
     expect(res.status).toBe(202);
-    await waitUntilFDACompleted({ baseUrl, service, fdaId });
+    const completedFDA = await waitUntilFDACompleted({
+      baseUrl,
+      service,
+      fdaId,
+    });
 
     expect(completedFDA.validationMode).toBe('strict');
     expect(Array.isArray(completedFDA.schema)).toBe(true);
