@@ -23,6 +23,9 @@
 // criminal actions it may exercise to protect its rights.
 
 import express from 'express';
+import multer from 'multer';
+import fs from 'fs';
+import path from 'path';
 
 import { startFetcher } from './fetcher.js';
 import { shutdownAgenda, initAgenda } from './lib/jobs.js';
@@ -37,6 +40,7 @@ import {
   getFDA,
   updateFDA,
   deleteFDA,
+  uploadFDA,
   getDAs,
   getDA,
   putDA,
@@ -440,6 +444,174 @@ app.delete('/:visibility/fdas/:fdaId', async (req, res) => {
   return res.sendStatus(204);
 });
 
+// Multer configuration for file uploads
+const UPLOAD_TMP_DIR = config.fileUpload?.tmpDir || '/tmp/fda_uploads';
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, UPLOAD_TMP_DIR);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    const ext = path.extname(file.originalname);
+    cb(null, file.fieldname + '-' + uniqueSuffix + ext);
+  },
+});
+
+const upload = multer({
+  storage: storage,
+  limits: { fileSize: config.fileUpload?.maxSize || 50 * 1024 * 1024 }, // 50 MB by default
+  fileFilter: (req, file, cb) => {
+    const allowedMimes = [
+      'text/csv',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ];
+    const allowedExtensions = /\.(csv|xls|xlsx)$/i;
+    if (
+      allowedMimes.includes(file.mimetype) ||
+      allowedExtensions.test(file.originalname)
+    ) {
+      cb(null, true);
+    } else {
+      cb(
+        new FDAError(
+          415,
+          'UnsupportedMediaType',
+          'Only CSV, XLS, or XLSX files are allowed',
+        ),
+        false,
+      );
+    }
+  },
+}).single('file'); // The form field must be named 'file'
+
+app.post('/:visibility/fdas/upload', (req, res) => {
+  upload(req, res, async (err) => {
+    if (err) {
+      if (req.file && req.file.path && fs.existsSync(req.file.path)) {
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (e) {}
+      }
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({
+          error: 'PayloadTooLarge',
+          description: 'The file exceeds the maximum allowed size.',
+        });
+      }
+      return res.status(400).json({
+        error: 'BadRequest',
+        description: err.message,
+      });
+    }
+
+    const { visibility } = req.params;
+    const service = req.get('Fiware-Service');
+    const servicePath = req.get('Fiware-ServicePath');
+
+    if (!service || !servicePath) {
+      if (req.file && req.file.path && fs.existsSync(req.file.path)) {
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (e) {}
+      }
+      return res.status(400).json({
+        error: 'BadRequest',
+        description: 'Missing Fiware-Service and Fiware-ServicePath headers',
+      });
+    }
+
+    const {
+      id,
+      description,
+      timeColumn,
+      objStgConf,
+      defaultDataAccess,
+      datasourceId,
+    } = req.body;
+
+    if (!id) {
+      if (req.file && req.file.path && fs.existsSync(req.file.path)) {
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (e) {}
+      }
+      return res.status(400).json({
+        error: 'BadRequest',
+        description: 'Missing "id" field in the form',
+      });
+    }
+    if (!req.file) {
+      if (req.file && req.file.path && fs.existsSync(req.file.path)) {
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (e) {}
+      }
+      return res.status(400).json({
+        error: 'BadRequest',
+        description: 'Missing file (form field "file")',
+      });
+    }
+
+    const defaultDataAccessBool =
+      defaultDataAccess === undefined
+        ? config.defaultDataAccess?.enabled ?? true
+        : parseBooleanQueryParam(defaultDataAccess, 'defaultDataAccess', true);
+
+    let objStgConfParsed = {};
+    if (objStgConf) {
+      try {
+        objStgConfParsed =
+          typeof objStgConf === 'string' ? JSON.parse(objStgConf) : objStgConf;
+      } catch {
+        if (req.file && req.file.path && fs.existsSync(req.file.path)) {
+          try {
+            fs.unlinkSync(req.file.path);
+          } catch (e) {}
+        }
+        return res.status(400).json({
+          error: 'BadRequest',
+          description: 'objStgConf must be a valid JSON object',
+        });
+      }
+    }
+
+    try {
+      const result = await uploadFDA({
+        fdaId: id,
+        tempFilePath: req.file.path,
+        originalname: req.file.originalname,
+        mimetype: req.file.mimetype,
+        service,
+        visibility,
+        servicePath,
+        description,
+        timeColumn,
+        objStgConf: objStgConfParsed,
+        cached: true,
+        defaultDataAccessEnabled: defaultDataAccessBool,
+        datasourceId: datasourceId || 'upload',
+      });
+
+      return res.status(202).json({
+        id: result.id,
+        status: result.status,
+      });
+    } catch (error) {
+      if (req.file && req.file.path && fs.existsSync(req.file.path)) {
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (e) {}
+      }
+      const status = error.status || 500;
+      return res.status(status).json({
+        error: error.type || 'InternalServerError',
+        description: error.message,
+      });
+    }
+  });
+});
+
 app.get('/:visibility/fdas/:fdaId/das', async (req, res) => {
   const service = req.get('Fiware-Service');
   const servicePath = req.get('Fiware-ServicePath');
@@ -837,6 +1009,40 @@ async function startup() {
 
   if (config.roles.apiServer || config.roles.fetcher) {
     await initAgenda();
+  }
+
+  if (config.roles.apiServer) {
+    try {
+      if (!fs.existsSync(UPLOAD_TMP_DIR)) {
+        fs.mkdirSync(UPLOAD_TMP_DIR, { recursive: true });
+        logger.info(`[INIT] Created upload temp directory: ${UPLOAD_TMP_DIR}`);
+      } else {
+        logger.debug(`[INIT] Upload temp directory exists: ${UPLOAD_TMP_DIR}`);
+      }
+    } catch (err) {
+      logger.error(
+        `[INIT] Failed to create upload temp directory: ${err.message}`,
+      );
+      throw err;
+    }
+    setInterval(() => {
+      try {
+        const files = fs.readdirSync(UPLOAD_TMP_DIR);
+        const now = Date.now();
+        const maxAge = 12 * 60 * 60 * 1000; // 12 hours
+
+        files.forEach((file) => {
+          const filePath = path.join(UPLOAD_TMP_DIR, file);
+          const stats = fs.statSync(filePath);
+          if (now - stats.mtimeMs > maxAge) {
+            fs.unlinkSync(filePath);
+            logger.debug(`[CLEANUP] Removed old temp file: ${file}`);
+          }
+        });
+      } catch (err) {
+        logger.warn('[CLEANUP] Failed to clean temp directory', err);
+      }
+    }, 3600000); // Run cleanup every hour
   }
 
   getInitialLogger(config).fatal('[INIT]: Initializing app');

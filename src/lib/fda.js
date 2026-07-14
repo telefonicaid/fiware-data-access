@@ -22,6 +22,8 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
+import fs from 'fs';
+
 import { getAgenda } from './jobs.js';
 import {
   runPreparedStatement,
@@ -64,6 +66,7 @@ import {
   updateDA,
   removeDA,
   updateFDAStatus,
+  updateFDALastFetch,
   createDatasource,
   retrieveDatasources,
   retrieveDatasource,
@@ -80,16 +83,27 @@ import {
   acquireFreshQuerySlot,
   convertRefreshIntervalToMs,
   getTimeColumnQuery,
+  parseUploadedFile,
+  escapeCsvValue,
+  writeCsvLine,
+  writeNdjsonLine,
+  writeCsvHeader,
+  toRowObject,
+  normalizeVisibility,
+  normalizeServicePath,
+  toFDAApiResponse,
 } from './utils/utils.js';
 import {
   buildFDAJobFilter,
   buildFDAJobCancelFilter,
   getBucketNameFromService,
   getFDAStoragePath,
-  normalizeScopedServicePath,
 } from './utils/fdaScope.js';
 import { config } from './fdaConfig.js';
 import { FDAError } from './fdaError.js';
+
+import { getBasicLogger } from './utils/logger.js';
+const logger = getBasicLogger();
 
 const FRESH_CURSOR_BATCH_SIZE = 250;
 
@@ -309,77 +323,10 @@ export async function deleteDatasourceForService(service, datasourceId) {
 
   await removeDatasource(service, datasourceId);
 }
-export const VALID_VISIBILITIES = ['public', 'private'];
-const VALID_VISIBILITIES_SET = new Set(VALID_VISIBILITIES);
+
 const VALID_REFRESH_POLICY_TYPES = ['none', 'interval', 'window'];
 const VALID_WINDOW_FETCH_SIZES = ['hour', 'day', 'week', 'month', 'year'];
 const CSV_CONTENT_TYPE = 'text/csv; charset=utf-8';
-
-function stringifyCsvValue(value) {
-  const normalizedValue = normalizeForSerialization(value);
-
-  if (normalizedValue === null || normalizedValue === undefined) {
-    return '';
-  }
-
-  if (typeof normalizedValue === 'object') {
-    return JSON.stringify(normalizedValue);
-  }
-
-  return String(normalizedValue);
-}
-
-function escapeCsvValue(value) {
-  const strValue = stringifyCsvValue(value);
-
-  if (
-    strValue.includes(',') ||
-    strValue.includes('"') ||
-    strValue.includes('\n') ||
-    strValue.includes('\r')
-  ) {
-    return '"' + strValue.replace(/"/g, '""') + '"';
-  }
-
-  return strValue;
-}
-
-async function writeCsvLine(res, line) {
-  const ok = res.write(line);
-  if (!ok) {
-    await new Promise((resolve) => res.once('drain', resolve));
-  }
-}
-
-async function writeNdjsonLine(res, row) {
-  const safeObj = normalizeForSerialization(row);
-  const ok = res.write(JSON.stringify(safeObj) + '\n');
-  if (!ok) {
-    await new Promise((resolve) => res.once('drain', resolve));
-  }
-}
-
-async function writeCsvHeader(res, columnNames) {
-  if (columnNames.length === 0) {
-    return;
-  }
-
-  await writeCsvLine(
-    res,
-    columnNames.map((columnName) => escapeCsvValue(columnName)).join(',') +
-      '\n',
-  );
-}
-
-function toRowObject(row, columnNames) {
-  const rowObj = {};
-
-  for (let i = 0; i < columnNames.length; i++) {
-    rowObj[columnNames[i]] = row[i];
-  }
-
-  return rowObj;
-}
 
 export async function getFDAs(service, visibility, servicePath) {
   const fdas = await retrieveFDAs(service);
@@ -1386,11 +1333,14 @@ async function uploadCsvContentToObjectStorage(s3Client, bucket, path, body) {
 
   try {
     await upload.done();
-  } catch (error) {
+  } catch (e) {
+    if (e instanceof FDAError) {
+      throw e;
+    }
     throw new FDAError(
       503,
       'UploadError',
-      `Error uploading FDA to object storage: ${error.message}`,
+      `Error uploading FDA to object storage: ${e.message}`,
     );
   }
 }
@@ -1691,6 +1641,9 @@ async function uploadTableToObjStg(
     }
     await dropFile(s3Client, bucket, `${path}.csv`);
   } catch (e) {
+    if (e instanceof FDAError) {
+      throw e;
+    }
     throw new FDAError(500, 'UploadError', e.message);
   } finally {
     await releaseDBConnection(conn);
@@ -1782,62 +1735,6 @@ async function getAccessibleFDA(service, fdaId, visibility, servicePath) {
   return fda;
 }
 
-function normalizeVisibility(visibility) {
-  if (!VALID_VISIBILITIES_SET.has(visibility)) {
-    throw new FDAError(
-      400,
-      'InvalidVisibility',
-      'Visibility must be public or private',
-    );
-  }
-
-  return visibility;
-}
-
-function normalizeServicePath(servicePath) {
-  try {
-    return normalizeScopedServicePath(servicePath);
-  } catch (error) {
-    if (error.message === 'servicePath is required') {
-      throw new FDAError(
-        400,
-        'InvalidServicePath',
-        'Fiware-ServicePath header is required',
-      );
-    }
-
-    throw new FDAError(
-      400,
-      'InvalidServicePath',
-      'Fiware-ServicePath must be a non-root absolute path (e.g. /servicepath)',
-    );
-  }
-}
-
-function toFDAApiResponse(fda, { includeId }) {
-  if (!fda) {
-    return fda;
-  }
-
-  const response = { ...fda };
-  const fdaId = response.fdaId;
-
-  delete response._id;
-  delete response.fdaId;
-  delete response.service;
-  delete response.visibility;
-  delete response.servicePath;
-
-  if (!includeId) {
-    return response;
-  }
-
-  return {
-    id: fdaId,
-    ...response,
-  };
-}
-
 async function createOneRowParquetSync(
   service,
   fdaId,
@@ -1920,6 +1817,11 @@ async function createOneRowParquetSync(
     }
 
     await dropFile(s3Client, bucketName, `${storagePath}.csv`);
+  } catch (e) {
+    if (e instanceof FDAError) {
+      throw e;
+    }
+    throw new FDAError(500, 'UploadError', e.message);
   } finally {
     await releaseDBConnection(conn);
   }
@@ -2322,5 +2224,201 @@ async function createDefaultDAIfNeeded({
       'DefaultDataAccessCreationError',
       `Failed to create default Data Access for FDA ${fdaId}: ${err.message}`,
     );
+  }
+}
+
+export async function uploadFDA({
+  fdaId,
+  tempFilePath,
+  originalname,
+  mimetype,
+  service,
+  visibility,
+  servicePath,
+  description = '',
+  timeColumn,
+  objStgConf = {},
+  cached = true,
+  defaultDataAccessEnabled = config.defaultDataAccess?.enabled ?? true,
+  datasourceId = 'upload',
+}) {
+  const normalizedVisibility = normalizeVisibility(visibility);
+  const normalizedServicePath = normalizeServicePath(servicePath);
+
+  logger.debug({ fdaId, service }, 'Starting upload FDA');
+
+  const query = 'uploaded data'; // placeholder
+  const refreshPolicy = { type: 'none' };
+  validateScheduledOptions(refreshPolicy, objStgConf);
+  await createFDAMongo(
+    fdaId,
+    query,
+    service,
+    normalizedVisibility,
+    normalizedServicePath,
+    description,
+    refreshPolicy,
+    timeColumn,
+    objStgConf,
+    cached,
+    datasourceId,
+  );
+
+  logger.debug({ fdaId }, 'FDA record created');
+  const agenda = getAgenda();
+  await agenda.now('upload-fda', {
+    fdaId,
+    service,
+    servicePath: normalizedServicePath,
+    visibility: normalizedVisibility,
+    tempFilePath,
+    originalname,
+    mimetype,
+    description,
+    timeColumn,
+    objStgConf,
+    cached,
+    defaultDataAccessEnabled,
+    datasourceId,
+  });
+
+  return { id: fdaId, status: 'pending' };
+}
+
+export async function processUploadFDAJob({
+  fdaId,
+  service,
+  servicePath, // already normalized
+  visibility,
+  tempFilePath,
+  originalname,
+  mimetype,
+  description,
+  timeColumn,
+  objStgConf,
+  cached,
+  defaultDataAccessEnabled,
+  datasourceId,
+}) {
+  let s3Client;
+  let bucketName;
+  let tempKey;
+  let conn;
+
+  try {
+    const fileBuffer = fs.readFileSync(tempFilePath);
+    try {
+      if (tempFilePath && fs.existsSync(tempFilePath)) {
+        fs.unlinkSync(tempFilePath);
+        logger.debug(
+          { fdaId, tempFilePath },
+          'Temporary file deleted after reading',
+        );
+      }
+    } catch (cleanupErr) {
+      logger.warn(
+        { fdaId, tempFilePath, error: cleanupErr.message },
+        'Failed to delete temp file immediately',
+      );
+    }
+
+    const parsed = parseUploadedFile(fileBuffer, mimetype, originalname);
+    const { headers, csvContent } = parsed;
+    await updateFDAStatus(service, fdaId, servicePath, 'fetching', 20);
+
+    if (timeColumn) {
+      if (!headers.includes(timeColumn)) {
+        throw new FDAError(
+          400,
+          'InvalidTimeColumn',
+          `Column "${timeColumn}" not found in the uploaded file`,
+        );
+      }
+    }
+
+    s3Client = getS3Client(
+      `${config.objstg.protocol}://${config.objstg.endpoint}`,
+      config.objstg.usr,
+      config.objstg.pass,
+    );
+    bucketName = getBucketNameFromService(service);
+    const storagePath = getFDAStoragePath(fdaId, servicePath);
+    tempKey = `tmp/${fdaId}_${Date.now()}`;
+
+    logger.debug({ fdaId, tempKey }, 'Uploading temporary CSV to MinIO');
+    await updateFDAStatus(service, fdaId, servicePath, 'fetching', 40);
+    await uploadCsvContentToObjectStorage(
+      s3Client,
+      bucketName,
+      tempKey,
+      csvContent,
+    );
+
+    logger.debug({ fdaId }, 'Converting upload file to Parquet');
+    await updateFDAStatus(service, fdaId, servicePath, 'transforming', 30);
+    const originPath = `${bucketName}/${tempKey}.csv`;
+    const resultPath = `${bucketName}/${storagePath}.parquet`;
+    conn = await getDBConnection();
+
+    await updateFDAStatus(service, fdaId, servicePath, 'transforming', 60);
+    try {
+      await toParquet(
+        conn,
+        originPath,
+        resultPath,
+        timeColumn,
+        objStgConf.partition,
+        objStgConf.compression,
+      );
+    } catch (e) {
+      if (e instanceof FDAError) {
+        throw e;
+      }
+      throw new FDAError(500, 'UploadError', e.message);
+    } finally {
+      await releaseDBConnection(conn);
+    }
+
+    await dropFile(s3Client, bucketName, `${tempKey}.csv`);
+
+    await updateFDAStatus(service, fdaId, servicePath, 'completed', 100);
+    await updateFDALastFetch(service, fdaId, servicePath);
+
+    logger.debug({ fdaId }, 'Creating default DataAccess');
+    if (defaultDataAccessEnabled && cached) {
+      const daDefinition = await buildDefaultDataAccessDefinition(
+        service,
+        fdaId,
+        servicePath,
+        timeColumn,
+        objStgConf,
+      );
+      await createDA(
+        service,
+        fdaId,
+        'defaultDataAccess',
+        'Default Data Access for uploaded data',
+        daDefinition.query,
+        daDefinition.params,
+        visibility,
+        servicePath,
+      );
+    }
+
+    logger.info({ fdaId }, 'Upload FDA completed successfully');
+  } catch (err) {
+    logger.error({ err, fdaId }, 'Upload FDA failed');
+    await updateFDAStatus(
+      service,
+      fdaId,
+      servicePath,
+      'failed',
+      0,
+      err.message,
+    );
+    if (s3Client && bucketName && tempKey) {
+      await dropFile(s3Client, bucketName, `${tempKey}.csv`).catch(() => {});
+    }
+    throw err;
   }
 }

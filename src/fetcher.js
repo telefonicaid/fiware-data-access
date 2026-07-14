@@ -23,7 +23,11 @@
 // criminal actions it may exercise to protect its rights.
 
 import { getAgenda } from './lib/jobs.js';
-import { cleanPartition, processFDAAsync } from './lib/fda.js';
+import {
+  cleanPartition,
+  processFDAAsync,
+  processUploadFDAJob,
+} from './lib/fda.js';
 import { getBasicLogger } from './lib/utils/logger.js';
 
 const logger = getBasicLogger();
@@ -73,6 +77,44 @@ export async function startFetcher() {
   agenda.define('refresh-fda-recurring', refreshFDA);
   agenda.define('clean-partition', cleanPartitionFDA);
   agenda.define('clean-partition-recurring', cleanPartitionFDA);
+
+  agenda.define('upload-fda', async (job) => {
+    const {
+      fdaId,
+      service,
+      servicePath,
+      visibility,
+      tempFilePath,
+      originalname,
+      mimetype,
+      description,
+      timeColumn,
+      objStgConf,
+      cached,
+      defaultDataAccessEnabled,
+      datasourceId,
+    } = job.attrs.data;
+
+    try {
+      await processUploadFDAJob({
+        fdaId,
+        service,
+        servicePath,
+        visibility,
+        tempFilePath,
+        originalname,
+        mimetype,
+        description,
+        timeColumn,
+        objStgConf,
+        cached,
+        defaultDataAccessEnabled,
+        datasourceId,
+      });
+    } catch (e) {
+      logger.error('Fetcher error: ', e);
+    }
+  });
 
   await agenda.start();
   logger.info('[Fetcher] Agenda started');
