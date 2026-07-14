@@ -403,34 +403,52 @@ describe('index routes - validation and middleware branches', () => {
       .expect(400);
   });
 
-  test('forwards skipBootstrap in POST /:visibility/fdas', async () => {
+  test('forwards validationMode in POST /:visibility/fdas', async () => {
     await request(app)
       .post('/public/fdas')
       .set('Fiware-Service', 'svc')
       .set('Fiware-ServicePath', '/servicepath')
       .send({
-        id: 'fda_skip_bootstrap',
+        id: 'fda_unchecked',
         query: 'SELECT 1',
-        description: 'skip bootstrap',
-        skipBootstrap: true,
+        description: 'unchecked mode',
+        validationMode: 'unchecked',
       })
       .expect(202);
 
     expect(fdaMocks.fetchFDA).toHaveBeenCalledWith(
-      'fda_skip_bootstrap',
+      'fda_unchecked',
       'SELECT 1',
       'svc',
       'public',
       '/servicepath',
-      'skip bootstrap',
+      'unchecked mode',
       { type: 'none' },
       undefined,
       {},
       true,
       true,
       undefined,
-      true,
+      'unchecked',
     );
+  });
+
+  test('returns 400 when validationMode is invalid in POST /:visibility/fdas', async () => {
+    const res = await request(app)
+      .post('/public/fdas')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .send({
+        id: 'fda_invalid_mode',
+        query: 'SELECT 1',
+        validationMode: 'legacy',
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({
+      error: 'BadRequest',
+    });
+    expect(fdaMocks.fetchFDA).not.toHaveBeenCalled();
   });
 
   test('returns 400 when Fiware-Service is missing in GET /:visibility/fdas/:fdaId', async () => {

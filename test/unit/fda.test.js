@@ -1061,6 +1061,8 @@ describe('fetchFDA', () => {
       undefined,
       true,
       'default',
+      'strict',
+      null,
     );
     expect(pgMocks.uploadTable).toHaveBeenCalledWith(
       {},
@@ -1102,7 +1104,7 @@ describe('fetchFDA', () => {
     expect(agenda.create).not.toHaveBeenCalled();
   });
 
-  test('skipBootstrap=true skips bootstrap path and default DA creation', async () => {
+  test('validationMode=unchecked skips strict bootstrap path and default DA creation', async () => {
     await fetchFDA(
       'fda1',
       'SELECT id FROM users;',
@@ -1118,7 +1120,7 @@ describe('fetchFDA', () => {
       true,
       true,
       'default',
-      true,
+      'unchecked',
     );
 
     expect(pgMocks.uploadTable).not.toHaveBeenCalled();
@@ -2736,6 +2738,69 @@ describe('DA access and update helpers', () => {
     ).rejects.toThrow('invalid DA query');
 
     expect(dbMocks.releaseDBConnection).toHaveBeenCalledWith({});
+  });
+
+  test('createDA skips compatibility validation for unchecked FDA mode', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      cached: true,
+      validationMode: 'unchecked',
+      visibility: 'public',
+      servicePath: '/servicepath',
+    });
+    mongoMocks.retrieveDA.mockResolvedValue(null);
+
+    await createDA(
+      'svc',
+      'fdaA',
+      'daA',
+      'desc',
+      'SELECT id',
+      [{ name: 'id' }],
+      undefined,
+      '/servicepath',
+    );
+
+    expect(dbMocks.validateDAQuery).not.toHaveBeenCalled();
+    expect(mongoMocks.storeDA).toHaveBeenCalledWith(
+      'svc',
+      'fdaA',
+      '/servicepath',
+      'daA',
+      'desc',
+      'SELECT id',
+      [{ name: 'id' }],
+    );
+  });
+
+  test('putDA skips compatibility validation for unchecked FDA mode', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      cached: true,
+      validationMode: 'unchecked',
+      visibility: 'public',
+      servicePath: '/servicepath',
+    });
+
+    await putDA(
+      'svc',
+      'fdaA',
+      'daA',
+      'desc',
+      'SELECT id',
+      [{ name: 'id' }],
+      undefined,
+      '/servicepath',
+    );
+
+    expect(dbMocks.validateDAQuery).not.toHaveBeenCalled();
+    expect(mongoMocks.updateDA).toHaveBeenCalledWith(
+      'svc',
+      'fdaA',
+      '/servicepath',
+      'daA',
+      'desc',
+      'SELECT id',
+      [{ name: 'id' }],
+    );
   });
 });
 

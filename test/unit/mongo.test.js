@@ -145,7 +145,35 @@ describe('mongo utils', () => {
         cached: false,
         status: 'completed',
         progress: 100,
+        initFetch: null,
         lastFetch: null,
+      }),
+    );
+  });
+
+  test('createFDAMongo stores validationMode and schema metadata when provided', async () => {
+    const { createFDAMongo, collectionMock } = await loadMongoModule();
+
+    await createFDAMongo(
+      'fdaA',
+      'SELECT 1',
+      'svc',
+      'public',
+      '/sp',
+      'desc',
+      { type: 'none' },
+      undefined,
+      undefined,
+      true,
+      'default',
+      'strict',
+      [{ name: 'id', type: 'INTEGER' }],
+    );
+
+    expect(collectionMock.insertOne).toHaveBeenCalledWith(
+      expect.objectContaining({
+        validationMode: 'strict',
+        schema: [{ name: 'id', type: 'INTEGER' }],
       }),
     );
   });
@@ -280,6 +308,23 @@ describe('mongo utils', () => {
           status: 'failed',
           progress: 0,
           error: 'boom',
+        }),
+      },
+    );
+  });
+
+  test('updateFDAStatus updates initFetch timestamp on each fetching status update', async () => {
+    const { updateFDAStatus, collectionMock } = await loadMongoModule();
+
+    await updateFDAStatus('svc', 'fdaA', '/sp', 'fetching', 10);
+
+    expect(collectionMock.updateOne).toHaveBeenCalledWith(
+      { service: 'svc', fdaId: 'fdaA', servicePath: '/sp' },
+      {
+        $set: expect.objectContaining({
+          status: 'fetching',
+          progress: 10,
+          initFetch: expect.any(Date),
         }),
       },
     );
