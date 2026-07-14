@@ -2249,46 +2249,44 @@ describe('processFDAAsync', () => {
   test('updates status through successful async FDA processing lifecycle', async () => {
     await processFDAAsync('fda1', 'SELECT 1', 'svc', '/servicepath');
 
-    expect(mongoMocks.updateFDAStatus).toHaveBeenNthCalledWith(
-      1,
-      'svc',
-      'fda1',
-      '/servicepath',
-      'fetching',
-      10,
-    );
-    expect(mongoMocks.updateFDAStatus).toHaveBeenNthCalledWith(
-      2,
-      'svc',
-      'fda1',
-      '/servicepath',
-      'fetching',
-      20,
-    );
-    expect(mongoMocks.updateFDAStatus).toHaveBeenNthCalledWith(
-      3,
-      'svc',
-      'fda1',
-      '/servicepath',
-      'transforming',
-      60,
-    );
-    expect(mongoMocks.updateFDAStatus).toHaveBeenNthCalledWith(
-      4,
-      'svc',
-      'fda1',
-      '/servicepath',
-      'uploading',
-      80,
-    );
-    expect(mongoMocks.updateFDAStatus).toHaveBeenNthCalledWith(
-      5,
-      'svc',
-      'fda1',
-      '/servicepath',
-      'completed',
-      100,
-    );
+    expect(mongoMocks.updateFDAStatus).toHaveBeenNthCalledWith(1, {
+      service: 'svc',
+      fdaId: 'fda1',
+      servicePath: '/servicepath',
+      status: 'fetching',
+      progress: 10,
+    });
+
+    expect(mongoMocks.updateFDAStatus).toHaveBeenNthCalledWith(2, {
+      service: 'svc',
+      fdaId: 'fda1',
+      servicePath: '/servicepath',
+      progress: 20,
+    });
+
+    expect(mongoMocks.updateFDAStatus).toHaveBeenNthCalledWith(3, {
+      service: 'svc',
+      fdaId: 'fda1',
+      servicePath: '/servicepath',
+      status: 'transforming',
+      progress: 60,
+    });
+
+    expect(mongoMocks.updateFDAStatus).toHaveBeenNthCalledWith(4, {
+      service: 'svc',
+      fdaId: 'fda1',
+      servicePath: '/servicepath',
+      status: 'uploading',
+      progress: 80,
+    });
+
+    expect(mongoMocks.updateFDAStatus).toHaveBeenNthCalledWith(5, {
+      service: 'svc',
+      fdaId: 'fda1',
+      servicePath: '/servicepath',
+      status: 'completed',
+      progress: 100,
+    });
   });
 
   test('uses normalized bucket name while preserving original database name', async () => {
@@ -2350,14 +2348,14 @@ describe('processFDAAsync', () => {
       processFDAAsync('fda2', 'SELECT 2', 'svc', '/servicepath'),
     ).rejects.toThrow('upload failed');
 
-    expect(mongoMocks.updateFDAStatus).toHaveBeenCalledWith(
-      'svc',
-      'fda2',
-      '/servicepath',
-      'failed',
-      0,
-      'upload failed',
-    );
+    expect(mongoMocks.updateFDAStatus).toHaveBeenCalledWith({
+      service: 'svc',
+      fdaId: 'fda2',
+      servicePath: '/servicepath',
+      status: 'failed',
+      progress: 0,
+      error: 'upload failed',
+    });
   });
 
   test('uploads Mongo datasource rows as CSV before parquet conversion', async () => {
@@ -2756,7 +2754,7 @@ describe('DA access and update helpers', () => {
       'desc',
       'SELECT id',
       [{ name: 'id' }],
-      undefined,
+      'public',
       '/servicepath',
     );
 
@@ -2787,7 +2785,7 @@ describe('DA access and update helpers', () => {
       'desc',
       'SELECT id',
       [{ name: 'id' }],
-      undefined,
+      'public',
       '/servicepath',
     );
 

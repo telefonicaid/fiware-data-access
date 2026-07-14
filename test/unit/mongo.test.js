@@ -299,7 +299,14 @@ describe('mongo utils', () => {
   test('updateFDAStatus includes optional error in update payload', async () => {
     const { updateFDAStatus, collectionMock } = await loadMongoModule();
 
-    await updateFDAStatus('svc', 'fdaA', '/sp', 'failed', 0, 'boom');
+    await updateFDAStatus({
+      service: 'svc',
+      fdaId: 'fdaA',
+      servicePath: '/sp',
+      status: 'failed',
+      progress: 0,
+      error: 'boom',
+    });
 
     expect(collectionMock.updateOne).toHaveBeenCalledWith(
       { service: 'svc', fdaId: 'fdaA', servicePath: '/sp' },
@@ -316,7 +323,13 @@ describe('mongo utils', () => {
   test('updateFDAStatus updates initFetch timestamp on each fetching status update', async () => {
     const { updateFDAStatus, collectionMock } = await loadMongoModule();
 
-    await updateFDAStatus('svc', 'fdaA', '/sp', 'fetching', 10);
+    await updateFDAStatus({
+      service: 'svc',
+      fdaId: 'fdaA',
+      servicePath: '/sp',
+      status: 'fetching',
+      progress: 10,
+    });
 
     expect(collectionMock.updateOne).toHaveBeenCalledWith(
       { service: 'svc', fdaId: 'fdaA', servicePath: '/sp' },
