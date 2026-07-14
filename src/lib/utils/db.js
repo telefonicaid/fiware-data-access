@@ -107,7 +107,12 @@ async function closePreparedStatement(stmt) {
   }
 }
 
-function shouldFallbackToSchemaSource(error) {
+function shouldReturnEmptyOnSchemaFallback(error) {
+  const message = String(error?.message ?? error);
+  return message.includes(NO_PARQUET_FILES_MATCH_ERROR);
+}
+
+function shouldTrySchemaFallback(error) {
   const message = String(error?.message ?? error);
   return message.includes(NO_PARQUET_FILES_MATCH_ERROR);
 }
@@ -187,7 +192,7 @@ async function prepareAndRunStatementWithFallback(
     const result = await executePreparedStatement(stmt, boundParams, streaming);
     return { stmt, result };
   } catch (primaryError) {
-    if (!fallbackQuery || !shouldFallbackToSchemaSource(primaryError)) {
+    if (!fallbackQuery || !shouldTrySchemaFallback(primaryError)) {
       throw primaryError;
     }
 
@@ -202,7 +207,7 @@ async function prepareAndRunStatementWithFallback(
       );
       return { stmt, result };
     } catch (fallbackError) {
-      if (shouldFallbackToSchemaSource(fallbackError)) {
+      if (shouldReturnEmptyOnSchemaFallback(fallbackError)) {
         const emptyResult = createEmptyPreparedStatementResult();
         return {
           stmt: null,
@@ -611,12 +616,32 @@ export function toParquet(
 ) {
   logger.debug({ originPath, resultPath }, '[DEBUG]: toParquet');
 
+  return copyQueryToParquet(
+    conn,
+    `SELECT * FROM read_csv_auto('s3://${originPath}')`,
+    resultPath,
+    timeColumn,
+    partitionType,
+    compression,
+  );
+}
+
+export function copyQueryToParquet(
+  conn,
+  sourceQuery,
+  resultPath,
+  timeColumn,
+  partitionType,
+  compression,
+) {
+  logger.debug({ resultPath }, '[DEBUG]: copyQueryToParquet');
+
   const { cols, partitionBy } = getPartitionConf(partitionType, timeColumn);
   const compressionString = compression ? `, COMPRESSION ZSTD` : '';
 
   return conn.run(
     `COPY ( SELECT ${cols}
-                FROM read_csv_auto('s3://${originPath}')) 
+                FROM (${sourceQuery}) AS fda_source) 
       TO 's3://${resultPath}' (FORMAT PARQUET ${partitionBy} ${compressionString});`,
   );
 }

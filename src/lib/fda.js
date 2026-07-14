@@ -29,6 +29,7 @@ import {
   getDBConnection,
   releaseDBConnection,
   toParquet,
+  copyQueryToParquet,
   checkParams,
   validateDAParamBindings,
   resolveDAParams,
@@ -1133,6 +1134,7 @@ async function prepareCachedFDA({
       datasourceId,
       timeColumn,
       objStgConf,
+      sourceSchema,
     );
   } catch (err) {
     await rollbackFDAProvisioning(service, fdaId, servicePath);
@@ -1734,6 +1736,8 @@ async function uploadTableToObjStg(
     config.objstg.pass,
   );
   const datasource = await resolveDatasource(service, datasourceId);
+  const fda = await retrieveFDA(service, fdaId, servicePath);
+  const schemaFields = normalizePersistedSchemaFields(fda?.schema);
   await updateFDAStatus({ service, fdaId, servicePath, progress: 20 });
 
   if (datasource.type === 'postgres') {
@@ -1765,14 +1769,26 @@ async function uploadTableToObjStg(
       ? getPath(bucket, 'tmp/' + path, '.parquet')
       : getPath(bucket, path, '.parquet');
 
-    await toParquet(
-      conn,
-      getPath(bucket, path, '.csv'),
-      parquetPath,
-      timeColumn,
-      objStgConf?.partition,
-      objStgConf?.compression,
-    );
+    const csvPath = getPath(bucket, path, '.csv');
+    if (datasource.type === 'postgres' && schemaFields.length > 0) {
+      await copyQueryToParquet(
+        conn,
+        buildTypedCsvSourceQuery(csvPath, schemaFields),
+        parquetPath,
+        timeColumn,
+        objStgConf?.partition,
+        objStgConf?.compression,
+      );
+    } else {
+      await toParquet(
+        conn,
+        csvPath,
+        parquetPath,
+        timeColumn,
+        objStgConf?.partition,
+        objStgConf?.compression,
+      );
+    }
 
     if (objStgConf?.partition) {
       const objectsList = await listObjects(
@@ -1970,6 +1986,7 @@ async function createParquet(
   datasourceId,
   timeColumn,
   objStgConf,
+  sourceSchema,
 ) {
   const s3Client = getS3Client(
     `${config.objstg.protocol}://${config.objstg.endpoint}`,
@@ -1979,8 +1996,29 @@ async function createParquet(
   const storagePath = getFDAStoragePath(fdaId, servicePath);
   const bucketName = getBucketNameFromService(service);
   const datasource = await resolveDatasource(service, datasourceId);
+  const parquetPath = getPath(bucketName, storagePath, '.parquet');
 
   if (datasource.type === 'postgres') {
+    const typedEmptyQuery = buildTypedEmptyQueryFromSchema(sourceSchema);
+
+    if (typedEmptyQuery) {
+      const conn = await getDBConnection();
+      try {
+        await copyQueryToParquet(
+          conn,
+          typedEmptyQuery,
+          parquetPath,
+          timeColumn,
+          objStgConf?.partition,
+          objStgConf?.compression,
+        );
+      } finally {
+        await releaseDBConnection(conn);
+      }
+
+      return;
+    }
+
     const oneRowQuery = buildZeroRowQuery(query);
     await uploadTable(
       s3Client,
@@ -2008,13 +2046,13 @@ async function createParquet(
 
   const conn = await getDBConnection();
   try {
-    const parquetPath = getPath(bucketName, storagePath, '.parquet');
     await toParquet(
       conn,
       getPath(bucketName, storagePath, '.csv'),
       parquetPath,
       timeColumn,
       objStgConf?.partition,
+      objStgConf?.compression,
     );
 
     await dropFile(s3Client, bucketName, `${storagePath}.csv`);
@@ -2028,6 +2066,70 @@ function buildZeroRowQuery(query) {
 
   // Schema-only bootstrap keeps creation validation synchronous without row materialization.
   return `SELECT * FROM (${normalizedQuery}) AS fda_one_row LIMIT 0`;
+}
+
+function isValidDuckDBType(type) {
+  return /^[A-Za-z0-9_,()\s]+$/.test(type);
+}
+
+function buildTypedEmptyQueryFromSchema(sourceSchema) {
+  const fields = Array.isArray(sourceSchema?.fields)
+    ? sourceSchema.fields.filter(
+        (field) =>
+          typeof field?.name === 'string' &&
+          field.name.length > 0 &&
+          typeof field?.duckdbType === 'string' &&
+          field.duckdbType.length > 0,
+      )
+    : [];
+
+  if (fields.length === 0) {
+    return null;
+  }
+
+  const projections = fields.map(({ name, duckdbType }) => {
+    if (!isValidDuckDBType(duckdbType)) {
+      throw new FDAError(
+        500,
+        'InvalidSchemaType',
+        `Invalid schema type for column ${name}: ${duckdbType}`,
+      );
+    }
+
+    return `CAST(NULL AS ${duckdbType}) AS ${quoteDuckDBIdentifier(name)}`;
+  });
+
+  return `SELECT ${projections.join(', ')} WHERE FALSE`;
+}
+
+function normalizePersistedSchemaFields(schema) {
+  if (!Array.isArray(schema)) {
+    return [];
+  }
+
+  return schema.filter(
+    (field) =>
+      typeof field?.name === 'string' &&
+      field.name.length > 0 &&
+      typeof field?.type === 'string' &&
+      field.type.length > 0 &&
+      isValidDuckDBType(field.type),
+  );
+}
+
+function quoteSqlStringLiteral(value) {
+  return `'${String(value).replaceAll("'", "''")}'`;
+}
+
+function buildTypedCsvSourceQuery(csvPath, schemaFields) {
+  const columnsConf = schemaFields
+    .map(
+      ({ name, type }) =>
+        `${quoteSqlStringLiteral(name)}: ${quoteSqlStringLiteral(type)}`,
+    )
+    .join(', ');
+
+  return `SELECT * FROM read_csv('s3://${csvPath}', header = true, columns = {${columnsConf}})`;
 }
 
 async function buildDefaultDataAccessDefinition(
