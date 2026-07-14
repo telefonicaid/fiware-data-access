@@ -389,8 +389,8 @@ Flow:
 
 To keep early DA validation without waiting for the first asynchronous job completion:
 
--   FDA provisioning creates the canonical `${fdaId}.parquet` synchronously from a one-row snapshot.
--   DA create/update validates compatibility using DuckDB `prepare` against that parquet.
+-   FDA provisioning in `validationMode=strict` performs synchronous schema introspection.
+-   DA create/update validates compatibility using DuckDB `prepare` against persisted schema metadata.
 -   Query execution is blocked until the first successful fetch has completed (`lastFetch` exists), returning
     `409 FDAUnavailable` beforehand.
 -   After the first successful fetch, queries can still run during later `fetching` states using the last available

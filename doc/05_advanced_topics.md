@@ -54,8 +54,8 @@ use the `fiware-service` value as the _database_ name.
 
 FDA can automatically create a built-in DA named `defaultDataAccess` when a new FDA is created.
 
-When `skipBootstrap=true` is used during FDA creation, synchronous bootstrap is skipped and `defaultDataAccess` is not
-created at that moment, even if default DA creation is enabled.
+When `validationMode="unchecked"` is used during FDA creation, synchronous validation is skipped and `defaultDataAccess`
+is not created at that moment, even if default DA creation is enabled.
 
 This topic covers:
 

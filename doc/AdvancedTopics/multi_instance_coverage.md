@@ -64,6 +64,7 @@ This allows independent scaling of:
 FDA queryability is explicitly tied to first successful fetch completion:
 
 -   First provisioning creates a one-row parquet synchronously.
+-   First provisioning in `validationMode=strict` performs synchronous schema introspection.
 -   Query execution is blocked until `lastFetch` exists (`409 FDAUnavailable`).
 -   After first completion, reads can continue using the latest available parquet snapshot while refresh jobs run.
 

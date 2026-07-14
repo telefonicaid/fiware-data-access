@@ -804,7 +804,7 @@ A FDA is represented by a JSON object with the following fields:
 | `timeColumn`                                             | ✓        | string        | Required with `refreshPolicy` of type `window` and `partition`. Column in the table indicating when the data was received (date).                                                          |
 | `cached`                                                 | ✓        | boolean       | If `false`, the FDA is created as only-fresh: no parquet snapshot is maintained, no DAs are allowed, and the FDA is queried through `GET /{visibility}/fdas/{fdaId}/data`. Default `true`. |
 | `datasourceId`                                           | ✓        | string        | Datasource id used to resolve DB credentials for this FDA. If omitted, FDA uses `default`.                                                                                                 |
-| `skipBootstrap`                                          | ✓        | boolean       | If `true`, skips synchronous bootstrap during creation (one-row parquet + default DA creation). First refresh job is still scheduled. Default `false`.                                     |
+| `validationMode`                                         | ✓        | string        | Controls synchronous validation during creation. Allowed values: `strict` and `unchecked`. Default `strict`.                                                                               |
 
 For MongoDB datasources, `query` is an object with the following keys:
 
@@ -950,6 +950,7 @@ _**Example Response:**_
     {
         "id": "fda_alarms",
         "datasourceId": "default",
+        "validationMode": "strict",
         "query": "SELECT * FROM public.alarms",
         "das": {},
         "status": "completed",
@@ -981,8 +982,8 @@ _**Request query parameters**_
 | ------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
 | `defaultDataAccess` | ✓        | Overrides the instance default and enables or disables automatic `defaultDataAccess` creation for this FDA. The default value is taken from `FDA_CREATE_DEFAULT_DATA_ACCESS`; if that env var is not set, the default is `true`. | `false` |
 
-When `skipBootstrap=true` is sent in the request body, it has priority during creation and initial `defaultDataAccess`
-generation is skipped even if this query parameter is enabled.
+When `validationMode="unchecked"` is sent in the request body, synchronous validation is skipped and initial
+`defaultDataAccess` generation is skipped even if this query parameter is enabled.
 
 _**Request headers**_
 
@@ -997,8 +998,9 @@ _**Request payload**_
 The payload is a JSON object containing a FDA that follows the JSON FDA representation format (described in
 [FDA payload datamodel](#fda-payload-datamodel) section).
 
-`skipBootstrap=true` is useful for heavy queries where synchronous bootstrap could delay creation. In this mode FDA
-creation returns normally and first fetch is delegated to the background job.
+`validationMode="unchecked"` is useful for heavy queries where synchronous validation could delay creation. In this mode
+FDA creation returns normally, `defaultDataAccess` is not created automatically, and DA compatibility validation is
+skipped for that FDA.
 
 _**Example Request:**_
 
@@ -1049,7 +1051,7 @@ curl -i -X POST http://localhost:8080/public/fdas \
     }'
 ```
 
-_**Example Request with bootstrap skip:**_
+_**Example Request with unchecked validation mode:**_
 
 ```bash
 curl -i -X POST "http://localhost:8080/public/fdas?defaultDataAccess=true" \
@@ -1059,8 +1061,8 @@ curl -i -X POST "http://localhost:8080/public/fdas?defaultDataAccess=true" \
     -d '{
         "id": "fda_heavy_query",
         "query": "SELECT * FROM public.very_large_table",
-        "description": "Create without synchronous bootstrap",
-        "skipBootstrap": true,
+        "description": "Create without synchronous validation",
+        "validationMode": "unchecked",
         "cached": true
     }'
 ```
