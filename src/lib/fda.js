@@ -1013,17 +1013,12 @@ export async function fetchFDA(
       ? getTimeColumnQuery(query, timeColumn)
       : query;
 
-  let sourceSchema;
-
-  if (
-    datasource.type === 'postgres' &&
-    validationMode === FDA_VALIDATION_MODE_STRICT
-  ) {
-    sourceSchema = await validatePostgresQuery(datasource.config, timeQuery, {
-      timeColumn,
-      returnColumns: true,
-    });
-  }
+  const sourceSchema = await validateAndGetSourceSchema(
+    datasource,
+    validationMode,
+    timeQuery,
+    timeColumn,
+  );
 
   const persistedSchema = buildPersistedSchema(sourceSchema);
 
@@ -1043,33 +1038,17 @@ export async function fetchFDA(
     persistedSchema,
   );
 
-  if (validationMode === FDA_VALIDATION_MODE_STRICT) {
-    if (cached) {
-      try {
-        await createOneRowParquetSync(
-          service,
-          fdaId,
-          timeQuery,
-          normalizedServicePath,
-          datasourceId,
-          timeColumn,
-          objStgConf,
-        );
-      } catch (err) {
-        await rollbackFDAProvisioning(service, fdaId, normalizedServicePath);
-        throw err;
-      }
-    }
-
-    await createDefaultDAIfNeeded({
-      cached,
-      defaultDataAccessEnabled,
+  if (cached && validationMode === FDA_VALIDATION_MODE_STRICT) {
+    await bootstrapCachedFDA({
       service,
       fdaId,
-      normalizedServicePath,
+      query: timeQuery,
+      servicePath: normalizedServicePath,
+      datasourceId,
       timeColumn,
       objStgConf,
-      normalizedVisibility,
+      defaultDataAccessEnabled,
+      visibility: normalizedVisibility,
       sourceSchema,
     });
   }
@@ -1078,32 +1057,14 @@ export async function fetchFDA(
     return;
   }
 
+  const { firstQuery, recurringQuery } = resolveRefreshQueries(
+    datasource,
+    refreshPolicy,
+    timeQuery,
+    timeColumn,
+  );
+
   const agenda = getAgenda();
-
-  let firstQuery = timeQuery;
-  let recurringQuery = timeQuery;
-  if (datasource.type === 'postgres' && refreshPolicy?.type === 'window') {
-    firstQuery = getWindowQuery(
-      timeQuery,
-      timeColumn,
-      refreshPolicy?.params?.windowSize,
-    );
-    recurringQuery = getWindowQuery(
-      timeQuery,
-      timeColumn,
-      refreshPolicy?.params?.fetchSize,
-    );
-  } else if (
-    datasource.type === 'mongodb' &&
-    refreshPolicy?.type === 'window'
-  ) {
-    throw new FDAError(
-      400,
-      'InvalidMongoFDAContract',
-      'Mongo datasource does not support window refresh policy',
-    );
-  }
-
   // Execute first fetch immediately (when a fetcher is free)
   await agenda.now('refresh-fda', {
     fdaId,
@@ -1130,6 +1091,95 @@ export async function fetchFDA(
       datasourceId,
     });
   }
+}
+
+async function validateAndGetSourceSchema(
+  datasource,
+  validationMode,
+  query,
+  timeColumn,
+) {
+  if (
+    datasource.type !== 'postgres' ||
+    validationMode !== FDA_VALIDATION_MODE_STRICT
+  ) {
+    return;
+  }
+
+  return validatePostgresQuery(datasource.config, query, {
+    timeColumn,
+    returnColumns: true,
+  });
+}
+
+async function bootstrapCachedFDA({
+  service,
+  fdaId,
+  query,
+  servicePath,
+  datasourceId,
+  timeColumn,
+  objStgConf,
+  defaultDataAccessEnabled,
+  visibility,
+  sourceSchema,
+}) {
+  try {
+    await createOneRowParquetSync(
+      service,
+      fdaId,
+      query,
+      servicePath,
+      datasourceId,
+      timeColumn,
+      objStgConf,
+    );
+  } catch (err) {
+    await rollbackFDAProvisioning(service, fdaId, servicePath);
+    throw err;
+  }
+
+  await createDefaultDAIfNeeded({
+    cached: true,
+    defaultDataAccessEnabled,
+    service,
+    fdaId,
+    normalizedServicePath: servicePath,
+    timeColumn,
+    objStgConf,
+    normalizedVisibility: visibility,
+    sourceSchema,
+  });
+}
+
+function resolveRefreshQueries(datasource, refreshPolicy, query, timeColumn) {
+  if (refreshPolicy?.type !== 'window') {
+    return {
+      firstQuery: query,
+      recurringQuery: query,
+    };
+  }
+
+  if (datasource.type === 'mongodb') {
+    throw new FDAError(
+      400,
+      'InvalidMongoFDAContract',
+      'Mongo datasource does not support window refresh policy',
+    );
+  }
+
+  return {
+    firstQuery: getWindowQuery(
+      query,
+      timeColumn,
+      refreshPolicy.params.windowSize,
+    ),
+    recurringQuery: getWindowQuery(
+      query,
+      timeColumn,
+      refreshPolicy.params.fetchSize,
+    ),
+  };
 }
 
 function getWindowQuery(query, timeColumn, startDate) {
