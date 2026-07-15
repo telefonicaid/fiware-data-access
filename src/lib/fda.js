@@ -1094,7 +1094,7 @@ export async function fetchFDA(
   }
 }
 
-async function validateAndGetSourceSchema(
+function validateAndGetSourceSchema(
   datasource,
   validationMode,
   query,
@@ -1104,7 +1104,7 @@ async function validateAndGetSourceSchema(
     datasource.type !== 'postgres' ||
     validationMode !== FDA_VALIDATION_MODE_STRICT
   ) {
-    return;
+    return null;
   }
 
   return validatePostgresQuery(datasource.config, query, {
