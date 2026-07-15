@@ -140,7 +140,7 @@ function buildStoredSchemaQuery(schema, userQuery) {
   const selectList = schemaFields
     .map(
       ({ name, type }) =>
-        `CAST(NULL AS ${type}) AS "${String(name).replaceAll(/"/g, '""')}"`,
+        `CAST(NULL AS ${type}) AS "${String(name).replaceAll('"', '""')}"`,
     )
     .join(', ');
 
