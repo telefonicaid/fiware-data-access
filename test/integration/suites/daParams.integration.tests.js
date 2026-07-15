@@ -658,7 +658,7 @@ export function registerDaParamsIntegrationTests({
 
       expect(numberCoercionRes.status).toBe(200);
       expect(numberCoercionRes.json).toEqual([
-        { id: '3', name: 'carlos', age: '40' },
+        { id: 3, name: 'carlos', age: 40 },
       ]);
 
       const booleanCoercionRes = await httpReq({
