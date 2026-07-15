@@ -1,6 +1,6 @@
 - Feat: persist FDA schema in MongoDB during creation (strict mode) and use it for DA validation and default DA generation (#233)
 - Feat: introduce `validationMode` field (`strict` / `unchecked`) to control synchronous schema validation; `unchecked` skips validation and default DA creation, enabling fast FDA creation for heavy queries (#209, #222)
-- Feat: add `initFetch` timestamp to FDA document to track fetch cycle start time, alongside `lastFetch` for completion (#223) AAA
+- Feat: add `initFetch` timestamp to FDA document to track fetch cycle start time, alongside `lastFetch` for completion (#223)
 - Fix: remove legacy `__schema__.parquet` fallback logic (#217)
 - Fix: allow DA creation even when source table is empty or parquet files are missing, by validating against stored schema (strict) or skipping validation (unchecked) (#217, #222)
 - Fix: first fetch in sliding window FDAs now uses windowSize, recurring fetches use fetchSize (#221)
