@@ -998,7 +998,7 @@ _**Request payload**_
 The payload is a JSON object containing a FDA that follows the JSON FDA representation format (described in
 [FDA payload datamodel](#fda-payload-datamodel) section).
 
-`validationMode="unchecked"` is useful for heavy queries where synchronous validation could delay creation. In this mode
+`validationMode=unchecked` is useful for heavy queries where synchronous validation could delay creation. In this mode
 FDA creation returns normally, `defaultDataAccess` is not created automatically, and DA compatibility validation is
 skipped for that FDA.
 
