@@ -672,7 +672,7 @@ export function registerDaParamsIntegrationTests({
 
       expect(booleanCoercionRes.status).toBe(200);
       expect(booleanCoercionRes.json).toEqual([
-        { id: '1', name: 'ana', age: '30' },
+        { id: 1, name: 'ana', age: 30 },
       ]);
 
       const dateTimeCoercionRes = await httpReq({
@@ -686,7 +686,7 @@ export function registerDaParamsIntegrationTests({
 
       expect(dateTimeCoercionRes.status).toBe(200);
       expect(dateTimeCoercionRes.json).toEqual([
-        { id: '3', name: 'carlos', age: '40' },
+        { id: 3, name: 'carlos', age: 40 },
       ]);
     });
   });
