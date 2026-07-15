@@ -1085,6 +1085,7 @@ describe('fetchFDA', () => {
       'svc/servicepath/fda1.parquet',
       'timeinstant',
       undefined,
+      undefined,
     );
     expect(awsMocks.dropFile).toHaveBeenCalledWith(
       {},
