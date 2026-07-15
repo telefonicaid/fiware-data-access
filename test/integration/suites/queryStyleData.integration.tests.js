@@ -134,8 +134,8 @@ export function registerQueryStyleDataIntegrationTests({
 
       expect(res.status).toBe(200);
       expect(res.json).toEqual([
-        { id: '1', name: 'ana', age: '30' },
-        { id: '3', name: 'carlos', age: '40' },
+        { id: 1, name: 'ana', age: 30 },
+        { id: 3, name: 'carlos', age: 40 },
       ]);
     });
 
@@ -180,8 +180,8 @@ export function registerQueryStyleDataIntegrationTests({
         { colIndex: 2, colName: 'age' },
       ]);
       expect(res.json.resultset).toEqual([
-        ['1', 'ana', '30'],
-        ['3', 'carlos', '40'],
+        [1, 'ana', 30],
+        [3, 'carlos', 40],
       ]);
       expect(res.json.queryInfo.pageStart).toBe(0);
       expect(res.json.queryInfo.pageSize).toBe(2);

@@ -573,7 +573,7 @@ export function registerDaParamsIntegrationTests({
       }
       expect(defaultsQueryRes.status).toBe(200);
       expect(defaultsQueryRes.json).toEqual([
-        { id: '3', name: 'carlos', age: '40' },
+        { id: 3, name: 'carlos', age: 40 },
       ]);
 
       const requiredQueryRes = await httpReq({

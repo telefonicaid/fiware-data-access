@@ -947,8 +947,8 @@ export function registerFdaCreationIntegrationTests({
 
     expect(queryAfterCompletion.status).toBe(200);
     expect(queryAfterCompletion.json).toEqual([
-      { id: '1', name: 'ana', age: '30' },
-      { id: '3', name: 'carlos', age: '40' },
+      { id: 1, name: 'ana', age: 30 },
+      { id: 3, name: 'carlos', age: 40 },
     ]);
   });
 

@@ -88,8 +88,8 @@ export function registerDaCrudIntegrationTests({
       }
       expect(queryRes.status).toBe(200);
       expect(queryRes.json).toEqual([
-        { id: '1', name: 'ana', age: '30' },
-        { id: '3', name: 'carlos', age: '40' },
+        { id: 1, name: 'ana', age: 30 },
+        { id: 3, name: 'carlos', age: 40 },
       ]);
     });
 
@@ -241,7 +241,7 @@ export function registerDaCrudIntegrationTests({
       });
 
       expect(secondQuery.status).toBe(200);
-      expect(secondQuery.json).toEqual([{ id: '1', name: 'ana', age: '30' }]);
+      expect(secondQuery.json).toEqual([{ id: 1, name: 'ana', age: 30 }]);
     });
   });
 }
