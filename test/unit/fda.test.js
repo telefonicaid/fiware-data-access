@@ -2370,7 +2370,7 @@ describe('processFDAAsync', () => {
         database: 'svc',
       },
     });
-    mongoMocks.retrieveFDA.mockResolvedValueOnce({
+    mongoMocks.retrieveFDA.mockResolvedValue({
       fdaId: 'fda_mongo_cached',
       query: {
         collection: 'events',
