@@ -1355,6 +1355,16 @@ export async function processFDAAsync(
   objStgConf,
   datasourceId = DEFAULT_DATASOURCE_ID,
 ) {
+  const datasource = await resolveDatasource(service, datasourceId);
+
+  if (datasource.type === 'mongodb' && refreshPolicy?.type === 'window') {
+    throw new FDAError(
+      400,
+      'InvalidMongoFDAContract',
+      'Mongo datasource does not support window refresh',
+    );
+  }
+
   const storagePath = getFDAStoragePath(fdaId, servicePath);
   const bucketName = getBucketNameFromService(service);
 
