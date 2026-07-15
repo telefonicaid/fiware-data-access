@@ -166,12 +166,14 @@ Each document corresponds to one FDA:
 -   **initFetch**: timestamp of the current/last fetch start (ISO date)
 -   **lastFetch**: timestamp of the last successful fetch completion (ISO date)
 -   **datasourceId**: datasource identifier used to resolve source credentials (default `default` when omitted)
--   **agendaJobIds**: array of scheduled job IDs for refresh tasks
+-   **validationMode**: validation mode (`strict` or `unchecked`, default `strict`)
+-   **schema**: array of column definitions (`name` and `type`) persisted from the source schema (`strict` mode only)
 
 Each DA contains:
 
 -   **description**: description of the DA
 -   **query**: parameterized SQL query executed on the FDA
+-   **params**: array of parameter definitions (optional)
 
 #### Example MongoDB document
 
@@ -180,7 +182,7 @@ Each DA contains:
     "_id": "695f9a3cc0d41d928f5e6a39",
     "fdaId": "fda1",
     "description": "Description for the first FDA",
-    "query": "SELECT population, timeinstant FROM exampleSchema.exampleTable",
+    "query": "SELECT population, timeinstant, gender FROM exampleSchema.exampleTable",
     "servicePath": "/servicePath",
     "service": "fiwareService",
     "progress": 10,
@@ -188,18 +190,32 @@ Each DA contains:
     "lastFetch": null,
     "agendaJobIds": ["6a4647d198863226b8001614"],
     "visibility": "public",
+    "validationMode": "strict",
+    "schema": [
+        { "name": "population", "type": "INTEGER" },
+        { "name": "timeinstant", "type": "TIMESTAMP" },
+        { "name": "gender", "type": "Text" }
+    ],
     "refreshPolicy": {
         "type": "interval",
-        "value": "1 hour"
+        "params": { "refreshInterval": "1 hour" }
     },
     "das": {
         "da1": {
             "description": "First DA querying timeInstant and population.",
-            "query": "SELECT * WHERE population = $population AND timeinstant = $timeinstant;"
+            "query": "SELECT * WHERE population = $population AND timeinstant = $timeinstant;",
+            "params": [
+                { "name": "population", "type": "Number" },
+                { "name": "timeinstant", "type": "DateTime" }
+            ]
         },
         "da2": {
             "description": "Second DA querying timeInstant and gender.",
-            "query": "SELECT * WHERE gender = $gender AND timeinstant = $timeinstant;"
+            "query": "SELECT * WHERE gender = $gender AND timeinstant = $timeinstant;",
+            "params": [
+                { "name": "gender", "type": "Text" },
+                { "name": "timeinstant", "type": "DateTime" }
+            ]
         }
     }
 }

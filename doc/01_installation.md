@@ -482,15 +482,125 @@ Content-Type: application/json; charset=utf-8
   {
     "id": "fda_alarms",
     "query": "SELECT * FROM public.alarms",
-    "das": {},
-    "status": "fetching",
-    "progress": 10,
-    "initFetch": "2026-02-19T07:37:52.084Z",
-    "lastFetch": null,
+    "das": {
+      "defaultDataAccess": {
+        "description": "Default Data Access providing access to whole FDA data. It has parameters for all columns in the FDA.",
+        "query": "SELECT *, COUNT(*) OVER() as __total WHERE ($entityid IS NULL OR \"entityid\" = $entityid) AND ($entitytype IS NULL OR \"entitytype\" = $entitytype) AND ($alertdescription IS NULL OR \"__ALERTDESCRIPTION__\" = $alertdescription) AND ($name IS NULL OR \"__NAME__\" = $name) AND ($severity IS NULL OR \"__SEVERITY__\" = $severity) AND ($time_between_notif IS NULL OR \"__TIME_BETWEEN_NOTIF__\" = $time_between_notif) AND ($templateid IS NULL OR \"templateid\" = $templateid) AND ($attr IS NULL OR \"__ATTR__\" = $attr) AND ($oper IS NULL OR \"__OPER__\" = $oper) AND ($umbral IS NULL OR \"__UMBRAL__\" = $umbral) AND ($created_at IS NULL OR \"created_at\" = $created_at) LIMIT CAST($pageSize AS BIGINT) OFFSET CAST($pageStart AS BIGINT)",
+        "params": [
+          {
+            "name": "entityid",
+            "default": null
+          },
+          {
+            "name": "entitytype",
+            "default": null
+          },
+          {
+            "name": "alertdescription",
+            "default": null
+          },
+          {
+            "name": "name",
+            "default": null
+          },
+          {
+            "name": "severity",
+            "default": null
+          },
+          {
+            "name": "time_between_notif",
+            "default": null
+          },
+          {
+            "name": "templateid",
+            "default": null
+          },
+          {
+            "name": "attr",
+            "default": null
+          },
+          {
+            "name": "oper",
+            "default": null
+          },
+          {
+            "name": "umbral",
+            "default": null
+          },
+          {
+            "name": "created_at",
+            "default": null
+          },
+          {
+            "name": "pageSize",
+            "default": "9223372036854775807"
+          },
+          {
+            "name": "pageStart",
+            "default": 0
+          }
+        ]
+      }
+    },
+    "status": "completed",
+    "progress": 100,
+    "initFetch": "2026-07-15T13:13:32.286Z",
+    "lastFetch": "2026-07-15T13:13:32.442Z",
     "refreshPolicy": {
       "type": "none"
     },
-    "description": "FDA de alarmas del sistema"
+    "description": "FDA de alarmas del sistema",
+    "timeColumn": null,
+    "objStgConf": {},
+    "cached": true,
+    "datasourceId": "default",
+    "validationMode": "strict",
+    "schema": [
+      {
+        "name": "entityid",
+        "type": "VARCHAR"
+      },
+      {
+        "name": "entitytype",
+        "type": "VARCHAR"
+      },
+      {
+        "name": "__ALERTDESCRIPTION__",
+        "type": "VARCHAR"
+      },
+      {
+        "name": "__NAME__",
+        "type": "VARCHAR"
+      },
+      {
+        "name": "__SEVERITY__",
+        "type": "VARCHAR"
+      },
+      {
+        "name": "__TIME_BETWEEN_NOTIF__",
+        "type": "INTEGER"
+      },
+      {
+        "name": "templateid",
+        "type": "VARCHAR"
+      },
+      {
+        "name": "__ATTR__",
+        "type": "VARCHAR"
+      },
+      {
+        "name": "__OPER__",
+        "type": "VARCHAR"
+      },
+      {
+        "name": "__UMBRAL__",
+        "type": "DOUBLE"
+      },
+      {
+        "name": "created_at",
+        "type": "TIMESTAMP"
+      }
+    ]
   }
 ]
 ```

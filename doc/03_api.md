@@ -961,7 +961,12 @@ _**Example Response:**_
             "type": "interval",
             "params": { "refreshInterval": "1 hour" }
         },
-        "description": "FDA de alarmas del sistema"
+        "description": "FDA for system alarms",
+        "schema": [
+            { "name": "entityid", "type": "VARCHAR" },
+            { "name": "__SEVERITY__", "type": "VARCHAR" },
+            { "name": "created_at", "type": "TIMESTAMP" }
+        ]
     }
 ]
 ```
@@ -1189,7 +1194,13 @@ _**Example Response:**_
         "type": "interval",
         "params": { "refreshInterval": "1 hour" }
     },
-    "description": "FDA de alarmas del sistema"
+    "description": "FDA for system alarms",
+    "validationMode": "strict",
+    "schema": [
+        { "name": "entityid", "type": "VARCHAR" },
+        { "name": "__SEVERITY__", "type": "VARCHAR" },
+        { "name": "created_at", "type": "TIMESTAMP" }
+    ]
 }
 ```
 
