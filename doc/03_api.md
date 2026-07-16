@@ -987,7 +987,7 @@ _**Request query parameters**_
 | ------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
 | `defaultDataAccess` | ✓        | Overrides the instance default and enables or disables automatic `defaultDataAccess` creation for this FDA. The default value is taken from `FDA_CREATE_DEFAULT_DATA_ACCESS`; if that env var is not set, the default is `true`. | `false` |
 
-When `validationMode="unchecked"` is sent in the request body, synchronous validation is skipped and initial
+When `validationMode` is set to `unchecked` in the request body, synchronous validation is skipped and initial
 `defaultDataAccess` generation is skipped even if this query parameter is enabled.
 
 _**Request headers**_
@@ -1003,7 +1003,7 @@ _**Request payload**_
 The payload is a JSON object containing a FDA that follows the JSON FDA representation format (described in
 [FDA payload datamodel](#fda-payload-datamodel) section).
 
-`validationMode=unchecked` is useful for heavy queries where synchronous validation could delay creation. In this mode
+`validationMode` set to `unchecked` is useful for heavy queries where synchronous validation could delay creation. In this mode
 FDA creation returns normally, `defaultDataAccess` is not created automatically, and DA compatibility validation is
 skipped for that FDA.
 

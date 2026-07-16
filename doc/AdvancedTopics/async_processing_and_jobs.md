@@ -389,7 +389,7 @@ Flow:
 
 To keep early DA validation without waiting for the first asynchronous job completion:
 
--   FDA provisioning in `validationMode=strict` performs synchronous schema introspection.
+-   FDA provisioning with `validationMode` set to `strict` performs synchronous schema introspection.
 -   DA create/update validates compatibility using DuckDB `prepare` against persisted schema metadata.
 -   Query execution is blocked until the first successful fetch has completed (`lastFetch` exists), returning
     `409 FDAUnavailable` beforehand.

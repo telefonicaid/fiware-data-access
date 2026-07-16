@@ -221,7 +221,7 @@ export function registerFdaVariantsIntegrationTests({
       }
     });
 
-    test('POST /fdas with validationMode=unchecked does not create default DA even when defaultDataAccess=true', async () => {
+    test('POST /fdas with validationMode set to unchecked does not create default DA even when defaultDataAccess=true', async () => {
       const baseUrl = getBaseUrl();
       const uncheckedModeFdaId = 'fda_unchecked_mode';
 
