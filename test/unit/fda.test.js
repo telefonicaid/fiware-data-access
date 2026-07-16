@@ -1107,7 +1107,7 @@ describe('fetchFDA', () => {
     expect(agenda.create).not.toHaveBeenCalled();
   });
 
-  test('validationMode=unchecked skips strict bootstrap path and default DA creation', async () => {
+  test('validationMode set to unchecked skips strict bootstrap path and default DA creation', async () => {
     await fetchFDA(
       'fda1',
       'SELECT id FROM users;',
