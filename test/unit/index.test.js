@@ -441,7 +441,7 @@ describe('index routes - validation and middleware branches', () => {
       .send({
         id: 'fda_invalid_mode',
         query: 'SELECT 1',
-        validationMode: 'legacy',
+        validationMode: 'unsupportedMode',
       });
 
     expect(res.status).toBe(400);
