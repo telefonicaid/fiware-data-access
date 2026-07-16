@@ -1364,7 +1364,7 @@ function getPreviousWindowStartDate(fetchSize) {
       throw new FDAError(
         400,
         'InvalidParam',
-        `Invalid param fetchSize: ${fetchSize}.`,
+        `Invalid unit in window param: ${fetchSize}.`,
       );
   }
 }
@@ -1460,8 +1460,7 @@ export async function deleteFDA(service, fdaId, visibility, servicePath) {
   // (e.g. fda_test and fda_test_1 both match the prefix "fda_test").
   const objPaths = allObjPaths.filter(
     (key) =>
-      key.startsWith(`${storagePath}.parquet/`) ||
-      key.startsWith(`${storagePath}.`),
+      key.startsWith(`${storagePath}/`) || key.startsWith(`${storagePath}.`),
   );
   await dropFiles(s3Client, bucketName, objPaths);
 
@@ -1598,7 +1597,7 @@ export async function cleanPartition(
   );
   // Filter strictly to objects belonging to this FDA only (same prefix-collision guard as deleteFDA)
   const objPaths = allPartitionPaths.filter((key) =>
-    key.startsWith(`${cleanPartitionStoragePath}.parquet/`),
+    key.startsWith(`${cleanPartitionStoragePath}/`),
   );
 
   const partitionsToRemove = [];
@@ -1651,7 +1650,7 @@ async function uploadTableToObjStg(
     // DuckDB cant overwrite files in Minio, so for partitioned files we upload them in a tmp file and the move them
     // This includes first upload because the one row parquet is also partitioned
     const parquetPath = objStgConf?.partition
-      ? getPath(bucket, 'tmp/' + path, '.parquet')
+      ? getPath(bucket, 'tmp/' + path, '')
       : getPath(bucket, path, '.parquet');
 
     await toParquet(
@@ -1664,11 +1663,7 @@ async function uploadTableToObjStg(
     );
 
     if (objStgConf?.partition) {
-      const objectsList = await listObjects(
-        s3Client,
-        bucket,
-        `tmp/${path}.parquet`,
-      );
+      const objectsList = await listObjects(s3Client, bucket, `tmp/${path}/`);
       const hasRealPartitionedParquet = objectsList.some((key) =>
         key.endsWith('.parquet'),
       );
@@ -1686,7 +1681,7 @@ async function uploadTableToObjStg(
         await dropFile(
           s3Client,
           bucket,
-          `${path}.parquet/${getSchemaPartitionPath(objStgConf.partition)}/schema.parquet`,
+          `${path}/${getSchemaPartitionPath(objStgConf.partition)}/schema.parquet`,
         );
       }
     }

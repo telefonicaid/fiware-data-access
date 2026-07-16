@@ -737,12 +737,12 @@ export function buildDAQuery(
 
   const objectKey = getFDAStoragePath(fdaId, servicePath);
   const bucketName = getBucketNameFromService(service);
-  const parquetPath = `s3://${bucketName}/${objectKey}.parquet`;
+  const parquetPath = `s3://${bucketName}/${objectKey}`;
 
   if (partition) {
     return `FROM read_parquet('${parquetPath}/**/*.parquet') ${trimmed}`;
   } else {
-    return `FROM read_parquet('${parquetPath}') ${trimmed}`;
+    return `FROM read_parquet('${parquetPath}.parquet') ${trimmed}`;
   }
 }
 
