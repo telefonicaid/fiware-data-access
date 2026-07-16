@@ -54,7 +54,7 @@ use the `fiware-service` value as the _database_ name.
 
 FDA can automatically create a built-in DA named `defaultDataAccess` when a new FDA is created.
 
-When `validationMode` is set to `unchecked` is used during FDA creation, synchronous validation is skipped and `defaultDataAccess`
+When `validationMode` is set to `unchecked` at FDA creation, synchronous validation is skipped and `defaultDataAccess`
 is not created at that moment, even if default DA creation is enabled.
 
 This topic covers:
