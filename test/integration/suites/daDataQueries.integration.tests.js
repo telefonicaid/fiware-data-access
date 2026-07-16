@@ -106,8 +106,8 @@ export function registerDaDataQueriesIntegrationTests({
       }
       expect(res.status).toBe(200);
       expect(res.json).toEqual([
-        { id: '1', name: 'ana', age: '30' },
-        { id: '3', name: 'carlos', age: '40' },
+        { id: 1, name: 'ana', age: 30 },
+        { id: 3, name: 'carlos', age: 40 },
       ]);
     });
 

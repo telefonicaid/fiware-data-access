@@ -1,6 +1,5 @@
 - Fix: FDA scheduled job cleanup now cancels Agenda jobs by persisted IDs (`agendaJobIds`) to prevent deleting jobs from other FDAs with the same recurring job name (**)
 - Migration: FDA documents now include `agendaJobIds` (`string[]`). Legacy FDAs without this field can still be deleted, but cleanup relies on runtime job lookup fallback; to guarantee deterministic cleanup in all environments, backfill `agendaJobIds` or recreate those FDAs (**)
-- Fix: add skipBootstrap for FDA creation to bypass synchronous bootstrap (`createOneRowParquetSync`) and initial defaultDataAccess creation on heavy queries (#209) (*)
 - Add: support CDA-compatible JSON output format (`outputType=cda` and `Accept: application/vnd.fiware.cda+json`) for FDA data endpoints (#204) (*)
 - Add: MongoDB datasource support as a new datasource type, including connection validation, cached-only FDA support, Mongo-specific contract and full ingestion pipeline integration (#176) (*)
 - Fix: prevent recurring Agenda jobs from being overwritten across FDAs by using per-FDA recurring job identity and scheduling (#206) (*)

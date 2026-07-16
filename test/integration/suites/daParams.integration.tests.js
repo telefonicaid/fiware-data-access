@@ -573,7 +573,7 @@ export function registerDaParamsIntegrationTests({
       }
       expect(defaultsQueryRes.status).toBe(200);
       expect(defaultsQueryRes.json).toEqual([
-        { id: '3', name: 'carlos', age: '40' },
+        { id: 3, name: 'carlos', age: 40 },
       ]);
 
       const requiredQueryRes = await httpReq({
@@ -658,7 +658,7 @@ export function registerDaParamsIntegrationTests({
 
       expect(numberCoercionRes.status).toBe(200);
       expect(numberCoercionRes.json).toEqual([
-        { id: '3', name: 'carlos', age: '40' },
+        { id: 3, name: 'carlos', age: 40 },
       ]);
 
       const booleanCoercionRes = await httpReq({
@@ -672,7 +672,7 @@ export function registerDaParamsIntegrationTests({
 
       expect(booleanCoercionRes.status).toBe(200);
       expect(booleanCoercionRes.json).toEqual([
-        { id: '1', name: 'ana', age: '30' },
+        { id: 1, name: 'ana', age: 30 },
       ]);
 
       const dateTimeCoercionRes = await httpReq({
@@ -686,7 +686,7 @@ export function registerDaParamsIntegrationTests({
 
       expect(dateTimeCoercionRes.status).toBe(200);
       expect(dateTimeCoercionRes.json).toEqual([
-        { id: '3', name: 'carlos', age: '40' },
+        { id: 3, name: 'carlos', age: 40 },
       ]);
     });
   });

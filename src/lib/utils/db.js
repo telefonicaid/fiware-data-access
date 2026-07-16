@@ -107,28 +107,44 @@ async function closePreparedStatement(stmt) {
   }
 }
 
-function shouldFallbackToSchemaParquet(error, partitionType) {
+function shouldReturnEmptyOnSchemaFallback(error) {
   const message = String(error?.message ?? error);
-  return (
-    Boolean(partitionType) && message.includes(NO_PARQUET_FILES_MATCH_ERROR)
+  return message.includes(NO_PARQUET_FILES_MATCH_ERROR);
+}
+
+function shouldTrySchemaFallback(error) {
+  const message = String(error?.message ?? error);
+  return message.includes(NO_PARQUET_FILES_MATCH_ERROR);
+}
+
+function normalizeStoredSchema(schema) {
+  if (!Array.isArray(schema)) {
+    return [];
+  }
+
+  return schema.filter(
+    (field) =>
+      typeof field?.name === 'string' &&
+      field.name.length > 0 &&
+      typeof field?.type === 'string' &&
+      field.type.length > 0,
   );
 }
 
-function getSchemaBootstrapParquetPath(service, fdaId, servicePath) {
-  const objectKey = getFDAStoragePath(fdaId, servicePath);
-  const bucketName = getBucketNameFromService(service);
-  return `s3://${bucketName}/${objectKey}.__schema__.parquet`;
-}
+function buildStoredSchemaQuery(schema, userQuery) {
+  const schemaFields = normalizeStoredSchema(schema);
+  if (schemaFields.length === 0) {
+    return null;
+  }
 
-function buildSchemaBootstrapQuery(service, fdaId, userQuery, servicePath) {
-  const schemaParquetPath = getSchemaBootstrapParquetPath(
-    service,
-    fdaId,
-    servicePath,
-  );
-  const safeSchemaParquetPath = schemaParquetPath.replaceAll("'", "''");
+  const selectList = schemaFields
+    .map(
+      ({ name, type }) =>
+        `CAST(NULL AS ${type}) AS "${String(name).replaceAll('"', '""')}"`,
+    )
+    .join(', ');
 
-  return `FROM read_parquet('${safeSchemaParquetPath}') ${userQuery.trim()}`;
+  return `FROM (SELECT ${selectList} LIMIT 0) AS fda_schema ${userQuery.trim()}`;
 }
 
 function createEmptyPreparedStatementResult() {
@@ -167,7 +183,7 @@ async function prepareAndRunStatementWithFallback(
   conn,
   query,
   boundParams,
-  { streaming, partitionType, fallbackQuery },
+  { streaming, fallbackQuery },
 ) {
   let stmt;
 
@@ -176,10 +192,7 @@ async function prepareAndRunStatementWithFallback(
     const result = await executePreparedStatement(stmt, boundParams, streaming);
     return { stmt, result };
   } catch (primaryError) {
-    if (
-      !fallbackQuery ||
-      !shouldFallbackToSchemaParquet(primaryError, partitionType)
-    ) {
+    if (!fallbackQuery || !shouldTrySchemaFallback(primaryError)) {
       throw primaryError;
     }
 
@@ -194,7 +207,7 @@ async function prepareAndRunStatementWithFallback(
       );
       return { stmt, result };
     } catch (fallbackError) {
-      if (shouldFallbackToSchemaParquet(fallbackError, partitionType)) {
+      if (shouldReturnEmptyOnSchemaFallback(fallbackError)) {
         const emptyResult = createEmptyPreparedStatementResult();
         return {
           stmt: null,
@@ -235,11 +248,11 @@ export async function runPreparedStatement(
     );
   }
 
-  const { objStgConf, servicePath: storedServicePath } = await retrieveFDA(
-    service,
-    fdaId,
-    servicePath,
-  );
+  const {
+    objStgConf,
+    servicePath: storedServicePath,
+    schema,
+  } = await retrieveFDA(service, fdaId, servicePath);
   const query = buildDAQuery(
     service,
     fdaId,
@@ -260,15 +273,7 @@ export async function runPreparedStatement(
       boundParams,
       {
         streaming,
-        partitionType: objStgConf?.partition,
-        fallbackQuery: objStgConf?.partition
-          ? buildSchemaBootstrapQuery(
-              service,
-              fdaId,
-              da.query,
-              storedServicePath ?? servicePath,
-            )
-          : null,
+        fallbackQuery: buildStoredSchemaQuery(schema, da.query),
       },
     );
 
@@ -611,12 +616,32 @@ export function toParquet(
 ) {
   logger.debug({ originPath, resultPath }, '[DEBUG]: toParquet');
 
+  return copyQueryToParquet(
+    conn,
+    `SELECT * FROM read_csv_auto('s3://${originPath}')`,
+    resultPath,
+    timeColumn,
+    partitionType,
+    compression,
+  );
+}
+
+export function copyQueryToParquet(
+  conn,
+  sourceQuery,
+  resultPath,
+  timeColumn,
+  partitionType,
+  compression,
+) {
+  logger.debug({ resultPath }, '[DEBUG]: copyQueryToParquet');
+
   const { cols, partitionBy } = getPartitionConf(partitionType, timeColumn);
   const compressionString = compression ? `, COMPRESSION ZSTD` : '';
 
   return conn.run(
     `COPY ( SELECT ${cols}
-                FROM read_csv_auto('s3://${originPath}')) 
+                FROM (${sourceQuery}) AS fda_source) 
       TO 's3://${resultPath}' (FORMAT PARQUET ${partitionBy} ${compressionString});`,
   );
 }
@@ -779,8 +804,28 @@ export async function validateDAQuery(
   userQuery,
   servicePath,
 ) {
-  const { objStgConf = {} } =
+  const { objStgConf = {}, schema } =
     (await retrieveFDA(service, fdaId, servicePath)) || {};
+  const schemaQuery = buildStoredSchemaQuery(schema, userQuery);
+
+  if (schemaQuery) {
+    let schemaStmt;
+    try {
+      schemaStmt = await conn.prepare(schemaQuery);
+      return;
+    } catch (schemaError) {
+      throw new FDAError(
+        400,
+        'InvalidDAQuery',
+        `DA query is not compatible with FDA ${fdaId}: ${schemaError.message || schemaError}`,
+      );
+    } finally {
+      if (schemaStmt && typeof schemaStmt.close === 'function') {
+        await schemaStmt.close();
+      }
+    }
+  }
+
   const query = buildDAQuery(
     service,
     fdaId,
@@ -793,31 +838,6 @@ export async function validateDAQuery(
   try {
     stmt = await conn.prepare(query);
   } catch (e) {
-    const message = String(e?.message ?? e);
-
-    if (
-      objStgConf?.partition &&
-      message.includes('No files found that match the pattern')
-    ) {
-      const fallbackQuery = buildSchemaBootstrapQuery(
-        service,
-        fdaId,
-        userQuery,
-        servicePath,
-      );
-
-      try {
-        stmt = await conn.prepare(fallbackQuery);
-        return;
-      } catch (fallbackError) {
-        throw new FDAError(
-          400,
-          'InvalidDAQuery',
-          `DA query is not compatible with FDA ${fdaId}: ${fallbackError.message || fallbackError}`,
-        );
-      }
-    }
-
     throw new FDAError(
       400,
       'InvalidDAQuery',

@@ -61,7 +61,15 @@ export function registerFdaCreationIntegrationTests({
       console.error('POST /fdas failed:', res.status, res.json ?? res.text);
     }
     expect(res.status).toBe(202);
-    await waitUntilFDACompleted({ baseUrl, service, fdaId });
+    const completedFDA = await waitUntilFDACompleted({
+      baseUrl,
+      service,
+      fdaId,
+    });
+
+    expect(completedFDA.validationMode).toBe('strict');
+    expect(Array.isArray(completedFDA.schema)).toBe(true);
+    expect(completedFDA.schema.length).toBeGreaterThan(0);
   });
 
   test('POST /fdas creates an FDA and defaultDataAccess on an empty source query (includes timeColumn and partition case)', async () => {
@@ -939,8 +947,8 @@ export function registerFdaCreationIntegrationTests({
 
     expect(queryAfterCompletion.status).toBe(200);
     expect(queryAfterCompletion.json).toEqual([
-      { id: '1', name: 'ana', age: '30' },
-      { id: '3', name: 'carlos', age: '40' },
+      { id: 1, name: 'ana', age: 30 },
+      { id: 3, name: 'carlos', age: 40 },
     ]);
   });
 
