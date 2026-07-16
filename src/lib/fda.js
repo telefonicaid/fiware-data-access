@@ -1460,7 +1460,8 @@ export async function deleteFDA(service, fdaId, visibility, servicePath) {
   // (e.g. fda_test and fda_test_1 both match the prefix "fda_test").
   const objPaths = allObjPaths.filter(
     (key) =>
-      key.startsWith(`${storagePath}/`) || key.startsWith(`${storagePath}.`),
+      key.startsWith(`${storagePath}.parquet/`) ||
+      key.startsWith(`${storagePath}.`),
   );
   await dropFiles(s3Client, bucketName, objPaths);
 
@@ -1570,7 +1571,7 @@ export async function cleanPartition(
     );
   }
 
-  const cutoff = getWindowDate(windowSize);
+  const cutoff = new Date(getPreviousWindowStartDate(windowSize));
   if (!cutoff) {
     /* c8 ignore next 5 */
     throw new FDAError(
@@ -1597,7 +1598,7 @@ export async function cleanPartition(
   );
   // Filter strictly to objects belonging to this FDA only (same prefix-collision guard as deleteFDA)
   const objPaths = allPartitionPaths.filter((key) =>
-    key.startsWith(`${cleanPartitionStoragePath}/`),
+    key.startsWith(`${cleanPartitionStoragePath}.parquet/`),
   );
 
   const partitionsToRemove = [];
