@@ -167,7 +167,7 @@ Each document corresponds to one FDA:
 -   **lastFetch**: timestamp of the last successful fetch completion (ISO date)
 -   **datasourceId**: datasource identifier used to resolve source credentials (default `default` when omitted)
 -   **validationMode**: validation mode (`strict` or `unchecked`, default `strict`)
--   **schema**: array of column definitions (`name` and `type`) persisted from the source schema (`strict` mode only). By the moment, only for FDA based in PG datasources (for other datasources se have to consider how to it applies)
+-   **schema**: array of column definitions (`name` and `type`) persisted from the source schema (`strict` mode only). It is an optional field, by the moment used only in FDAs based in PG datasources (for other datasources se have to consider how to it applies, specially for schema-less ones, see issue [#235](https://github.com/telefonicaid/fiware-data-access/issues/235))
 
 Each DA contains:
 
