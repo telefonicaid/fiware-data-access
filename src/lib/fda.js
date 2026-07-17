@@ -1168,16 +1168,15 @@ function validateScheduledOptions(refreshPolicy, objStgConf) {
     );
   }
 
-  if (
-    refreshPolicy.type === 'window' &&
-    fetchSize &&
-    !VALID_WINDOW_FETCH_SIZES.includes(fetchSize)
-  ) {
-    throw new FDAError(
-      400,
-      'InvalidParam',
-      `Invalid fetchSize "${fetchSize}".`,
-    );
+  if (refreshPolicy.type === 'window' && fetchSize) {
+    const { unit } = processFetchSize(fetchSize);
+    if (!VALID_WINDOW_FETCH_SIZES.includes(unit)) {
+      throw new FDAError(
+        400,
+        'InvalidParam',
+        `Invalid fetchSize "${fetchSize}".`,
+      );
+    }
   }
 
   if (
