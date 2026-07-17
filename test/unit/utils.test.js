@@ -285,6 +285,41 @@ describe('utils', () => {
     });
   });
 
+  describe('processFetchSize', () => {
+    let processFetchSize;
+
+    beforeAll(async () => {
+      const utils = await loadUtilsModule();
+      processFetchSize = utils.processFetchSize;
+    });
+
+    test('returns a singular unit with amount 1 for a single token', () => {
+      expect(processFetchSize('day')).toEqual({ unit: 'day', amount: 1 });
+      expect(processFetchSize('days')).toEqual({ unit: 'day', amount: 1 });
+    });
+
+    test('parses explicit quantity and normalizes plural units', () => {
+      expect(processFetchSize('2 hours')).toEqual({ unit: 'hour', amount: 2 });
+      expect(processFetchSize('3 minutes')).toEqual({
+        unit: 'minute',
+        amount: 3,
+      });
+    });
+
+    test('throws for malformed time sizes', () => {
+      expect(() => processFetchSize('1 day extra')).toThrow(
+        'Invalid time size',
+      );
+      expect(() => processFetchSize('')).toThrow('Invalid unit in time size');
+    });
+
+    test('throws for non-integer amounts', () => {
+      expect(() => processFetchSize('1.5 days')).toThrow(
+        'Invalid amount in time size',
+      );
+    });
+  });
+
   describe('convertRefreshIntervalToMs', () => {
     let convertRefreshIntervalToMs;
 
