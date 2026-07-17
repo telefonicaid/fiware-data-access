@@ -87,7 +87,7 @@ export function registerDefaultDataAccessIntegrationTests({
 
       expect(pagingRes.status).toBe(200);
       expect(pagingRes.json).toHaveLength(1);
-      expect(pagingRes.json[0].id).toBe('3');
+      expect(pagingRes.json[0].id).toBe(3);
     } finally {
       await httpReq({
         method: 'DELETE',
@@ -212,7 +212,7 @@ export function registerDefaultDataAccessIntegrationTests({
       expect(rangeAndPagingRes.status).toBe(200);
       expect(Array.isArray(rangeAndPagingRes.json)).toBe(true);
       expect(rangeAndPagingRes.json).toHaveLength(1);
-      expect(rangeAndPagingRes.json[0].id).toBe('2');
+      expect(rangeAndPagingRes.json[0].id).toBe(2);
     } finally {
       await httpReq({
         method: 'DELETE',
@@ -277,7 +277,7 @@ export function registerDefaultDataAccessIntegrationTests({
 
       expect(equalityRes.status).toBe(200);
       expect(Array.isArray(equalityRes.json)).toBe(true);
-      expect(equalityRes.json.map((row) => row.id)).toEqual(['1', '2', '3']);
+      expect(equalityRes.json.map((row) => row.id)).toEqual([1, 2, 3]);
     } finally {
       await httpReq({
         method: 'DELETE',

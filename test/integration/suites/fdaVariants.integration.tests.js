@@ -221,9 +221,9 @@ export function registerFdaVariantsIntegrationTests({
       }
     });
 
-    test('POST /fdas with skipBootstrap=true does not create default DA even when defaultDataAccess=true', async () => {
+    test('POST /fdas with validationMode set to unchecked does not create default DA even when defaultDataAccess=true', async () => {
       const baseUrl = getBaseUrl();
-      const skipBootstrapFdaId = 'fda_skip_bootstrap';
+      const uncheckedModeFdaId = 'fda_unchecked_mode';
 
       try {
         const createFda = await httpReq({
@@ -234,11 +234,11 @@ export function registerFdaVariantsIntegrationTests({
             'Fiware-ServicePath': servicePath,
           },
           body: {
-            id: skipBootstrapFdaId,
+            id: uncheckedModeFdaId,
             query:
               'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
-            description: 'skip bootstrap integration test',
-            skipBootstrap: true,
+            description: 'unchecked mode integration test',
+            validationMode: 'unchecked',
             cached: true,
           },
         });
@@ -248,15 +248,145 @@ export function registerFdaVariantsIntegrationTests({
         const completedFDA = await waitUntilFDACompleted({
           baseUrl,
           service,
-          fdaId: skipBootstrapFdaId,
+          fdaId: uncheckedModeFdaId,
         });
 
         expect(completedFDA?.cached).toBe(true);
+        expect(completedFDA?.validationMode).toBe('unchecked');
+        expect(completedFDA?.schema).toBeUndefined();
         expect(completedFDA?.das || {}).toEqual({});
       } finally {
         await httpReq({
           method: 'DELETE',
-          url: `${baseUrl}/${visibility}/fdas/${skipBootstrapFdaId}`,
+          url: `${baseUrl}/${visibility}/fdas/${uncheckedModeFdaId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+      }
+    });
+
+    test('unchecked mode allows DA registration without compatibility validation', async () => {
+      const baseUrl = getBaseUrl();
+      const fdaUncheckedId = 'fda_unchecked_invalid_da';
+      const invalidDaId = 'da_unchecked_invalid';
+
+      try {
+        const createFda = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: fdaUncheckedId,
+            query:
+              'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+            description: 'unchecked mode DA registration test',
+            validationMode: 'unchecked',
+          },
+        });
+
+        expect(createFda.status).toBe(202);
+        await waitUntilFDACompleted({
+          baseUrl,
+          service,
+          fdaId: fdaUncheckedId,
+        });
+
+        const daRes = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas/${fdaUncheckedId}/das`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: invalidDaId,
+            description: 'invalid da allowed in unchecked mode',
+            query: 'SELECT not_existing_column ORDER BY id',
+          },
+        });
+
+        expect(daRes.status).toBe(200);
+
+        const executionRes = await httpReq({
+          method: 'GET',
+          url: `${baseUrl}/${visibility}/fdas/${fdaUncheckedId}/das/${invalidDaId}/data`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+
+        expect(executionRes.status).toBe(500);
+        expect(executionRes.json.error).toBe('DuckDBServerError');
+      } finally {
+        await httpReq({
+          method: 'DELETE',
+          url: `${baseUrl}/${visibility}/fdas/${fdaUncheckedId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+      }
+    });
+
+    test('strict mode rejects incompatible DA query during DA creation', async () => {
+      const baseUrl = getBaseUrl();
+      const strictFdaId = 'fda_strict_invalid_da';
+
+      try {
+        const createFda = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: strictFdaId,
+            query:
+              'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+            description: 'strict mode DA validation test',
+          },
+        });
+
+        expect(createFda.status).toBe(202);
+
+        const completedFDA = await waitUntilFDACompleted({
+          baseUrl,
+          service,
+          fdaId: strictFdaId,
+        });
+
+        expect(completedFDA.validationMode).toBe('strict');
+        expect(Array.isArray(completedFDA.schema)).toBe(true);
+        expect(completedFDA.schema.length).toBeGreaterThan(0);
+
+        const daRes = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas/${strictFdaId}/das`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: 'da_strict_invalid',
+            description: 'invalid da in strict mode',
+            query: 'SELECT not_existing_column ORDER BY id',
+          },
+        });
+
+        expect(daRes.status).toBe(400);
+        expect(daRes.json.error).toBe('InvalidDAQuery');
+      } finally {
+        await httpReq({
+          method: 'DELETE',
+          url: `${baseUrl}/${visibility}/fdas/${strictFdaId}`,
           headers: {
             'Fiware-Service': service,
             'Fiware-ServicePath': servicePath,

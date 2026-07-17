@@ -804,7 +804,7 @@ A FDA is represented by a JSON object with the following fields:
 | `timeColumn`                                             | ✓        | string        | Required with `refreshPolicy` of type `window` and `partition`. Column in the table indicating when the data was received (date).                                                          |
 | `cached`                                                 | ✓        | boolean       | If `false`, the FDA is created as only-fresh: no parquet snapshot is maintained, no DAs are allowed, and the FDA is queried through `GET /{visibility}/fdas/{fdaId}/data`. Default `true`. |
 | `datasourceId`                                           | ✓        | string        | Datasource id used to resolve DB credentials for this FDA. If omitted, FDA uses `default`.                                                                                                 |
-| `skipBootstrap`                                          | ✓        | boolean       | If `true`, skips synchronous bootstrap during creation (one-row parquet + default DA creation). First refresh job is still scheduled. Default `false`.                                     |
+| `validationMode`                                         | ✓        | string        | Controls synchronous validation during creation. Allowed values: `strict` and `unchecked`. Default `strict`.                                                                               |
 
 For MongoDB datasources, `query` is an object with the following keys:
 
@@ -884,7 +884,8 @@ These fields are **provided in responses** but **cannot be included or modified*
 | ----------- | -------- | ------ | --------------------------------------------------------------------------------------------- |
 | `status`    |          | string | Current FDA execution status (`fetching`, `transforming`, `uploading`, `completed`, `failed`) |
 | `progress`  |          | number | Execution progress percentage (0–100)                                                         |
-| `lastFetch` |          | string | Timestamp of the last fetch (ISO date format)                                                 |
+| `initFetch` |          | string | Timestamp of the current/last fetch start (ISO date format)                                   |
+| `lastFetch` |          | string | Timestamp of the last completed fetch (ISO date format)                                       |
 
 > Note: Including operational fields like `progress` or `status` in POST/PUT requests is ignored by the server. Requests
 > including these fields are rejected with `400 BadRequest`.
@@ -949,16 +950,23 @@ _**Example Response:**_
     {
         "id": "fda_alarms",
         "datasourceId": "default",
+        "validationMode": "strict",
         "query": "SELECT * FROM public.alarms",
         "das": {},
         "status": "completed",
         "progress": 100,
+        "initFetch": "2026-02-19T07:37:52.084Z",
         "lastFetch": "2026-02-19T07:38:21.263Z",
         "refreshPolicy": {
             "type": "interval",
             "params": { "refreshInterval": "1 hour" }
         },
-        "description": "FDA de alarmas del sistema"
+        "description": "FDA for system alarms",
+        "schema": [
+            { "name": "entityid", "type": "VARCHAR" },
+            { "name": "__SEVERITY__", "type": "VARCHAR" },
+            { "name": "created_at", "type": "TIMESTAMP" }
+        ]
     }
 ]
 ```
@@ -979,8 +987,8 @@ _**Request query parameters**_
 | ------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
 | `defaultDataAccess` | ✓        | Overrides the instance default and enables or disables automatic `defaultDataAccess` creation for this FDA. The default value is taken from `FDA_CREATE_DEFAULT_DATA_ACCESS`; if that env var is not set, the default is `true`. | `false` |
 
-When `skipBootstrap=true` is sent in the request body, it has priority during creation and initial `defaultDataAccess`
-generation is skipped even if this query parameter is enabled.
+When `validationMode` is set to `unchecked` in the request body, synchronous validation is skipped and initial
+`defaultDataAccess` generation is skipped even if this query parameter is enabled.
 
 _**Request headers**_
 
@@ -995,8 +1003,9 @@ _**Request payload**_
 The payload is a JSON object containing a FDA that follows the JSON FDA representation format (described in
 [FDA payload datamodel](#fda-payload-datamodel) section).
 
-`skipBootstrap=true` is useful for heavy queries where synchronous bootstrap could delay creation. In this mode FDA
-creation returns normally and first fetch is delegated to the background job.
+`validationMode` set to `unchecked` is useful for heavy queries where synchronous validation could delay creation. In this mode
+FDA creation returns normally, `defaultDataAccess` is not created automatically, and DA compatibility validation is
+skipped for that FDA.
 
 _**Example Request:**_
 
@@ -1047,7 +1056,7 @@ curl -i -X POST http://localhost:8080/public/fdas \
     }'
 ```
 
-_**Example Request with bootstrap skip:**_
+_**Example Request with unchecked validation mode:**_
 
 ```bash
 curl -i -X POST "http://localhost:8080/public/fdas?defaultDataAccess=true" \
@@ -1057,8 +1066,8 @@ curl -i -X POST "http://localhost:8080/public/fdas?defaultDataAccess=true" \
     -d '{
         "id": "fda_heavy_query",
         "query": "SELECT * FROM public.very_large_table",
-        "description": "Create without synchronous bootstrap",
-        "skipBootstrap": true,
+        "description": "Create without synchronous validation",
+        "validationMode": "unchecked",
         "cached": true
     }'
 ```
@@ -1179,12 +1188,19 @@ _**Example Response:**_
     "das": {},
     "status": "completed",
     "progress": 100,
+    "initFetch": "2026-02-19T07:37:52.084Z",
     "lastFetch": "2026-02-19T07:38:21.263Z",
     "refreshPolicy": {
         "type": "interval",
         "params": { "refreshInterval": "1 hour" }
     },
-    "description": "FDA de alarmas del sistema"
+    "description": "FDA for system alarms",
+    "validationMode": "strict",
+    "schema": [
+        { "name": "entityid", "type": "VARCHAR" },
+        { "name": "__SEVERITY__", "type": "VARCHAR" },
+        { "name": "created_at", "type": "TIMESTAMP" }
+    ]
 }
 ```
 

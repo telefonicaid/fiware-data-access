@@ -63,6 +63,24 @@ export function registerFdaLifecycleIntegrationTests({
 
   test('PUT /fdas/:fdaID reuploads FDA', async () => {
     const baseUrl = getBaseUrl();
+
+    const beforeRefresh = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    expect(beforeRefresh.status).toBe(200);
+    expect(typeof beforeRefresh.json.initFetch).toBe('string');
+    expect(typeof beforeRefresh.json.lastFetch).toBe('string');
+
+    const beforeInitFetchMs = Date.parse(beforeRefresh.json.initFetch);
+    const beforeLastFetchMs = Date.parse(beforeRefresh.json.lastFetch);
+
+    expect(Number.isNaN(beforeInitFetchMs)).toBe(false);
+    expect(Number.isNaN(beforeLastFetchMs)).toBe(false);
+    expect(beforeLastFetchMs).toBeGreaterThanOrEqual(beforeInitFetchMs);
+
     const res = await httpReq({
       method: 'PUT',
       url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
@@ -78,6 +96,24 @@ export function registerFdaLifecycleIntegrationTests({
     }
     expect(res.status).toBe(202);
     await waitUntilFDACompleted({ baseUrl, service, fdaId });
+
+    const afterRefresh = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    expect(afterRefresh.status).toBe(200);
+    expect(typeof afterRefresh.json.initFetch).toBe('string');
+    expect(typeof afterRefresh.json.lastFetch).toBe('string');
+
+    const afterInitFetchMs = Date.parse(afterRefresh.json.initFetch);
+    const afterLastFetchMs = Date.parse(afterRefresh.json.lastFetch);
+
+    expect(Number.isNaN(afterInitFetchMs)).toBe(false);
+    expect(Number.isNaN(afterLastFetchMs)).toBe(false);
+    expect(afterLastFetchMs).toBeGreaterThanOrEqual(afterInitFetchMs);
+    expect(afterInitFetchMs).toBeGreaterThanOrEqual(beforeLastFetchMs);
   });
 
   test('PUT /fdas/:fdaId triggers AlreadyFetching if concurrent', async () => {
@@ -205,7 +241,15 @@ export function registerFdaLifecycleIntegrationTests({
     expect(completedFDA.fdaId).toBeUndefined();
     expect(completedFDA.service).toBeUndefined();
     expect(completedFDA.servicePath).toBeUndefined();
+    expect(completedFDA.initFetch).toBeDefined();
+    expect(typeof completedFDA.initFetch).toBe('string');
     expect(completedFDA.lastFetch).toBeDefined();
     expect(typeof completedFDA.lastFetch).toBe('string');
+
+    const initFetchMs = Date.parse(completedFDA.initFetch);
+    const lastFetchMs = Date.parse(completedFDA.lastFetch);
+    expect(Number.isNaN(initFetchMs)).toBe(false);
+    expect(Number.isNaN(lastFetchMs)).toBe(false);
+    expect(lastFetchMs).toBeGreaterThanOrEqual(initFetchMs);
   });
 }

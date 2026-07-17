@@ -219,7 +219,7 @@ describe('db utils', () => {
     });
   });
 
-  test('runPreparedStatement returns empty rows when partitioned fallback has no files', async () => {
+  test('runPreparedStatement returns empty rows when schema fallback source also has no files', async () => {
     const { runPreparedStatement, runtimeConn } = await loadDbModule({
       retrieveDAResult: {
         query: 'SELECT id WHERE id = $id',
@@ -228,7 +228,7 @@ describe('db utils', () => {
     });
 
     retrieveFDAMock.mockResolvedValue({
-      objStgConf: { partition: 'day' },
+      schema: [{ name: 'id', type: 'INTEGER' }],
       servicePath: '/sp',
     });
 
@@ -251,7 +251,7 @@ describe('db utils', () => {
     expect(runtimeConn.prepare).toHaveBeenCalledTimes(2);
   });
 
-  test('runPreparedStatementStream returns empty stream when partitioned fallback has no files', async () => {
+  test('runPreparedStatementStream returns empty stream when schema fallback source has no files', async () => {
     const { runPreparedStatementStream, runtimeConn } = await loadDbModule({
       retrieveDAResult: {
         query: 'SELECT id WHERE id = $id',
@@ -260,7 +260,7 @@ describe('db utils', () => {
     });
 
     retrieveFDAMock.mockResolvedValue({
-      objStgConf: { partition: 'day' },
+      schema: [{ name: 'id', type: 'INTEGER' }],
       servicePath: '/sp',
     });
 
@@ -525,6 +525,26 @@ describe('db utils', () => {
       type: 'InvalidDAQuery',
       message: 'DA query is not compatible with FDA fdaA: parse failed',
     });
+  });
+
+  test('validateDAQuery validates against stored schema when available', async () => {
+    const { validateDAQuery, runtimeConn } = await loadDbModule();
+
+    retrieveFDAMock.mockResolvedValue({
+      schema: [{ name: 'id', type: 'INTEGER' }],
+    });
+
+    const stmt = {
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+    runtimeConn.prepare.mockResolvedValueOnce(stmt);
+
+    await validateDAQuery(runtimeConn, 'svc', 'fdaA', 'SELECT id', '/sp');
+
+    expect(runtimeConn.prepare).toHaveBeenCalledWith(
+      'FROM (SELECT CAST(NULL AS INTEGER) AS "id" LIMIT 0) AS fda_schema SELECT id',
+    );
+    expect(stmt.close).toHaveBeenCalledTimes(1);
   });
 
   test('resolveDAParams throws for unknown parameter types', async () => {

@@ -102,6 +102,32 @@ const DATA_ACCEPT_CONTENT_TYPE_TO_OUTPUT = {
 };
 
 const QUERY_STYLE_OUTPUT_TYPES = ['json', 'ndjson', 'csv', 'xls', 'cda'];
+const VALIDATION_MODES = ['strict', 'unchecked'];
+
+function parseValidationMode(value) {
+  if (value === undefined) {
+    return 'strict';
+  }
+
+  if (typeof value !== 'string') {
+    throw new FDAError(
+      400,
+      'BadRequest',
+      'Body field "validationMode" must be a string.',
+    );
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (!VALIDATION_MODES.includes(normalized)) {
+    throw new FDAError(
+      400,
+      'BadRequest',
+      `Body field "validationMode" must be one of: ${VALIDATION_MODES.join(', ')}.`,
+    );
+  }
+
+  return normalized;
+}
 
 function throwRequestStyleConflictIfMixed(hasHeaderContext, hasQueryContext) {
   if (hasHeaderContext && hasQueryContext) {
@@ -315,7 +341,7 @@ app.post('/:visibility/fdas', async (req, res) => {
     'objStgConf',
     'cached',
     'datasourceId',
-    'skipBootstrap',
+    'validationMode',
   ]);
   const {
     id,
@@ -326,7 +352,7 @@ app.post('/:visibility/fdas', async (req, res) => {
     objStgConf,
     cached,
     datasourceId,
-    skipBootstrap,
+    validationMode,
   } = body;
   const service = req.get('Fiware-Service');
   const servicePath = req.get('Fiware-ServicePath');
@@ -344,10 +370,7 @@ app.post('/:visibility/fdas', async (req, res) => {
     cached === undefined
       ? true
       : parseBooleanQueryParam(cached, 'cached', true);
-  const skipBootstrapEnabled =
-    skipBootstrap === undefined
-      ? false
-      : parseBooleanQueryParam(skipBootstrap, 'skipBootstrap', false);
+  const resolvedValidationMode = parseValidationMode(validationMode);
 
   if (!id || !query || !service || !servicePath || !visibility) {
     return res.status(400).json({
@@ -372,7 +395,7 @@ app.post('/:visibility/fdas', async (req, res) => {
     defaultDataAccessEnabled,
     cachedEnabled,
     datasourceId,
-    skipBootstrapEnabled,
+    resolvedValidationMode,
   );
 
   return res.status(202).json({

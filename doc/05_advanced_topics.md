@@ -54,8 +54,8 @@ use the `fiware-service` value as the _database_ name.
 
 FDA can automatically create a built-in DA named `defaultDataAccess` when a new FDA is created.
 
-When `skipBootstrap=true` is used during FDA creation, synchronous bootstrap is skipped and `defaultDataAccess` is not
-created at that moment, even if default DA creation is enabled.
+When `validationMode` is set to `unchecked` at FDA creation, synchronous validation is skipped and `defaultDataAccess`
+is not created at that moment, even if default DA creation is enabled.
 
 This topic covers:
 
@@ -71,8 +71,8 @@ Full documentation available at: [`Default Data Access`](/doc/AdvancedTopics/def
 
 ## FDA Execution Lifecycle
 
-Each `FDA` has **operational fields** (`status`, `progress`, `lastFetch`) that are **read-only** for clients and reflect
-its asynchronous processing state.
+Each `FDA` has **operational fields** (`status`, `progress`, `initFetch`, `lastFetch`) that are **read-only** for
+clients and reflect its asynchronous processing state.
 
 ### Status & Progress
 
@@ -86,7 +86,8 @@ its asynchronous processing state.
 
 ### Last Execution
 
-`lastFetch` records the timestamp of the last completed attempt in ISO format.
+`initFetch` records when the current/last fetch cycle started, and `lastFetch` records when the last successful cycle
+completed. The execution time for each cycle can be estimated as `lastFetch - initFetch`.
 
 ### Flow
 

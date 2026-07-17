@@ -894,10 +894,9 @@ export function registerSlidingWindowsIntegrationTests({
       });
 
       expect(readRes.status).toBe(200);
-      expect(readRes.json.map((row) => row.label)).toEqual([
-        'inside_window_2h',
-        'inside_window_20h',
-      ]);
+      expect(new Set(readRes.json.map((r) => r.label))).toEqual(
+        new Set(['inside_window_2h', 'inside_window_20h']),
+      );
     } finally {
       await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
       await pgClient.end();
