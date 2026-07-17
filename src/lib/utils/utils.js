@@ -220,7 +220,7 @@ export function processFetchSize(fetchSize) {
     throw new FDAError(
       400,
       'InvalidParam',
-      `Invalid amount in time size: "${amount}".`,
+      `Invalid amount in time size: "${fetchSize}".`,
     );
   }
   if (typeof unit !== 'string' || unit.trim() === '') {

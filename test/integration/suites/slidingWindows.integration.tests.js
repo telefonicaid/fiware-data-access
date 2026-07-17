@@ -587,7 +587,7 @@ export function registerSlidingWindowsIntegrationTests({
     expect(res.status).toBe(400);
     expect(res.json.error).toBe('InvalidParam');
     expect(res.json.description).toContain(
-      'Invalid amount in time size: "fake".',
+      'Invalid amount in time size: "fake windowsize".',
     );
   });
 
