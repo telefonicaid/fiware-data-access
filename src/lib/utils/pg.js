@@ -310,7 +310,7 @@ export async function validatePostgresQuery(
         throw new FDAError(
           400,
           'InvalidParam',
-          `Time column "${timeColumn}" is not present in the FDA query schema.`,
+          `Time column "${timeColumn}" is not present in the SELECT clause of the FDA query. `,
         );
       }
     }

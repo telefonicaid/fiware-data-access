@@ -993,7 +993,7 @@ export async function fetchFDA(
   const normalizedVisibility = normalizeVisibility(visibility);
   const normalizedServicePath = normalizeServicePath(servicePath);
   const datasource = await getDatasourceForService(service, datasourceId);
-  validateScheduledOptions(refreshPolicy, objStgConf);
+  validateScheduledOptions(refreshPolicy, objStgConf, timeColumn);
 
   if (datasource.type === 'mongodb') {
     validateMongoFDAContract(query, timeColumn, cached);
@@ -1200,6 +1200,17 @@ function validateScheduledOptions(refreshPolicy, objStgConf, timeColumn) {
 
   if (refreshPolicy.type === 'none') {
     return;
+  }
+
+  if (
+    (refreshPolicy?.type === 'window' || objStgConf?.partition) &&
+    !timeColumn
+  ) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      'timeColumn is required when using window refresh policy or partitioning.',
+    );
   }
 
   const { refreshInterval, fetchSize } = refreshPolicy.params || {};
