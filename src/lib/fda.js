@@ -71,6 +71,7 @@ import {
   updateDatasource,
   removeDatasource,
   countFDAsUsingDatasource,
+  updateFDA,
   validateMongoDatasourceConnection,
   readMongoDatasourceRows,
 } from './utils/mongo.js';
@@ -1299,8 +1300,32 @@ function validateScheduledOptions(refreshPolicy, objStgConf) {
   }
 }
 
-export async function updateFDA(service, fdaId, visibility, servicePath) {
+export async function putFDA(
+  service,
+  fdaId,
+  visibility,
+  servicePath,
+  query,
+  description,
+  refreshPolicy,
+  timeColumn,
+  objStgConf,
+  datasourceId,
+) {
   const normalizedServicePath = normalizeServicePath(servicePath);
+
+  await updateFDA(
+    service,
+    fdaId,
+    servicePath,
+    query,
+    description,
+    refreshPolicy,
+    timeColumn,
+    objStgConf,
+    datasourceId,
+  );
+
   const fda =
     visibility !== undefined
       ? await getAccessibleFDA(service, fdaId, visibility, servicePath)
