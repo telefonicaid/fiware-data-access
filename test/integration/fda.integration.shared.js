@@ -413,6 +413,16 @@ export function runFDAIntegrationSuite({ mode, label }) {
       buildFdaDataUrl,
     });
 
+    registerFdaTimeColumnIntegrationTests({
+      getBaseUrl: () => baseUrl,
+      service,
+      servicePath,
+      visibility,
+      httpReq,
+      waitUntilFDACompleted,
+      buildFdaDataUrl,
+    });
+
     registerDaCrudIntegrationTests({
       getBaseUrl: () => baseUrl,
       service,
