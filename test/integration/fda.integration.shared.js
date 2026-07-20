@@ -421,7 +421,6 @@ export function runFDAIntegrationSuite({ mode, label }) {
       visibility,
       httpReq,
       waitUntilFDACompleted,
-      buildFdaDataUrl,
     });
 
     registerDaCrudIntegrationTests({

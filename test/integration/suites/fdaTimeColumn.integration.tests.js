@@ -31,7 +31,6 @@ export function registerFdaTimeColumnIntegrationTests({
   visibility,
   httpReq,
   waitUntilFDACompleted,
-  buildFdaDataUrl,
 }) {
   describe('Time column validation in strict mode', () => {
     test('POST /fdas with timeColumn in SELECT (unqualified) succeeds', async () => {
