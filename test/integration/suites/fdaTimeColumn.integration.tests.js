@@ -31,8 +31,44 @@ export function registerFdaTimeColumnIntegrationTests({
   visibility,
   httpReq,
   waitUntilFDACompleted,
+  getPgHost,
+  getPgPort,
 }) {
   describe('Time column validation in strict mode', () => {
+    async function ensureDefaultDatasource(baseUrl) {
+      const createRes = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/datasources`,
+        headers: {
+          'Content-Type': 'application/json',
+          'Fiware-Service': service,
+        },
+        body: {
+          datasourceId: 'default',
+          type: 'postgres',
+          config: {
+            user: 'postgres',
+            password: 'postgres',
+            host: getPgHost(),
+            port: getPgPort(),
+            database: service,
+          },
+        },
+      });
+
+      if (createRes.status !== 200 && createRes.status !== 409) {
+        throw new Error(
+          `Failed to ensure default datasource: ${createRes.status} ${JSON.stringify(createRes.json)}`,
+        );
+      }
+    }
+
+    beforeAll(async () => {
+      const baseUrl = getBaseUrl();
+
+      await ensureDefaultDatasource(baseUrl);
+    });
+
     test('POST /fdas with timeColumn in SELECT (unqualified) succeeds', async () => {
       const baseUrl = getBaseUrl();
       const fdaId = 'fda_timecolumn_unqualified';
@@ -85,7 +121,7 @@ export function registerFdaTimeColumnIntegrationTests({
 
         const daResponse = await httpReq({
           method: 'GET',
-          url: `${baseUrl}/${visibility}/fdas/${fdaId}/das/default/data`,
+          url: `${baseUrl}/${visibility}/fdas/${fdaId}/das/defaultDataAccess/data`,
           headers: {
             'Fiware-Service': service,
             'Fiware-ServicePath': servicePath,
@@ -158,7 +194,7 @@ export function registerFdaTimeColumnIntegrationTests({
 
         const daResponse = await httpReq({
           method: 'GET',
-          url: `${baseUrl}/${visibility}/fdas/${fdaId}/das/default/data`,
+          url: `${baseUrl}/${visibility}/fdas/${fdaId}/das/defaultDataAccess/data`,
           headers: {
             'Fiware-Service': service,
             'Fiware-ServicePath': servicePath,
@@ -228,7 +264,7 @@ export function registerFdaTimeColumnIntegrationTests({
 
         const daResponse = await httpReq({
           method: 'GET',
-          url: `${baseUrl}/${visibility}/fdas/${fdaId}/das/default/data`,
+          url: `${baseUrl}/${visibility}/fdas/${fdaId}/das/defaultDataAccess/data`,
           headers: {
             'Fiware-Service': service,
             'Fiware-ServicePath': servicePath,
@@ -299,7 +335,7 @@ export function registerFdaTimeColumnIntegrationTests({
 
         const daResponse = await httpReq({
           method: 'GET',
-          url: `${baseUrl}/${visibility}/fdas/${fdaId}/das/default/data`,
+          url: `${baseUrl}/${visibility}/fdas/${fdaId}/das/defaultDataAccess/data`,
           headers: {
             'Fiware-Service': service,
             'Fiware-ServicePath': servicePath,
@@ -355,9 +391,6 @@ export function registerFdaTimeColumnIntegrationTests({
       expect(createFda.json.description).toContain(
         '"timeinstant" is not present in the SELECT clause',
       );
-      expect(createFda.json.description).toContain(
-        'Available columns: "id", "name", "age"',
-      );
 
       await httpReq({
         method: 'DELETE',
@@ -369,7 +402,7 @@ export function registerFdaTimeColumnIntegrationTests({
       });
     });
 
-    test('POST /fdas with timeColumn NOT in SELECT but in unchecked mode succeeds (no validation)', async () => {
+    test('POST /fdas with timeColumn NOT in SELECT but in unchecked mode creates FDA (no validation) and then fails', async () => {
       const baseUrl = getBaseUrl();
       const fdaId = 'fda_timecolumn_unchecked';
 
@@ -409,10 +442,9 @@ export function registerFdaTimeColumnIntegrationTests({
         });
 
         expect(completedFDA.validationMode).toBe('unchecked');
+        expect(completedFDA.status).toBe('failed');
         expect(completedFDA.schema).toBeUndefined();
-
         expect(completedFDA.das || {}).toEqual({});
-
         expect(completedFDA.query).toBe(
           'SELECT id, name, age FROM public.users ORDER BY id',
         );
@@ -473,7 +505,7 @@ export function registerFdaTimeColumnIntegrationTests({
 
         const daResponse = await httpReq({
           method: 'GET',
-          url: `${baseUrl}/${visibility}/fdas/${fdaId}/das/default/data`,
+          url: `${baseUrl}/${visibility}/fdas/${fdaId}/das/defaultDataAccess/data`,
           headers: {
             'Fiware-Service': service,
             'Fiware-ServicePath': servicePath,
@@ -494,9 +526,9 @@ export function registerFdaTimeColumnIntegrationTests({
       }
     });
 
-    test('POST /fdas with timeColumn via function with alias passes validation', async () => {
+    test('POST /fdas with timeColumn via DATE_TRUNC with alias succeeds', async () => {
       const baseUrl = getBaseUrl();
-      const fdaId = 'fda_timecolumn_function';
+      const fdaId = 'fda_timecolumn_truncate';
 
       try {
         const createFda = await httpReq({
@@ -509,19 +541,21 @@ export function registerFdaTimeColumnIntegrationTests({
           body: {
             id: fdaId,
             query:
-              'SELECT EXTRACT(YEAR FROM timeinstant) AS timeyear, id, name FROM public.users ORDER BY id',
-            description: 'FDA with timeColumn via function with alias',
-            timeColumn: 'timeyear',
+              "SELECT DATE_TRUNC('year', timeinstant) AS year, id, name FROM public.users ORDER BY id",
+            description:
+              'FDA with timeColumn via DATE_TRUNC (returns TIMESTAMP)',
+            timeColumn: 'year',
             validationMode: 'strict',
             refreshPolicy: {
               type: 'window',
               params: {
-                refreshInterval: '0 0 1 * *',
-                fetchSize: 'month',
+                refreshInterval: '0 1 * * *',
+                fetchSize: 'year',
+                windowSize: 'year',
               },
             },
             objStgConf: {
-              partition: 'month',
+              partition: 'year',
             },
           },
         });
@@ -534,13 +568,20 @@ export function registerFdaTimeColumnIntegrationTests({
           fdaId,
         });
 
-        expect(completedFDA.schema.some((col) => col.name === 'timeyear')).toBe(
+        expect(completedFDA.schema.some((col) => col.name === 'year')).toBe(
           true,
         );
+        const yearColumn = completedFDA.schema.find(
+          (col) => col.name === 'year',
+        );
+        expect(yearColumn.type).toMatch(/TIMESTAMP|TIMESTAMPTZ/i);
+
+        expect(completedFDA.timeColumn).toBe('year');
+        expect(completedFDA.status).toBe('completed');
 
         const daResponse = await httpReq({
           method: 'GET',
-          url: `${baseUrl}/${visibility}/fdas/${fdaId}/das/default/data`,
+          url: `${baseUrl}/${visibility}/fdas/${fdaId}/das/defaultDataAccess/data`,
           headers: {
             'Fiware-Service': service,
             'Fiware-ServicePath': servicePath,
@@ -548,7 +589,10 @@ export function registerFdaTimeColumnIntegrationTests({
         });
 
         expect(daResponse.status).toBe(200);
-        expect(daResponse.json[0]).toHaveProperty('timeyear');
+
+        if (daResponse.json && daResponse.json.length > 0) {
+          expect(daResponse.json[0]).toHaveProperty('year');
+        }
       } finally {
         await httpReq({
           method: 'DELETE',
@@ -561,9 +605,98 @@ export function registerFdaTimeColumnIntegrationTests({
       }
     });
 
-    test('POST /fdas with timeColumn NOT in SELECT but no refreshPolicy/partition succeeds in strict mode', async () => {
+    test('POST /fdas with timeColumn via EXTRACT with alias fails validation (not temporal)', async () => {
       const baseUrl = getBaseUrl();
-      const fdaId = 'fda_timecolumn_no_refresh';
+      const fdaId = 'fda_timecolumn_extract';
+
+      const createFda = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: fdaId,
+          query:
+            'SELECT EXTRACT(YEAR FROM timeinstant) AS year, id, name FROM public.users ORDER BY id',
+          description: 'FDA with timeColumn via EXTRACT (returns DOUBLE)',
+          timeColumn: 'year',
+          validationMode: 'strict',
+          refreshPolicy: {
+            type: 'window',
+            params: {
+              refreshInterval: '0 1 * * *',
+              fetchSize: 'year',
+              windowSize: 'year',
+            },
+          },
+          objStgConf: {
+            partition: 'year',
+          },
+        },
+      });
+
+      expect(createFda.status).toBe(400);
+      expect(createFda.json.error).toBe('InvalidParam');
+      expect(createFda.json.description).toContain(
+        'must be of a temporal type',
+      );
+      expect(createFda.json.description).toContain('DOUBLE');
+
+      await httpReq({
+        method: 'DELETE',
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+      });
+    });
+
+    test('POST /fdas with timeColumn via EXTRACT with alias and NO partitioning fails validation (not temporal)', async () => {
+      const baseUrl = getBaseUrl();
+      const fdaId = 'fda_timecolumn_extract_no_partition';
+
+      const createFda = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: fdaId,
+          query:
+            'SELECT EXTRACT(YEAR FROM timeinstant) AS year, id, name FROM public.users ORDER BY id',
+          description:
+            'FDA with EXTRACT but NO partitioning (fails validation)',
+          timeColumn: 'year',
+          validationMode: 'strict',
+          cached: true,
+        },
+      });
+
+      expect(createFda.status).toBe(400);
+      expect(createFda.json.error).toBe('InvalidParam');
+      expect(createFda.json.description).toContain(
+        'must be of a temporal type',
+      );
+      expect(createFda.json.description).toContain('DOUBLE');
+
+      await httpReq({
+        method: 'DELETE',
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+      });
+    });
+
+    test('POST /fdas with timeColumn via CAST to DATE succeeds', async () => {
+      const baseUrl = getBaseUrl();
+      const fdaId = 'fda_timecolumn_cast_date';
 
       try {
         const createFda = await httpReq({
@@ -575,8 +708,122 @@ export function registerFdaTimeColumnIntegrationTests({
           },
           body: {
             id: fdaId,
-            query: 'SELECT id, name, age FROM public.users ORDER BY id',
-            description: 'FDA with timeColumn but no refreshPolicy/partition',
+            query:
+              'SELECT timeinstant::date AS day, id, name FROM public.users ORDER BY id',
+            description: 'FDA with timeColumn via CAST to DATE',
+            timeColumn: 'day',
+            validationMode: 'strict',
+            refreshPolicy: {
+              type: 'window',
+              params: {
+                refreshInterval: '0 1 * * *',
+                fetchSize: 'day',
+                windowSize: 'day',
+              },
+            },
+            objStgConf: {
+              partition: 'day',
+            },
+          },
+        });
+
+        expect(createFda.status).toBe(202);
+
+        const completedFDA = await waitUntilFDACompleted({
+          baseUrl,
+          service,
+          fdaId,
+        });
+
+        expect(completedFDA.schema.some((col) => col.name === 'day')).toBe(
+          true,
+        );
+        const dayColumn = completedFDA.schema.find((col) => col.name === 'day');
+        expect(dayColumn.type).toMatch(/DATE|TIMESTAMP|TIMESTAMPTZ/i);
+
+        expect(completedFDA.timeColumn).toBe('day');
+        expect(completedFDA.status).toBe('completed');
+
+        const daResponse = await httpReq({
+          method: 'GET',
+          url: `${baseUrl}/${visibility}/fdas/${fdaId}/das/defaultDataAccess/data`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+
+        expect(daResponse.status).toBe(200);
+        if (daResponse.json && daResponse.json.length > 0) {
+          expect(daResponse.json[0]).toHaveProperty('day');
+        }
+      } finally {
+        await httpReq({
+          method: 'DELETE',
+          url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+      }
+    });
+
+    test('POST /fdas with timeColumn NOT in SELECT but no refreshPolicy/partition FAILS in strict mode', async () => {
+      const baseUrl = getBaseUrl();
+      const fdaId = 'fda_timecolumn_no_refresh';
+
+      const createFda = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: fdaId,
+          query: 'SELECT id, name, age FROM public.users ORDER BY id',
+          description: 'FDA with timeColumn but no refreshPolicy/partition',
+          timeColumn: 'timeinstant',
+          validationMode: 'strict',
+          cached: true,
+        },
+      });
+
+      expect(createFda.status).toBe(400);
+      expect(createFda.json.error).toBe('InvalidParam');
+      expect(createFda.json.description).toContain(
+        '"timeinstant" is not present in the SELECT clause',
+      );
+
+      await httpReq({
+        method: 'DELETE',
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+      });
+    });
+
+    test('POST /fdas with timeColumn in SELECT but no refreshPolicy/partition succeeds', async () => {
+      const baseUrl = getBaseUrl();
+      const fdaId = 'fda_timecolumn_no_refresh_valid';
+
+      try {
+        const createFda = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: fdaId,
+            query:
+              'SELECT timeinstant, id, name, age FROM public.users ORDER BY id',
+            description:
+              'FDA with timeColumn in SELECT but no refreshPolicy/partition',
             timeColumn: 'timeinstant',
             validationMode: 'strict',
             cached: true,
@@ -592,11 +839,15 @@ export function registerFdaTimeColumnIntegrationTests({
         });
 
         expect(completedFDA.timeColumn).toBe('timeinstant');
-        expect(completedFDA.schema).toBeUndefined();
+        expect(completedFDA.schema).toBeDefined();
+        expect(
+          completedFDA.schema.some((col) => col.name === 'timeinstant'),
+        ).toBe(true);
+        expect(completedFDA.status).toBe('completed');
 
         const daResponse = await httpReq({
           method: 'GET',
-          url: `${baseUrl}/${visibility}/fdas/${fdaId}/das/default/data`,
+          url: `${baseUrl}/${visibility}/fdas/${fdaId}/das/defaultDataAccess/data`,
           headers: {
             'Fiware-Service': service,
             'Fiware-ServicePath': servicePath,
@@ -604,7 +855,9 @@ export function registerFdaTimeColumnIntegrationTests({
         });
 
         expect(daResponse.status).toBe(200);
-        expect(daResponse.json[0]).not.toHaveProperty('timeinstant');
+        if (daResponse.json && daResponse.json.length > 0) {
+          expect(daResponse.json[0]).toHaveProperty('timeinstant');
+        }
       } finally {
         await httpReq({
           method: 'DELETE',

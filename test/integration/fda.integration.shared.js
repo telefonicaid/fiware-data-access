@@ -421,6 +421,8 @@ export function runFDAIntegrationSuite({ mode, label }) {
       visibility,
       httpReq,
       waitUntilFDACompleted,
+      getPgHost: () => pgHost,
+      getPgPort: () => pgPort,
     });
 
     registerDaCrudIntegrationTests({

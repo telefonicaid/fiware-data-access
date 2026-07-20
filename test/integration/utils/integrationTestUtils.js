@@ -303,7 +303,7 @@ export async function waitUntilFDACompleted({
         error: res.json.error,
       };
 
-      if (res.json.status === 'completed') {
+      if (res.json.status === 'completed' || res.json.status === 'failed') {
         return res.json;
       }
 
