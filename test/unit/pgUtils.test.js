@@ -216,7 +216,10 @@ describe('pg utils', () => {
 
   test('validatePostgresQuery validates a query and allows a declared timeColumn', async () => {
     currentClient.query.mockResolvedValue({
-      fields: [{ name: 'id' }, { name: 'timeinstant' }],
+      fields: [
+        { name: 'id', dataTypeID: 23, duckdbType: 'INTEGER' },
+        { name: 'timeinstant', dataTypeID: 1184, duckdbType: 'TIMESTAMPTZ' },
+      ],
     });
 
     const creds = {

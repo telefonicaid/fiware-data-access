@@ -308,7 +308,7 @@ export async function validatePostgresQuery(
   try {
     const result = await pgClient.query(validationQuery);
     const schemaInfo = buildPostgresSchemaInfo(result);
-    const { columns, fields } = schemaInfo;
+    const { fields } = schemaInfo;
 
     if (typeof timeColumn === 'string' && timeColumn.length > 0) {
       const columnInfo = fields.find(
