@@ -80,6 +80,7 @@ import {
   assertFreshQueriesEnabled,
   acquireFreshQuerySlot,
   convertRefreshIntervalToMs,
+  processFetchSize,
 } from './utils/utils.js';
 import {
   buildFDAJobFilter,
@@ -1238,16 +1239,15 @@ function validateScheduledOptions(refreshPolicy, objStgConf, timeColumn) {
     );
   }
 
-  if (
-    refreshPolicy.type === 'window' &&
-    fetchSize &&
-    !VALID_WINDOW_FETCH_SIZES.includes(fetchSize)
-  ) {
-    throw new FDAError(
-      400,
-      'InvalidParam',
-      `Invalid fetchSize "${fetchSize}".`,
-    );
+  if (refreshPolicy.type === 'window' && fetchSize) {
+    const { unit } = processFetchSize(fetchSize);
+    if (!VALID_WINDOW_FETCH_SIZES.includes(unit)) {
+      throw new FDAError(
+        400,
+        'InvalidParam',
+        `Invalid fetchSize "${fetchSize}".`,
+      );
+    }
   }
 
   if (
@@ -1262,15 +1262,15 @@ function validateScheduledOptions(refreshPolicy, objStgConf, timeColumn) {
     );
   }
 
-  if (
-    refreshPolicy.params?.windowSize &&
-    !getWindowDate(refreshPolicy.params.windowSize)
-  ) {
-    throw new FDAError(
-      400,
-      'InvalidParam',
-      `Invalid windowSize "${refreshPolicy.params.windowSize}".`,
-    );
+  if (refreshPolicy.params?.windowSize) {
+    const { unit } = processFetchSize(refreshPolicy.params.windowSize);
+    if (!getWindowDate(unit)) {
+      throw new FDAError(
+        400,
+        'InvalidParam',
+        `Invalid windowSize "${refreshPolicy.params.windowSize}".`,
+      );
+    }
   }
 
   if (
@@ -1415,44 +1415,49 @@ export async function processFDAAsync(
 
 function getPreviousWindowStartDate(fetchSize) {
   const now = new Date();
+  const { amount, unit } = processFetchSize(fetchSize);
 
-  switch (fetchSize) {
+  switch (unit) {
     case 'hour': {
       const d = new Date(now);
-      d.setUTCHours(d.getUTCHours() - 1, 0, 0, 0);
+      d.setUTCHours(d.getUTCHours() - amount, 0, 0, 0);
       return d.toISOString();
     }
 
     case 'day': {
       const d = new Date(now);
-      d.setUTCDate(d.getUTCDate() - 1);
+      d.setUTCDate(d.getUTCDate() - amount);
       d.setUTCHours(0, 0, 0, 0);
       return d.toISOString();
     }
 
     case 'week': {
       const d = new Date(now);
-      d.setUTCDate(d.getUTCDate() - 7);
+      d.setUTCDate(d.getUTCDate() - 7 * amount);
       d.setUTCHours(0, 0, 0, 0);
       return d.toISOString();
     }
 
     case 'month': {
       const d = new Date(now);
-      d.setUTCMonth(d.getUTCMonth() - 1);
+      d.setUTCMonth(d.getUTCMonth() - amount);
       d.setUTCHours(0, 0, 0, 0);
       return d.toISOString();
     }
 
     case 'year': {
       const d = new Date(now);
-      d.setUTCFullYear(d.getUTCFullYear() - 1);
+      d.setUTCFullYear(d.getUTCFullYear() - amount);
       d.setUTCHours(0, 0, 0, 0);
       return d.toISOString();
     }
 
     default:
-      throw new FDAError(400, 'InvalidParam', `Missing param fetchSize.`);
+      throw new FDAError(
+        400,
+        'InvalidParam',
+        `Invalid unit in window param: ${fetchSize}.`,
+      );
   }
 }
 
@@ -1692,7 +1697,7 @@ export async function cleanPartition(
     );
   }
 
-  const cutoff = getWindowDate(windowSize);
+  const cutoff = new Date(getPreviousWindowStartDate(windowSize));
   if (!cutoff) {
     /* c8 ignore next 5 */
     throw new FDAError(
@@ -1780,7 +1785,7 @@ async function uploadTableToObjStg(
     // DuckDB cant overwrite files in Minio, so for partitioned files we upload them in a tmp file and the move them
     // This includes first upload because the one row parquet is also partitioned
     const parquetPath = objStgConf?.partition
-      ? getPath(bucket, 'tmp/' + path, '.parquet')
+      ? getPath(bucket, 'tmp/' + path, '')
       : getPath(bucket, path, '.parquet');
 
     const csvPath = getPath(bucket, path, '.csv');
@@ -1805,11 +1810,7 @@ async function uploadTableToObjStg(
     }
 
     if (objStgConf?.partition) {
-      const objectsList = await listObjects(
-        s3Client,
-        bucket,
-        `tmp/${path}.parquet`,
-      );
+      const objectsList = await listObjects(s3Client, bucket, `tmp/${path}/`);
       const hasRealPartitionedParquet = objectsList.some((key) =>
         key.endsWith('.parquet'),
       );
@@ -1827,7 +1828,7 @@ async function uploadTableToObjStg(
         await dropFile(
           s3Client,
           bucket,
-          `${path}.parquet/${getSchemaPartitionPath(objStgConf.partition)}/schema.parquet`,
+          `${path}/${getSchemaPartitionPath(objStgConf.partition)}/schema.parquet`,
         );
       }
     }

@@ -2805,6 +2805,7 @@ describe('DA access and update helpers', () => {
   });
 });
 
+//
 describe('fetchFDA with refresh policies', () => {
   const agenda = {
     now: jest.fn(),
@@ -2893,6 +2894,72 @@ describe('fetchFDA with refresh policies', () => {
         params: { refreshInterval: '0 0 * * *', fetchSize: 'week' },
       },
       'timeinstant',
+    );
+
+    const refreshJob = agenda.create.mock.results[0].value;
+    expect(refreshJob.unique).toHaveBeenCalledWith({
+      name: 'refresh-fda-recurring',
+      'data.service': 'svc',
+      'data.fdaId': 'fda1',
+      'data.servicePath': '/servicepath',
+    });
+    expect(refreshJob.repeatEvery).toHaveBeenCalledWith('0 0 * * *', {
+      skipImmediate: true,
+    });
+    expect(refreshJob.save).toHaveBeenCalled();
+  });
+
+  test('fetchFDA with compound fetchSize in window refresh policy schedules job', async () => {
+    await fetchFDA(
+      'fda1',
+      'SELECT 1',
+      'svc',
+      'public',
+      '/servicepath',
+      'desc',
+      {
+        type: 'window',
+        params: {
+          refreshInterval: '0 0 * * *',
+          fetchSize: '2 weeks',
+        },
+      },
+      'timeinstant',
+    );
+
+    const refreshJob = agenda.create.mock.results[0].value;
+    expect(refreshJob.unique).toHaveBeenCalledWith({
+      name: 'refresh-fda-recurring',
+      'data.service': 'svc',
+      'data.fdaId': 'fda1',
+      'data.servicePath': '/servicepath',
+    });
+    expect(refreshJob.repeatEvery).toHaveBeenCalledWith('0 0 * * *', {
+      skipImmediate: true,
+    });
+    expect(refreshJob.save).toHaveBeenCalled();
+  });
+
+  test('fetchFDA with compound windowSize in window refresh policy schedules job', async () => {
+    await fetchFDA(
+      'fda1',
+      'SELECT 1',
+      'svc',
+      'public',
+      '/servicepath',
+      'desc',
+      {
+        type: 'window',
+        params: {
+          refreshInterval: '0 0 * * *',
+          fetchSize: 'day',
+          windowSize: '3 months',
+        },
+      },
+      'timeinstant',
+      {
+        partition: 'day',
+      },
     );
 
     const refreshJob = agenda.create.mock.results[0].value;
@@ -3127,6 +3194,37 @@ describe('fetchFDA with refresh policies', () => {
       status: 400,
       type: 'InvalidParam',
     });
+  });
+
+  test('fetchFDA rejects invalid refresh policy params', async () => {
+    await expect(
+      fetchFDA(
+        'fda1',
+        'SELECT 1',
+        'svc',
+        'public',
+        '/servicepath',
+        'desc',
+        {
+          type: 'window',
+          params: {
+            refreshInterval: '1 hour',
+            fetchSize: 'day',
+            windowSize: 'fakeWindowSize',
+          },
+        },
+        'timeinstant',
+        {
+          partition: 'day',
+        },
+      ),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidParam',
+      message: 'Invalid windowSize "fakeWindowSize".',
+    });
+
+    expect(agenda.create).not.toHaveBeenCalled();
   });
 });
 
@@ -3441,8 +3539,8 @@ describe('cleanPartition', () => {
       );
     } catch (err) {
       expect(err).toBeInstanceOf(FDAError);
-      expect(err.message).toContain('Incorrect window size in refresh policy');
-      expect(err.type).toContain('CleaningError');
+      expect(err.message).toContain('Invalid unit in window param');
+      expect(err.type).toContain('InvalidParam');
       expect(err.status).toBe(400);
     }
   });

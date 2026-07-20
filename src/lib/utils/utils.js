@@ -197,6 +197,44 @@ export function getWindowDate(windowSize) {
   return map[windowSize] ? now : undefined;
 }
 
+export function processFetchSize(fetchSize) {
+  const timeSize = fetchSize.split(' ');
+
+  let unit;
+  let amount;
+  if (timeSize.length > 2 || timeSize.length === 0) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Invalid time size: "${timeSize}".`,
+    );
+  } else if (timeSize.length === 1) {
+    amount = 1;
+    unit = timeSize[0];
+  } else {
+    amount = Number(timeSize[0]);
+    unit = timeSize[1];
+  }
+
+  if (!Number.isInteger(amount)) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Invalid amount in time size: "${fetchSize}".`,
+    );
+  }
+  if (typeof unit !== 'string' || unit.trim() === '') {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Invalid unit in time size: "${unit}".`,
+    );
+  }
+
+  unit = unit.toLowerCase().replace(/s$/, '');
+  return { unit, amount };
+}
+
 export function convertRefreshIntervalToMs(interval) {
   if (!interval || typeof interval !== 'string' || !interval.trim()) {
     return null;

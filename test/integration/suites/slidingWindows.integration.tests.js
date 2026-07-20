@@ -554,6 +554,43 @@ export function registerSlidingWindowsIntegrationTests({
     expect(res.json.description).toContain('windowSize');
   });
 
+  test('POST /fdas rejects invalid windowSize in refresh interval', async () => {
+    const baseUrl = getBaseUrl();
+
+    const res = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/${visibility}/fdas`,
+      headers: {
+        'Fiware-Service': service,
+        'Fiware-ServicePath': servicePath,
+      },
+      body: {
+        id: 'fda_sw_invalid_interval',
+        query:
+          'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+        description: 'invalid refresh interval format test',
+        refreshPolicy: {
+          type: 'interval',
+          params: {
+            refreshInterval: '0 2 * * *',
+            fetchSize: 'day',
+            windowSize: 'fake windowsize',
+          },
+        },
+        timeColumn: 'timeinstant',
+        objStgConf: {
+          partition: 'day',
+        },
+      },
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.json.error).toBe('InvalidParam');
+    expect(res.json.description).toContain(
+      'Invalid amount in time size: "fake windowsize".',
+    );
+  });
+
   test('POST /fdas sliding window FDA makes first fetch using windowSize', async () => {
     const baseUrl = getBaseUrl();
     const suffix = `${Date.now()}`;
@@ -626,6 +663,85 @@ export function registerSlidingWindowsIntegrationTests({
       expect(readRes.status).toBe(200);
       expect(readRes.json.map((row) => row.label)).toEqual([
         'inside_week_window',
+      ]);
+    } finally {
+      await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
+      await pgClient.end();
+    }
+  });
+
+  test('POST /fdas sliding window FDA makes first fetch using compound windowSize', async () => {
+    const baseUrl = getBaseUrl();
+    const suffix = `${Date.now()}`;
+    const fixtureTable = `sw_hour_fixture_${suffix}`;
+    const fdaId = `fda_sw_hour_${suffix}`;
+
+    const pgClient = createPgClient();
+    await pgClient.connect();
+
+    try {
+      await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
+      await pgClient.query(`
+        CREATE TABLE public.${fixtureTable} (
+          id INT PRIMARY KEY,
+          label TEXT NOT NULL,
+          observed_at TIMESTAMPTZ NOT NULL
+        )
+      `);
+
+      await pgClient.query(`
+        INSERT INTO public.${fixtureTable} (id, label, observed_at)
+        VALUES
+          (1, 'outside_3week_window', date_trunc('week', NOW()) - INTERVAL '5 weeks'),
+          (2, 'inside_3week_window', date_trunc('hour', NOW()) - INTERVAL '15 minutes')
+      `);
+
+      const createFda = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: fdaId,
+          query: `
+            SELECT id, label, observed_at
+            FROM public.${fixtureTable}
+            ORDER BY id
+          `,
+          description: 'daily sliding window test',
+          refreshPolicy: {
+            type: 'window',
+            params: {
+              refreshInterval: '1 hour',
+              fetchSize: 'day',
+              windowSize: '3 weeks',
+            },
+          },
+          objStgConf: {
+            partition: 'day',
+          },
+          timeColumn: 'observed_at',
+        },
+      });
+
+      expect(createFda.status).toBe(202);
+
+      await waitUntilFDACompleted({ baseUrl, service, fdaId });
+
+      const readRes = await httpReq({
+        method: 'GET',
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, 'defaultDataAccess', {
+          pageSize: 100,
+          pageStart: 0,
+        }),
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect(readRes.status).toBe(200);
+      expect(readRes.json.map((row) => row.label)).toEqual([
+        'inside_3week_window',
       ]);
     } finally {
       await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);

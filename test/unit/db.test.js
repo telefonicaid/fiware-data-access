@@ -392,7 +392,7 @@ describe('db utils', () => {
     );
 
     expect(result).toBe(
-      "FROM read_parquet('s3://my-service/servicepath/fdaA.parquet/**/*.parquet') SELECT * WHERE id = $1",
+      "FROM read_parquet('s3://my-service/servicepath/fdaA/**/*.parquet') SELECT * WHERE id = $1",
     );
   });
 
