@@ -283,6 +283,15 @@ export async function runPgQuery(pgCredentials, text, values) {
   }
 }
 
+const TEMPORAL_TYPES = new Set([
+  'TIMESTAMP',
+  'TIMESTAMPTZ',
+  'DATE',
+  'TIME',
+  'TIMESTAMP WITHOUT TIME ZONE',
+  'TIMESTAMP WITH TIME ZONE',
+]);
+
 export async function validatePostgresQuery(
   pgCredentials,
   query,
@@ -299,18 +308,27 @@ export async function validatePostgresQuery(
   try {
     const result = await pgClient.query(validationQuery);
     const schemaInfo = buildPostgresSchemaInfo(result);
-    const columns = schemaInfo.columns;
+    const { fields } = schemaInfo;
 
     if (typeof timeColumn === 'string' && timeColumn.length > 0) {
-      const hasTimeColumn = columns.some(
-        (field) => field.toLowerCase() === timeColumn.toLowerCase(),
+      const columnInfo = fields.find(
+        (field) => field.name.toLowerCase() === timeColumn.toLowerCase(),
       );
 
-      if (!hasTimeColumn) {
+      if (!columnInfo) {
         throw new FDAError(
           400,
           'InvalidParam',
-          `Time column "${timeColumn}" is not present in the FDA query schema.`,
+          `Time column "${timeColumn}" is not present in the SELECT clause of the FDA query. `,
+        );
+      }
+
+      if (!TEMPORAL_TYPES.has(columnInfo.duckdbType.toUpperCase())) {
+        throw new FDAError(
+          400,
+          'InvalidParam',
+          `Time column "${timeColumn}" must be of a temporal type (TIMESTAMP, TIMESTAMPTZ, DATE or TIME). ` +
+            `Got "${columnInfo.duckdbType}" instead.`,
         );
       }
     }

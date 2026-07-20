@@ -212,6 +212,90 @@ Detailed reference available at: [`CDA legacy compatibility`](/doc/AdvancedTopic
 
 ---
 
+## Time Column Behavior
+
+The `timeColumn` parameter is used for:
+
+-   **Window refresh policies**: Determines the range of data to refresh
+-   **Partitioning**: Used to partition the Parquet file in object storage
+
+### Requirements
+
+The `timeColumn` must be of a **temporal type** (`TIMESTAMP`, `TIMESTAMPTZ`, `DATE`) for window refresh policies and
+partitioning to work correctly. The system needs to:
+
+1. Compare the column with timestamps in `WHERE` clauses
+2. Partition data by time intervals
+3. Order data chronologically
+
+**Valid temporal types:**
+
+-   `TIMESTAMP`
+-   `TIMESTAMPTZ`
+-   `DATE`
+-   `TIME`
+
+### Validation Modes
+
+The behavior of `timeColumn` validation depends on the `validationMode` setting:
+
+#### Strict Mode (default)
+
+In `strict` mode, the system validates that the `timeColumn` exists in the query result schema **before** creating the
+FDA. If the column is not present, the creation fails with a clear error message.
+
+#### Unchecked Mode
+
+In `unchecked` mode, the system **does not validate** the presence of `timeColumn` during creation. However, if the
+column is missing and you configure `refreshPolicy` or `partitioning`, the system will fail at runtime
+
+### Column Name Matching
+
+The `timeColumn` value must match the **name of the column as it appears in the result set** (after applying any
+aliases).
+
+#### Valid Examples
+
+```sql
+-- Unqualified column
+SELECT timeinstant, id, name FROM users
+-- timeColumn: "timeinstant"
+
+-- Qualified column
+SELECT u.timeinstant, u.id, u.name FROM users u
+-- timeColumn: "timeinstant"
+
+-- Column with alias (use the alias name)
+SELECT timeinstant AS ts, id, name FROM users
+-- timeColumn: "ts" (NOT "timeinstant")
+
+-- Valid: DATE_TRUNC returns TIMESTAMP
+SELECT DATE_TRUNC('year', observed_at) AS year FROM table
+
+-- SELECT * (implicitly includes all columns)
+SELECT * FROM users
+-- timeColumn: "timeinstant" (if the column exists)
+```
+
+### Error Messages
+
+When `timeColumn` validation fails in `strict` mode, the error response includes:
+
+-   HTTP status: `400 Bad Request`
+-   Error code: `InvalidParam`
+-   Description: Lists the available columns to help you correct the query
+
+Example error:
+
+```json
+{
+    "error": "InvalidParam",
+    "description": "Time column \"timeinstant\" is not present in the SELECT clause of the FDA query."
+}
+```
+
+---
+
 ## 🧭 Navigation
 
 -   [⬅️ Previous: Config And Operational Guide](/doc/04_config_operational_guide.md)

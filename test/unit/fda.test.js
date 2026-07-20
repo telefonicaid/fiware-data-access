@@ -3172,10 +3172,24 @@ describe('fetchFDA with refresh policies', () => {
 
   test('fetchFDA throws when refresh policy window and no timecolumn', async () => {
     await expect(
-      fetchFDA('fda1', 'SELECT 1', 'svc', 'public', '/servicepath', 'desc', {
-        type: 'window',
-        params: { refreshInterval: '0 0 * * *', fetchSize: 'week' },
-      }),
+      fetchFDA(
+        'fda1',
+        'SELECT id, name FROM users',
+        'svc',
+        'public',
+        '/servicepath',
+        'desc',
+        {
+          type: 'window',
+          params: { refreshInterval: '0 0 * * *', fetchSize: 'week' },
+        },
+        undefined,
+        {},
+        true,
+        true,
+        'default',
+        'strict',
+      ),
     ).rejects.toMatchObject({
       status: 400,
       type: 'InvalidParam',
