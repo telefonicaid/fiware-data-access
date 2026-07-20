@@ -80,7 +80,6 @@ import {
   assertFreshQueriesEnabled,
   acquireFreshQuerySlot,
   convertRefreshIntervalToMs,
-  getTimeColumnQuery,
 } from './utils/utils.js';
 import {
   buildFDAJobFilter,
@@ -1008,16 +1007,10 @@ export async function fetchFDA(
     }
   }
 
-  const timeQuery =
-    datasource.type === 'postgres' &&
-    (refreshPolicy?.type === 'window' || objStgConf?.partition)
-      ? getTimeColumnQuery(query, timeColumn)
-      : query;
-
   const sourceSchema = await validateAndGetSourceSchema(
     datasource,
     validationMode,
-    timeQuery,
+    query,
     timeColumn,
   );
 
@@ -1025,7 +1018,7 @@ export async function fetchFDA(
 
   await createFDAMongo(
     fdaId,
-    timeQuery,
+    query,
     service,
     normalizedVisibility,
     normalizedServicePath,
@@ -1043,7 +1036,7 @@ export async function fetchFDA(
     await prepareCachedFDA({
       service,
       fdaId,
-      query: timeQuery,
+      query: query,
       servicePath: normalizedServicePath,
       datasourceId,
       timeColumn,
@@ -1061,7 +1054,7 @@ export async function fetchFDA(
   const { firstQuery, recurringQuery } = resolveRefreshQueries(
     datasource,
     refreshPolicy,
-    timeQuery,
+    query,
     timeColumn,
   );
 
@@ -1192,7 +1185,7 @@ function getWindowQuery(query, timeColumn, startDate) {
   return getUpdateWindowQuery(query, timeColumn, prevWindowStartDate);
 }
 
-function validateScheduledOptions(refreshPolicy, objStgConf) {
+function validateScheduledOptions(refreshPolicy, objStgConf, timeColumn) {
   if (!refreshPolicy) {
     return;
   }
