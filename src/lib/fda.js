@@ -1037,7 +1037,7 @@ export async function fetchFDA(
     await prepareCachedFDA({
       service,
       fdaId,
-      query: query,
+      query,
       servicePath: normalizedServicePath,
       datasourceId,
       timeColumn,
