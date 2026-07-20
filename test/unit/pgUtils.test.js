@@ -292,6 +292,8 @@ describe('pg utils', () => {
     );
   });
 
+  // test/unit/pgUtils.test.js
+
   test('validatePostgresQuery rejects when the declared timeColumn is not in the schema', async () => {
     currentClient.query.mockResolvedValue({
       fields: [{ name: 'id' }, { name: 'name' }],
@@ -312,8 +314,9 @@ describe('pg utils', () => {
     ).rejects.toMatchObject({
       status: 400,
       type: 'InvalidParam',
-      message:
-        'Time column "timeinstant" is not present in the FDA query schema.',
+      message: expect.stringContaining(
+        'Time column "timeinstant" is not present in the SELECT clause',
+      ),
     });
 
     expect(currentClient.release).toHaveBeenCalledTimes(1);
