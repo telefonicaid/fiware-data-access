@@ -1302,6 +1302,23 @@ function validateScheduledOptions(refreshPolicy, objStgConf, timeColumn) {
         `Invalid consistency refresh interval "${consistencyRefreshInterval}".`,
       );
     }
+
+    const refreshMs = convertRefreshIntervalToMs(refreshInterval);
+    const consistencyMs = convertRefreshIntervalToMs(
+      consistencyRefreshInterval,
+    );
+
+    if (
+      refreshMs !== null &&
+      consistencyMs !== null &&
+      consistencyMs <= refreshMs
+    ) {
+      throw new FDAError(
+        400,
+        'InvalidParam',
+        `consistencyRefreshInterval ("${consistencyRefreshInterval}") must be greater than refreshInterval ("${refreshInterval}").`,
+      );
+    }
   }
 
   // RefreshInterval must be smaller or equal than partition size
