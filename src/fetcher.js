@@ -23,7 +23,7 @@
 // criminal actions it may exercise to protect its rights.
 
 import { getAgenda } from './lib/jobs.js';
-import { cleanPartition, processFDAAsync, updateFDA } from './lib/fda.js';
+import { cleanPartition, processFDAAsync } from './lib/fda.js';
 import { getBasicLogger } from './lib/utils/logger.js';
 
 const logger = getBasicLogger();
