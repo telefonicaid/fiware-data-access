@@ -1936,6 +1936,191 @@ describe('fetchFDA', () => {
     });
   });
 
+  test('fetchFDA with window refresh policy schedules consistency refresh', async () => {
+    await fetchFDA(
+      'fda1',
+      'SELECT 1',
+      'svc',
+      'public',
+      '/servicepath',
+      'desc',
+      {
+        type: 'window',
+        params: {
+          refreshInterval: '0 0 * * *',
+          consistencyRefreshInterval: '1 month',
+          fetchSize: 'day',
+          windowSize: 'day',
+        },
+      },
+      'timeinstant',
+      {
+        partition: 'day',
+      },
+    );
+
+    expect(agenda.create).toHaveBeenCalledWith(
+      'consistency-refresh-fda-recurring',
+      {
+        fdaId: 'fda1',
+        query: 'SELECT 1',
+        service: 'svc',
+        servicePath: '/servicepath',
+        timeColumn: 'timeinstant',
+        refreshPolicy: {
+          type: 'window',
+          params: {
+            refreshInterval: '0 0 * * *',
+            consistencyRefreshInterval: '1 month',
+            fetchSize: 'day',
+            windowSize: 'day',
+          },
+        },
+        objStgConf: {
+          partition: 'day',
+        },
+        datasourceId: DEFAULT_DATASOURCE_ID,
+      },
+    );
+
+    const consistencyJob = agenda.create.mock.results.find(
+      ({ value }) => value.name === 'consistency-refresh-fda-recurring',
+    ).value;
+
+    expect(consistencyJob.unique).toHaveBeenCalledWith({
+      name: 'consistency-refresh-fda-recurring',
+      'data.service': 'svc',
+      'data.fdaId': 'fda1',
+      'data.servicePath': '/servicepath',
+    });
+    expect(consistencyJob.repeatEvery).toHaveBeenCalledWith('1 month', {
+      skipImmediate: true,
+    });
+    expect(consistencyJob.save).toHaveBeenCalled();
+  });
+
+  test('fetchFDA rejects consistency refresh interval for non-window policies', async () => {
+    await expect(
+      fetchFDA(
+        'fda1',
+        'SELECT 1',
+        'svc',
+        'public',
+        '/servicepath',
+        'desc',
+        {
+          type: 'interval',
+          params: {
+            refreshInterval: '0 0 * * *',
+            consistencyRefreshInterval: '1 month',
+          },
+        },
+        'timeinstant',
+      ),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidParam',
+      message:
+        'consistencyRefreshInterval is only supported for window refresh policy.',
+    });
+
+    expect(agenda.create).not.toHaveBeenCalledWith(
+      'consistency-refresh-fda-recurring',
+      expect.any(Object),
+    );
+  });
+
+  test('fetchFDA rejects when consistencyRefreshInterval is not greater than refreshInterval', async () => {
+    await expect(
+      fetchFDA(
+        'fda1',
+        'SELECT 1',
+        'svc',
+        'public',
+        '/servicepath',
+        'desc',
+        {
+          type: 'window',
+          params: {
+            refreshInterval: '1 day',
+            consistencyRefreshInterval: '12 hours',
+            fetchSize: 'day',
+            windowSize: 'day',
+          },
+        },
+        'timeinstant',
+        {
+          partition: 'day',
+        },
+      ),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidParam',
+      message: expect.stringContaining('must be greater than refreshInterval'),
+    });
+  });
+
+  test('fetchFDA accepts when consistencyRefreshInterval is greater than refreshInterval', async () => {
+    await fetchFDA(
+      'fda1',
+      'SELECT 1',
+      'svc',
+      'public',
+      '/servicepath',
+      'desc',
+      {
+        type: 'window',
+        params: {
+          refreshInterval: '1 day',
+          consistencyRefreshInterval: '1 week',
+          fetchSize: 'day',
+          windowSize: 'day',
+        },
+      },
+      'timeinstant',
+      {
+        partition: 'day',
+      },
+    );
+
+    expect(agenda.create).toHaveBeenCalledWith(
+      'consistency-refresh-fda-recurring',
+      expect.objectContaining({
+        fdaId: 'fda1',
+        service: 'svc',
+        servicePath: '/servicepath',
+      }),
+    );
+  });
+
+  test('fetchFDA with window refresh policy does not schedule consistency refresh when not provided', async () => {
+    await fetchFDA(
+      'fda1',
+      'SELECT 1',
+      'svc',
+      'public',
+      '/servicepath',
+      'desc',
+      {
+        type: 'window',
+        params: {
+          refreshInterval: '0 0 * * *',
+          fetchSize: 'day',
+          windowSize: 'day',
+        },
+      },
+      'timeinstant',
+      {
+        partition: 'day',
+      },
+    );
+
+    expect(agenda.create).not.toHaveBeenCalledWith(
+      'consistency-refresh-fda-recurring',
+      expect.any(Object),
+    );
+  });
+
   test('fetchFDA throws when servicePath is missing', async () => {
     await expect(
       fetchFDA('fda1', 'SELECT 1', 'svc', 'public', undefined, 'desc', {
