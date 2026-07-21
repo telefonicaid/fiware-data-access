@@ -2686,6 +2686,14 @@ describe('deleteFDA', () => {
       },
     });
     expect(agenda.cancel).toHaveBeenCalledWith({
+      name: 'consistency-refresh-fda-recurring', // AÑADIDO
+      data: {
+        service: 'svc',
+        fdaId: 'fdaA',
+        servicePath: '/servicepath',
+      },
+    });
+    expect(agenda.cancel).toHaveBeenCalledWith({
       name: 'clean-partition-recurring',
       data: {
         service: 'svc',
@@ -2693,7 +2701,7 @@ describe('deleteFDA', () => {
         servicePath: '/servicepath',
       },
     });
-    expect(agenda.cancel).toHaveBeenCalledTimes(2);
+    expect(agenda.cancel).toHaveBeenCalledTimes(3); // Cambiado de 2 a 3
   });
 
   test('deleteFDA uses normalized bucket name for object storage deletion', async () => {
@@ -2765,6 +2773,14 @@ describe('deleteFDA', () => {
       },
     });
     expect(agenda.cancel).toHaveBeenCalledWith({
+      name: 'consistency-refresh-fda-recurring', // AÑADIDO
+      data: {
+        service: 'svc',
+        fdaId: 'fdaA',
+        servicePath: '/servicepath',
+      },
+    });
+    expect(agenda.cancel).toHaveBeenCalledWith({
       name: 'clean-partition-recurring',
       data: {
         service: 'svc',
@@ -2772,7 +2788,44 @@ describe('deleteFDA', () => {
         servicePath: '/servicepath',
       },
     });
-    expect(agenda.cancel).toHaveBeenCalledTimes(2);
+    expect(agenda.cancel).toHaveBeenCalledTimes(3); // Cambiado de 2 a 3
+  });
+
+  test('deleteFDA cancels both refresh and clean-partition scheduled jobs', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      _id: 'mongo-id',
+      visibility: 'private',
+      servicePath: '/servicepath',
+    });
+    awsMocks.listObjects.mockResolvedValue([]);
+
+    await deleteFDA('svc', 'fda1', 'private', '/servicepath');
+
+    expect(agenda.cancel).toHaveBeenNthCalledWith(1, {
+      name: 'refresh-fda-recurring',
+      data: {
+        service: 'svc',
+        fdaId: 'fda1',
+        servicePath: '/servicepath',
+      },
+    });
+    expect(agenda.cancel).toHaveBeenNthCalledWith(2, {
+      name: 'consistency-refresh-fda-recurring', // Cambiado de clean-partition a consistency
+      data: {
+        service: 'svc',
+        fdaId: 'fda1',
+        servicePath: '/servicepath',
+      },
+    });
+    expect(agenda.cancel).toHaveBeenNthCalledWith(3, {
+      name: 'clean-partition-recurring',
+      data: {
+        service: 'svc',
+        fdaId: 'fda1',
+        servicePath: '/servicepath',
+      },
+    });
+    expect(agenda.cancel).toHaveBeenCalledTimes(3); // Cambiado de 2 a 3
   });
 
   test('throws FDANotFound when FDA does not exist', async () => {
@@ -3410,50 +3463,6 @@ describe('fetchFDA with refresh policies', () => {
     });
 
     expect(agenda.create).not.toHaveBeenCalled();
-  });
-});
-
-describe('deleteFDA', () => {
-  const agenda = {
-    cancel: jest.fn(),
-  };
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-    jobsMocks.getAgenda.mockReturnValue(agenda);
-    agenda.cancel.mockResolvedValue(undefined);
-    awsMocks.getS3Client.mockReturnValue({});
-    awsMocks.dropFiles.mockResolvedValue(undefined);
-    mongoMocks.removeFDA.mockResolvedValue(undefined);
-  });
-
-  test('deleteFDA cancels both refresh and clean-partition scheduled jobs', async () => {
-    mongoMocks.retrieveFDA.mockResolvedValue({
-      _id: 'mongo-id',
-      visibility: 'private',
-      servicePath: '/servicepath',
-    });
-    awsMocks.listObjects.mockResolvedValue(['fda1.parquet']);
-
-    await deleteFDA('svc', 'fda1', 'private', '/servicepath');
-
-    expect(agenda.cancel).toHaveBeenNthCalledWith(1, {
-      name: 'refresh-fda-recurring',
-      data: {
-        service: 'svc',
-        fdaId: 'fda1',
-        servicePath: '/servicepath',
-      },
-    });
-    expect(agenda.cancel).toHaveBeenNthCalledWith(2, {
-      name: 'clean-partition-recurring',
-      data: {
-        service: 'svc',
-        fdaId: 'fda1',
-        servicePath: '/servicepath',
-      },
-    });
-    expect(agenda.cancel).toHaveBeenCalledTimes(2);
   });
 });
 
