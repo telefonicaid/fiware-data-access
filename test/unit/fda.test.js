@@ -1937,6 +1937,9 @@ describe('fetchFDA', () => {
   });
 
   test('fetchFDA with window refresh policy schedules consistency refresh', async () => {
+    const fixedDate = new Date('2026-07-21T00:00:00.000Z');
+    jest.useFakeTimers({ now: fixedDate });
+
     await fetchFDA(
       'fda1',
       'SELECT 1',
@@ -1948,9 +1951,9 @@ describe('fetchFDA', () => {
         type: 'window',
         params: {
           refreshInterval: '0 0 * * *',
-          consistencyRefreshInterval: '1 month',
+          consistencyRefreshInterval: '1 week',
           fetchSize: 'day',
-          windowSize: 'day',
+          windowSize: 'month',
         },
       },
       'timeinstant',
@@ -1959,28 +1962,30 @@ describe('fetchFDA', () => {
       },
     );
 
-    expect(agenda.create).toHaveBeenCalledWith(
+    expect(agenda.create).toHaveBeenNthCalledWith(
+      2, // second call (first: refresh-fda-recurring, second: consistency)
       'consistency-refresh-fda-recurring',
-      {
+      expect.objectContaining({
         fdaId: 'fda1',
-        query: 'SELECT 1',
         service: 'svc',
         servicePath: '/servicepath',
         timeColumn: 'timeinstant',
-        refreshPolicy: {
+        refreshPolicy: expect.objectContaining({
           type: 'window',
-          params: {
+          params: expect.objectContaining({
             refreshInterval: '0 0 * * *',
-            consistencyRefreshInterval: '1 month',
+            consistencyRefreshInterval: '1 week',
             fetchSize: 'day',
-            windowSize: 'day',
-          },
-        },
-        objStgConf: {
+            windowSize: 'month',
+          }),
+        }),
+        objStgConf: expect.objectContaining({
           partition: 'day',
-        },
-        datasourceId: `default`,
-      },
+        }),
+        datasourceId: 'default',
+        query:
+          "SELECT * FROM (SELECT 1) q WHERE timeinstant >= TIMESTAMP '2026-06-21T00:00:00.000Z' AND timeinstant < NOW()",
+      }),
     );
 
     const consistencyJob = agenda.create.mock.results.find(
@@ -1993,10 +1998,12 @@ describe('fetchFDA', () => {
       'data.fdaId': 'fda1',
       'data.servicePath': '/servicepath',
     });
-    expect(consistencyJob.repeatEvery).toHaveBeenCalledWith('1 month', {
+    expect(consistencyJob.repeatEvery).toHaveBeenCalledWith('1 week', {
       skipImmediate: true,
     });
     expect(consistencyJob.save).toHaveBeenCalled();
+
+    jest.useRealTimers();
   });
 
   test('fetchFDA rejects consistency refresh interval for non-window policies', async () => {
