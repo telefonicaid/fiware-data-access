@@ -1215,6 +1215,8 @@ function validateScheduledOptions(refreshPolicy, objStgConf, timeColumn) {
   }
 
   const { refreshInterval, fetchSize } = refreshPolicy.params || {};
+  const consistencyRefreshInterval =
+    refreshPolicy.params?.consistencyRefreshInterval;
   if (!refreshInterval) {
     throw new FDAError(
       400,
@@ -1282,6 +1284,24 @@ function validateScheduledOptions(refreshPolicy, objStgConf, timeColumn) {
       'InvalidParam',
       `Invalid partition type "${objStgConf.partition}".`,
     );
+  }
+
+  if (consistencyRefreshInterval) {
+    if (refreshPolicy.type !== 'window') {
+      throw new FDAError(
+        400,
+        'InvalidParam',
+        'consistencyRefreshInterval is only supported for window refresh policy.',
+      );
+    }
+
+    if (convertRefreshIntervalToMs(consistencyRefreshInterval) === null) {
+      throw new FDAError(
+        400,
+        'InvalidParam',
+        `Invalid consistency refresh interval "${consistencyRefreshInterval}".`,
+      );
+    }
   }
 
   // RefreshInterval must be smaller or equal than partition size
@@ -2401,7 +2421,8 @@ async function scheduleFDAJobs({
   objStgConf,
   datasourceId,
 }) {
-  const { refreshInterval, windowSize } = refreshPolicy.params || {};
+  const { refreshInterval, windowSize, consistencyRefreshInterval } =
+    refreshPolicy.params || {};
 
   const refreshJob = agenda.create('refresh-fda-recurring', {
     fdaId,
@@ -2439,6 +2460,30 @@ async function scheduleFDAJobs({
     );
     cleanPartitionJob.repeatEvery(refreshInterval, { skipImmediate: true });
     await cleanPartitionJob.save();
+  }
+
+  if (consistencyRefreshInterval) {
+    const consistencyRefreshJob = agenda.create(
+      'consistency-refresh-fda-recurring',
+      {
+        fdaId,
+        service,
+        servicePath,
+      },
+    );
+
+    consistencyRefreshJob.unique(
+      buildFDAJobFilter(
+        'consistency-refresh-fda-recurring',
+        service,
+        fdaId,
+        servicePath,
+      ),
+    );
+    consistencyRefreshJob.repeatEvery(consistencyRefreshInterval, {
+      skipImmediate: true,
+    });
+    await consistencyRefreshJob.save();
   }
 }
 
