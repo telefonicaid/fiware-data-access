@@ -70,9 +70,27 @@ export async function startFetcher() {
   };
 
   const consistencyRefreshFDA = async (job) => {
-    const { fdaId, service, servicePath } = job.attrs.data;
+    const {
+      fdaId,
+      query,
+      service,
+      servicePath,
+      timeColumn,
+      refreshPolicy,
+      objStgConf,
+      datasourceId,
+    } = job.attrs.data;
     try {
-      await updateFDA(service, fdaId, undefined, servicePath);
+      await processFDAAsync(
+        fdaId,
+        query,
+        service,
+        servicePath,
+        timeColumn,
+        refreshPolicy,
+        objStgConf,
+        datasourceId,
+      );
     } catch (e) {
       logger.error('Fetcher error: ', e);
     }

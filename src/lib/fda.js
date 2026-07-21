@@ -2492,8 +2492,13 @@ async function scheduleFDAJobs({
       'consistency-refresh-fda-recurring',
       {
         fdaId,
+        query,
         service,
         servicePath,
+        timeColumn,
+        refreshPolicy,
+        objStgConf,
+        datasourceId,
       },
     );
 
