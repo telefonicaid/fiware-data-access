@@ -1633,6 +1633,14 @@ export async function deleteFDA(service, fdaId, visibility, servicePath) {
   );
   await agenda.cancel(
     buildFDAJobCancelFilter(
+      'consistency-refresh-fda-recurring',
+      service,
+      fdaId,
+      targetServicePath,
+    ),
+  );
+  await agenda.cancel(
+    buildFDAJobCancelFilter(
       'clean-partition-recurring',
       service,
       fdaId,
