@@ -1979,7 +1979,7 @@ describe('fetchFDA', () => {
         objStgConf: {
           partition: 'day',
         },
-        datasourceId: DEFAULT_DATASOURCE_ID,
+        datasourceId: `default`,
       },
     );
 
