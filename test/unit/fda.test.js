@@ -2149,6 +2149,19 @@ describe('fetchFDA', () => {
       type: 'InvalidServicePath',
     });
   });
+
+  test('fetchFDA throws InvalidServicePath for invalid servicePath format', async () => {
+    await expect(
+      fetchFDA('fda1', 'SELECT 1', 'svc', 'public', '/', 'desc', {
+        type: 'none',
+      }),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidServicePath',
+      message:
+        'Fiware-ServicePath must be a non-root absolute path (e.g. /servicepath)',
+    });
+  });
 });
 
 describe('updateFDA', () => {
@@ -3631,6 +3644,7 @@ describe('cleanPartition', () => {
       'public/fdaA/2099-01-01.parquet',
     ]);
     awsMocks.dropFiles.mockResolvedValue(undefined);
+    dbMocks.extractDate.mockReturnValue(new Date('2020-01-01')); // valor por defecto
   });
 
   test('drops only partitions older than the cutoff date', async () => {
@@ -3747,7 +3761,11 @@ describe('cleanPartition', () => {
   });
 });
 
-describe('mongo utils extra coverage', () => {
+describe('getStoredFDA', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   test('getStoredFDA returns FDA when exists', async () => {
     mongoMocks.retrieveFDA.mockResolvedValueOnce({
       fdaId: 'fdaA',
@@ -3767,6 +3785,56 @@ describe('mongo utils extra coverage', () => {
     });
   });
 
+  test('returns FDA when found', async () => {
+    const mockFDA = {
+      _id: 'mongo1',
+      fdaId: 'fdaA',
+      datasourceId: 'default',
+      service: 'svc',
+      servicePath: '/public',
+      query: 'SELECT 1',
+      status: 'completed',
+    };
+    mongoMocks.retrieveFDA.mockResolvedValue(mockFDA);
+
+    const result = await getStoredFDA('svc', 'fdaA', '/public');
+
+    expect(mongoMocks.retrieveFDA).toHaveBeenCalledWith(
+      'svc',
+      'fdaA',
+      '/public',
+    );
+    expect(result).toEqual(mockFDA);
+  });
+
+  test('throws FDANotFound when FDA does not exist (null)', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue(null);
+
+    await expect(getStoredFDA('svc', 'fdaA', '/public')).rejects.toMatchObject({
+      status: 404,
+      type: 'FDANotFound',
+      message: 'FDA fdaA not found in service svc',
+    });
+
+    expect(mongoMocks.retrieveFDA).toHaveBeenCalledWith(
+      'svc',
+      'fdaA',
+      '/public',
+    );
+  });
+
+  test('throws FDANotFound when retrieveFDA returns undefined', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue(undefined);
+
+    await expect(getStoredFDA('svc', 'fdaA', '/public')).rejects.toMatchObject({
+      status: 404,
+      type: 'FDANotFound',
+      message: 'FDA fdaA not found in service svc',
+    });
+  });
+});
+
+describe('mongo utils extra coverage', () => {
   test('validateMongoFDAContract throws when attrs contain invalid strings', async () => {
     const { validateMongoFDAContract } = await loadFdaModule();
 
