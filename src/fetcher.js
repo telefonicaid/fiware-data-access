@@ -69,38 +69,11 @@ export async function startFetcher() {
     }
   };
 
-  const consistencyRefreshFDA = async (job) => {
-    const {
-      fdaId,
-      query,
-      service,
-      servicePath,
-      timeColumn,
-      refreshPolicy,
-      objStgConf,
-      datasourceId,
-    } = job.attrs.data;
-    try {
-      await processFDAAsync(
-        fdaId,
-        query,
-        service,
-        servicePath,
-        timeColumn,
-        refreshPolicy,
-        objStgConf,
-        datasourceId,
-      );
-    } catch (e) {
-      logger.error('Fetcher error: ', e);
-    }
-  };
-
   agenda.define('refresh-fda', refreshFDA);
   agenda.define('refresh-fda-recurring', refreshFDA);
+  agenda.define('consistency-refresh-fda-recurring', refreshFDA);
   agenda.define('clean-partition', cleanPartitionFDA);
   agenda.define('clean-partition-recurring', cleanPartitionFDA);
-  agenda.define('consistency-refresh-fda-recurring', consistencyRefreshFDA);
 
   await agenda.start();
   logger.info('[Fetcher] Agenda started');
