@@ -50,6 +50,7 @@ import { registerVisibilityConstraintsIntegrationTests } from './suites/visibili
 import { registerCdaCompatibilityIntegrationTests } from './suites/cdaCompatibility.integration.tests.js';
 import { registerFdaLifecycleIntegrationTests } from './suites/fdaLifecycle.integration.tests.js';
 import { registerMongoFdasIntegrationTests } from './suites/mongoFdas.integration.tests.js';
+import { registerComplexCasesIntegrationTests } from './suites/complexCases.integration.tests.js';
 import {
   httpReq,
   httpFormReq,
@@ -497,6 +498,17 @@ export function runFDAIntegrationSuite({ mode, label }) {
       httpReqRaw,
       waitUntilFDACompleted,
       buildDaDataUrl,
+    });
+
+    registerComplexCasesIntegrationTests({
+      getBaseUrl: () => baseUrl,
+      service,
+      servicePath,
+      visibility,
+      httpReq,
+      waitUntilFDACompleted,
+      getPgHost: () => pgHost,
+      getPgPort: () => pgPort,
     });
   });
 }
