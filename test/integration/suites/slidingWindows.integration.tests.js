@@ -41,14 +41,6 @@ export function registerSlidingWindowsIntegrationTests({
   getPgPort,
   getMongoUri,
 }) {
-  function getMongoClient() {
-    const { MongoClient } = require('mongodb');
-    const mongoUrl = process.env.MONGO_URL || 'mongodb://localhost:27017';
-    return new MongoClient(mongoUrl, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    });
-  }
   function createPgClient() {
     return new Client({
       host: getPgHost(),
@@ -1212,7 +1204,7 @@ export function registerSlidingWindowsIntegrationTests({
       `);
 
       // 3. Force recurring job
-      const recurringJob = await agendaJobs.findOne({
+      await agendaJobs.findOne({
         name: 'refresh-fda-recurring',
         'data.fdaId': fdaId,
       });
@@ -1244,7 +1236,7 @@ export function registerSlidingWindowsIntegrationTests({
       expect(labels).not.toContain('delayed_inside_week');
 
       // 4. Force consistency job
-      const consistencyJob = await agendaJobs.findOne({
+      await agendaJobs.findOne({
         name: 'consistency-refresh-fda-recurring',
         'data.fdaId': fdaId,
       });
