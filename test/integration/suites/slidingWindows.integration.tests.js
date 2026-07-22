@@ -24,6 +24,7 @@
 
 import { test, expect } from '@jest/globals';
 import pg from 'pg';
+import { MongoClient } from 'mongodb';
 
 const { Client } = pg;
 
@@ -34,10 +35,20 @@ export function registerSlidingWindowsIntegrationTests({
   visibility,
   httpReq,
   waitUntilFDACompleted,
+  waitForJobToFinish,
   buildDaDataUrl,
   getPgHost,
   getPgPort,
+  getMongoUri,
 }) {
+  function getMongoClient() {
+    const { MongoClient } = require('mongodb');
+    const mongoUrl = process.env.MONGO_URL || 'mongodb://localhost:27017';
+    return new MongoClient(mongoUrl, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    });
+  }
   function createPgClient() {
     return new Client({
       host: getPgHost(),
@@ -48,6 +59,40 @@ export function registerSlidingWindowsIntegrationTests({
       connectionTimeoutMillis: 10_000,
     });
   }
+
+  async function ensureDefaultDatasource(baseUrl) {
+    const createRes = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/datasources`,
+      headers: {
+        'Content-Type': 'application/json',
+        'Fiware-Service': service,
+      },
+      body: {
+        datasourceId: 'default',
+        type: 'postgres',
+        config: {
+          user: 'postgres',
+          password: 'postgres',
+          host: getPgHost(),
+          port: getPgPort(),
+          database: service,
+        },
+      },
+    });
+
+    if (createRes.status !== 200 && createRes.status !== 409) {
+      throw new Error(
+        `Failed to ensure default datasource: ${createRes.status} ${JSON.stringify(createRes.json)}`,
+      );
+    }
+  }
+
+  beforeAll(async () => {
+    const baseUrl = getBaseUrl();
+
+    await ensureDefaultDatasource(baseUrl);
+  });
 
   test('POST /fdas creates an FDA with various refresh policies', async () => {
     const baseUrl = getBaseUrl();
@@ -1074,6 +1119,173 @@ export function registerSlidingWindowsIntegrationTests({
     } finally {
       await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
       await pgClient.end();
+    }
+  });
+
+  test('POST /fdas with consistencyRefreshInterval schedules consistency refresh and respects windowSize', async () => {
+    const baseUrl = getBaseUrl();
+    const suffix = `${Date.now()}`;
+    const fixtureTable = `consistency_fixture_${suffix}`;
+    const fdaId = `fda_consistency_${suffix}`;
+
+    const pgClient = createPgClient();
+    await pgClient.connect();
+
+    const mongoUri = getMongoUri();
+    const mongoClient = new MongoClient(mongoUri);
+    await mongoClient.connect();
+    const agendaDb = mongoClient.db('test-db');
+    const agendaJobs = agendaDb.collection('agendaJobs');
+
+    try {
+      await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
+      await pgClient.query(`
+        CREATE TABLE public.${fixtureTable} (
+          id INT PRIMARY KEY,
+          label TEXT NOT NULL,
+          observed_at TIMESTAMPTZ NOT NULL
+        )
+      `);
+
+      await pgClient.query(`
+        INSERT INTO public.${fixtureTable} (id, label, observed_at)
+        VALUES
+          (1, 'inside_week', NOW() - INTERVAL '2 days'),
+          (2, 'inside_week_latest', NOW()),
+          (3, 'outside_week', NOW() - INTERVAL '10 days')
+      `);
+
+      const createRes = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: fdaId,
+          query: `
+            SELECT id, label, observed_at
+            FROM public.${fixtureTable}
+            ORDER BY id
+          `,
+          description: 'consistency refresh test',
+          refreshPolicy: {
+            type: 'window',
+            params: {
+              refreshInterval: '1 day',
+              fetchSize: 'day',
+              windowSize: 'week',
+              consistencyRefreshInterval: '1 week',
+            },
+          },
+          timeColumn: 'observed_at',
+          objStgConf: {
+            partition: 'day',
+          },
+        },
+      });
+
+      expect(createRes.status).toBe(202);
+      await waitUntilFDACompleted({ baseUrl, service, fdaId });
+
+      // 1. Verify initial fetch
+      let readRes = await httpReq({
+        method: 'GET',
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, 'defaultDataAccess', {
+          pageSize: 100,
+          pageStart: 0,
+        }),
+        headers: { 'Fiware-Service': service },
+      });
+      expect(readRes.status).toBe(200);
+      let labels = readRes.json.map((row) => row.label);
+      expect(labels).toEqual(
+        expect.arrayContaining(['inside_week', 'inside_week_latest']),
+      );
+      expect(labels).not.toContain('outside_week');
+
+      // 2. Insert delayed row
+      await pgClient.query(`
+        INSERT INTO public.${fixtureTable} (id, label, observed_at)
+        VALUES (4, 'delayed_inside_week', NOW() - INTERVAL '4 days')
+      `);
+
+      // 3. Force recurring job
+      const recurringJob = await agendaJobs.findOne({
+        name: 'refresh-fda-recurring',
+        'data.fdaId': fdaId,
+      });
+
+      const updateRecurringResult = await agendaJobs.updateOne(
+        {
+          name: 'refresh-fda-recurring',
+          'data.fdaId': fdaId,
+        },
+        { $set: { nextRunAt: new Date() } },
+      );
+      expect(updateRecurringResult.modifiedCount).toBe(1);
+      await waitForJobToFinish(agendaJobs, fdaId, 'refresh-fda-recurring');
+
+      // Verify recurring did NOT capture delayed
+      readRes = await httpReq({
+        method: 'GET',
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, 'defaultDataAccess', {
+          pageSize: 100,
+          pageStart: 0,
+        }),
+        headers: { 'Fiware-Service': service },
+      });
+      expect(readRes.status).toBe(200);
+      labels = readRes.json.map((row) => row.label);
+      expect(labels).toEqual(
+        expect.arrayContaining(['inside_week', 'inside_week_latest']),
+      );
+      expect(labels).not.toContain('delayed_inside_week');
+
+      // 4. Force consistency job
+      const consistencyJob = await agendaJobs.findOne({
+        name: 'consistency-refresh-fda-recurring',
+        'data.fdaId': fdaId,
+      });
+
+      const updateConsistencyResult = await agendaJobs.updateOne(
+        {
+          name: 'consistency-refresh-fda-recurring',
+          'data.fdaId': fdaId,
+        },
+        { $set: { nextRunAt: new Date() } },
+      );
+      expect(updateConsistencyResult.modifiedCount).toBe(1);
+      await waitForJobToFinish(
+        agendaJobs,
+        fdaId,
+        'consistency-refresh-fda-recurring',
+      );
+
+      // Verify consistency DID capture delayed
+      readRes = await httpReq({
+        method: 'GET',
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, 'defaultDataAccess', {
+          pageSize: 100,
+          pageStart: 0,
+        }),
+        headers: { 'Fiware-Service': service },
+      });
+      expect(readRes.status).toBe(200);
+      labels = readRes.json.map((row) => row.label);
+      expect(labels).toEqual(
+        expect.arrayContaining([
+          'inside_week',
+          'inside_week_latest',
+          'delayed_inside_week',
+        ]),
+      );
+      expect(labels).not.toContain('outside_week');
+    } finally {
+      await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
+      await pgClient.end();
+      await mongoClient.close();
     }
   });
 }

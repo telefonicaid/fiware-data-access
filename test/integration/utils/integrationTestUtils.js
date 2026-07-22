@@ -321,3 +321,43 @@ export async function waitUntilFDACompleted({
     `Timeout waiting for FDA ${fdaId} to reach completed state (last status=${lastSeen?.status ?? 'unknown'}, progress=${lastSeen?.progress ?? 'unknown'}, error=${lastSeen?.error ?? 'n/a'})`,
   );
 }
+
+export async function waitForJobToFinish(
+  agendaJobs,
+  fdaId,
+  jobName,
+  timeout = 30000,
+) {
+  const start = Date.now();
+  let previousFinishedAt = null;
+
+  const initialJob = await agendaJobs.findOne({
+    name: jobName,
+    'data.fdaId': fdaId,
+  });
+
+  if (initialJob && initialJob.lastFinishedAt) {
+    previousFinishedAt = initialJob.lastFinishedAt.getTime();
+  }
+
+  while (Date.now() - start < timeout) {
+    const job = await agendaJobs.findOne({
+      name: jobName,
+      'data.fdaId': fdaId,
+    });
+
+    if (job && job.lastFinishedAt) {
+      const currentFinishedAt = job.lastFinishedAt.getTime();
+
+      if (
+        previousFinishedAt === null ||
+        currentFinishedAt !== previousFinishedAt
+      ) {
+        return job;
+      }
+    }
+
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  throw new Error(`Timeout waiting for job ${jobName} to finish`);
+}
