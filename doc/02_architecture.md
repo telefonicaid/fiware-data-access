@@ -34,6 +34,8 @@ An **FDA** represents a **materialized dataset** in the system. It:
 -   Saves the file in a **bucket-based object storage system**
 -   Acts as the **base dataset** for one or more DAs
 -   Supports an optional `refreshPolicy` that defines how the FDA is automatically refreshed (none, interval or window)
+-   Window-based FDAs can also schedule a periodic consistency refresh that triggers the manual rebuild flow and helps
+    recover historical gaps.
 
 In simple terms:
 
@@ -167,7 +169,10 @@ Each document corresponds to one FDA:
 -   **lastFetch**: timestamp of the last successful fetch completion (ISO date)
 -   **datasourceId**: datasource identifier used to resolve source credentials (default `default` when omitted)
 -   **validationMode**: validation mode (`strict` or `unchecked`, default `strict`)
--   **schema**: array of column definitions (`name` and `type`) persisted from the source schema (`strict` mode only). It is an optional field, by the moment used only in FDAs based in PG datasources (for other datasources we have to consider how to it applies, specially for schema-less ones, see issue [#235](https://github.com/telefonicaid/fiware-data-access/issues/235))
+-   **schema**: array of column definitions (`name` and `type`) persisted from the source schema (`strict` mode only).
+    It is an optional field, by the moment used only in FDAs based in PG datasources (for other datasources we have to
+    consider how to it applies, specially for schema-less ones, see issue
+    [#235](https://github.com/telefonicaid/fiware-data-access/issues/235))
 
 Each DA contains:
 

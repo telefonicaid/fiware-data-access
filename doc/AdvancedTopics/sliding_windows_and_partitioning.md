@@ -14,12 +14,13 @@ reprocessing the entire dataset, only the most recent slice of data is fetched a
 Each configuration parameter is described in detail in the [API documentation](../03_api.md/#refresh-policy-object), but
 the key fields are summarized below:
 
-| Field             | Description                                                                                                                               |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `type`            | Must be set to `window` to enable sliding window behavior.                                                                                |
-| `refreshInterval` | Defines how often the window refresh runs. It accepts either a human interval such as `1 hour` or a cron expression.                      |
-| `fetchSize`       | Defines the **time range** of data to fetch on each refresh. For example, `week` fetches data from the last week.                         |
-| `windowSize`      | Specifies the total retention window (e.g., data from last month), defining which data should be preserved and which should be discarded. |
+| Field                        | Description                                                                                                                               |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`                       | Must be set to `window` to enable sliding window behavior.                                                                                |
+| `refreshInterval`            | Defines how often the window refresh runs. It accepts either a human interval such as `1 hour` or a cron expression.                      |
+| `consistencyRefreshInterval` | Optional lower-frequency schedule for a full FDA rebuild that helps recover delayed historical data.                                      |
+| `fetchSize`                  | Defines the **time range** of data to fetch on each refresh. For example, `week` fetches data from the last week.                         |
+| `windowSize`                 | Specifies the total retention window (e.g., data from last month), defining which data should be preserved and which should be discarded. |
 
 ---
 
@@ -73,6 +74,9 @@ This separation provides flexibility, but also introduces potential misconfigura
 
     This leads to **inconsistent data window sizes over time**.
 
+-   **Historical gaps outside the incremental window** If a source delivers late rows, an incremental refresh may miss
+    them until the next consistency rebuild.
+
 ---
 
 ## Recommended Approach
@@ -82,6 +86,8 @@ For optimal performance and predictability:
 -   Align **partition granularity** with **refresh frequency** (e.g., daily refresh → daily partitions)
 
 -   Keep the **refresh cadence** consistent with the intended cleanup cycle
+-   Add a **consistency refresh** at a lower cadence when you need to recover delayed historical rows without paying the
+    cost of full rebuilds on every fetch
 
 -   Define a **clear retention window** (`windowSize`) to maintain a stable dataset size
 
