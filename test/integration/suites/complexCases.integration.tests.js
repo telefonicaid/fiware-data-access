@@ -23,7 +23,6 @@
 // criminal actions it may exercise to protect its rights.
 
 import { describe, test, expect } from '@jest/globals';
-import { log } from 'node:console';
 import pg from 'pg';
 import { connectWithRetry } from '../utils/integrationTestUtils.js';
 
@@ -36,7 +35,6 @@ export function registerComplexCasesIntegrationTests({
   visibility,
   httpReq,
   waitUntilFDACompleted,
-  buildFdaDataUrl,
   getPgHost,
   getPgPort,
 }) {
