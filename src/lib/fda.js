@@ -87,7 +87,7 @@ import {
   buildFDAJobCancelFilter,
   getBucketNameFromService,
   getFDAStoragePath,
-  normalizeScopedServicePath,
+  normalizeServicePath,
 } from './utils/fdaScope.js';
 import { config } from './fdaConfig.js';
 import { FDAError } from './fdaError.js';
@@ -110,7 +110,7 @@ function assertSupportedDatasourceType(type) {
   }
 }
 
-function validateMongoFDAContract(query, timeColumn, cached) {
+export function validateMongoFDAContract(query, timeColumn, cached) {
   validateBasicQueryStructure(query);
 
   const { collection, filter, projection, aggregation } = query;
@@ -1052,40 +1052,17 @@ export async function fetchFDA(
     return;
   }
 
-  const { firstQuery, recurringQuery } = resolveRefreshQueries(
-    datasource,
-    refreshPolicy,
-    query,
-    timeColumn,
-  );
-
-  const agenda = getAgenda();
-  // Execute first fetch immediately (when a fetcher is free)
-  await agenda.now('refresh-fda', {
+  // Schedule refreshes according to the refresh policy
+  await scheduleFDAJobs({
     fdaId,
-    query: firstQuery,
+    query,
     service,
     servicePath: normalizedServicePath,
     timeColumn,
     refreshPolicy,
     objStgConf,
-    datasourceId,
+    datasource,
   });
-
-  // Schedule refreshes according to policy
-  if (refreshPolicy?.type === 'interval' || refreshPolicy?.type === 'window') {
-    await scheduleFDAJobs({
-      agenda,
-      fdaId,
-      query: recurringQuery,
-      service,
-      servicePath: normalizedServicePath,
-      timeColumn,
-      refreshPolicy,
-      objStgConf,
-      datasourceId,
-    });
-  }
 }
 
 function validateAndGetSourceSchema(
@@ -1215,6 +1192,8 @@ function validateScheduledOptions(refreshPolicy, objStgConf, timeColumn) {
   }
 
   const { refreshInterval, fetchSize } = refreshPolicy.params || {};
+  const consistencyRefreshInterval =
+    refreshPolicy.params?.consistencyRefreshInterval;
   if (!refreshInterval) {
     throw new FDAError(
       400,
@@ -1282,6 +1261,41 @@ function validateScheduledOptions(refreshPolicy, objStgConf, timeColumn) {
       'InvalidParam',
       `Invalid partition type "${objStgConf.partition}".`,
     );
+  }
+
+  if (consistencyRefreshInterval) {
+    if (refreshPolicy.type !== 'window') {
+      throw new FDAError(
+        400,
+        'InvalidParam',
+        'consistencyRefreshInterval is only supported for window refresh policy.',
+      );
+    }
+
+    if (convertRefreshIntervalToMs(consistencyRefreshInterval) === null) {
+      throw new FDAError(
+        400,
+        'InvalidParam',
+        `Invalid consistency refresh interval "${consistencyRefreshInterval}".`,
+      );
+    }
+
+    const refreshMs = convertRefreshIntervalToMs(refreshInterval);
+    const consistencyMs = convertRefreshIntervalToMs(
+      consistencyRefreshInterval,
+    );
+
+    if (
+      refreshMs !== null &&
+      consistencyMs !== null &&
+      consistencyMs < refreshMs
+    ) {
+      throw new FDAError(
+        400,
+        'InvalidParam',
+        `consistencyRefreshInterval ("${consistencyRefreshInterval}") must be greater than refreshInterval ("${refreshInterval}").`,
+      );
+    }
   }
 
   // RefreshInterval must be smaller or equal than partition size
@@ -1589,6 +1603,14 @@ export async function deleteFDA(service, fdaId, visibility, servicePath) {
   await agenda.cancel(
     buildFDAJobCancelFilter(
       'refresh-fda-recurring',
+      service,
+      fdaId,
+      targetServicePath,
+    ),
+  );
+  await agenda.cancel(
+    buildFDAJobCancelFilter(
+      'consistency-refresh-fda-recurring',
       service,
       fdaId,
       targetServicePath,
@@ -1947,26 +1969,6 @@ function normalizeVisibility(visibility) {
   }
 
   return visibility;
-}
-
-function normalizeServicePath(servicePath) {
-  try {
-    return normalizeScopedServicePath(servicePath);
-  } catch (error) {
-    if (error.message === 'servicePath is required') {
-      throw new FDAError(
-        400,
-        'InvalidServicePath',
-        'Fiware-ServicePath header is required',
-      );
-    }
-
-    throw new FDAError(
-      400,
-      'InvalidServicePath',
-      'Fiware-ServicePath must be a non-root absolute path (e.g. /servicepath)',
-    );
-  }
 }
 
 function toFDAApiResponse(fda, { includeId }) {
@@ -2391,54 +2393,109 @@ const getPath = (bucket, path, extension) => {
 };
 
 async function scheduleFDAJobs({
-  agenda,
   fdaId,
-  query,
+  query, // Query original (sin filtrar)
   service,
   servicePath,
   timeColumn,
   refreshPolicy,
   objStgConf,
-  datasourceId,
+  datasource,
 }) {
-  const { refreshInterval, windowSize } = refreshPolicy.params || {};
+  const { refreshInterval, windowSize, consistencyRefreshInterval } =
+    refreshPolicy.params || {};
 
-  const refreshJob = agenda.create('refresh-fda-recurring', {
-    fdaId,
+  const agenda = getAgenda();
+
+  const { firstQuery, recurringQuery } = resolveRefreshQueries(
+    datasource,
+    refreshPolicy,
     query,
+    timeColumn,
+  );
+
+  // 0. Execute first fetch immediately (fetch all data inside window if windowSize is defined, otherwise fetch all data)
+  await agenda.now('refresh-fda', {
+    fdaId,
+    query: firstQuery,
     service,
     servicePath,
     timeColumn,
     refreshPolicy,
     objStgConf,
-    datasourceId,
+    datasourceId: datasource.datasourceId ?? DEFAULT_DATASOURCE_ID,
   });
 
-  refreshJob.unique(
-    buildFDAJobFilter('refresh-fda-recurring', service, fdaId, servicePath),
-  );
-  refreshJob.repeatEvery(refreshInterval, { skipImmediate: true });
-  await refreshJob.save();
-
-  if (windowSize) {
-    const cleanPartitionJob = agenda.create('clean-partition-recurring', {
+  if (refreshPolicy?.type === 'interval' || refreshPolicy?.type === 'window') {
+    // 1. Recurring fetch job (incremental fetches)
+    const refreshJob = agenda.create('refresh-fda-recurring', {
       fdaId,
+      query: recurringQuery,
       service,
       servicePath,
-      windowSize,
+      timeColumn,
+      refreshPolicy,
       objStgConf,
+      datasourceId: datasource.datasourceId ?? DEFAULT_DATASOURCE_ID,
     });
 
-    cleanPartitionJob.unique(
-      buildFDAJobFilter(
-        'clean-partition-recurring',
-        service,
-        fdaId,
-        servicePath,
-      ),
+    refreshJob.unique(
+      buildFDAJobFilter('refresh-fda-recurring', service, fdaId, servicePath),
     );
-    cleanPartitionJob.repeatEvery(refreshInterval, { skipImmediate: true });
-    await cleanPartitionJob.save();
+    refreshJob.repeatEvery(refreshInterval, { skipImmediate: true });
+    await refreshJob.save();
+
+    // 2. Consistency refresh job if applicable (fech all data inside windowSize if windowSize is defined, otherwise fetch all data)
+    if (consistencyRefreshInterval) {
+      const consistencyRefreshJob = agenda.create(
+        'consistency-refresh-fda-recurring',
+        {
+          fdaId,
+          query: firstQuery,
+          service,
+          servicePath,
+          timeColumn,
+          refreshPolicy,
+          objStgConf,
+          datasourceId: datasource.datasourceId ?? DEFAULT_DATASOURCE_ID,
+        },
+      );
+
+      consistencyRefreshJob.unique(
+        buildFDAJobFilter(
+          'consistency-refresh-fda-recurring',
+          service,
+          fdaId,
+          servicePath,
+        ),
+      );
+      consistencyRefreshJob.repeatEvery(consistencyRefreshInterval, {
+        skipImmediate: true,
+      });
+      await consistencyRefreshJob.save();
+    }
+
+    // 3. Clean partition job if applicable (remove all data older than windowSize)
+    if (windowSize) {
+      const cleanPartitionJob = agenda.create('clean-partition-recurring', {
+        fdaId,
+        service,
+        servicePath,
+        windowSize,
+        objStgConf,
+      });
+
+      cleanPartitionJob.unique(
+        buildFDAJobFilter(
+          'clean-partition-recurring',
+          service,
+          fdaId,
+          servicePath,
+        ),
+      );
+      cleanPartitionJob.repeatEvery(refreshInterval, { skipImmediate: true });
+      await cleanPartitionJob.save();
+    }
   }
 }
 

@@ -71,6 +71,7 @@ export async function startFetcher() {
 
   agenda.define('refresh-fda', refreshFDA);
   agenda.define('refresh-fda-recurring', refreshFDA);
+  agenda.define('consistency-refresh-fda-recurring', refreshFDA);
   agenda.define('clean-partition', cleanPartitionFDA);
   agenda.define('clean-partition-recurring', cleanPartitionFDA);
 

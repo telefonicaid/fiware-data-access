@@ -60,6 +60,7 @@ import {
   getFreePort,
   connectWithRetry,
   waitUntilFDACompleted,
+  waitForJobToFinish,
 } from './utils/integrationTestUtils.js';
 
 const { Client } = pg;
@@ -355,9 +356,11 @@ export function runFDAIntegrationSuite({ mode, label }) {
       visibility,
       httpReq,
       waitUntilFDACompleted,
+      waitForJobToFinish,
       buildDaDataUrl,
       getPgHost: () => pgHost,
       getPgPort: () => pgPort,
+      getMongoUri: () => mongoUri,
     });
 
     registerDefaultDataAccessIntegrationTests({
