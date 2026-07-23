@@ -51,7 +51,7 @@ export function registerComplexCasesIntegrationTests({
           datasourceId: 'default',
           type: 'postgres',
           config: {
-            user: 'postgres',
+            username: 'postgres',
             password: 'postgres',
             host: getPgHost(),
             port: getPgPort(),
@@ -77,7 +77,7 @@ export function registerComplexCasesIntegrationTests({
         const pgClient = new Client({
           host: getPgHost(),
           port: getPgPort(),
-          user: 'postgres',
+          username: 'postgres',
           password: 'postgres',
           database: service,
           connectionTimeoutMillis: 10_000,

@@ -47,7 +47,7 @@ export function registerFdaTimeColumnIntegrationTests({
           datasourceId: 'default',
           type: 'postgres',
           config: {
-            user: 'postgres',
+            username: 'postgres',
             password: 'postgres',
             host: getPgHost(),
             port: getPgPort(),

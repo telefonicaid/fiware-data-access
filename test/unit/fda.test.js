@@ -233,7 +233,7 @@ describe('fda fresh query execution', () => {
       datasourceId: 'default',
       type: 'postgres',
       config: {
-        user: 'u',
+        username: 'u',
         password: 'p',
         host: 'h',
         port: 5432,
@@ -269,7 +269,7 @@ describe('fda fresh query execution', () => {
 
     expect(pgMocks.runPgQuery).toHaveBeenCalledWith(
       {
-        user: 'u',
+        username: 'u',
         password: 'p',
         host: 'h',
         port: 5432,
@@ -321,7 +321,7 @@ describe('fda fresh query execution', () => {
 
     expect(pgMocks.runPgQuery).toHaveBeenCalledWith(
       {
-        user: 'u',
+        username: 'u',
         password: 'p',
         host: 'h',
         port: 5432,
@@ -384,7 +384,7 @@ describe('fda fresh query execution', () => {
 
     expect(pgMocks.createPgCursorReader).toHaveBeenCalledWith(
       {
-        user: 'u',
+        username: 'u',
         password: 'p',
         host: 'h',
         port: 5432,
@@ -1071,7 +1071,7 @@ describe('fetchFDA', () => {
       {},
       'svc',
       {
-        user: 'u',
+        username: 'u',
         password: 'p',
         host: 'h',
         port: 5432,
@@ -2324,7 +2324,7 @@ describe('datasource service helpers', () => {
       datasourceId: 'default',
       type: 'postgres',
       config: {
-        user: 'u',
+        username: 'u',
         password: 'p',
         host: 'h',
         port: 5432,
@@ -2336,7 +2336,7 @@ describe('datasource service helpers', () => {
 
   test('validates datasource connection before creating datasource', async () => {
     const dsConfig = {
-      user: 'u',
+      username: 'u',
       password: 'p',
       host: 'h',
       port: 5432,
@@ -2359,7 +2359,7 @@ describe('datasource service helpers', () => {
 
     await expect(
       createDatasourceForService('svc', 'default', 'postgres', {
-        user: 'u',
+        username: 'u',
         password: 'bad',
         host: 'h',
         port: 5432,
@@ -2395,7 +2395,7 @@ describe('datasource service helpers', () => {
 
   test('validates merged datasource config before updating datasource', async () => {
     const nextConfig = {
-      user: 'u2',
+      username: 'u2',
       password: 'p2',
       host: 'h2',
       port: 5432,
@@ -2446,7 +2446,7 @@ describe('processFDAAsync', () => {
       datasourceId: 'default',
       type: 'postgres',
       config: {
-        user: 'u',
+        username: 'u',
         password: 'p',
         host: 'h',
         port: 5432,
@@ -2505,7 +2505,7 @@ describe('processFDAAsync', () => {
       {},
       'service-name',
       {
-        user: 'u',
+        username: 'u',
         password: 'p',
         host: 'h',
         port: 5432,
@@ -2536,7 +2536,7 @@ describe('processFDAAsync', () => {
       {},
       'svc',
       {
-        user: 'u',
+        username: 'u',
         password: 'p',
         host: 'h',
         port: 5432,

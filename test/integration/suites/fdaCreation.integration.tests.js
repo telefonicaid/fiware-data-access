@@ -319,7 +319,7 @@ export function registerFdaCreationIntegrationTests({
         datasourceId,
         type: 'postgres',
         config: {
-          user: 'postgres',
+          username: 'postgres',
           password: 'postgres',
           host: getPgHost(),
           port: getPgPort(),
@@ -409,7 +409,7 @@ export function registerFdaCreationIntegrationTests({
         datasourceId,
         type: 'postgres',
         config: {
-          user: 'postgres',
+          username: 'postgres',
           password: 'postgres',
           host: getPgHost(),
           port: getPgPort(),
@@ -578,7 +578,7 @@ export function registerFdaCreationIntegrationTests({
         datasourceId,
         type: 'postgres',
         config: {
-          user: 'postgres',
+          username: 'postgres',
           password: 'postgres',
           host: getPgHost(),
           port: getPgPort(),

@@ -328,7 +328,7 @@ export function registerCdaCompatibilityIntegrationTests({
       const pgClient = new Client({
         host: getPgHost(),
         port: getPgPort(),
-        user: 'postgres',
+        username: 'postgres',
         password: 'postgres',
         database: service,
       });

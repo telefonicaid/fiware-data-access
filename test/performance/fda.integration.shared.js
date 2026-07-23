@@ -196,7 +196,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
         const pgClient = new Client({
           host: pgHost,
           port: pgPort,
-          user: 'postgres',
+          username: 'postgres',
           password: 'postgres',
           database: service,
           connectionTimeoutMillis: 10_000,
@@ -416,7 +416,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
           datasourceId: 'default',
           type: 'postgres',
           config: {
-            user: 'postgres',
+            username: 'postgres',
             password: 'postgres',
             host: getPgHost(),
             port: getPgPort(),
@@ -446,7 +446,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
         datasourceId: 'default',
         type: 'postgres',
         config: {
-          user: 'postgres',
+          username: 'postgres',
           password: 'postgres',
           host: getPgHost(),
           port: getPgPort(),

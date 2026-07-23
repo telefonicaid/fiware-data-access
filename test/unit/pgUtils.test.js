@@ -165,7 +165,7 @@ describe('pg utils', () => {
     currentClient.query.mockResolvedValue({ rows: [{ id: 1 }] });
 
     const creds = {
-      user: 'u',
+      username: 'u',
       password: 'p',
       host: 'h',
       port: 5432,
@@ -183,7 +183,7 @@ describe('pg utils', () => {
     currentClient.query.mockRejectedValue(new Error('query exploded'));
 
     const creds = {
-      user: 'u',
+      username: 'u',
       password: 'p',
       host: 'h',
       port: 5432,
@@ -203,7 +203,7 @@ describe('pg utils', () => {
     currentClient.query.mockRejectedValue(fdaError);
 
     const creds = {
-      user: 'u',
+      username: 'u',
       password: 'p',
       host: 'h',
       port: 5432,
@@ -223,7 +223,7 @@ describe('pg utils', () => {
     });
 
     const creds = {
-      user: 'u',
+      username: 'u',
       password: 'p',
       host: 'h',
       port: 5432,
@@ -252,7 +252,7 @@ describe('pg utils', () => {
     });
 
     const creds = {
-      user: 'u',
+      username: 'u',
       password: 'p',
       host: 'h',
       port: 5432,
@@ -303,7 +303,7 @@ describe('pg utils', () => {
     });
 
     const creds = {
-      user: 'u',
+      username: 'u',
       password: 'p',
       host: 'h',
       port: 5432,
@@ -329,7 +329,7 @@ describe('pg utils', () => {
     currentClient.query.mockRejectedValue(new Error('syntax exploded'));
 
     const creds = {
-      user: 'u',
+      username: 'u',
       password: 'p',
       host: 'h',
       port: 5432,
@@ -355,7 +355,7 @@ describe('pg utils', () => {
     currentClient.query.mockReturnValue(cursorObject);
 
     const creds = {
-      user: 'u',
+      username: 'u',
       password: 'p',
       host: 'h',
       port: 5432,
@@ -377,7 +377,7 @@ describe('pg utils', () => {
     currentPool.connect.mockRejectedValue(new Error('connect exploded'));
 
     const creds = {
-      user: 'u',
+      username: 'u',
       password: 'p',
       host: 'h',
       port: 5432,
@@ -405,7 +405,7 @@ describe('pg utils', () => {
     newUploadMock.mockReturnValue(uploader);
 
     const creds = {
-      user: 'u',
+      username: 'u',
       password: 'p',
       host: 'h',
       port: 5432,
@@ -440,7 +440,7 @@ describe('pg utils', () => {
     newUploadMock.mockReturnValue(uploader);
 
     const creds = {
-      user: 'u',
+      username: 'u',
       password: 'p',
       host: 'h',
       port: 5432,
@@ -459,14 +459,14 @@ describe('pg utils', () => {
     currentClient.query.mockResolvedValue({ rows: [] });
 
     const creds1 = {
-      user: 'u',
+      username: 'u',
       password: 'p',
       host: 'h',
       port: 5432,
       database: 'svc_db_1',
     };
     const creds2 = {
-      user: 'u',
+      username: 'u',
       password: 'p',
       host: 'h',
       port: 5432,
@@ -488,7 +488,7 @@ describe('pg utils', () => {
     currentPool.waitingCount = 0;
 
     const creds = {
-      user: 'u',
+      username: 'u',
       password: 'p',
       host: 'h',
       port: 5432,
@@ -512,7 +512,7 @@ describe('pg utils', () => {
     config.pg.pool.databaseIdleTimeoutMillis = 0;
 
     const creds = {
-      user: 'u',
+      username: 'u',
       password: 'p',
       host: 'h',
       port: 5432,
@@ -533,7 +533,7 @@ describe('pg utils', () => {
     });
 
     const creds = {
-      user: 'u',
+      username: 'u',
       password: 'p',
       host: 'h',
       port: 5432,
@@ -554,7 +554,7 @@ describe('pg utils', () => {
     currentPool.waitingCount = 0;
 
     const creds = {
-      user: 'u',
+      username: 'u',
       password: 'p',
       host: 'h',
       port: 5432,

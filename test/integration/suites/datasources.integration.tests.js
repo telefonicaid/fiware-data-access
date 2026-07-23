@@ -55,7 +55,7 @@ export function registerDatasourcesIntegrationTests({
       body: {
         type: 'postgres',
         config: {
-          user: 'postgres',
+          username: 'postgres',
           password: 'postgres',
           host: getPgHost(),
           port: getPgPort(),
@@ -85,7 +85,7 @@ export function registerDatasourcesIntegrationTests({
       datasourceId: 'default',
       type: 'postgres',
       config: {
-        user: 'postgres',
+        username: 'postgres',
         password: 'postgres',
         host: getPgHost(),
         port: getPgPort(),
@@ -108,7 +108,7 @@ export function registerDatasourcesIntegrationTests({
         datasourceId: 'default',
         type: 'postgres',
         config: {
-          user: 'postgres',
+          username: 'postgres',
           password: 'postgres',
           host: getPgHost(),
           port: getPgPort(),
@@ -136,7 +136,7 @@ export function registerDatasourcesIntegrationTests({
         datasourceId,
         type: 'postgres',
         config: {
-          user: 'postgres',
+          username: 'postgres',
           password: 'postgres',
           host: getPgHost(),
           port: getPgPort(),
@@ -168,7 +168,7 @@ export function registerDatasourcesIntegrationTests({
       body: {
         type: 'postgres',
         config: {
-          user: 'postgres',
+          username: 'postgres',
           password: 'postgres',
           host: getPgHost(),
           port: getPgPort(),
@@ -271,7 +271,7 @@ export function registerDatasourcesIntegrationTests({
         datasourceId: 'default',
         type: 'postgres',
         config: {
-          user: 'postgres',
+          username: 'postgres',
           password: 'postgres',
           host: getPgHost(),
           port: getPgPort(),
