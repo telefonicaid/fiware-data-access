@@ -653,8 +653,8 @@ describe('mongo utils', () => {
     expect(fakeClient.close).toHaveBeenCalled();
   });
 
-  test('readMongoDatasourceRows throws error for aggregation queries', async () => {
-    const { readMongoDatasourceRows } = await loadMongoModule();
+  test('createMongoCursorReader throws error for aggregation queries', async () => {
+    const { createMongoCursorReader } = await loadMongoModule();
 
     const dsConfig = {};
 
@@ -664,7 +664,7 @@ describe('mongo utils', () => {
     };
 
     await expect(
-      readMongoDatasourceRows(dsConfig, query),
+      createMongoCursorReader(dsConfig, query),
     ).rejects.toMatchObject({
       status: 400,
       type: 'NotImplemented',
@@ -672,8 +672,8 @@ describe('mongo utils', () => {
     });
   });
 
-  test('readMongoDatasourceRows throws error when neither filter nor aggregation defined', async () => {
-    const { readMongoDatasourceRows } = await loadMongoModule();
+  test('createMongoCursorReader throws error when neither filter nor aggregation defined', async () => {
+    const { createMongoCursorReader } = await loadMongoModule();
 
     const dsConfig = {};
 
@@ -683,11 +683,53 @@ describe('mongo utils', () => {
     };
 
     await expect(
-      readMongoDatasourceRows(dsConfig, query),
+      createMongoCursorReader(dsConfig, query),
     ).rejects.toMatchObject({
       status: 400,
       type: 'InvalidMongoFDAContract',
       message: 'Mongo query must define either filter or aggregation',
     });
+  });
+
+  test('createMongoCursorReader reads rows in chunks and closes resources', async () => {
+    const { createMongoCursorReader, collectionMock, clientMock } =
+      await loadMongoModule();
+
+    const cursorMock = {
+      next: jest
+        .fn()
+        .mockResolvedValueOnce({ device: 'dev-1', status: 'ok' })
+        .mockResolvedValueOnce({ device: 'dev-2', status: 'warn' })
+        .mockResolvedValueOnce(null),
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+
+    collectionMock.find.mockReturnValueOnce(cursorMock);
+
+    const reader = await createMongoCursorReader(
+      { uri: 'mongodb://mongo:27017', database: 'test-db' },
+      {
+        collection: 'events',
+        filter: { status: 'active' },
+        projection: { device: 1, status: 1 },
+      },
+      { chunkSize: 2 },
+    );
+
+    await expect(reader.columns).toEqual(['device', 'status']);
+    await expect(reader.readNextChunk()).resolves.toEqual([
+      { device: 'dev-1', status: 'ok' },
+      { device: 'dev-2', status: 'warn' },
+    ]);
+    await expect(reader.readNextChunk()).resolves.toEqual([]);
+
+    await reader.close();
+
+    expect(collectionMock.find).toHaveBeenCalledWith(
+      { status: 'active' },
+      { projection: { device: 1, status: 1 } },
+    );
+    expect(cursorMock.close).toHaveBeenCalled();
+    expect(clientMock.close).toHaveBeenCalled();
   });
 });

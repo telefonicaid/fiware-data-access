@@ -77,7 +77,7 @@ const mongoMocks = {
   updateDatasource: jest.fn(),
   removeDatasource: jest.fn(),
   validateMongoDatasourceConnection: jest.fn(),
-  readMongoDatasourceRows: jest.fn(),
+  createMongoCursorReader: jest.fn(),
 };
 
 const jobsMocks = {
@@ -142,7 +142,7 @@ await jest.unstable_mockModule('../../src/lib/utils/mongo.js', () => ({
   removeDatasource: mongoMocks.removeDatasource,
   validateMongoDatasourceConnection:
     mongoMocks.validateMongoDatasourceConnection,
-  readMongoDatasourceRows: mongoMocks.readMongoDatasourceRows,
+  createMongoCursorReader: mongoMocks.createMongoCursorReader,
 }));
 
 await jest.unstable_mockModule('../../src/lib/fdaConfig.js', () => ({
@@ -1017,7 +1017,6 @@ describe('fetchFDA', () => {
     });
     mongoMocks.createFDAMongo.mockResolvedValue(undefined);
     mongoMocks.removeFDA.mockResolvedValue(undefined);
-    mongoMocks.readMongoDatasourceRows.mockResolvedValue([]);
     dbMocks.getDBConnection.mockResolvedValue({});
     dbMocks.releaseDBConnection.mockResolvedValue(undefined);
     dbMocks.toParquet.mockResolvedValue(undefined);
@@ -2441,7 +2440,6 @@ describe('processFDAAsync', () => {
     dbMocks.toParquet.mockResolvedValue(undefined);
     pgMocks.uploadTable.mockResolvedValue(undefined);
     mongoMocks.updateFDAStatus.mockResolvedValue(undefined);
-    mongoMocks.readMongoDatasourceRows.mockResolvedValue([]);
     mongoMocks.retrieveDatasource.mockResolvedValue({
       datasourceId: 'default',
       type: 'postgres',
@@ -2589,10 +2587,40 @@ describe('processFDAAsync', () => {
       cached: true,
       servicePath: '/servicepath',
     });
-    mongoMocks.readMongoDatasourceRows.mockResolvedValueOnce([
-      { device: 'dev-1', status: 'ok' },
-      { device: 'dev-2', status: 'warn' },
-    ]);
+    const reader = {
+      columns: ['device', 'status'],
+      readNextChunk: jest
+        .fn()
+        .mockResolvedValueOnce([
+          { device: 'dev-1', status: 'ok' },
+          { device: 'dev-2', status: 'warn' },
+        ])
+        .mockResolvedValueOnce([]),
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+    mongoMocks.createMongoCursorReader.mockResolvedValueOnce(reader);
+
+    const uploadBody = {
+      write: jest.fn().mockReturnValue(true),
+      once: jest.fn((event, callback) => {
+        if (event === 'drain') {
+          callback();
+        }
+      }),
+      end: jest.fn(),
+      destroy: jest.fn(),
+    };
+
+    awsMocks.newUpload.mockReturnValueOnce({
+      done: jest.fn().mockResolvedValue(undefined),
+    });
+
+    const { PassThrough } = await import('node:stream');
+    const passThroughSpy = jest.spyOn(
+      await import('node:stream'),
+      'PassThrough',
+    );
+    passThroughSpy.mockImplementation(() => uploadBody);
 
     await processFDAAsync(
       'fda_mongo_cached',
@@ -2613,14 +2641,34 @@ describe('processFDAAsync', () => {
       'mongo-ds',
     );
 
+    expect(mongoMocks.createMongoCursorReader).toHaveBeenCalledWith(
+      {
+        uri: 'mongodb://mongo:27017',
+        database: 'svc',
+      },
+      {
+        collection: 'events',
+        filter: { status: 'ok' },
+        projection: {
+          device: 1,
+          status: 1,
+        },
+      },
+      { limit: undefined },
+    );
     expect(awsMocks.newUpload).toHaveBeenCalledWith(
       {},
       'svc',
       'servicepath/fda_mongo_cached.csv',
-      'device,status\ndev-1,ok\ndev-2,warn\n',
+      expect.anything(),
       5,
       1,
     );
+    expect(uploadBody.write).toHaveBeenCalledWith('device,status\n');
+    expect(uploadBody.write).toHaveBeenCalledWith('dev-1,ok\n');
+    expect(uploadBody.write).toHaveBeenCalledWith('dev-2,warn\n');
+    expect(uploadBody.end).toHaveBeenCalled();
+    expect(reader.close).toHaveBeenCalled();
     expect(dbMocks.toParquet).toHaveBeenCalledWith(
       {},
       'svc/servicepath/fda_mongo_cached.csv',
