@@ -45,7 +45,7 @@ export function registerSlidingWindowsIntegrationTests({
     return new Client({
       host: getPgHost(),
       port: getPgPort(),
-      username: 'postgres',
+      user: 'postgres',
       password: 'postgres',
       database: service,
       connectionTimeoutMillis: 10_000,
