@@ -714,9 +714,25 @@ describe('index routes - validation and middleware branches', () => {
       .expect(204);
 
     await request(app)
+      .post('/datasources')
+      .set('Fiware-Service', 'svc')
+      .send({
+        type: 'postgres',
+        config: { host: 'db' },
+      })
+      .expect(204);
+
+    expect(fdaMocks.createDatasourceForService).toHaveBeenCalledWith(
+      'svc',
+      'default',
+      'postgres',
+      { host: 'db' },
+    );
+
+    await request(app)
       .get('/datasources')
       .set('Fiware-Service', 'svc')
-      .expect(204)
+      .expect(200)
       .expect([
         { datasourceId: 'default', type: 'postgres', config: { host: 'db' } },
       ]);

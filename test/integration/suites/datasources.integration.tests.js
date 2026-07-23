@@ -53,7 +53,6 @@ export function registerDatasourcesIntegrationTests({
         'Fiware-Service': service,
       },
       body: {
-        datasourceId: 'default',
         type: 'postgres',
         config: {
           user: 'postgres',
