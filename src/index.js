@@ -690,13 +690,17 @@ app.post('/datasources', async (req, res) => {
   const service = req.get('Fiware-Service');
   const body = req.body ?? {};
   validateAllowedFieldsBody(body, ['datasourceId', 'type', 'config']);
-  const { datasourceId, type, config: dsConfig } = body;
+  let { datasourceId, type, config: dsConfig } = body;
 
-  if (!service || !datasourceId || !type || !dsConfig) {
+  if (!service || !type || !dsConfig) {
     return res.status(400).json({
       error: 'BadRequest',
       description: 'Missing required fields: datasourceId, type, config',
     });
+  }
+
+  if (!datasourceId) {
+    datasourceId = 'default';
   }
 
   await createDatasourceForService(service, datasourceId, type, dsConfig);
