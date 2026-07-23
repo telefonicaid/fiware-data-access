@@ -53,10 +53,9 @@ export function registerDatasourcesIntegrationTests({
         'Fiware-Service': service,
       },
       body: {
-        datasourceId: 'default',
         type: 'postgres',
         config: {
-          user: 'postgres',
+          username: 'postgres',
           password: 'postgres',
           host: getPgHost(),
           port: getPgPort(),
@@ -73,7 +72,7 @@ export function registerDatasourcesIntegrationTests({
       );
     }
 
-    expect(createRes.status).toBe(200);
+    expect(createRes.status).toBe(204);
 
     const getRes = await httpReq({
       method: 'GET',
@@ -86,7 +85,7 @@ export function registerDatasourcesIntegrationTests({
       datasourceId: 'default',
       type: 'postgres',
       config: {
-        user: 'postgres',
+        username: 'postgres',
         password: 'postgres',
         host: getPgHost(),
         port: getPgPort(),
@@ -109,7 +108,7 @@ export function registerDatasourcesIntegrationTests({
         datasourceId: 'default',
         type: 'postgres',
         config: {
-          user: 'postgres',
+          username: 'postgres',
           password: 'postgres',
           host: getPgHost(),
           port: getPgPort(),
@@ -137,7 +136,7 @@ export function registerDatasourcesIntegrationTests({
         datasourceId,
         type: 'postgres',
         config: {
-          user: 'postgres',
+          username: 'postgres',
           password: 'postgres',
           host: getPgHost(),
           port: getPgPort(),
@@ -146,7 +145,7 @@ export function registerDatasourcesIntegrationTests({
       },
     });
 
-    expect(createRes.status).toBe(200);
+    expect(createRes.status).toBe(204);
 
     const listRes = await httpReq({
       method: 'GET',
@@ -169,7 +168,7 @@ export function registerDatasourcesIntegrationTests({
       body: {
         type: 'postgres',
         config: {
-          user: 'postgres',
+          username: 'postgres',
           password: 'postgres',
           host: getPgHost(),
           port: getPgPort(),
@@ -272,7 +271,7 @@ export function registerDatasourcesIntegrationTests({
         datasourceId: 'default',
         type: 'postgres',
         config: {
-          user: 'postgres',
+          username: 'postgres',
           password: 'postgres',
           host: getPgHost(),
           port: getPgPort(),
@@ -281,7 +280,7 @@ export function registerDatasourcesIntegrationTests({
       },
     });
 
-    expect(createDefault.status).toBe(200);
+    expect(createDefault.status).toBe(204);
 
     const createCachedWithDefault = await httpReq({
       method: 'POST',
@@ -338,7 +337,7 @@ export function registerDatasourcesIntegrationTests({
       },
     });
 
-    expect(createDa.status).toBe(200);
+    expect(createDa.status).toBe(204);
 
     const cachedRead = await httpReq({
       method: 'GET',

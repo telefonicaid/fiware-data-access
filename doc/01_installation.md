@@ -185,10 +185,9 @@ curl -i -X POST http://localhost:8080/datasources \
   -H "Content-Type: application/json" \
   -H "Fiware-Service: trantor" \
   -d '{
-    "datasourceId": "default",
     "type": "postgres",
     "config": {
-      "user": "postgres",
+      "username": "postgres",
       "password": "postgres",
       "host": "localhost",
       "port": 5432,
@@ -685,7 +684,7 @@ Notes:
     [Complete Working Example](#complete-working-example-manual-verification)).
 
 -   **PostgreSQL connection errors** Verify the datasource provisioning (`GET /datasources` with the same
-    `Fiware-Service`) and the datasource credentials (`host`, `port`, `database`, user, password).
+    `Fiware-Service`) and the datasource credentials (`host`, `port`, `database`, username, password).
 
 -   **Wrong Node.js version** Ensure Node.js 24 is being used when running locally.
 

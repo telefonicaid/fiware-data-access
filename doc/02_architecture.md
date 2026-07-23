@@ -233,7 +233,7 @@ Each document corresponds to one datasource definition for one service:
 -   **service**: FIWARE service (`fiware-service`) name
 -   **datasourceId**: datasource identifier (unique within the service)
 -   **type**: datasource type (currently `postgres`)
--   **config**: connection settings (for postgres: `user`, `password`, `host`, `port`, `database`)
+-   **config**: connection settings (for postgres: `username`, `password`, `host`, `port`, `database`)
 
 #### Example MongoDB datasource document
 
@@ -244,7 +244,7 @@ Each document corresponds to one datasource definition for one service:
     "datasourceId": "default",
     "type": "postgres",
     "config": {
-        "user": "postgres",
+        "username": "postgres",
         "password": "postgres",
         "host": "localhost",
         "port": 5432,

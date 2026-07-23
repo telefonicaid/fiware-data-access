@@ -416,7 +416,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
           datasourceId: 'default',
           type: 'postgres',
           config: {
-            user: 'postgres',
+            username: 'postgres',
             password: 'postgres',
             host: getPgHost(),
             port: getPgPort(),
@@ -446,7 +446,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
         datasourceId: 'default',
         type: 'postgres',
         config: {
-          user: 'postgres',
+          username: 'postgres',
           password: 'postgres',
           host: getPgHost(),
           port: getPgPort(),
