@@ -1288,7 +1288,7 @@ function validateScheduledOptions(refreshPolicy, objStgConf, timeColumn) {
     if (
       refreshMs !== null &&
       consistencyMs !== null &&
-      consistencyMs <= refreshMs
+      consistencyMs < refreshMs
     ) {
       throw new FDAError(
         400,
