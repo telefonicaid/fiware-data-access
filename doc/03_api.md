@@ -593,7 +593,7 @@ Validation is datasource-specific:
 
 _**Response code**_
 
--   Successful operation uses `200 OK`.
+-   Successful operation uses 204 No Content
 -   Errors use a non-2xx and (optionally) an error payload. See subsection on [Error Responses](#error-responses).
 
 _**Response headers**_
@@ -865,7 +865,7 @@ If omitted, the default policy is:
 | Field                        | Optional | Type   | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | ---------------------------- | -------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `refreshInterval`            |          | string | It represents a human interval (e.g. `1 hour`) or a cron expression. The frequency for the scheduled refresh and clean jobs. Must be minor or equal to partition size (if existing) (value of the field [`objstgconf.partition`](#object-storage-configuration-objstgconf)).                                                                                                                                                                                                                                |
-| `consistencyRefreshInterval` | ✓        | string | **Only for type `window`**, it represents a human interval or cron expression used to schedule a periodic full rebuild of the FDA through the manual refresh flow. This helps recover delayed historical data while keeping the incremental sliding-window refresh active. It must be greater than `refreshInterval`, otherwise `InvalidParam` error response will be got                                                                                                                                                                                                                                 |
+| `consistencyRefreshInterval` | ✓        | string | **Only for type `window`**, it represents a human interval or cron expression used to schedule a periodic full rebuild of the FDA through the manual refresh flow. This helps recover delayed historical data while keeping the incremental sliding-window refresh active. It must be greater than `refreshInterval`, otherwise `InvalidParam` error response will be got                                                                                                                                   |
 | `fetchSize`                  |          | string | **Only for type `window`**, it can take the values `hour`, `day`, `week`, `month` and `year`. Represents the time range of data to fetch in the scheduled fetchs (e.g. last hour/month data). If [`objStgConf.partition`](#object-storage-configuration-objstgconf) is set, it must be equal to partition size; in practice `hour` is only valid when no partitioning is configured.                                                                                                                        |
 | `windowSize`                 | ✓        | string | Temporal interval of data we are gonna keep in storage (e.g. only the data of the last month). This value also affects the first fetch of a window FDA and the manual refresh. Possible values are formed using a number and an allowed unit, e.g.: `3 days`, `6 weeks`, `1 month` and `2 years`. Units without number count as amount 1 (`year` = `1 year`). If omitted, then all data is kept forever, no clean partition is done and the first fetch retrieves all the data (i.e. an "infinite" window). |
 
@@ -1472,17 +1472,13 @@ curl -i -X POST http://localhost:8080/public/fdas/fda_alarms/das \
 _**Example Response:**_
 
 ```
-HTTP/1.1 200 OK
+HTTP/1.1 204 No Content
 X-Powered-By: Express
-Content-Type: text/plain; charset=utf-8
-Content-Length: 7
-
-Created
 ```
 
 _**Response code**_
 
--   Successful operation uses 200 OK
+-   Successful operation uses 204 No Content
 -   Errors use a non-2xx and (optionally) an error payload. See subsection on [Error Responses](#error-responses) for
     more details.
 
