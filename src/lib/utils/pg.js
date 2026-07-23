@@ -38,8 +38,8 @@ pg.types.setTypeParser(pg.types.builtins.INT8, (value) =>
 const logger = getBasicLogger();
 const pools = new Map();
 
-function getPoolKey(user, password, host, port, database) {
-  return JSON.stringify({ user, password, host, port, database });
+function getPoolKey(username, password, host, port, database) {
+  return JSON.stringify({ username, password, host, port, database });
 }
 
 function clearPoolIdleTimer(entry) {
@@ -86,8 +86,8 @@ function schedulePoolIdleClose(key) {
   }, timeoutMs);
 }
 
-export function getPgPool(user, password, host, port, database) {
-  const key = getPoolKey(user, password, host, port, database);
+export function getPgPool(username, password, host, port, database) {
+  const key = getPoolKey(username, password, host, port, database);
 
   if (pools.has(key)) {
     const existing = pools.get(key);
@@ -96,7 +96,7 @@ export function getPgPool(user, password, host, port, database) {
   }
 
   const pool = new Pool({
-    user,
+    user: username,
     password,
     host,
     port,
@@ -203,9 +203,9 @@ export async function closePgPools() {
   pools.clear();
 }
 
-export function getPgClient(user, password, host, port, database) {
+export function getPgClient(username, password, host, port, database) {
   return new Client({
-    user,
+    user: username,
     password,
     host,
     port,
@@ -220,10 +220,10 @@ export async function uploadTable(
   query,
   path,
 ) {
-  const { user, password, host, port, database } = pgCredentials;
+  const { username, password, host, port, database } = pgCredentials;
   logger.debug({ bucket, database, query, path }, '[DEBUG]: uploadTable');
-  const key = getPoolKey(user, password, host, port, database);
-  const pgPool = getPgPool(user, password, host, port, database);
+  const key = getPoolKey(username, password, host, port, database);
+  const pgPool = getPgPool(username, password, host, port, database);
   const pgClient = await pgPool.connect();
 
   const baseQuery = `COPY (${query}) TO STDOUT WITH CSV HEADER`;
@@ -259,9 +259,9 @@ export async function uploadTable(
 }
 
 export async function runPgQuery(pgCredentials, text, values) {
-  const { user, password, host, port, database } = pgCredentials;
-  const key = getPoolKey(user, password, host, port, database);
-  const pgPool = getPgPool(user, password, host, port, database);
+  const { username, password, host, port, database } = pgCredentials;
+  const key = getPoolKey(username, password, host, port, database);
+  const pgPool = getPgPool(username, password, host, port, database);
 
   const pgClient = await pgPool.connect();
 
@@ -297,9 +297,9 @@ export async function validatePostgresQuery(
   query,
   { timeColumn, returnColumns = false } = {},
 ) {
-  const { user, password, host, port, database } = pgCredentials;
-  const key = getPoolKey(user, password, host, port, database);
-  const pgPool = getPgPool(user, password, host, port, database);
+  const { username, password, host, port, database } = pgCredentials;
+  const key = getPoolKey(username, password, host, port, database);
+  const pgPool = getPgPool(username, password, host, port, database);
   const pgClient = await pgPool.connect();
 
   const normalizedQuery = query.trim().replace(/;+\s*$/, '');
@@ -355,9 +355,9 @@ export async function createPgCursorReader(
   values,
   batchSize,
 ) {
-  const { user, password, host, port, database } = pgCredentials;
-  const key = getPoolKey(user, password, host, port, database);
-  const pgPool = getPgPool(user, password, host, port, database);
+  const { username, password, host, port, database } = pgCredentials;
+  const key = getPoolKey(username, password, host, port, database);
+  const pgPool = getPgPool(username, password, host, port, database);
 
   let pgClient;
   let cursor;
