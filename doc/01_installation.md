@@ -185,7 +185,6 @@ curl -i -X POST http://localhost:8080/datasources \
   -H "Content-Type: application/json" \
   -H "Fiware-Service: trantor" \
   -d '{
-    "datasourceId": "default",
     "type": "postgres",
     "config": {
       "user": "postgres",

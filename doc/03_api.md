@@ -491,7 +491,7 @@ A datasource is represented by a JSON object with the following fields:
 
 | Parameter      | Optional | Type   | Description                                                                                                                            |
 | -------------- | -------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `datasourceId` |          | string | Datasource identifier, unique within a given `Fiware-Service`.                                                                         |
+| `datasourceId` | ✓        | string | Datasource identifier, unique within a given `Fiware-Service`. Defaults to `"default"` if not provided.                                |
 | `type`         |          | string | Datasource type. Currently supported: `postgres`, `mongodb`.                                                                           |
 | `config`       |          | object | Datasource connection configuration. For `postgres`: `user`, `password`, `host`, `port`, `database`. For `mongodb`: `uri`, `database`. |
 
@@ -582,7 +582,7 @@ _**Request payload**_
 
 JSON object following [Datasource payload datamodel](#datasource-payload-datamodel).
 
-Required body fields: `datasourceId`, `type`, `config`.
+Required body fields: `type`, `config`. `datasourceId` is optional and defaults to `"default"` when not provided.
 
 Datasource creation validates the connection before persisting the datasource.
 
@@ -611,7 +611,6 @@ curl -i -X POST http://localhost:8080/datasources \
     -H "Content-Type: application/json" \
     -H "Fiware-Service: trantor" \
     -d '{
-        "datasourceId": "default",
         "type": "postgres",
         "config": {
             "user": "postgres",
