@@ -73,7 +73,7 @@ export function registerDatasourcesIntegrationTests({
       );
     }
 
-    expect(createRes.status).toBe(200);
+    expect(createRes.status).toBe(204);
 
     const getRes = await httpReq({
       method: 'GET',
@@ -146,7 +146,7 @@ export function registerDatasourcesIntegrationTests({
       },
     });
 
-    expect(createRes.status).toBe(200);
+    expect(createRes.status).toBe(204);
 
     const listRes = await httpReq({
       method: 'GET',
@@ -281,7 +281,7 @@ export function registerDatasourcesIntegrationTests({
       },
     });
 
-    expect(createDefault.status).toBe(200);
+    expect(createDefault.status).toBe(204);
 
     const createCachedWithDefault = await httpReq({
       method: 'POST',
@@ -338,7 +338,7 @@ export function registerDatasourcesIntegrationTests({
       },
     });
 
-    expect(createDa.status).toBe(200);
+    expect(createDa.status).toBe(204);
 
     const cachedRead = await httpReq({
       method: 'GET',

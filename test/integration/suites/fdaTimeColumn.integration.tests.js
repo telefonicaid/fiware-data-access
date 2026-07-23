@@ -56,7 +56,7 @@ export function registerFdaTimeColumnIntegrationTests({
         },
       });
 
-      if (createRes.status !== 200 && createRes.status !== 409) {
+      if (createRes.status !== 204 && createRes.status !== 409) {
         throw new Error(
           `Failed to ensure default datasource: ${createRes.status} ${JSON.stringify(createRes.json)}`,
         );

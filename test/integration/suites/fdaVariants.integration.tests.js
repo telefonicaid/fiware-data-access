@@ -112,7 +112,7 @@ export function registerFdaVariantsIntegrationTests({
           },
         });
 
-        expect(createSiblingDa.status).toBe(200);
+        expect(createSiblingDa.status).toBe(204);
 
         const listRes = await httpReq({
           method: 'GET',
@@ -310,7 +310,7 @@ export function registerFdaVariantsIntegrationTests({
           },
         });
 
-        expect(daRes.status).toBe(200);
+        expect(daRes.status).toBe(204);
 
         const executionRes = await httpReq({
           method: 'GET',

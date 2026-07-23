@@ -354,7 +354,7 @@ export function registerMongoFdasIntegrationTests({
             createDaRes.json ?? createDaRes.text,
           );
         }
-        expect(createDaRes.status).toBe(200);
+        expect(createDaRes.status).toBe(204);
 
         const queryRes = await httpReq({
           method: 'GET',
