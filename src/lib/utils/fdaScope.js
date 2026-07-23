@@ -21,6 +21,27 @@
 // the peaceful possession and ownership of these rights will be prosecuted by the means
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
+import { FDAError } from '../fdaError.js';
+
+export function normalizeServicePath(servicePath) {
+  try {
+    return normalizeScopedServicePath(servicePath);
+  } catch (error) {
+    if (error.message === 'servicePath is required') {
+      throw new FDAError(
+        400,
+        'InvalidServicePath',
+        'Fiware-ServicePath header is required',
+      );
+    }
+
+    throw new FDAError(
+      400,
+      'InvalidServicePath',
+      'Fiware-ServicePath must be a non-root absolute path (e.g. /servicepath)',
+    );
+  }
+}
 
 export function normalizeScopedServicePath(servicePath) {
   if (!servicePath || typeof servicePath !== 'string') {

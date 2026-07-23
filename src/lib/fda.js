@@ -87,7 +87,7 @@ import {
   buildFDAJobCancelFilter,
   getBucketNameFromService,
   getFDAStoragePath,
-  normalizeScopedServicePath,
+  normalizeServicePath,
 } from './utils/fdaScope.js';
 import { config } from './fdaConfig.js';
 import { FDAError } from './fdaError.js';
@@ -1969,26 +1969,6 @@ function normalizeVisibility(visibility) {
   }
 
   return visibility;
-}
-
-function normalizeServicePath(servicePath) {
-  try {
-    return normalizeScopedServicePath(servicePath);
-  } catch (error) {
-    if (error.message === 'servicePath is required') {
-      throw new FDAError(
-        400,
-        'InvalidServicePath',
-        'Fiware-ServicePath header is required',
-      );
-    }
-
-    throw new FDAError(
-      400,
-      'InvalidServicePath',
-      'Fiware-ServicePath must be a non-root absolute path (e.g. /servicepath)',
-    );
-  }
 }
 
 function toFDAApiResponse(fda, { includeId }) {
