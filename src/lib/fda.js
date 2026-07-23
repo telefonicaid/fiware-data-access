@@ -110,7 +110,7 @@ function assertSupportedDatasourceType(type) {
   }
 }
 
-function validateMongoFDAContract(query, timeColumn, cached) {
+export function validateMongoFDAContract(query, timeColumn, cached) {
   validateBasicQueryStructure(query);
 
   const { collection, filter, projection, aggregation } = query;

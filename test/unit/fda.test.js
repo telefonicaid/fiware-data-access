@@ -181,6 +181,7 @@ const {
   getDA,
   putDA,
   getFDAs,
+  validateMongoFDAContract,
   cleanPartition,
 } = await import('../../src/lib/fda.js');
 
@@ -3644,7 +3645,7 @@ describe('cleanPartition', () => {
       'public/fdaA/2099-01-01.parquet',
     ]);
     awsMocks.dropFiles.mockResolvedValue(undefined);
-    dbMocks.extractDate.mockReturnValue(new Date('2020-01-01')); // valor por defecto
+    dbMocks.extractDate.mockReturnValue(new Date('2020-01-01'));
   });
 
   test('drops only partitions older than the cutoff date', async () => {
@@ -3759,6 +3760,66 @@ describe('cleanPartition', () => {
       expect(err.status).toBe(400);
     }
   });
+
+  test('throws CleaningError when objStgConf.partition is undefined', async () => {
+    jest.clearAllMocks();
+    awsMocks.getS3Client.mockReturnValue({});
+    awsMocks.listObjects.mockResolvedValue([]);
+    awsMocks.dropFiles.mockResolvedValue(undefined);
+
+    await expect(
+      cleanPartition(
+        'svc',
+        'fdaA',
+        'month',
+        { partition: undefined },
+        '/servicepath',
+      ),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'CleaningError',
+      message: 'Removing a non partitioned FDA fdaA.',
+    });
+
+    expect(awsMocks.listObjects).not.toHaveBeenCalled();
+    expect(awsMocks.dropFiles).not.toHaveBeenCalled();
+  });
+
+  test('throws CleaningError when objStgConf is null', async () => {
+    jest.clearAllMocks();
+    awsMocks.getS3Client.mockReturnValue({});
+    awsMocks.listObjects.mockResolvedValue([]);
+    awsMocks.dropFiles.mockResolvedValue(undefined);
+
+    await expect(
+      cleanPartition('svc', 'fdaA', 'month', null, '/servicepath'),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'CleaningError',
+      message: 'Removing a non partitioned FDA fdaA.',
+    });
+
+    expect(awsMocks.listObjects).not.toHaveBeenCalled();
+    expect(awsMocks.dropFiles).not.toHaveBeenCalled();
+  });
+
+  test('throws CleaningError when objStgConf is undefined', async () => {
+    jest.clearAllMocks();
+    awsMocks.getS3Client.mockReturnValue({});
+    awsMocks.listObjects.mockResolvedValue([]);
+    awsMocks.dropFiles.mockResolvedValue(undefined);
+
+    await expect(
+      cleanPartition('svc', 'fdaA', 'month', undefined, '/servicepath'),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'CleaningError',
+      message: 'Removing a non partitioned FDA fdaA.',
+    });
+
+    expect(awsMocks.listObjects).not.toHaveBeenCalled();
+    expect(awsMocks.dropFiles).not.toHaveBeenCalled();
+  });
 });
 
 describe('getStoredFDA', () => {
@@ -3766,23 +3827,41 @@ describe('getStoredFDA', () => {
     jest.clearAllMocks();
   });
 
-  test('getStoredFDA returns FDA when exists', async () => {
-    mongoMocks.retrieveFDA.mockResolvedValueOnce({
+  test('returns FDA when exists', async () => {
+    const mockFda = {
       fdaId: 'fdaA',
-    });
+      query: 'SELECT 1',
+      visibility: 'public',
+      servicePath: '/servicepath',
+    };
+    mongoMocks.retrieveFDA.mockResolvedValue(mockFda);
 
-    const result = await getStoredFDA('svc', 'fdaA', '/sp');
+    const result = await getStoredFDA('svc', 'fdaA', '/servicepath');
 
-    expect(result).toEqual({ fdaId: 'fdaA' });
+    expect(mongoMocks.retrieveFDA).toHaveBeenCalledWith(
+      'svc',
+      'fdaA',
+      '/servicepath',
+    );
+    expect(result).toEqual(mockFda);
   });
 
-  test('getStoredFDA throws 404 when FDA does not exist', async () => {
-    mongoMocks.retrieveFDA.mockResolvedValueOnce(null);
+  test('throws FDANotFound when FDA does not exist', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue(null);
 
-    await expect(getStoredFDA('svc', 'missing', '/sp')).rejects.toMatchObject({
+    await expect(
+      getStoredFDA('svc', 'missing-fda', '/servicepath'),
+    ).rejects.toMatchObject({
       status: 404,
       type: 'FDANotFound',
+      message: 'FDA missing-fda not found in service svc',
     });
+
+    expect(mongoMocks.retrieveFDA).toHaveBeenCalledWith(
+      'svc',
+      'missing-fda',
+      '/servicepath',
+    );
   });
 
   test('returns FDA when found', async () => {
@@ -3865,5 +3944,171 @@ describe('mongo utils extra coverage', () => {
     expect(() =>
       validateMongoFDAContract({ a: 1 }, 'col', ['a'], 'a', false),
     ).toThrow();
+  });
+});
+
+describe('validateMongoFDAContract functions', () => {
+  test('validateFilter throws when filter is null', () => {
+    expect(() =>
+      validateMongoFDAContract(
+        { collection: 'col', filter: null, projection: { a: 1 } },
+        'time',
+        true,
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        status: 400,
+        type: 'InvalidMongoFDAContract',
+        message: 'Mongo FDA filter must be a JSON object',
+      }),
+    );
+  });
+
+  test('validateFilter throws when filter is an array', () => {
+    expect(() =>
+      validateMongoFDAContract(
+        { collection: 'col', filter: [], projection: { a: 1 } },
+        'time',
+        true,
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        status: 400,
+        type: 'InvalidMongoFDAContract',
+        message: 'Mongo FDA filter must be a JSON object',
+      }),
+    );
+  });
+
+  test('validateFilter throws when filter is a string', () => {
+    expect(() =>
+      validateMongoFDAContract(
+        { collection: 'col', filter: 'string', projection: { a: 1 } },
+        'time',
+        true,
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        status: 400,
+        type: 'InvalidMongoFDAContract',
+        message: 'Mongo FDA filter must be a JSON object',
+      }),
+    );
+  });
+
+  test('validateProjection throws when projection is null', () => {
+    expect(() =>
+      validateMongoFDAContract(
+        { collection: 'col', filter: {}, projection: null },
+        'time',
+        true,
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        status: 400,
+        type: 'InvalidMongoFDAContract',
+        message: 'Mongo FDA projection must be an object',
+      }),
+    );
+  });
+
+  test('validateProjection throws when projection is an array', () => {
+    expect(() =>
+      validateMongoFDAContract(
+        { collection: 'col', filter: {}, projection: [] },
+        'time',
+        true,
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        status: 400,
+        type: 'InvalidMongoFDAContract',
+        message: 'Mongo FDA projection must be an object',
+      }),
+    );
+  });
+
+  test('validateTimeColumnInProjection throws when timeColumn not in projection', () => {
+    expect(() =>
+      validateMongoFDAContract(
+        { collection: 'col', filter: {}, projection: { a: 1 } },
+        'timeColumnMissing',
+        true,
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        status: 400,
+        type: 'InvalidMongoFDAContract',
+        message: 'Mongo FDA timeColumn must be included in projection',
+      }),
+    );
+  });
+
+  test('validateTimeColumnInProjection passes when timeColumn is undefined', () => {
+    expect(() =>
+      validateMongoFDAContract(
+        { collection: 'col', filter: {}, projection: { a: 1 } },
+        undefined,
+        true,
+      ),
+    ).not.toThrow();
+  });
+
+  test('validateTimeColumnInProjection passes when projection is undefined', () => {
+    expect(() =>
+      validateMongoFDAContract(
+        { collection: 'col', filter: {}, projection: undefined },
+        'time',
+        true,
+      ),
+    ).not.toThrow();
+  });
+
+  test('validateAggregationQuery throws when query is not an array', () => {
+    expect(() =>
+      validateMongoFDAContract(
+        { collection: 'col', aggregation: {} },
+        'time',
+        true,
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        status: 400,
+        type: 'InvalidMongoFDAContract',
+        message: 'Mongo FDA aggregation must be a non-empty array',
+      }),
+    );
+  });
+
+  test('validateAggregationQuery throws when query is an empty array', () => {
+    expect(() =>
+      validateMongoFDAContract(
+        { collection: 'col', aggregation: [] },
+        'time',
+        true,
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        status: 400,
+        type: 'InvalidMongoFDAContract',
+        message: 'Mongo FDA aggregation must be a non-empty array',
+      }),
+    );
+  });
+
+  test('validateAggregationQuery throws with aggregation not supported message', () => {
+    expect(() =>
+      validateMongoFDAContract(
+        { collection: 'col', aggregation: [{ $match: { status: 'ok' } }] },
+        'time',
+        true,
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        status: 400,
+        type: 'MongoAggregationNotSupported',
+        message: 'Aggregation pipelines are not supported yet',
+      }),
+    );
   });
 });
