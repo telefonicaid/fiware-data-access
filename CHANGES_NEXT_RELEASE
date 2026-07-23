@@ -1,4 +1,4 @@
-- Add: configurable consistency refresh for window-based FDAs, scheduling periodic full rebuilds to recover delayed historical gaps while preserving incremental refreshes (#231)
+- Add: configurable consistency refresh for window-based FDAs, scheduling periodic full rebuilds to recover delayed historical gaps while preserving incremental refreshes (new field consistencyRefreshInterval) (#231)
 - Add: windowSize param in refresh policy now supports a custom amount before the unit (#219)
 - Add: persist FDA schema in MongoDB during creation (strict mode) and use it for DA validation and default DA generation (#233)
 - Add: introduce `validationMode` field (`strict` / `unchecked`) to control synchronous schema validation; `unchecked` skips validation and default DA creation, enabling fast FDA creation for heavy queries (#209, #222)
