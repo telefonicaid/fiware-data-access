@@ -18,7 +18,7 @@ the key fields are summarized below:
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | `type`                       | Must be set to `window` to enable sliding window behavior.                                                                                |
 | `refreshInterval`            | Defines how often the window refresh runs. It accepts either a human interval such as `1 hour` or a cron expression.                      |
-| `consistencyRefreshInterval` | Optional lower-frequency schedule for a full FDA rebuild that helps recover delayed historical data.                                      |
+| `consistencyRefreshInterval` | Optional lower-frequency schedule for a full FDA rebuild that helps recover delayed historical data. It must be greater than `refreshInterval`, otherwise `InvalidParam` error response will be got                                      |
 | `fetchSize`                  | Defines the **time range** of data to fetch on each refresh. For example, `week` fetches data from the last week.                         |
 | `windowSize`                 | Specifies the total retention window (e.g., data from last month), defining which data should be preserved and which should be discarded. |
 
