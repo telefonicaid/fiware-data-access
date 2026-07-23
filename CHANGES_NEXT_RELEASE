@@ -1,4 +1,4 @@
-- Migration: PostgreSQL datasource configuration field user renamed to username; datasource payloads must be updated accordingly (#246)
+- (!) Fix: PostgreSQL datasource configuration field user renamed to username; datasource payloads must be updated accordingly (#246)
 - Add: make `datasourceId` optional when creating datasources, defaulting to "default" when not provided (#245)
 - Add: configurable consistency refresh for window-based FDAs, scheduling periodic full rebuilds to recover delayed historical gaps while preserving incremental refreshes (new field consistencyRefreshInterval) (#231)
 - Add: windowSize param in refresh policy now supports a custom amount before the unit (#219)
