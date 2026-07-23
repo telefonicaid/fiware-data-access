@@ -489,11 +489,11 @@ fda_jobs_agenda_total 7
 
 A datasource is represented by a JSON object with the following fields:
 
-| Parameter      | Optional | Type   | Description                                                                                                                            |
-| -------------- | -------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `datasourceId` | ✓        | string | Datasource identifier, unique within a given `Fiware-Service`. Defaults to `"default"` if not provided.                                |
-| `type`         |          | string | Datasource type. Currently supported: `postgres`, `mongodb`.                                                                           |
-| `config`       |          | object | Datasource connection configuration. For `postgres`: `user`, `password`, `host`, `port`, `database`. For `mongodb`: `uri`, `database`. |
+| Parameter      | Optional | Type   | Description                                                                                                                                |
+| -------------- | -------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `datasourceId` | ✓        | string | Datasource identifier, unique within a given `Fiware-Service`. Defaults to `"default"` if not provided.                                    |
+| `type`         |          | string | Datasource type. Currently supported: `postgres`, `mongodb`.                                                                               |
+| `config`       |          | object | Datasource connection configuration. For `postgres`: `username`, `password`, `host`, `port`, `database`. For `mongodb`: `uri`, `database`. |
 
 ### Datasources operations
 
@@ -549,7 +549,7 @@ _**Example Response:**_
         "datasourceId": "default",
         "type": "postgres",
         "config": {
-            "user": "postgres",
+            "username": "postgres",
             "password": "postgres",
             "host": "localhost",
             "port": 5432,
@@ -613,7 +613,7 @@ curl -i -X POST http://localhost:8080/datasources \
     -d '{
         "type": "postgres",
         "config": {
-            "user": "postgres",
+            "username": "postgres",
             "password": "postgres",
             "host": "localhost",
             "port": 5432,
@@ -731,7 +731,7 @@ curl -i -X PUT http://localhost:8080/datasources/default \
     -d '{
         "type": "postgres",
         "config": {
-            "user": "postgres",
+            "username": "postgres",
             "password": "postgres",
             "host": "localhost",
             "port": 5432,
