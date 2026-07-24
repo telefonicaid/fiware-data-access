@@ -64,7 +64,7 @@ export function registerSlidingWindowsIntegrationTests({
         datasourceId: 'default',
         type: 'postgres',
         config: {
-          user: 'postgres',
+          username: 'postgres',
           password: 'postgres',
           host: getPgHost(),
           port: getPgPort(),
@@ -73,7 +73,7 @@ export function registerSlidingWindowsIntegrationTests({
       },
     });
 
-    if (createRes.status !== 200 && createRes.status !== 409) {
+    if (createRes.status !== 204 && createRes.status !== 409) {
       throw new Error(
         `Failed to ensure default datasource: ${createRes.status} ${JSON.stringify(createRes.json)}`,
       );
@@ -973,7 +973,7 @@ export function registerSlidingWindowsIntegrationTests({
         createDa.json ?? createDa.text,
       );
     }
-    expect(createDa.status).toBe(200);
+    expect(createDa.status).toBe(204);
 
     const queryRes = await httpReq({
       method: 'GET',

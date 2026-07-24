@@ -53,7 +53,7 @@ export function registerQueryStyleDataIntegrationTests({
           datasourceId: 'default',
           type: 'postgres',
           config: {
-            user: 'postgres',
+            username: 'postgres',
             password: 'postgres',
             host: getPgHost(),
             port: getPgPort(),
@@ -62,7 +62,7 @@ export function registerQueryStyleDataIntegrationTests({
         },
       });
 
-      if (createRes.status !== 200 && createRes.status !== 409) {
+      if (createRes.status !== 204 && createRes.status !== 409) {
         throw new Error(
           `Failed to ensure default datasource: ${createRes.status} ${JSON.stringify(createRes.json)}`,
         );
@@ -112,7 +112,7 @@ export function registerQueryStyleDataIntegrationTests({
         },
       });
 
-      if (createDa.status !== 200) {
+      if (createDa.status !== 204) {
         throw new Error(
           `Failed to create query-style DA fixture: ${createDa.status} ${JSON.stringify(createDa.json)}`,
         );

@@ -269,7 +269,7 @@ export function registerFdaCreationIntegrationTests({
           createDaRes.json ?? createDaRes.text,
         );
       }
-      expect(createDaRes.status).toBe(200);
+      expect(createDaRes.status).toBe(204);
 
       const queryRes = await httpReq({
         method: 'GET',
@@ -319,7 +319,7 @@ export function registerFdaCreationIntegrationTests({
         datasourceId,
         type: 'postgres',
         config: {
-          user: 'postgres',
+          username: 'postgres',
           password: 'postgres',
           host: getPgHost(),
           port: getPgPort(),
@@ -328,7 +328,7 @@ export function registerFdaCreationIntegrationTests({
       },
     });
 
-    expect(datasourceRes.status).toBe(200);
+    expect(datasourceRes.status).toBe(204);
 
     const createFda = async (id) => {
       const res = await httpReq({
@@ -409,7 +409,7 @@ export function registerFdaCreationIntegrationTests({
         datasourceId,
         type: 'postgres',
         config: {
-          user: 'postgres',
+          username: 'postgres',
           password: 'postgres',
           host: getPgHost(),
           port: getPgPort(),
@@ -418,7 +418,7 @@ export function registerFdaCreationIntegrationTests({
       },
     });
 
-    expect(datasourceRes.status).toBe(200);
+    expect(datasourceRes.status).toBe(204);
 
     const createFda = async (id) => {
       const res = await httpReq({
@@ -578,7 +578,7 @@ export function registerFdaCreationIntegrationTests({
         datasourceId,
         type: 'postgres',
         config: {
-          user: 'postgres',
+          username: 'postgres',
           password: 'postgres',
           host: getPgHost(),
           port: getPgPort(),
@@ -587,7 +587,7 @@ export function registerFdaCreationIntegrationTests({
       },
     });
 
-    expect(datasourceRes.status).toBe(200);
+    expect(datasourceRes.status).toBe(204);
 
     const createFda = async (id) => {
       const res = await httpReq({
@@ -909,7 +909,7 @@ export function registerFdaCreationIntegrationTests({
       },
     });
 
-    expect(createDa.status).toBe(200);
+    expect(createDa.status).toBe(204);
 
     const queryRes = await httpReq({
       method: 'GET',
