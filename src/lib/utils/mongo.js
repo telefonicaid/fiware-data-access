@@ -154,8 +154,19 @@ export async function createMongoCursorReader(
   try {
     await client.connect();
 
-    const hasFilter = filter !== undefined && Object.keys(filter).length > 0;
+    const hasFilter = filter !== undefined;
     const hasAggregation = aggregation !== undefined && aggregation.length > 0;
+
+    if (
+      filter !== undefined &&
+      (filter === null || typeof filter !== 'object' || Array.isArray(filter))
+    ) {
+      throw new FDAError(
+        400,
+        'InvalidMongoFDAContract',
+        'Mongo FDA filter must be a JSON object',
+      );
+    }
 
     if (hasAggregation) {
       throw new FDAError(
