@@ -32,6 +32,8 @@ const client = new MongoClient(uri);
 const logger = getBasicLogger();
 let isConnected = false;
 const DEFAULT_DATASOURCE_ID = 'default';
+const MONGO_CONNECTION_TIMEOUT_MS = 5000;
+const DEFAULT_MONGO_CURSOR_CHUNK_SIZE = 1000;
 
 async function getDb() {
   if (!isConnected) {
@@ -125,7 +127,7 @@ export async function validateMongoDatasourceConnection(dsConfig) {
   }
 
   const validationClient = new MongoClient(uri, {
-    serverSelectionTimeoutMS: 5000,
+    serverSelectionTimeoutMS: MONGO_CONNECTION_TIMEOUT_MS,
   });
 
   try {
@@ -285,11 +287,11 @@ function createMongoReaderHandlers({
 export async function createMongoCursorReader(
   dsConfig,
   query,
-  { limit, chunkSize = 1000 } = {},
+  { limit, chunkSize = DEFAULT_MONGO_CURSOR_CHUNK_SIZE } = {},
 ) {
   const { collection, filter, projection, aggregation } = query;
   const client = new MongoClient(dsConfig.uri, {
-    serverSelectionTimeoutMS: 5000,
+    serverSelectionTimeoutMS: MONGO_CONNECTION_TIMEOUT_MS,
   });
 
   try {
