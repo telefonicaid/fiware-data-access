@@ -295,7 +295,9 @@ export async function retrieveDatasources(service) {
   logger.debug({ service }, '[DEBUG]: retrieveDatasources');
   const collection = await getDatasourcesCollection();
   try {
-    return collection.find({ service }, { projection: { _id: 0, service: 0 } });
+    return await collection
+      .find({ service }, { projection: { _id: 0, service: 0 } })
+      .toArray();
   } catch (e) {
     throw new FDAError(
       500,
