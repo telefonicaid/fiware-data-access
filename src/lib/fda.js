@@ -1562,6 +1562,7 @@ async function uploadMongoCursorContentToObjectStorage(
 }
 
 async function createMongoFDAReader(
+  service,
   datasourceId,
   fdaId,
   servicePath,
