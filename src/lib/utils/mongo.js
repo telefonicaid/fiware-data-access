@@ -299,6 +299,7 @@ export async function retrieveDatasources(service) {
   } catch (e) {
     throw new FDAError(
       500,
+      'MongoDBServerError',
       `Error retrieving datasources for service ${service}: ${e.message}`,
     );
   }
