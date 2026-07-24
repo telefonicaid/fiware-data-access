@@ -2648,7 +2648,7 @@ describe('processFDAAsync', () => {
       },
       {
         collection: 'events',
-        filter: { status: 'ok' },
+        filter: {},
         projection: {
           device: 1,
           status: 1,

@@ -691,6 +691,40 @@ describe('mongo utils', () => {
     });
   });
 
+  test('createMongoCursorReader accepts empty filter with dot notation projection', async () => {
+    const { createMongoCursorReader, collectionMock } = await loadMongoModule();
+
+    const cursorMock = {
+      next: jest
+        .fn()
+        .mockResolvedValueOnce({ device: { name: 'sensor-x' }, status: 'ok' })
+        .mockResolvedValueOnce(null),
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+
+    collectionMock.find.mockReturnValueOnce(cursorMock);
+
+    const reader = await createMongoCursorReader(
+      { uri: 'mongodb://mongo:27017', database: 'test-db' },
+      {
+        collection: 'events',
+        filter: {},
+        projection: { 'device.name': 1, status: 1 },
+      },
+    );
+
+    await expect(reader.readNextChunk()).resolves.toEqual([
+      { 'device.name': 'sensor-x', status: 'ok' },
+    ]);
+
+    expect(collectionMock.find).toHaveBeenCalledWith(
+      {},
+      { projection: { 'device.name': 1, status: 1 } },
+    );
+
+    await reader.close();
+  });
+
   test('createMongoCursorReader reads rows in chunks and closes resources', async () => {
     const { createMongoCursorReader, collectionMock, clientMock } =
       await loadMongoModule();
