@@ -1480,20 +1480,6 @@ function getUpdateWindowQuery(query, timeColumn, latestFetchStartDate) {
   return `SELECT * FROM (${query}) q WHERE ${timeColumn} >= TIMESTAMP '${latestFetchStartDate}' AND ${timeColumn} < NOW()`;
 }
 
-function buildCsvContentFromRows(rows, columns) {
-  const header = columns.map((column) => escapeCsvValue(column)).join(',');
-
-  if (rows.length === 0) {
-    return `${header}\n`;
-  }
-
-  const dataLines = rows.map((row) =>
-    columns.map((column) => escapeCsvValue(row[column])).join(','),
-  );
-
-  return `${header}\n${dataLines.join('\n')}\n`;
-}
-
 function buildPersistedSchema(sourceSchema) {
   const schemaFields = Array.isArray(sourceSchema?.fields)
     ? sourceSchema.fields.filter(
@@ -1521,19 +1507,6 @@ function shouldValidateDACompatibility(fda) {
     FDA_VALIDATION_MODE_UNCHECKED
   );
 }
-async function uploadCsvContentToObjectStorage(s3Client, bucket, path, body) {
-  const upload = newUpload(s3Client, bucket, `${path}.csv`, body, 5, 1);
-
-  try {
-    await upload.done();
-  } catch (error) {
-    throw new FDAError(
-      503,
-      'UploadError',
-      `Error uploading FDA to object storage: ${error.message}`,
-    );
-  }
-}
 
 async function uploadMongoCursorContentToObjectStorage(
   s3Client,
@@ -1547,16 +1520,11 @@ async function uploadMongoCursorContentToObjectStorage(
   const uploadDone = upload.done();
 
   try {
-    let columns = reader.columns || [];
+    const columns = reader.columns || [];
     let wroteHeader = false;
 
-    while (true) {
-      const rows = await reader.readNextChunk();
-
-      if (rows.length === 0) {
-        break;
-      }
-
+    let rows = await reader.readNextChunk();
+    while (rows.length > 0) {
       if (!wroteHeader) {
         if (columns.length > 0) {
           await writeCsvHeader(uploadBody, columns);
@@ -1570,6 +1538,8 @@ async function uploadMongoCursorContentToObjectStorage(
           .join(',');
         await writeCsvLine(uploadBody, `${csvLine}\n`);
       }
+
+      rows = await reader.readNextChunk();
     }
 
     if (!wroteHeader && columns.length > 0) {
@@ -1592,7 +1562,6 @@ async function uploadMongoCursorContentToObjectStorage(
 }
 
 async function createMongoFDAReader(
-  service,
   datasourceId,
   fdaId,
   servicePath,
