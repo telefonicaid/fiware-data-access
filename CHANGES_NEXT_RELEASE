@@ -1,3 +1,4 @@
+- Add: support cursor-based ingestion for MongoDB FDAs, streaming query results directly to object storage to lower memory usage and improve scalability (#195)
 - Add: configurable consistency refresh for window-based FDAs, scheduling periodic full rebuilds to recover delayed historical gaps while preserving incremental refreshes (new field consistencyRefreshInterval) (#231)
 - Add: windowSize param in refresh policy now supports a custom amount before the unit (#219)
 - Add: persist FDA schema in MongoDB during creation (strict mode) and use it for DA validation and default DA generation (#233)
