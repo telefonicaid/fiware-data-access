@@ -32,6 +32,8 @@ const client = new MongoClient(uri);
 const logger = getBasicLogger();
 let isConnected = false;
 const DEFAULT_DATASOURCE_ID = 'default';
+const MONGO_CONNECTION_TIMEOUT_MS = 5000;
+const DEFAULT_MONGO_CURSOR_CHUNK_SIZE = 1000;
 
 async function getDb() {
   if (!isConnected) {
@@ -125,7 +127,7 @@ export async function validateMongoDatasourceConnection(dsConfig) {
   }
 
   const validationClient = new MongoClient(uri, {
-    serverSelectionTimeoutMS: 5000,
+    serverSelectionTimeoutMS: MONGO_CONNECTION_TIMEOUT_MS,
   });
 
   try {
@@ -141,71 +143,194 @@ export async function validateMongoDatasourceConnection(dsConfig) {
   }
 }
 
-export async function readMongoDatasourceRows(dsConfig, query, { limit } = {}) {
-  const { collection, filter, projection, aggregation } = query;
+function validateMongoCursorQuery(filter, aggregation) {
+  const hasFilter = filter !== undefined;
+  const hasAggregation = aggregation !== undefined && aggregation.length > 0;
 
+  if (
+    filter !== undefined &&
+    (filter === null || typeof filter !== 'object' || Array.isArray(filter))
+  ) {
+    throw new FDAError(
+      400,
+      'InvalidMongoFDAContract',
+      'Mongo FDA filter must be a JSON object',
+    );
+  }
+
+  if (hasAggregation) {
+    throw new FDAError(
+      400,
+      'NotImplemented',
+      'Mongo aggregation queries are not supported yet',
+    );
+  }
+
+  if (!hasFilter) {
+    throw new FDAError(
+      400,
+      'InvalidMongoFDAContract',
+      'Mongo query must define either filter or aggregation',
+    );
+  }
+}
+
+function isMongoProjection(projection) {
+  return (
+    projection && typeof projection === 'object' && !Array.isArray(projection)
+  );
+}
+
+function getMongoProjectionColumns(projection) {
+  return Object.keys(projection).filter((column) => projection[column]);
+}
+
+function getMongoColumnsFromDocument(doc) {
+  return Object.keys(doc).filter((column) => column !== '_id');
+}
+
+function mapMongoRow(doc, columns) {
+  const mappedRow = {};
+
+  for (const column of columns) {
+    mappedRow[column] = getNestedMongoValue(doc, column);
+  }
+
+  return mappedRow;
+}
+
+async function initializeMongoCursorReader(cursor, projection) {
+  if (isMongoProjection(projection)) {
+    return {
+      columns: getMongoProjectionColumns(projection),
+      bufferedRows: [],
+    };
+  }
+
+  const firstRow = await cursor.next();
+  if (!firstRow) {
+    return {
+      columns: [],
+      bufferedRows: [],
+    };
+  }
+
+  const columns = getMongoColumnsFromDocument(firstRow);
+  return {
+    columns,
+    bufferedRows: [mapMongoRow(firstRow, columns)],
+  };
+}
+
+function createMongoReaderHandlers({
+  cursor,
+  client,
+  collection,
+  columns,
+  bufferedRows,
+  chunkSize,
+}) {
+  let closed = false;
+
+  const close = async () => {
+    if (closed) {
+      return;
+    }
+
+    closed = true;
+    await cursor.close().catch(() => {});
+    await client.close().catch(() => {});
+  };
+
+  const readNextChunk = async () => {
+    if (closed) {
+      return [];
+    }
+
+    if (bufferedRows.length > 0) {
+      const firstChunk = bufferedRows;
+      bufferedRows = [];
+      return firstChunk;
+    }
+
+    const rows = [];
+
+    try {
+      for (let index = 0; index < chunkSize; index++) {
+        const nextRow = await cursor.next();
+
+        if (!nextRow) {
+          break;
+        }
+
+        rows.push(mapMongoRow(nextRow, columns));
+      }
+
+      if (rows.length === 0) {
+        await close();
+      }
+
+      return rows;
+    } catch (error) {
+      await close();
+      throw new FDAError(
+        500,
+        'MongoDBServerError',
+        `Error reading datasource collection ${collection}: ${error.message}`,
+      );
+    }
+  };
+
+  return { columns, readNextChunk, close };
+}
+
+export async function createMongoCursorReader(
+  dsConfig,
+  query,
+  { limit, chunkSize = DEFAULT_MONGO_CURSOR_CHUNK_SIZE } = {},
+) {
+  const { collection, filter, projection, aggregation } = query;
   const client = new MongoClient(dsConfig.uri, {
-    serverSelectionTimeoutMS: 5000,
+    serverSelectionTimeoutMS: MONGO_CONNECTION_TIMEOUT_MS,
   });
 
   try {
     await client.connect();
+    validateMongoCursorQuery(filter, aggregation);
 
-    let rows;
-    const hasFilter = filter !== undefined && Object.keys(filter).length > 0;
-    const hasAggregation = aggregation !== undefined && aggregation.length > 0;
+    const cursor = client
+      .db(dsConfig.database)
+      .collection(collection)
+      .find(filter ?? {}, {
+        ...(projection ? { projection } : {}),
+        ...(Number.isFinite(limit) && limit > 0 ? { limit } : {}),
+      });
 
-    if (hasFilter) {
-      rows = await client
-        .db(dsConfig.database)
-        .collection(collection)
-        .find(filter ?? {}, {
-          ...(projection ? { projection } : {}),
-          ...(Number.isFinite(limit) && limit > 0 ? { limit } : {}),
-        })
-        .toArray();
-    } else if (hasAggregation) {
-      throw new FDAError(
-        400,
-        'NotImplemented',
-        'Mongo aggregation queries are not supported yet',
-      );
-    } else {
-      throw new FDAError(
-        400,
-        'InvalidMongoFDAContract',
-        'Mongo query must define either filter or aggregation',
-      );
-    }
+    const { columns, bufferedRows } = await initializeMongoCursorReader(
+      cursor,
+      projection,
+    );
 
-    const hasProjection =
-      projection &&
-      typeof projection === 'object' &&
-      !Array.isArray(projection);
-    const columns = hasProjection
-      ? Object.keys(projection).filter((column) => projection[column])
-      : Object.keys(rows[0] ?? {}).filter((column) => column !== '_id');
-
-    return rows.map((row) => {
-      const mappedRow = {};
-
-      for (const column of columns) {
-        mappedRow[column] = getNestedMongoValue(row, column);
-      }
-
-      return mappedRow;
+    return createMongoReaderHandlers({
+      cursor,
+      client,
+      collection,
+      columns,
+      bufferedRows,
+      chunkSize,
     });
   } catch (error) {
+    await client.close().catch(() => {});
+
     if (error instanceof FDAError) {
       throw error;
     }
+
     throw new FDAError(
       500,
       'MongoDBServerError',
       `Error reading datasource collection ${collection}: ${error.message}`,
     );
-  } finally {
-    await client.close().catch(() => {});
   }
 }
 
@@ -213,7 +338,7 @@ export async function retrieveDatasources(service) {
   logger.debug({ service }, '[DEBUG]: retrieveDatasources');
   const collection = await getDatasourcesCollection();
   try {
-    return collection
+    return await collection
       .find({ service }, { projection: { _id: 0, service: 0 } })
       .toArray();
   } catch (e) {

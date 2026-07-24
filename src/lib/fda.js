@@ -22,6 +22,7 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
+import { PassThrough } from 'node:stream';
 import { getAgenda } from './jobs.js';
 import {
   runPreparedStatement,
@@ -72,7 +73,7 @@ import {
   removeDatasource,
   countFDAsUsingDatasource,
   validateMongoDatasourceConnection,
-  readMongoDatasourceRows,
+  createMongoCursorReader,
 } from './utils/mongo.js';
 import {
   normalizeForSerialization,
@@ -1479,20 +1480,6 @@ function getUpdateWindowQuery(query, timeColumn, latestFetchStartDate) {
   return `SELECT * FROM (${query}) q WHERE ${timeColumn} >= TIMESTAMP '${latestFetchStartDate}' AND ${timeColumn} < NOW()`;
 }
 
-function buildCsvContentFromRows(rows, columns) {
-  const header = columns.map((column) => escapeCsvValue(column)).join(',');
-
-  if (rows.length === 0) {
-    return `${header}\n`;
-  }
-
-  const dataLines = rows.map((row) =>
-    columns.map((column) => escapeCsvValue(row[column])).join(','),
-  );
-
-  return `${header}\n${dataLines.join('\n')}\n`;
-}
-
 function buildPersistedSchema(sourceSchema) {
   const schemaFields = Array.isArray(sourceSchema?.fields)
     ? sourceSchema.fields.filter(
@@ -1520,21 +1507,61 @@ function shouldValidateDACompatibility(fda) {
     FDA_VALIDATION_MODE_UNCHECKED
   );
 }
-async function uploadCsvContentToObjectStorage(s3Client, bucket, path, body) {
-  const upload = newUpload(s3Client, bucket, `${path}.csv`, body, 5, 1);
+
+async function uploadMongoCursorContentToObjectStorage(
+  s3Client,
+  bucket,
+  path,
+  reader,
+) {
+  const uploadBody = new PassThrough();
+  const upload = newUpload(s3Client, bucket, `${path}.csv`, uploadBody, 5, 1);
+
+  const uploadDone = upload.done();
 
   try {
-    await upload.done();
+    const columns = reader.columns || [];
+    let wroteHeader = false;
+
+    let rows = await reader.readNextChunk();
+    while (rows.length > 0) {
+      if (!wroteHeader) {
+        if (columns.length > 0) {
+          await writeCsvHeader(uploadBody, columns);
+        }
+        wroteHeader = true;
+      }
+
+      for (const row of rows) {
+        const csvLine = columns
+          .map((column) => escapeCsvValue(row[column]))
+          .join(',');
+        await writeCsvLine(uploadBody, `${csvLine}\n`);
+      }
+
+      rows = await reader.readNextChunk();
+    }
+
+    if (!wroteHeader && columns.length > 0) {
+      await writeCsvHeader(uploadBody, columns);
+    }
+
+    uploadBody.end();
+    await uploadDone;
   } catch (error) {
+    uploadBody.destroy(error);
+    await uploadDone.catch(() => {});
     throw new FDAError(
       503,
       'UploadError',
       `Error uploading FDA to object storage: ${error.message}`,
     );
+  } finally {
+    await reader.close();
   }
 }
 
-async function getMongoFDAStorageRows(
+async function createMongoFDAReader(
   service,
   datasourceId,
   fdaId,
@@ -1554,12 +1581,9 @@ async function getMongoFDAStorageRows(
 
   validateMongoFDAContract(fda.query, fda.timeColumn, fda.cached);
 
-  return {
-    columns: Object.keys(fda.query.projection),
-    rows: await readMongoDatasourceRows(datasource.config, fda.query, {
-      limit,
-    }),
-  };
+  return await createMongoCursorReader(datasource.config, fda.query, {
+    limit,
+  });
 }
 
 export async function deleteFDA(service, fdaId, visibility, servicePath) {
@@ -1784,14 +1808,18 @@ async function uploadTableToObjStg(
   if (datasource.type === 'postgres') {
     await uploadTable(s3Client, bucket, datasource.config, query, path);
   } else {
-    const { columns, rows } = await getMongoFDAStorageRows(
+    const reader = await createMongoFDAReader(
       service,
       datasourceId,
       fdaId,
       servicePath,
     );
-    const csvContent = buildCsvContentFromRows(rows, columns);
-    await uploadCsvContentToObjectStorage(s3Client, bucket, path, csvContent);
+    await uploadMongoCursorContentToObjectStorage(
+      s3Client,
+      bucket,
+      path,
+      reader,
+    );
   }
 
   const conn = await getDBConnection();
@@ -2045,19 +2073,18 @@ async function createParquet(
       storagePath,
     );
   } else {
-    const { columns, rows } = await getMongoFDAStorageRows(
+    const reader = await createMongoFDAReader(
       service,
       datasourceId,
       fdaId,
       servicePath,
       { limit: 1 },
     );
-    const csvContent = buildCsvContentFromRows(rows, columns);
-    await uploadCsvContentToObjectStorage(
+    await uploadMongoCursorContentToObjectStorage(
       s3Client,
       bucketName,
       storagePath,
-      csvContent,
+      reader,
     );
   }
 
