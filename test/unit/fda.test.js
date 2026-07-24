@@ -2600,27 +2600,18 @@ describe('processFDAAsync', () => {
     };
     mongoMocks.createMongoCursorReader.mockResolvedValueOnce(reader);
 
-    const uploadBody = {
-      write: jest.fn().mockReturnValue(true),
-      once: jest.fn((event, callback) => {
-        if (event === 'drain') {
-          callback();
-        }
-      }),
-      end: jest.fn(),
-      destroy: jest.fn(),
-    };
+    let uploadBody;
+    awsMocks.newUpload.mockImplementationOnce((client, bucket, path, body) => {
+      uploadBody = body;
+      body.write = jest.fn(body.write.bind(body));
+      body.once = jest.fn(body.once.bind(body));
+      body.end = jest.fn(body.end.bind(body));
+      body.destroy = jest.fn(body.destroy.bind(body));
 
-    awsMocks.newUpload.mockReturnValueOnce({
-      done: jest.fn().mockResolvedValue(undefined),
+      return {
+        done: jest.fn().mockResolvedValue(undefined),
+      };
     });
-
-    const { PassThrough } = await import('node:stream');
-    const passThroughSpy = jest.spyOn(
-      await import('node:stream'),
-      'PassThrough',
-    );
-    passThroughSpy.mockImplementation(() => uploadBody);
 
     await processFDAAsync(
       'fda_mongo_cached',
@@ -2664,6 +2655,7 @@ describe('processFDAAsync', () => {
       5,
       1,
     );
+    expect(uploadBody).toBeDefined();
     expect(uploadBody.write).toHaveBeenCalledWith('device,status\n');
     expect(uploadBody.write).toHaveBeenCalledWith('dev-1,ok\n');
     expect(uploadBody.write).toHaveBeenCalledWith('dev-2,warn\n');
