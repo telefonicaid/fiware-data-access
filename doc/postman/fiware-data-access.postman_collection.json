@@ -1,6 +1,6 @@
 {
 	"info": {
-		"_postman_id": "e5692425-53e8-4186-bb55-0e2fab0ab91b",
+		"_postman_id": "82b7886e-612a-41dd-9bd2-ffe596c441dc",
 		"name": "fiware-data-access",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
 		"_exporter_id": "25871624"
@@ -17,6 +17,11 @@
 							{
 								"key": "Fiware-Service",
 								"value": "{{Fiware-Service}}",
+								"type": "text"
+							},
+							{
+								"key": "X-Auth-Token",
+								"value": "{{auth_token}}",
 								"type": "text"
 							}
 						],
@@ -40,6 +45,11 @@
 							{
 								"key": "Fiware-Service",
 								"value": "{{Fiware-Service}}",
+								"type": "text"
+							},
+							{
+								"key": "X-Auth-Token",
+								"value": "{{auth_token}}",
 								"type": "text"
 							}
 						],
@@ -73,6 +83,11 @@
 								"key": "Fiware-Service",
 								"value": "{{Fiware-Service}}",
 								"type": "text"
+							},
+							{
+								"key": "X-Auth-Token",
+								"value": "{{auth_token}}",
+								"type": "text"
 							}
 						],
 						"url": {
@@ -96,6 +111,11 @@
 							{
 								"key": "Fiware-Service",
 								"value": "{{Fiware-Service}}",
+								"type": "text"
+							},
+							{
+								"key": "X-Auth-Token",
+								"value": "{{auth_token}}",
 								"type": "text"
 							}
 						],
@@ -130,6 +150,11 @@
 								"key": "Fiware-Service",
 								"value": "{{Fiware-Service}}",
 								"type": "text"
+							},
+							{
+								"key": "X-Auth-Token",
+								"value": "{{auth_token}}",
+								"type": "text"
 							}
 						],
 						"url": {
@@ -163,6 +188,11 @@
 							{
 								"key": "Fiware-ServicePath",
 								"value": "{{Fiware-ServicePath}}",
+								"type": "text"
+							},
+							{
+								"key": "X-Auth-Token",
+								"value": "{{auth_token}}",
 								"type": "text"
 							}
 						],
@@ -202,6 +232,11 @@
 								"key": "Fiware-ServicePath",
 								"value": "{{Fiware-ServicePath}}",
 								"type": "text"
+							},
+							{
+								"key": "X-Auth-Token",
+								"value": "{{auth_token}}",
+								"type": "text"
 							}
 						],
 						"url": {
@@ -230,6 +265,11 @@
 							{
 								"key": "Fiware-ServicePath",
 								"value": "{{Fiware-ServicePath}}",
+								"type": "text"
+							},
+							{
+								"key": "X-Auth-Token",
+								"value": "{{auth_token}}",
 								"type": "text"
 							}
 						],
@@ -261,6 +301,11 @@
 								"key": "Fiware-ServicePath",
 								"value": "{{Fiware-ServicePath}}",
 								"type": "text"
+							},
+							{
+								"key": "X-Auth-Token",
+								"value": "{{auth_token}}",
+								"type": "text"
 							}
 						],
 						"url": {
@@ -290,6 +335,11 @@
 							{
 								"key": "Fiware-ServicePath",
 								"value": "{{Fiware-ServicePath}}",
+								"type": "text"
+							},
+							{
+								"key": "X-Auth-Token",
+								"value": "{{auth_token}}",
 								"type": "text"
 							}
 						],
@@ -325,6 +375,11 @@
 							{
 								"key": "Fiware-ServicePath",
 								"value": "{{Fiware-ServicePath}}",
+								"type": "text"
+							},
+							{
+								"key": "X-Auth-Token",
+								"value": "{{auth_token}}",
 								"type": "text"
 							}
 						],
@@ -366,6 +421,11 @@
 								"key": "Fiware-ServicePath",
 								"value": "{{Fiware-ServicePath}}",
 								"type": "text"
+							},
+							{
+								"key": "X-Auth-Token",
+								"value": "{{auth_token}}",
+								"type": "text"
 							}
 						],
 						"url": {
@@ -396,6 +456,11 @@
 							{
 								"key": "Fiware-ServicePath",
 								"value": "{{Fiware-ServicePath}}",
+								"type": "text"
+							},
+							{
+								"key": "X-Auth-Token",
+								"value": "{{auth_token}}",
 								"type": "text"
 							}
 						],
@@ -428,6 +493,11 @@
 							{
 								"key": "Fiware-ServicePath",
 								"value": "{{Fiware-ServicePath}}",
+								"type": "text"
+							},
+							{
+								"key": "X-Auth-Token",
+								"value": "{{auth_token}}",
 								"type": "text"
 							}
 						],
@@ -469,6 +539,11 @@
 							{
 								"key": "Fiware-ServicePath",
 								"value": "{{Fiware-ServicePath}}",
+								"type": "text"
+							},
+							{
+								"key": "X-Auth-Token",
+								"value": "{{auth_token}}",
 								"type": "text"
 							}
 						],
@@ -512,6 +587,11 @@
 								"key": "Accept",
 								"value": "application/json",
 								"type": "text"
+							},
+							{
+								"key": "X-Auth-Token",
+								"value": "{{auth_token}}",
+								"type": "text"
 							}
 						],
 						"url": {
@@ -548,6 +628,11 @@
 								"key": "Accept",
 								"value": "application/x-ndjson",
 								"type": "text"
+							},
+							{
+								"key": "X-Auth-Token",
+								"value": "{{auth_token}}",
+								"type": "text"
 							}
 						],
 						"url": {
@@ -583,6 +668,11 @@
 							{
 								"key": "Accept",
 								"value": "application/json",
+								"type": "text"
+							},
+							{
+								"key": "X-Auth-Token",
+								"value": "{{auth_token}}",
 								"type": "text"
 							}
 						],
@@ -636,6 +726,11 @@
 								"key": "Accept",
 								"value": "application/x-ndjson",
 								"type": "text"
+							},
+							{
+								"key": "X-Auth-Token",
+								"value": "{{auth_token}}",
+								"type": "text"
 							}
 						],
 						"url": {
@@ -688,6 +783,11 @@
 								"key": "Accept",
 								"value": "text/csv",
 								"type": "text"
+							},
+							{
+								"key": "X-Auth-Token",
+								"value": "{{auth_token}}",
+								"type": "text"
 							}
 						],
 						"url": {
@@ -735,6 +835,11 @@
 							{
 								"key": "Accept",
 								"value": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+								"type": "text"
+							},
+							{
+								"key": "X-Auth-Token",
+								"value": "{{auth_token}}",
 								"type": "text"
 							}
 						],
@@ -802,6 +907,11 @@
 								"value": "application/json",
 								"type": "text",
 								"disabled": true
+							},
+							{
+								"key": "X-Auth-Token",
+								"value": "{{auth_token}}",
+								"type": "text"
 							}
 						],
 						"url": {
@@ -856,6 +966,11 @@
 							{
 								"key": "Fiware-Service",
 								"value": "{{Fiware-Service}}"
+							},
+							{
+								"key": "X-Auth-Token",
+								"value": "{{auth_token}}",
+								"type": "text"
 							}
 						],
 						"body": {
@@ -905,6 +1020,11 @@
 							{
 								"key": "Fiware-Service",
 								"value": "{{Fiware-Service}}"
+							},
+							{
+								"key": "X-Auth-Token",
+								"value": "{{auth_token}}",
+								"type": "text"
 							}
 						],
 						"body": {
@@ -945,13 +1065,65 @@
 			]
 		},
 		{
-			"name": "Health",
+			"name": "Misc",
 			"item": [
+				{
+					"name": "Metrics",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Auth-Token",
+								"value": "{{auth_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Fiware-Service",
+								"value": "{{Fiware-Service}}",
+								"type": "text"
+							},
+							{
+								"key": "Fiware-ServicePath",
+								"value": "{{Fiware-ServicePath}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{url}}/metrics",
+							"host": [
+								"{{url}}"
+							],
+							"path": [
+								"metrics"
+							]
+						}
+					},
+					"response": []
+				},
 				{
 					"name": "Health check",
 					"request": {
 						"method": "GET",
-						"header": [],
+						"header": [
+							{
+								"key": "X-Auth-Token",
+								"value": "{{auth_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Fiware-Service",
+								"value": "{{Fiware-Service}}",
+								"type": "text"
+							},
+							{
+								"key": "Fiware-ServicePath",
+								"value": "{{Fiware-ServicePath}}",
+								"type": "text"
+							}
+						],
 						"url": {
 							"raw": "{{url}}/health",
 							"host": [
