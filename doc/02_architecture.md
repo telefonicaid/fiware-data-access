@@ -193,7 +193,6 @@ Each DA contains:
     "progress": 10,
     "initFetch": "2026-02-19T07:37:52.084Z",
     "lastFetch": null,
-    "agendaJobIds": ["6a4647d198863226b8001614"],
     "visibility": "public",
     "validationMode": "strict",
     "schema": [

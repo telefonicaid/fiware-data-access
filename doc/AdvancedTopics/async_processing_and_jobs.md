@@ -282,16 +282,6 @@ This means:
 Recurring jobs are created using `agenda.create()`, configured with `repeatEvery()`, and persisted via `save()`. A
 `unique()` filter prevents duplicate recurring jobs from being created for the same FDA.
 
-When an FDA is deleted, recurring jobs are cancelled by their stored Agenda job IDs rather than by filtering on nested
-`data.*` fields.
-
-> **Compatibility note:** This project currently uses `agenda` 6.2.3 with `@agendajs/mongo-backend` 3.2.0. These
-> versions do not support partial matching on nested `data.*` fields in `agenda.cancel()`. This limitation has been
-> fixed upstream (Agenda PR #1679) and should be checked. Job IDs are therefore persisted to ensure precise cancellation
-> until the dependency is upgraded.
->
-> -   [Agenda PR #1679 – Partial matching on data subdocuments](https://github.com/agenda/agenda/pull/1679)
-
 ---
 
 ## 9. Failure Handling & Backoff Strategies
