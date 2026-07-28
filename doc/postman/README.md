@@ -23,15 +23,16 @@ Import the `fiware-data-access.postman_collection.json` file into Postman.
 
 Before sending requests, create or update a Postman environment and define the following variables:
 
-| Variable             | Description                                   | Example                 |
-| -------------------- | --------------------------------------------- | ----------------------- |
-| `url`                | API base endpoint including protocol and port | `http://localhost:8080` |
-| `Fiware-Service`     | Header indicating the FIWARE service          | `my-service`            |
-| `Fiware-ServicePath` | Header indicating the FIWARE service path     | `/servicePath`          |
-| `visibility`         | FDA visibility segment in the URL path        | `public` or `private`   |
-| `datasourceId`       | Identifier of the Datasource                  | `pg_datasource`         |
-| `fdaId`              | Identifier of the FDA                         | `fda_alarms`            |
-| `daId`               | Identifier of the DA                          | `da_all_alarms`         |
+| Variable             | Description                                        | Example                 |
+| -------------------- | -------------------------------------------------- | ----------------------- |
+| `url`                | API base endpoint including protocol and port      | `http://localhost:8080` |
+| `Fiware-Service`     | Header indicating the FIWARE service               | `my-service`            |
+| `Fiware-ServicePath` | Header indicating the FIWARE service path          | `/servicePath`          |
+| `visibility`         | FDA visibility segment in the URL path             | `public` or `private`   |
+| `datasourceId`       | Identifier of the Datasource                       | `pg_datasource`         |
+| `fdaId`              | Identifier of the FDA                              | `fda_alarms`            |
+| `daId`               | Identifier of the DA                               | `da_all_alarms`         |
+| `auth_token`         | Optional token to include as `X-Auth-Token` header | `-`                     |
 
 > ⚠️ These variables are required. The requests in the collection depend on them and will not work correctly if they are
 > not properly configured.
@@ -49,3 +50,9 @@ For `GET /{visibility}/fdas/{fdaId}/das/{daId}/data`, response format is selecte
 
 The same content negotiation rules apply to `GET /{visibility}/fdas/{fdaId}/data`, which is the direct fresh FDA query
 endpoint.
+
+### 4. Authentication
+
+FIWARE-data-access does not implement any specific security mechanisms, it offers the `visibility` property so the user
+can build his auth system on top. For those cases we added an optional `auth_token` variable to the requests thats gonna
+be mapped to the `X-Auth-Token` header, in case the user has a system that requires token-based auth.
