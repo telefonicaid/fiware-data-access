@@ -680,6 +680,8 @@ app.post('/:visibility/fdas/:fdaId/das', async (req, res) => {
     });
   }
 
+  validateFdaId(id);
+
   await createDA(
     service,
     fdaId,
@@ -888,6 +890,8 @@ app.post('/datasources', async (req, res) => {
   if (!datasourceId) {
     datasourceId = 'default';
   }
+
+  validateFdaId(datasourceId);
 
   await createDatasourceForService(service, datasourceId, type, dsConfig);
   return res.sendStatus(204);
