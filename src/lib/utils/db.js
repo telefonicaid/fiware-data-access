@@ -164,6 +164,12 @@ function createEmptyPreparedStatementResult() {
   };
 }
 
+function cleanDuckDBErrorMessage(error) {
+  return String(error?.message ?? error)
+    .split(/\n\s*\n/)[0]
+    .trim();
+}
+
 async function executePreparedStatement(stmt, boundParams, streaming) {
   await stmt.bind(boundParams);
 
@@ -617,7 +623,7 @@ export async function toParquet(
   logger.debug({ originPath, resultPath }, '[DEBUG]: toParquet');
 
   try {
-    return copyQueryToParquet(
+    return await copyQueryToParquet(
       conn,
       `SELECT * FROM read_csv_auto('s3://${originPath}')`,
       resultPath,
@@ -641,7 +647,7 @@ export async function toParquet(
       );
     }
 
-    throw new FDAError(500, 'ParquetError', e.message);
+    throw new FDAError(500, 'ParquetError', cleanDuckDBErrorMessage(e));
   }
 }
 
@@ -833,7 +839,7 @@ export async function validateDAQuery(
       throw new FDAError(
         400,
         'InvalidDAQuery',
-        `DA query is not compatible with FDA ${fdaId}: ${schemaError.message || schemaError}`,
+        `DA query is not compatible with FDA ${fdaId}: ${cleanDuckDBErrorMessage(schemaError)}`,
       );
     } finally {
       if (schemaStmt && typeof schemaStmt.close === 'function') {
@@ -857,7 +863,7 @@ export async function validateDAQuery(
     throw new FDAError(
       400,
       'InvalidDAQuery',
-      `DA query is not compatible with FDA ${fdaId}: ${e.message || e}`,
+      `DA query is not compatible with FDA ${fdaId}: ${cleanDuckDBErrorMessage(e)}`,
     );
   } finally {
     if (stmt && typeof stmt.close === 'function') {

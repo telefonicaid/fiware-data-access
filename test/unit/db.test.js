@@ -392,7 +392,7 @@ describe('db utils', () => {
     );
 
     expect(result).toBe(
-      "FROM read_parquet('s3://my-service/servicepath/fdaA/**/*.parquet') SELECT * WHERE id = $1",
+      "FROM read_parquet('s3://my-service/servicepath/fdaA.parquet/**/*.parquet') SELECT * WHERE id = $1",
     );
   });
 
@@ -806,5 +806,26 @@ describe('db utils', () => {
     await expect(
       toParquet(conn, 'a', 'b', undefined, 'day', false),
     ).rejects.toThrow('Missing timeColumn value.');
+  });
+
+  test('toParquet maps DuckDB conversion errors to InvalidTimeColumn', async () => {
+    const { toParquet } = await loadDbModule();
+    const conn = {
+      run: jest
+        .fn()
+        .mockRejectedValue(
+          new Error(
+            'Conversion Error: Unimplemented type for cast (DOUBLE -> TIMESTAMP) when casting from source column reading\n\nLINE 2:       year(reading::TIMESTAMP) as year,\n                          ^',
+          ),
+        ),
+    };
+
+    await expect(
+      toParquet(conn, 'a', 'b', 'reading', 'day', false),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidTimeColumn',
+      message: 'Column "reading" cannot be interpreted as a timestamp.',
+    });
   });
 });
