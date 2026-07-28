@@ -51,9 +51,11 @@ import { registerCdaCompatibilityIntegrationTests } from './suites/cdaCompatibil
 import { registerFdaLifecycleIntegrationTests } from './suites/fdaLifecycle.integration.tests.js';
 import { registerMongoFdasIntegrationTests } from './suites/mongoFdas.integration.tests.js';
 import { registerComplexCasesIntegrationTests } from './suites/complexCases.integration.tests.js';
+import { registerUploadFdasIntegrationTests } from './suites/uploadFdas.integration.tests.js';
 import {
   httpReq,
   httpFormReq,
+  httpMultipartReq,
   httpReqRaw,
   buildDaDataUrl,
   buildFdaDataUrl,
@@ -512,6 +514,16 @@ export function runFDAIntegrationSuite({ mode, label }) {
       waitUntilFDACompleted,
       getPgHost: () => pgHost,
       getPgPort: () => pgPort,
+    });
+
+    registerUploadFdasIntegrationTests({
+      getBaseUrl: () => baseUrl,
+      service,
+      servicePath,
+      visibility,
+      httpReq,
+      httpMultipartReq,
+      waitUntilFDACompleted,
     });
   });
 }
