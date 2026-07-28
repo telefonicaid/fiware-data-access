@@ -172,6 +172,7 @@ const {
   createDatasourceForService,
   updateDatasourceForService,
   deleteDatasourceForService,
+  uploadFDA,
   fetchFDA,
   getFDA,
   getStoredFDA,
@@ -2162,6 +2163,58 @@ describe('fetchFDA', () => {
       message:
         'Fiware-ServicePath must be a non-root absolute path (e.g. /servicepath)',
     });
+  });
+});
+
+describe('uploadFDA', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mongoMocks.createFDAMongo.mockResolvedValue(undefined);
+  });
+
+  test('rejects invalid objStgConf.partition before enqueueing the upload job', async () => {
+    await expect(
+      uploadFDA({
+        fdaId: 'fda-upload',
+        tempFilePath: '/tmp/upload.csv',
+        originalname: 'upload.csv',
+        mimetype: 'text/csv',
+        service: 'svc',
+        visibility: 'public',
+        servicePath: '/servicepath',
+        timeColumn: 'reading',
+        objStgConf: { partition: 'invalid' },
+      }),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidParam',
+      message: 'Invalid partition type "invalid".',
+    });
+
+    expect(mongoMocks.createFDAMongo).not.toHaveBeenCalled();
+    expect(jobsMocks.getAgenda).not.toHaveBeenCalled();
+  });
+
+  test('rejects invalid timeColumn names before enqueueing the upload job', async () => {
+    await expect(
+      uploadFDA({
+        fdaId: 'fda-upload',
+        tempFilePath: '/tmp/upload.csv',
+        originalname: 'upload.csv',
+        mimetype: 'text/csv',
+        service: 'svc',
+        visibility: 'public',
+        servicePath: '/servicepath',
+        timeColumn: 'reading-total',
+      }),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidParam',
+      message: 'Invalid time column name "reading-total".',
+    });
+
+    expect(mongoMocks.createFDAMongo).not.toHaveBeenCalled();
+    expect(jobsMocks.getAgenda).not.toHaveBeenCalled();
   });
 });
 
