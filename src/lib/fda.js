@@ -108,6 +108,7 @@ import { getBasicLogger } from './utils/logger.js';
 const logger = getBasicLogger();
 const FDA_VALIDATION_MODE_STRICT = 'strict';
 const FDA_VALIDATION_MODE_UNCHECKED = 'unchecked';
+const TIME_COLUMN_NAME_PATTERN = /^[a-zA-Z0-9_]+$/;
 
 const FRESH_CURSOR_BATCH_SIZE = 250;
 
@@ -1261,6 +1262,66 @@ function validateScheduledOptions(refreshPolicy, objStgConf, timeColumn) {
       'InvalidParam',
       `Fetch size "${fetchSize}" must be equal to partition size "${objStgConf?.partition}".`,
     );
+  }
+}
+
+function validateUploadOptions(timeColumn, objStgConf) {
+  if (
+    objStgConf === null ||
+    typeof objStgConf !== 'object' ||
+    Array.isArray(objStgConf)
+  ) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      'objStgConf must be a JSON object.',
+    );
+  }
+
+  if (timeColumn !== undefined && timeColumn !== null) {
+    if (
+      typeof timeColumn !== 'string' ||
+      timeColumn.length === 0 ||
+      !TIME_COLUMN_NAME_PATTERN.test(timeColumn)
+    ) {
+      throw new FDAError(
+        400,
+        'InvalidParam',
+        `Invalid time column name "${timeColumn}".`,
+      );
+    }
+  }
+
+  if (objStgConf.partition) {
+    if (!PARTITION_TYPES.includes(objStgConf.partition)) {
+      throw new FDAError(
+        400,
+        'InvalidParam',
+        `Invalid partition type "${objStgConf.partition}".`,
+      );
+    }
+
+    if (!timeColumn) {
+      throw new FDAError(
+        400,
+        'InvalidParam',
+        'timeColumn is required when using objStgConf.partition.',
+      );
+    }
+  }
+
+  if (objStgConf.compression !== undefined && objStgConf.compression !== null) {
+    if (
+      objStgConf.compression !== true &&
+      objStgConf.compression !== false &&
+      objStgConf.compression !== 'zstd'
+    ) {
+      throw new FDAError(
+        400,
+        'InvalidParam',
+        `Invalid compression type "${objStgConf.compression}".`,
+      );
+    }
   }
 }
 
@@ -2529,6 +2590,7 @@ export async function uploadFDA({
 
   const query = 'uploaded data'; // placeholder
   const refreshPolicy = { type: 'none' };
+  validateUploadOptions(timeColumn, objStgConf);
   validateScheduledOptions(refreshPolicy, objStgConf);
   await createFDAMongo(
     fdaId,
@@ -2542,6 +2604,7 @@ export async function uploadFDA({
     objStgConf,
     cached,
     datasourceId,
+    FDA_VALIDATION_MODE_STRICT,
   );
 
   logger.debug({ fdaId }, 'FDA record created');
