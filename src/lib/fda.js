@@ -83,7 +83,6 @@ import {
   assertFreshQueriesEnabled,
   acquireFreshQuerySlot,
   convertRefreshIntervalToMs,
-  getTimeColumnQuery,
   parseUploadedFile,
   escapeCsvValue,
   writeCsvLine,
@@ -1561,7 +1560,7 @@ async function uploadMongoCursorContentToObjectStorage(
     throw new FDAError(
       503,
       'UploadError',
-      `Error uploading FDA to object storage: ${e.message}`,
+      `Error uploading FDA to object storage: ${error.message}`,
     );
   } finally {
     await reader.close();
@@ -2636,12 +2635,10 @@ export async function processUploadFDAJob({
   tempFilePath,
   originalname,
   mimetype,
-  description,
   timeColumn,
   objStgConf,
   cached,
   defaultDataAccessEnabled,
-  datasourceId,
 }) {
   let s3Client;
   let bucketName;

@@ -27,8 +27,6 @@ import { parse as csvParse } from 'csv-parse/sync';
 import { CronExpressionParser } from 'cron-parser';
 
 import { FDAError } from '../fdaError.js';
-import { getBasicLogger } from './logger.js';
-const logger = getBasicLogger();
 
 export const VALID_VISIBILITIES = ['public', 'private'];
 export const VALID_VISIBILITIES_SET = new Set(VALID_VISIBILITIES);
@@ -452,7 +450,7 @@ function ensureBuffer(buffer) {
 
 function readSheetRows(sheet) {
   // Strategy 1: Standard read
-  let rows = xlsx.utils.sheet_to_json(sheet, {
+  const rows = xlsx.utils.sheet_to_json(sheet, {
     header: 1,
     defval: '',
     blankrows: true,
@@ -605,7 +603,9 @@ function parseXlsxBuffer(buffer) {
           cell !== undefined &&
           String(cell).trim() !== '',
       );
-      if (!hasContent) continue;
+      if (!hasContent) {
+        continue;
+      }
 
       const obj = {};
       let hasValues = false;
@@ -623,7 +623,9 @@ function parseXlsxBuffer(buffer) {
               ? row[j]
               : null;
           obj[colName] = value;
-          if (value !== null) hasValues = true;
+          if (value !== null) {
+            hasValues = true;
+          }
         }
       }
 
