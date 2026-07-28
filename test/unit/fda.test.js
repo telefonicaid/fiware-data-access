@@ -23,6 +23,9 @@
 // criminal actions it may exercise to protect its rights.
 
 import { beforeEach, describe, expect, jest, test } from '@jest/globals';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { FDAError } from '../../src/lib/fdaError.js';
 
 const dbMocks = {
@@ -71,6 +74,7 @@ const mongoMocks = {
   updateDA: jest.fn(),
   removeDA: jest.fn(),
   updateFDAStatus: jest.fn(),
+  updateFDALastFetch: jest.fn(),
   createDatasource: jest.fn(),
   retrieveDatasources: jest.fn(),
   retrieveDatasource: jest.fn(),
@@ -173,6 +177,7 @@ const {
   updateDatasourceForService,
   deleteDatasourceForService,
   uploadFDA,
+  processUploadFDAJob,
   fetchFDA,
   getFDA,
   getStoredFDA,
@@ -2167,9 +2172,60 @@ describe('fetchFDA', () => {
 });
 
 describe('uploadFDA', () => {
+  const agenda = {
+    now: jest.fn(),
+  };
+
   beforeEach(() => {
     jest.clearAllMocks();
     mongoMocks.createFDAMongo.mockResolvedValue(undefined);
+    jobsMocks.getAgenda.mockReturnValue(agenda);
+    agenda.now.mockResolvedValue(undefined);
+  });
+
+  test('creates upload FDA in mongo and enqueues upload-fda agenda job', async () => {
+    const response = await uploadFDA({
+      fdaId: 'fda-upload',
+      tempFilePath: '/tmp/upload.csv',
+      originalname: 'upload.csv',
+      mimetype: 'text/csv',
+      service: 'svc',
+      visibility: 'public',
+      servicePath: '/servicepath',
+      description: 'upload test',
+      timeColumn: 'event_date',
+      objStgConf: { partition: 'day' },
+      defaultDataAccessEnabled: false,
+      datasourceId: 'upload',
+    });
+
+    expect(response).toEqual({ id: 'fda-upload', status: 'pending' });
+    expect(mongoMocks.createFDAMongo).toHaveBeenCalledWith(
+      'fda-upload',
+      'uploaded data',
+      'svc',
+      'public',
+      '/servicepath',
+      'upload test',
+      { type: 'none' },
+      'event_date',
+      { partition: 'day' },
+      true,
+      'upload',
+      'strict',
+    );
+    expect(agenda.now).toHaveBeenCalledWith(
+      'upload-fda',
+      expect.objectContaining({
+        fdaId: 'fda-upload',
+        service: 'svc',
+        servicePath: '/servicepath',
+        visibility: 'public',
+        timeColumn: 'event_date',
+        objStgConf: { partition: 'day' },
+        defaultDataAccessEnabled: false,
+      }),
+    );
   });
 
   test('rejects invalid objStgConf.partition before enqueueing the upload job', async () => {
@@ -2215,6 +2271,222 @@ describe('uploadFDA', () => {
 
     expect(mongoMocks.createFDAMongo).not.toHaveBeenCalled();
     expect(jobsMocks.getAgenda).not.toHaveBeenCalled();
+  });
+
+  test('rejects invalid compression values before enqueueing the upload job', async () => {
+    await expect(
+      uploadFDA({
+        fdaId: 'fda-upload',
+        tempFilePath: '/tmp/upload.csv',
+        originalname: 'upload.csv',
+        mimetype: 'text/csv',
+        service: 'svc',
+        visibility: 'public',
+        servicePath: '/servicepath',
+        objStgConf: { compression: 'gzip' },
+      }),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidParam',
+      message: 'Invalid compression type "gzip".',
+    });
+
+    expect(mongoMocks.createFDAMongo).not.toHaveBeenCalled();
+    expect(jobsMocks.getAgenda).not.toHaveBeenCalled();
+  });
+
+  test('rejects partitioning when timeColumn is missing', async () => {
+    await expect(
+      uploadFDA({
+        fdaId: 'fda-upload',
+        tempFilePath: '/tmp/upload.csv',
+        originalname: 'upload.csv',
+        mimetype: 'text/csv',
+        service: 'svc',
+        visibility: 'public',
+        servicePath: '/servicepath',
+        objStgConf: { partition: 'day' },
+      }),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidParam',
+      message: 'timeColumn is required when using objStgConf.partition.',
+    });
+
+    expect(mongoMocks.createFDAMongo).not.toHaveBeenCalled();
+    expect(jobsMocks.getAgenda).not.toHaveBeenCalled();
+  });
+
+  test('rejects non-object objStgConf values', async () => {
+    await expect(
+      uploadFDA({
+        fdaId: 'fda-upload',
+        tempFilePath: '/tmp/upload.csv',
+        originalname: 'upload.csv',
+        mimetype: 'text/csv',
+        service: 'svc',
+        visibility: 'public',
+        servicePath: '/servicepath',
+        objStgConf: [],
+      }),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidParam',
+      message: 'objStgConf must be a JSON object.',
+    });
+
+    expect(mongoMocks.createFDAMongo).not.toHaveBeenCalled();
+    expect(jobsMocks.getAgenda).not.toHaveBeenCalled();
+  });
+});
+
+describe('processUploadFDAJob', () => {
+  function writeTempUploadFile(content, ext = '.csv') {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fda-upload-test-'));
+    const filePath = path.join(dir, `upload${ext}`);
+    fs.writeFileSync(filePath, content);
+    return { dir, filePath };
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    awsMocks.getS3Client.mockReturnValue({});
+    awsMocks.newUpload.mockReturnValue({
+      done: jest.fn().mockResolvedValue(undefined),
+    });
+    awsMocks.dropFile.mockResolvedValue(undefined);
+    dbMocks.getDBConnection.mockResolvedValue({});
+    dbMocks.releaseDBConnection.mockResolvedValue(undefined);
+    dbMocks.toParquet.mockResolvedValue(undefined);
+    mongoMocks.updateFDAStatus.mockResolvedValue(undefined);
+    mongoMocks.updateFDALastFetch.mockResolvedValue(undefined);
+  });
+
+  test('processes a CSV upload and marks FDA as completed', async () => {
+    const { dir, filePath } = writeTempUploadFile('id,value\n1,10\n2,20\n');
+
+    try {
+      await processUploadFDAJob({
+        fdaId: 'upload_csv_ok',
+        service: 'svc',
+        servicePath: '/servicepath',
+        visibility: 'public',
+        tempFilePath: filePath,
+        originalname: 'upload.csv',
+        mimetype: 'text/csv',
+        description: 'upload test',
+        objStgConf: {},
+        cached: true,
+        defaultDataAccessEnabled: false,
+        datasourceId: 'upload',
+      });
+
+      expect(dbMocks.toParquet).toHaveBeenCalledWith(
+        {},
+        expect.stringContaining('svc/tmp/upload_csv_ok_'),
+        'svc/servicepath/upload_csv_ok.parquet',
+        undefined,
+        undefined,
+        undefined,
+      );
+      expect(mongoMocks.updateFDALastFetch).toHaveBeenCalledWith(
+        'svc',
+        'upload_csv_ok',
+        '/servicepath',
+      );
+      expect(mongoMocks.updateFDAStatus).toHaveBeenCalledWith(
+        expect.objectContaining({
+          service: 'svc',
+          fdaId: 'upload_csv_ok',
+          servicePath: '/servicepath',
+          status: 'completed',
+          progress: 100,
+        }),
+      );
+      expect(fs.existsSync(filePath)).toBe(false);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('fails with InvalidTimeColumn when declared timeColumn is not in uploaded file', async () => {
+    const { dir, filePath } = writeTempUploadFile('id,value\n1,10\n');
+
+    try {
+      await expect(
+        processUploadFDAJob({
+          fdaId: 'upload_bad_timecol',
+          service: 'svc',
+          servicePath: '/servicepath',
+          visibility: 'public',
+          tempFilePath: filePath,
+          originalname: 'upload.csv',
+          mimetype: 'text/csv',
+          timeColumn: 'event_date',
+          objStgConf: {},
+          cached: true,
+          defaultDataAccessEnabled: false,
+          datasourceId: 'upload',
+        }),
+      ).rejects.toMatchObject({
+        status: 400,
+        type: 'InvalidTimeColumn',
+      });
+
+      expect(mongoMocks.updateFDAStatus).toHaveBeenCalledWith(
+        expect.objectContaining({
+          service: 'svc',
+          fdaId: 'upload_bad_timecol',
+          servicePath: '/servicepath',
+          status: 'failed',
+          progress: 0,
+          error: 'Column "event_date" not found in the uploaded file',
+        }),
+      );
+      expect(fs.existsSync(filePath)).toBe(false);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('wraps non-FDAError parquet failures as UploadError and marks FDA failed', async () => {
+    dbMocks.toParquet.mockRejectedValueOnce(new Error('duckdb explode'));
+    const { dir, filePath } = writeTempUploadFile('id,value\n1,10\n');
+
+    try {
+      await expect(
+        processUploadFDAJob({
+          fdaId: 'upload_parquet_fail',
+          service: 'svc',
+          servicePath: '/servicepath',
+          visibility: 'public',
+          tempFilePath: filePath,
+          originalname: 'upload.csv',
+          mimetype: 'text/csv',
+          objStgConf: {},
+          cached: true,
+          defaultDataAccessEnabled: false,
+          datasourceId: 'upload',
+        }),
+      ).rejects.toMatchObject({
+        status: 500,
+        type: 'UploadError',
+        message: 'duckdb explode',
+      });
+
+      expect(mongoMocks.updateFDAStatus).toHaveBeenCalledWith(
+        expect.objectContaining({
+          service: 'svc',
+          fdaId: 'upload_parquet_fail',
+          servicePath: '/servicepath',
+          status: 'failed',
+          progress: 0,
+          error: 'duckdb explode',
+        }),
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

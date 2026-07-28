@@ -23,6 +23,7 @@
 // criminal actions it may exercise to protect its rights.
 
 import { beforeEach, describe, expect, jest, test } from '@jest/globals';
+import xlsx from 'xlsx';
 
 const loggerMock = {
   debug: jest.fn(),
@@ -317,6 +318,103 @@ describe('utils', () => {
       expect(() => processFetchSize('1.5 days')).toThrow(
         'Invalid amount in time size',
       );
+    });
+  });
+
+  describe('parseUploadedFile', () => {
+    test('parses CSV files with comma delimiter', async () => {
+      const { parseUploadedFile } = await loadUtilsModule();
+
+      const parsed = parseUploadedFile(
+        Buffer.from('device,status\nsensor-a,ok\n'),
+        'text/csv',
+        'data.csv',
+      );
+
+      expect(parsed.headers).toEqual(['device', 'status']);
+      expect(parsed.csvContent).toContain('sensor-a,ok');
+    });
+
+    test('parses CSV files with semicolon delimiter', async () => {
+      const { parseUploadedFile } = await loadUtilsModule();
+
+      const parsed = parseUploadedFile(
+        Buffer.from('device;status\nsensor-a;ok\n'),
+        'text/csv',
+        'data.csv',
+      );
+
+      expect(parsed.headers).toEqual(['device', 'status']);
+      expect(parsed.csvContent).toContain('sensor-a;ok');
+    });
+
+    test('parses CSV files with UTF-8 BOM', async () => {
+      const { parseUploadedFile } = await loadUtilsModule();
+
+      const parsed = parseUploadedFile(
+        Buffer.concat([
+          Buffer.from([0xef, 0xbb, 0xbf]),
+          Buffer.from('device,status\nsensor-a,ok\n'),
+        ]),
+        'text/csv',
+        'data.csv',
+      );
+
+      expect(parsed.headers).toEqual(['device', 'status']);
+      expect(parsed.csvContent).toContain('sensor-a,ok');
+    });
+
+    test('rejects malformed CSV with inconsistent columns', async () => {
+      const { parseUploadedFile } = await loadUtilsModule();
+
+      expect(() =>
+        parseUploadedFile(
+          Buffer.from('value1,value2\nonly_one_column\n'),
+          'text/csv',
+          'broken.csv',
+        ),
+      ).toThrow('Invalid CSV format:');
+    });
+
+    test('parses XLSX files combining rows from multiple sheets', async () => {
+      const { parseUploadedFile } = await loadUtilsModule();
+
+      const workbook = xlsx.utils.book_new();
+      const mainSheet = xlsx.utils.aoa_to_sheet([
+        ['device', 'reading'],
+        ['sensor-a', 10],
+      ]);
+      const otherSheet = xlsx.utils.aoa_to_sheet([
+        ['id', 'value'],
+        ['row-b', 20],
+      ]);
+      xlsx.utils.book_append_sheet(workbook, mainSheet, 'Main');
+      xlsx.utils.book_append_sheet(workbook, otherSheet, 'Other');
+
+      const xlsxBuffer = xlsx.write(workbook, {
+        type: 'buffer',
+        bookType: 'xlsx',
+      });
+
+      const parsed = parseUploadedFile(
+        xlsxBuffer,
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'data.xlsx',
+      );
+
+      expect(parsed.headers).toEqual(
+        expect.arrayContaining(['device', 'reading', 'id', 'value']),
+      );
+      expect(parsed.csvContent).toContain('sensor-a');
+      expect(parsed.csvContent).toContain('row-b');
+    });
+
+    test('rejects unsupported upload media types', async () => {
+      const { parseUploadedFile } = await loadUtilsModule();
+
+      expect(() =>
+        parseUploadedFile(Buffer.from('hello'), 'text/plain', 'file.txt'),
+      ).toThrow('Only CSV, XLS, or XLSX files are allowed');
     });
   });
 
