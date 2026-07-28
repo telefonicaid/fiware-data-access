@@ -91,7 +91,6 @@ import {
   writeCsvHeader,
   toRowObject,
   normalizeVisibility,
-  normalizeServicePath,
   toFDAApiResponse,
   processFetchSize,
 } from './utils/utils.js';
@@ -1508,6 +1507,24 @@ async function uploadMongoCursorContentToObjectStorage(
   }
 }
 
+async function uploadCsvContentToObjectStorage(s3Client, bucket, path, body) {
+  const uploadBody = new PassThrough();
+  const upload = newUpload(s3Client, bucket, `${path}.csv`, uploadBody, 5, 1);
+
+  try {
+    uploadBody.write(body);
+    uploadBody.end();
+    await upload.done();
+  } catch (error) {
+    uploadBody.destroy(error);
+    throw new FDAError(
+      503,
+      'UploadError',
+      `Error uploading FDA to object storage: ${error.message}`,
+    );
+  }
+}
+
 async function createMongoFDAReader(
   service,
   datasourceId,
@@ -2587,7 +2604,13 @@ export async function processUploadFDAJob({
 
     const parsed = parseUploadedFile(fileBuffer, mimetype, originalname);
     const { headers, csvContent } = parsed;
-    await updateFDAStatus(service, fdaId, servicePath, 'fetching', 20);
+    await updateFDAStatus({
+      service,
+      fdaId,
+      servicePath,
+      status: 'fetching',
+      progress: 20,
+    });
 
     if (timeColumn) {
       if (!headers.includes(timeColumn)) {
@@ -2609,7 +2632,13 @@ export async function processUploadFDAJob({
     tempKey = `tmp/${fdaId}_${Date.now()}`;
 
     logger.debug({ fdaId, tempKey }, 'Uploading temporary CSV to MinIO');
-    await updateFDAStatus(service, fdaId, servicePath, 'fetching', 40);
+    await updateFDAStatus({
+      service,
+      fdaId,
+      servicePath,
+      status: 'fetching',
+      progress: 40,
+    });
     await uploadCsvContentToObjectStorage(
       s3Client,
       bucketName,
@@ -2618,12 +2647,24 @@ export async function processUploadFDAJob({
     );
 
     logger.debug({ fdaId }, 'Converting upload file to Parquet');
-    await updateFDAStatus(service, fdaId, servicePath, 'transforming', 30);
+    await updateFDAStatus({
+      service,
+      fdaId,
+      servicePath,
+      status: 'transforming',
+      progress: 30,
+    });
     const originPath = `${bucketName}/${tempKey}.csv`;
     const resultPath = `${bucketName}/${storagePath}.parquet`;
     conn = await getDBConnection();
 
-    await updateFDAStatus(service, fdaId, servicePath, 'transforming', 60);
+    await updateFDAStatus({
+      service,
+      fdaId,
+      servicePath,
+      status: 'transforming',
+      progress: 60,
+    });
     try {
       await toParquet(
         conn,
@@ -2644,7 +2685,13 @@ export async function processUploadFDAJob({
 
     await dropFile(s3Client, bucketName, `${tempKey}.csv`);
 
-    await updateFDAStatus(service, fdaId, servicePath, 'completed', 100);
+    await updateFDAStatus({
+      service,
+      fdaId,
+      servicePath,
+      status: 'completed',
+      progress: 100,
+    });
     await updateFDALastFetch(service, fdaId, servicePath);
 
     logger.debug({ fdaId }, 'Creating default DataAccess');
@@ -2671,14 +2718,14 @@ export async function processUploadFDAJob({
     logger.info({ fdaId }, 'Upload FDA completed successfully');
   } catch (err) {
     logger.error({ err, fdaId }, 'Upload FDA failed');
-    await updateFDAStatus(
+    await updateFDAStatus({
       service,
       fdaId,
       servicePath,
-      'failed',
-      0,
-      err.message,
-    );
+      status: 'failed',
+      progress: 0,
+      error: err.message,
+    });
     if (s3Client && bucketName && tempKey) {
       await dropFile(s3Client, bucketName, `${tempKey}.csv`).catch(() => {});
     }

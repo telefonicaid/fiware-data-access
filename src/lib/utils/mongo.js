@@ -739,7 +739,7 @@ export async function updateDA(
   params,
 ) {
   logger.debug(
-    { service, fdaId, daId, description, querySize: query.length },
+    { service, fdaId, daId, description, querySize: query?.length },
     '[DEBUG]: updateDA',
   );
   const collection = await getCollection();

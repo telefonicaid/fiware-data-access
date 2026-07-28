@@ -626,7 +626,7 @@ export async function toParquet(
       compression,
     );
   } catch (e) {
-    logger.error('Error converting CSV to Parquet: ', e);
+    logger.error?.('Error converting CSV to Parquet: ', e);
     if (e instanceof FDAError) {
       throw e;
     }

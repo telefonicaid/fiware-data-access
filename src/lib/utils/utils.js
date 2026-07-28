@@ -27,7 +27,6 @@ import { parse as csvParse } from 'csv-parse/sync';
 import { CronExpressionParser } from 'cron-parser';
 
 import { FDAError } from '../fdaError.js';
-import { normalizeScopedServicePath } from './fdaScope.js';
 import { getBasicLogger } from './logger.js';
 const logger = getBasicLogger();
 
@@ -409,26 +408,30 @@ export function escapeCsvValue(value) {
  */
 function parseCsvBuffer(buffer) {
   const content = buffer.toString('utf-8');
-  // Use sync parser with columns:true to get header names, limit to 1 row
-  let records;
   try {
-    records = csvParse(content, {
-      columns: true,
+    const records = csvParse(content, {
+      bom: true,
       skip_empty_lines: true,
-      relax_column_count: true, // allow inconsistent columns (we only need headers)
-      to: 1, // only parse first data row
+      relax_column_count: false,
+      delimiter: [',', ';', '\t', '|'],
     });
+
+    if (records.length === 0) {
+      throw new Error('CSV file has no header row');
+    }
+
+    const headers = records[0].map((header) =>
+      header !== null && header !== undefined ? String(header).trim() : '',
+    );
+
+    if (headers.length === 0 || headers.every((header) => header === '')) {
+      throw new Error('CSV header row is empty');
+    }
+
+    return { csvContent: content, headers };
   } catch (err) {
     throw new Error(`Invalid CSV format: ${err.message}`);
   }
-  if (records.length === 0) {
-    throw new Error('CSV file has no header row');
-  }
-  const headers = Object.keys(records[0]);
-  if (headers.length === 0) {
-    throw new Error('CSV header row is empty');
-  }
-  return { csvContent: content, headers };
 }
 
 function ensureBuffer(buffer) {
@@ -704,26 +707,6 @@ export function normalizeVisibility(visibility) {
   }
 
   return visibility;
-}
-
-export function normalizeServicePath(servicePath) {
-  try {
-    return normalizeScopedServicePath(servicePath);
-  } catch (error) {
-    if (error.message === 'servicePath is required') {
-      throw new FDAError(
-        400,
-        'InvalidServicePath',
-        'Fiware-ServicePath header is required',
-      );
-    }
-
-    throw new FDAError(
-      400,
-      'InvalidServicePath',
-      'Fiware-ServicePath must be a non-root absolute path (e.g. /servicepath)',
-    );
-  }
 }
 
 export function toFDAApiResponse(fda, { includeId }) {
