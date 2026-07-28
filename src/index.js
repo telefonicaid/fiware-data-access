@@ -493,6 +493,17 @@ const storage = multer.diskStorage({
   },
 });
 
+const originalRemoveFile = storage._removeFile?.bind(storage);
+if (originalRemoveFile) {
+  storage._removeFile = (req, file, cb) => {
+    if (!file || typeof file.path !== 'string') {
+      return cb(null);
+    }
+
+    return originalRemoveFile(req, file, cb);
+  };
+}
+
 const upload = multer({
   storage: storage,
   limits: { fileSize: config.fileUpload?.maxSize || 50 * 1024 * 1024 }, // 50 MB by default

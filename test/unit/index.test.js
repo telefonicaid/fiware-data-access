@@ -1746,28 +1746,6 @@ describe('index upload route', () => {
     expect(fdaMocks.uploadFDA).not.toHaveBeenCalled();
   });
 
-  test('POST /:visibility/fdas/upload returns 413 when file exceeds configured limit', async () => {
-    ({ app } = await loadIndexModule({
-      nodeEnv: 'test',
-      roles: { apiServer: true, fetcher: false },
-      fileUploadMaxSize: 1,
-    }));
-
-    await request(app)
-      .post('/public/fdas/upload')
-      .set('Fiware-Service', 'svc')
-      .set('Fiware-ServicePath', '/servicepath')
-      .field('id', 'upload_too_large')
-      .attach('file', Buffer.from('id,value\n1,10\n'), 'data.csv')
-      .expect(413)
-      .expect({
-        error: 'PayloadTooLarge',
-        description: 'The file exceeds the maximum allowed size.',
-      });
-
-    expect(fdaMocks.uploadFDA).not.toHaveBeenCalled();
-  });
-
   test('POST /:visibility/fdas/upload returns propagated FDAError from uploadFDA', async () => {
     fdaMocks.uploadFDA.mockRejectedValueOnce(
       new FDAError(409, 'DuplicatedKey', 'FDA already exists'),
@@ -1783,6 +1761,32 @@ describe('index upload route', () => {
       .expect({
         error: 'DuplicatedKey',
         description: 'FDA already exists',
+      });
+  });
+});
+
+describe('index upload route file size limit', () => {
+  let app;
+
+  beforeEach(async () => {
+    ({ app } = await loadIndexModule({
+      nodeEnv: 'test',
+      roles: { apiServer: true, fetcher: false },
+      fileUploadMaxSize: 1,
+    }));
+  });
+
+  test('POST /:visibility/fdas/upload returns 413 when file exceeds configured limit', async () => {
+    await request(app)
+      .post('/public/fdas/upload')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .field('id', 'upload_too_large')
+      .attach('file', Buffer.from('id,value\n1,10\n'), 'data.csv')
+      .expect(413)
+      .expect({
+        error: 'PayloadTooLarge',
+        description: 'The file exceeds the maximum allowed size.',
       });
   });
 });
