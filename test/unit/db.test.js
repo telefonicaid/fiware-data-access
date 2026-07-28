@@ -803,8 +803,8 @@ describe('db utils', () => {
     const { toParquet } = await loadDbModule();
     const conn = { run: jest.fn().mockResolvedValue(undefined) };
 
-    expect(() => toParquet(conn, 'a', 'b', undefined, 'day', false)).toThrow(
-      'Missing timeColumn value.',
-    );
+    await expect(
+      toParquet(conn, 'a', 'b', undefined, 'day', false),
+    ).rejects.toThrow('Missing timeColumn value.');
   });
 });

@@ -286,6 +286,7 @@ async function loadIndexModule({
     executeQueryStream: fdaMocks.executeQueryStream,
     executeFDAQueryStream: fdaMocks.executeFDAQueryStream,
     assertFDAAccess: jest.fn(),
+    uploadFDA: fdaMocks.uploadFDA,
     createDA: fdaMocks.createDA,
     getFDA: fdaMocks.getFDA,
     updateFDA: fdaMocks.updateFDA,

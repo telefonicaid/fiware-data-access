@@ -55,6 +55,7 @@ async function loadFetcherModule() {
   await jest.unstable_mockModule('../../src/lib/fda.js', () => ({
     processFDAAsync: processFDAAsyncMock,
     cleanPartition: cleanPartitionMock,
+    processUploadFDAJob: jest.fn().mockResolvedValue(undefined),
   }));
 
   await jest.unstable_mockModule('../../src/lib/utils/logger.js', () => ({

@@ -135,6 +135,7 @@ await jest.unstable_mockModule('../../src/lib/utils/mongo.js', () => ({
   updateDA: mongoMocks.updateDA,
   removeDA: mongoMocks.removeDA,
   updateFDAStatus: mongoMocks.updateFDAStatus,
+  updateFDALastFetch: mongoMocks.updateFDALastFetch,
   createDatasource: mongoMocks.createDatasource,
   retrieveDatasources: mongoMocks.retrieveDatasources,
   retrieveDatasource: mongoMocks.retrieveDatasource,
