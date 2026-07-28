@@ -127,6 +127,12 @@ Run locally:
 npm test
 ```
 
+Filter by name or describe:
+
+```bash
+npm run test -- -t "Complex FDA queries"
+```
+
 You can also run coverage this way:
 
 ```bash

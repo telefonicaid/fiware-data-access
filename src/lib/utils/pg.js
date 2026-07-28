@@ -38,8 +38,8 @@ pg.types.setTypeParser(pg.types.builtins.INT8, (value) =>
 const logger = getBasicLogger();
 const pools = new Map();
 
-function getPoolKey(user, password, host, port, database) {
-  return JSON.stringify({ user, password, host, port, database });
+function getPoolKey(username, password, host, port, database) {
+  return JSON.stringify({ username, password, host, port, database });
 }
 
 function clearPoolIdleTimer(entry) {
@@ -86,8 +86,8 @@ function schedulePoolIdleClose(key) {
   }, timeoutMs);
 }
 
-export function getPgPool(user, password, host, port, database) {
-  const key = getPoolKey(user, password, host, port, database);
+export function getPgPool(username, password, host, port, database) {
+  const key = getPoolKey(username, password, host, port, database);
 
   if (pools.has(key)) {
     const existing = pools.get(key);
@@ -96,7 +96,7 @@ export function getPgPool(user, password, host, port, database) {
   }
 
   const pool = new Pool({
-    user,
+    user: username,
     password,
     host,
     port,
@@ -128,6 +128,69 @@ function releasePgClient(key, pgClient) {
   }
 }
 
+export function getDuckDBTypeFromPostgresField(field) {
+  const typeId = field?.dataTypeID;
+
+  switch (typeId) {
+    case pg.types.builtins.BOOL:
+      return 'BOOLEAN';
+    case pg.types.builtins.INT2:
+      return 'SMALLINT';
+    case pg.types.builtins.INT4:
+      return 'INTEGER';
+    case pg.types.builtins.INT8:
+      return 'BIGINT';
+    case pg.types.builtins.FLOAT4:
+      return 'REAL';
+    case pg.types.builtins.FLOAT8:
+      return 'DOUBLE';
+    case pg.types.builtins.NUMERIC:
+      return 'DOUBLE';
+    case pg.types.builtins.DATE:
+      return 'DATE';
+    case pg.types.builtins.TIME:
+    case pg.types.builtins.TIMETZ:
+      return 'TIME';
+    case pg.types.builtins.TIMESTAMP:
+      return 'TIMESTAMP';
+    case pg.types.builtins.TIMESTAMPTZ:
+      return 'TIMESTAMPTZ';
+    case pg.types.builtins.JSON:
+    case pg.types.builtins.JSONB:
+      return 'JSON';
+    case pg.types.builtins.UUID:
+      return 'UUID';
+    case pg.types.builtins.BYTEA:
+      return 'BLOB';
+    default:
+      return 'VARCHAR';
+  }
+}
+
+function buildPostgresSchemaInfo(result) {
+  const fields = Array.isArray(result?.fields)
+    ? result.fields
+        .map((field) => {
+          const name = field?.name;
+          if (typeof name !== 'string' || name.length === 0) {
+            return null;
+          }
+
+          return {
+            name,
+            postgresTypeId: field?.dataTypeID ?? null,
+            duckdbType: getDuckDBTypeFromPostgresField(field),
+          };
+        })
+        .filter(Boolean)
+    : [];
+
+  return {
+    columns: fields.map((field) => field.name),
+    fields,
+  };
+}
+
 export async function closePgPools() {
   const closePromises = [];
 
@@ -140,9 +203,9 @@ export async function closePgPools() {
   pools.clear();
 }
 
-export function getPgClient(user, password, host, port, database) {
+export function getPgClient(username, password, host, port, database) {
   return new Client({
-    user,
+    user: username,
     password,
     host,
     port,
@@ -157,10 +220,10 @@ export async function uploadTable(
   query,
   path,
 ) {
-  const { user, password, host, port, database } = pgCredentials;
+  const { username, password, host, port, database } = pgCredentials;
   logger.debug({ bucket, database, query, path }, '[DEBUG]: uploadTable');
-  const key = getPoolKey(user, password, host, port, database);
-  const pgPool = getPgPool(user, password, host, port, database);
+  const key = getPoolKey(username, password, host, port, database);
+  const pgPool = getPgPool(username, password, host, port, database);
   const pgClient = await pgPool.connect();
 
   const baseQuery = `COPY (${query}) TO STDOUT WITH CSV HEADER`;
@@ -196,9 +259,9 @@ export async function uploadTable(
 }
 
 export async function runPgQuery(pgCredentials, text, values) {
-  const { user, password, host, port, database } = pgCredentials;
-  const key = getPoolKey(user, password, host, port, database);
-  const pgPool = getPgPool(user, password, host, port, database);
+  const { username, password, host, port, database } = pgCredentials;
+  const key = getPoolKey(username, password, host, port, database);
+  const pgPool = getPgPool(username, password, host, port, database);
 
   const pgClient = await pgPool.connect();
 
@@ -220,15 +283,81 @@ export async function runPgQuery(pgCredentials, text, values) {
   }
 }
 
+const TEMPORAL_TYPES = new Set([
+  'TIMESTAMP',
+  'TIMESTAMPTZ',
+  'DATE',
+  'TIME',
+  'TIMESTAMP WITHOUT TIME ZONE',
+  'TIMESTAMP WITH TIME ZONE',
+]);
+
+export async function validatePostgresQuery(
+  pgCredentials,
+  query,
+  { timeColumn, returnColumns = false } = {},
+) {
+  const { username, password, host, port, database } = pgCredentials;
+  const key = getPoolKey(username, password, host, port, database);
+  const pgPool = getPgPool(username, password, host, port, database);
+  const pgClient = await pgPool.connect();
+
+  const normalizedQuery = query.trim().replace(/;+\s*$/, '');
+  const validationQuery = `SELECT * FROM (${normalizedQuery}) AS fda_validation LIMIT 0`;
+
+  try {
+    const result = await pgClient.query(validationQuery);
+    const schemaInfo = buildPostgresSchemaInfo(result);
+    const { fields } = schemaInfo;
+
+    if (typeof timeColumn === 'string' && timeColumn.length > 0) {
+      const columnInfo = fields.find(
+        (field) => field.name.toLowerCase() === timeColumn.toLowerCase(),
+      );
+
+      if (!columnInfo) {
+        throw new FDAError(
+          400,
+          'InvalidParam',
+          `Time column "${timeColumn}" is not present in the SELECT clause of the FDA query. `,
+        );
+      }
+
+      if (!TEMPORAL_TYPES.has(columnInfo.duckdbType.toUpperCase())) {
+        throw new FDAError(
+          400,
+          'InvalidParam',
+          `Time column "${timeColumn}" must be of a temporal type (TIMESTAMP, TIMESTAMPTZ, DATE or TIME). ` +
+            `Got "${columnInfo.duckdbType}" instead.`,
+        );
+      }
+    }
+
+    return returnColumns ? schemaInfo : null;
+  } catch (e) {
+    if (e instanceof FDAError) {
+      throw e;
+    }
+
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Invalid Postgres FDA query: ${e.message}`,
+    );
+  } finally {
+    releasePgClient(key, pgClient);
+  }
+}
+
 export async function createPgCursorReader(
   pgCredentials,
   text,
   values,
   batchSize,
 ) {
-  const { user, password, host, port, database } = pgCredentials;
-  const key = getPoolKey(user, password, host, port, database);
-  const pgPool = getPgPool(user, password, host, port, database);
+  const { username, password, host, port, database } = pgCredentials;
+  const key = getPoolKey(username, password, host, port, database);
+  const pgPool = getPgPool(username, password, host, port, database);
 
   let pgClient;
   let cursor;

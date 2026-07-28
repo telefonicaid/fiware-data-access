@@ -1,7 +1,7 @@
 {
   "name": "fda",
   "license": "AGPL-3.0-only",
-  "version": "1.1.0-next",
+  "version": "1.2.0-next",
   "description": "fiware-data-access",
   "homepage": "https://github.com/telefonicaid/fiware-data-access",
   "type": "module",
@@ -26,11 +26,11 @@
     "node": ">=24"
   },
   "dependencies": {
-    "@agendajs/mongo-backend": "~3.2.0",
+    "@agendajs/mongo-backend": "~4.0.2",
     "@aws-sdk/client-s3": "~3.972.0",
     "@aws-sdk/lib-storage": "~3.934.0",
     "@duckdb/node-api": "~1.5.2-r.1",
-    "agenda": "~6.2.3",
+    "agenda": "~6.2.5",
     "ajv": "~8.17.1",
     "cron-parser": "~5.5.0",
     "dotenv": "~17.2.3",

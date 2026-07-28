@@ -277,6 +277,11 @@ This means:
 -   Survives restarts
 -   Can be modified dynamically
 
+### Recurring Job Lifecycle
+
+Recurring jobs are created using `agenda.create()`, configured with `repeatEvery()`, and persisted via `save()`. A
+`unique()` filter prevents duplicate recurring jobs from being created for the same FDA.
+
 ---
 
 ## 9. Failure Handling & Backoff Strategies
@@ -363,17 +368,19 @@ PUT /{visibility}/fdas/:fdaId
 Flow:
 
 1. FDA metadata saved in Mongo
-2. Agenda job scheduled (`agenda.now()` for immediate fetch, `agenda.every()` for recurring)
+2. Agenda jobs scheduled:
+    - `agenda.now()` for the initial fetch
+    - recurring jobs created with `agenda.create()`, `repeatEvery()` and `unique()`
 3. HTTP `202 Accepted` returned
-4. Fetcher picks up job
+4. Fetcher picks up the job
 5. Mongo updated throughout lifecycle
 
 ### Query availability during first fetch
 
 To keep early DA validation without waiting for the first asynchronous job completion:
 
--   FDA provisioning creates the canonical `${fdaId}.parquet` synchronously from a one-row snapshot.
--   DA create/update validates compatibility using DuckDB `prepare` against that parquet.
+-   FDA provisioning with `validationMode` set to `strict` performs synchronous schema introspection.
+-   DA create/update validates compatibility using DuckDB `prepare` against persisted schema metadata.
 -   Query execution is blocked until the first successful fetch has completed (`lastFetch` exists), returning
     `409 FDAUnavailable` beforehand.
 -   After the first successful fetch, queries can still run during later `fetching` states using the last available
@@ -385,7 +392,7 @@ To keep early DA validation without waiting for the first asynchronous job compl
 
 MongoDB stores:
 
--   FDA metadata & operational fields (`status`, `progress`, `lastFetch`)
+-   FDA metadata & operational fields (`status`, `progress`, `initFetch`, `lastFetch`)
 -   Agenda job metadata (`lockedAt`, `failCount`, `nextRunAt`)
 
 This guarantees:

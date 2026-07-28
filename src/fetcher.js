@@ -35,7 +35,7 @@ const logger = getBasicLogger();
 export async function startFetcher() {
   const agenda = getAgenda();
 
-  agenda.define('refresh-fda', async (job) => {
+  const refreshFDA = async (job) => {
     const {
       fdaId,
       query,
@@ -61,9 +61,9 @@ export async function startFetcher() {
     } catch (e) {
       logger.error('Fetcher error: ', e);
     }
-  });
+  };
 
-  agenda.define('clean-partition', async (job) => {
+  const cleanPartitionFDA = async (job) => {
     const { fdaId, service, servicePath, windowSize, objStgConf } =
       job.attrs.data;
     try {
@@ -71,7 +71,13 @@ export async function startFetcher() {
     } catch (e) {
       logger.error('Fetcher error: ', e);
     }
-  });
+  };
+
+  agenda.define('refresh-fda', refreshFDA);
+  agenda.define('refresh-fda-recurring', refreshFDA);
+  agenda.define('consistency-refresh-fda-recurring', refreshFDA);
+  agenda.define('clean-partition', cleanPartitionFDA);
+  agenda.define('clean-partition-recurring', cleanPartitionFDA);
 
   agenda.define('upload-fda', async (job) => {
     const {

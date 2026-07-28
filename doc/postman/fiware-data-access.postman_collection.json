@@ -45,7 +45,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"datasourceId\": \"{{datasourceId}}\",\n    \"type\": \"postgres\",\n    \"config\": {\n        \"user\": \"postgres\",\n        \"password\": \"postgres\",\n        \"host\": \"localhost\",\n        \"port\": 5432,\n        \"database\": \"postgres\"\n    }\n}",
+							"raw": "{\n    \"datasourceId\": \"{{datasourceId}}\",\n    \"type\": \"postgres\",\n    \"config\": {\n        \"username\": \"postgres\",\n        \"password\": \"postgres\",\n        \"host\": \"localhost\",\n        \"port\": 5432,\n        \"database\": \"postgres\"\n    }\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -101,7 +101,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"type\": \"postgres\",\n    \"config\": {\n        \"user\": \"postgres\",\n        \"password\": \"postgres\",\n        \"host\": \"localhost\",\n        \"port\": 5432,\n        \"database\": \"postgres\"\n    }\n}",
+							"raw": "{\n    \"type\": \"postgres\",\n    \"config\": {\n        \"username\": \"postgres\",\n        \"password\": \"postgres\",\n        \"host\": \"localhost\",\n        \"port\": 5432,\n        \"database\": \"postgres\"\n    }\n}",
 							"options": {
 								"raw": {
 									"language": "json"

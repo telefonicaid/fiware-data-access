@@ -53,7 +53,7 @@ export function registerQueryStyleDataIntegrationTests({
           datasourceId: 'default',
           type: 'postgres',
           config: {
-            user: 'postgres',
+            username: 'postgres',
             password: 'postgres',
             host: getPgHost(),
             port: getPgPort(),
@@ -62,7 +62,7 @@ export function registerQueryStyleDataIntegrationTests({
         },
       });
 
-      if (createRes.status !== 200 && createRes.status !== 409) {
+      if (createRes.status !== 204 && createRes.status !== 409) {
         throw new Error(
           `Failed to ensure default datasource: ${createRes.status} ${JSON.stringify(createRes.json)}`,
         );
@@ -112,7 +112,7 @@ export function registerQueryStyleDataIntegrationTests({
         },
       });
 
-      if (createDa.status !== 200) {
+      if (createDa.status !== 204) {
         throw new Error(
           `Failed to create query-style DA fixture: ${createDa.status} ${JSON.stringify(createDa.json)}`,
         );
@@ -134,8 +134,8 @@ export function registerQueryStyleDataIntegrationTests({
 
       expect(res.status).toBe(200);
       expect(res.json).toEqual([
-        { id: '1', name: 'ana', age: '30' },
-        { id: '3', name: 'carlos', age: '40' },
+        { id: 1, name: 'ana', age: 30 },
+        { id: 3, name: 'carlos', age: 40 },
       ]);
     });
 
@@ -155,6 +155,37 @@ export function registerQueryStyleDataIntegrationTests({
       expect(res.status).toBe(200);
       expect(res.headers['content-type']).toContain('text/csv');
       expect(res.text).toContain('id,name,age');
+    });
+
+    test('GET /{visibility}/fdas/{fdaId}/das/{daId}/data supports outputType=cda in query-style mode', async () => {
+      const baseUrl = getBaseUrl();
+
+      const res = await httpReq({
+        method: 'GET',
+        url: buildDaDataUrl(baseUrl, servicePath, fixtureFdaId, fixtureDaId, {
+          service,
+          servicePath,
+          outputType: 'cda',
+          minAge: 25,
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.json).toHaveProperty('metadata');
+      expect(res.json).toHaveProperty('resultset');
+      expect(res.json).toHaveProperty('queryInfo');
+      expect(res.json.metadata).toEqual([
+        { colIndex: 0, colName: 'id' },
+        { colIndex: 1, colName: 'name' },
+        { colIndex: 2, colName: 'age' },
+      ]);
+      expect(res.json.resultset).toEqual([
+        [1, 'ana', 30],
+        [3, 'carlos', 40],
+      ]);
+      expect(res.json.queryInfo.pageStart).toBe(0);
+      expect(res.json.queryInfo.pageSize).toBe(2);
+      expect(res.json.queryInfo.totalRows).toBe(2);
     });
 
     test('GET /{visibility}/fdas/{fdaId}/das/{daId}/data returns 409 when query-style is mixed with legacy headers', async () => {
@@ -257,6 +288,44 @@ export function registerQueryStyleDataIntegrationTests({
       expect(freshRes.status).toBe(200);
       expect(freshRes.headers['content-type']).toContain('text/csv');
       expect(freshRes.text).toContain('id,name,age,timeinstant,authorized');
+    });
+
+    test('GET /{visibility}/fdas/{fdaId}/data supports outputType=cda in query-style mode', async () => {
+      const baseUrl = getBaseUrl();
+      const fdaQueryStyleCDAJsonId = 'fda_query_style_cda_json';
+
+      const createFda = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: fdaQueryStyleCDAJsonId,
+          description: 'query-style cda endpoint test',
+          query:
+            'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+          cached: false,
+        },
+      });
+
+      expect(createFda.status).toBe(202);
+
+      const freshRes = await httpReq({
+        method: 'GET',
+        url: `${buildFdaDataUrl(baseUrl, servicePath, fdaQueryStyleCDAJsonId)}?service=${encodeURIComponent(service)}&servicePath=${encodeURIComponent(servicePath)}&outputType=cda`,
+      });
+
+      expect(freshRes.status).toBe(200);
+      expect(freshRes.json).toHaveProperty('metadata');
+      expect(freshRes.json).toHaveProperty('resultset');
+      expect(freshRes.json).toHaveProperty('queryInfo');
+      expect(Array.isArray(freshRes.json.resultset)).toBe(true);
+      expect(freshRes.json.resultset.length).toBeGreaterThan(0);
+      expect(freshRes.json.queryInfo.pageStart).toBe(0);
+      expect(freshRes.json.queryInfo.pageSize).toBe(3);
+      expect(freshRes.json.queryInfo.totalRows).toBe(3);
     });
 
     test('GET /{visibility}/fdas/{fdaId}/data returns 409 when query-style is mixed with legacy headers', async () => {

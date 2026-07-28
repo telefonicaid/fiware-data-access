@@ -87,6 +87,7 @@ All error responses follow this structure:
 | 400  | Bad Request           | `InvalidQueryParam`         | Some of the params in the request don't comply with the [params](#params) array restrictions.                                                                                                                                                                                                                      |
 | 400  | Bad Request           | `PartitionError`            | Some of the params related to the creation of the parquet partition don't comply with the [object storage configuration](#object-storage-configuration-objstgconf) requirements.                                                                                                                                   |
 | 400  | Bad Request           | `CleaningError`             | Trying to remove a non partitioned FDA or incorrect value in the [delete interval key](#refresh-policy-object).                                                                                                                                                                                                    |
+| 400  | Bad Request           | `InvalidParam`              | [Time column is not present](/doc/05_advanced_topics.md#time-column-behavior) in the SELECT clause of the FDA query.                                                                                                                                                                                               |
 | 403  | Forbidden             | `VisibilityMismatch`        | The FDA exists but was created under a different `visibility`. Cannot access a private FDA through a public route and vice-versa.                                                                                                                                                                                  |
 | 404  | Not Found             | `FDANotFound`               | The requested FDA was not found.                                                                                                                                                                                                                                                                                   |
 | 404  | Not Found             | `DaNotFound`                | The requested Data Access (DA) was not found.                                                                                                                                                                                                                                                                      |
@@ -488,11 +489,11 @@ fda_jobs_agenda_total 7
 
 A datasource is represented by a JSON object with the following fields:
 
-| Parameter      | Optional | Type   | Description                                                                                                                            |
-| -------------- | -------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `datasourceId` |          | string | Datasource identifier, unique within a given `Fiware-Service`.                                                                         |
-| `type`         |          | string | Datasource type. Currently supported: `postgres`, `mongodb`.                                                                           |
-| `config`       |          | object | Datasource connection configuration. For `postgres`: `user`, `password`, `host`, `port`, `database`. For `mongodb`: `uri`, `database`. |
+| Parameter      | Optional | Type   | Description                                                                                                                                |
+| -------------- | -------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `datasourceId` | ✓        | string | Datasource identifier, unique within a given `Fiware-Service`. Defaults to `"default"` if not provided.                                    |
+| `type`         |          | string | Datasource type. Currently supported: `postgres`, `mongodb`.                                                                               |
+| `config`       |          | object | Datasource connection configuration. For `postgres`: `username`, `password`, `host`, `port`, `database`. For `mongodb`: `uri`, `database`. |
 
 ### Datasources operations
 
@@ -548,7 +549,7 @@ _**Example Response:**_
         "datasourceId": "default",
         "type": "postgres",
         "config": {
-            "user": "postgres",
+            "username": "postgres",
             "password": "postgres",
             "host": "localhost",
             "port": 5432,
@@ -581,7 +582,7 @@ _**Request payload**_
 
 JSON object following [Datasource payload datamodel](#datasource-payload-datamodel).
 
-Required body fields: `datasourceId`, `type`, `config`.
+Required body fields: `type`, `config`. `datasourceId` is optional and defaults to `"default"` when not provided.
 
 Datasource creation validates the connection before persisting the datasource.
 
@@ -592,7 +593,7 @@ Validation is datasource-specific:
 
 _**Response code**_
 
--   Successful operation uses `200 OK`.
+-   Successful operation uses 204 No Content
 -   Errors use a non-2xx and (optionally) an error payload. See subsection on [Error Responses](#error-responses).
 
 _**Response headers**_
@@ -610,10 +611,9 @@ curl -i -X POST http://localhost:8080/datasources \
     -H "Content-Type: application/json" \
     -H "Fiware-Service: trantor" \
     -d '{
-        "datasourceId": "default",
         "type": "postgres",
         "config": {
-            "user": "postgres",
+            "username": "postgres",
             "password": "postgres",
             "host": "localhost",
             "port": 5432,
@@ -731,7 +731,7 @@ curl -i -X PUT http://localhost:8080/datasources/default \
     -d '{
         "type": "postgres",
         "config": {
-            "user": "postgres",
+            "username": "postgres",
             "password": "postgres",
             "host": "localhost",
             "port": 5432,
@@ -794,16 +794,17 @@ fail later if datasource resolution is required.
 
 A FDA is represented by a JSON object with the following fields:
 
-| Parameter                                                | Optional | Type          | Description                                                                                                                                                                                |
-| -------------------------------------------------------- | -------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `id`                                                     |          | string        | FDA unique identifier                                                                                                                                                                      |
-| `description`                                            | ✓        | string        | A free text used by the client to describe the FDA. If omitted, no description is stored.                                                                                                  |
-| `query`                                                  |          | string/object | Source query definition. For `postgres`, a SQL query string. For `mongodb`, a Mongo query definition detailed below.                                   |
-| `refreshPolicy`                                          | ✓        | object        | Optional policy for automatic refresh.                                                                                                                                                     |
-| [`objStgConf`](#object-storage-configuration-objstgconf) | ✓        | object        | Various options to configure the FDA uploaded in the object storage app.                                                                                                                   |
-| `timeColumn`                                             | ✓        | string        | Required with `refreshPolicy` of type `window` and `partition`. Column in the table indicating when the data was received (date).                                                          |
-| `cached`                                                 | ✓        | boolean       | If `false`, the FDA is created as only-fresh: no parquet snapshot is maintained, no DAs are allowed, and the FDA is queried through `GET /{visibility}/fdas/{fdaId}/data`. Default `true`. |
-| `datasourceId`                                           | ✓        | string        | Datasource id used to resolve DB credentials for this FDA. If omitted, FDA uses `default`.                                                                                                 |
+| Parameter                                                | Optional | Type          | Description                                                                                                                                                                                                                                                                                                                     |
+| -------------------------------------------------------- | -------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                                                     |          | string        | FDA unique identifier                                                                                                                                                                                                                                                                                                           |
+| `description`                                            | ✓        | string        | A free text used by the client to describe the FDA. If omitted, no description is stored.                                                                                                                                                                                                                                       |
+| `query`                                                  |          | string/object | Source query definition. For `postgres`, a SQL query string. For `mongodb`, a Mongo query definition detailed below.                                                                                                                                                                                                            |
+| [`refreshPolicy`](#refresh-policy-object)                | ✓        | object        | Optional policy for automatic refresh.                                                                                                                                                                                                                                                                                          |
+| [`objStgConf`](#object-storage-configuration-objstgconf) | ✓        | object        | Various options to configure the FDA uploaded in the object storage app.                                                                                                                                                                                                                                                        |
+| `timeColumn`                                             | ✓        | string        | Required with `refreshPolicy` of type `window` and `partition`. Column in the table indicating when the data was received (date). In `strict` validation mode, this column must be explicitly projected in the SELECT clause. See [Advanced Topics - Time Column](/doc/05_advanced_topics.md#time-column-behavior) for details. |
+| `cached`                                                 | ✓        | boolean       | If `false`, the FDA is created as only-fresh: no parquet snapshot is maintained, no DAs are allowed, and the FDA is queried through `GET /{visibility}/fdas/{fdaId}/data`. Default `true`.                                                                                                                                      |
+| `datasourceId`                                           | ✓        | string        | Datasource id used to resolve DB credentials for this FDA. If omitted, FDA uses `default`.                                                                                                                                                                                                                                      |
+| `validationMode`                                         | ✓        | string        | Controls synchronous validation during creation. Allowed values: `strict` and `unchecked`. Default `strict`.                                                                                                                                                                                                                    |
 
 For MongoDB datasources, `query` is an object with the following keys:
 
@@ -828,7 +829,8 @@ details. Nested MongoDB fields can be projected using dot notation:
 
 Projected nested fields are materialized as FDA columns preserving their dot notation (`device.name`).
 
-When generating [defaultDataAccess](AdvancedTopics/default_data_access.md) parameters, dots are replaced by underscores. For example:
+When generating [defaultDataAccess](AdvancedTopics/default_data_access.md) parameters, dots are replaced by underscores.
+For example:
 
 -   Column: `device.name`
 -   Parameter: `device_name`
@@ -859,11 +861,12 @@ If omitted, the default policy is:
 
 ##### Params
 
-| Field             | Optional | Type   | Description                                                                                                                                                                                                                                                                                                                                                       |
-| ----------------- | -------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `refreshInterval` |          | string | It represents a human interval (e.g. `1 hour`) or a cron expression. The frequency for the scheduled refresh and clean jobs. Must be minor or equal to partition size (if existing) (value of the field [`objstgconf.partition`](#object-storage-configuration-objstgconf)).                                                                                      |
-| `fetchSize`       |          | string | **Only for type `window`**, it can take the values `hour`, `day`, `week`, `month` and `year`. Represents the time range of data to fetch (e.g. last hour/month data). If [`objStgConf.partition`](#object-storage-configuration-objstgconf) is set, it must be equal to that partition size; in practice `hour` is only valid when no partitioning is configured. |
-| `windowSize`      | ✓        | string | Temporal interval of data we are gonna keep in storage (e.g. only the data of the last month). Possible values: `day`, `week`, `month` and `year`. If omitted, then all data is kept forever, no clean partition is done (i.e. an "infinite" window).                                                                                                             |
+| Field                        | Optional | Type   | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ---------------------------- | -------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `refreshInterval`            |          | string | It represents a human interval (e.g. `1 hour`) or a cron expression. The frequency for the scheduled refresh and clean jobs. Must be minor or equal to partition size (if existing) (value of the field [`objstgconf.partition`](#object-storage-configuration-objstgconf)).                                                                                                                                                                                                                                |
+| `consistencyRefreshInterval` | ✓        | string | **Only for type `window`**, it represents a human interval or cron expression used to schedule a periodic full rebuild of the FDA through the manual refresh flow. This helps recover delayed historical data while keeping the incremental sliding-window refresh active. It must be greater than `refreshInterval`, otherwise `InvalidParam` error response will be got                                                                                                                                   |
+| `fetchSize`                  |          | string | **Only for type `window`**, it can take the values `hour`, `day`, `week`, `month` and `year`. Represents the time range of data to fetch in the scheduled fetchs (e.g. last hour/month data). If [`objStgConf.partition`](#object-storage-configuration-objstgconf) is set, it must be equal to partition size; in practice `hour` is only valid when no partitioning is configured.                                                                                                                        |
+| `windowSize`                 | ✓        | string | Temporal interval of data we are gonna keep in storage (e.g. only the data of the last month). This value also affects the first fetch of a window FDA and the manual refresh. Possible values are formed using a number and an allowed unit, e.g.: `3 days`, `6 weeks`, `1 month` and `2 years`. Units without number count as amount 1 (`year` = `1 year`). If omitted, then all data is kept forever, no clean partition is done and the first fetch retrieves all the data (i.e. an "infinite" window). |
 
 ##### Object storage configuration (objstgconf)
 
@@ -882,7 +885,8 @@ These fields are **provided in responses** but **cannot be included or modified*
 | ----------- | -------- | ------ | --------------------------------------------------------------------------------------------- |
 | `status`    |          | string | Current FDA execution status (`fetching`, `transforming`, `uploading`, `completed`, `failed`) |
 | `progress`  |          | number | Execution progress percentage (0–100)                                                         |
-| `lastFetch` |          | string | Timestamp of the last fetch (ISO date format)                                                 |
+| `initFetch` |          | string | Timestamp of the current/last fetch start (ISO date format)                                   |
+| `lastFetch` |          | string | Timestamp of the last completed fetch (ISO date format)                                       |
 
 > Note: Including operational fields like `progress` or `status` in POST/PUT requests is ignored by the server. Requests
 > including these fields are rejected with `400 BadRequest`.
@@ -947,16 +951,23 @@ _**Example Response:**_
     {
         "id": "fda_alarms",
         "datasourceId": "default",
+        "validationMode": "strict",
         "query": "SELECT * FROM public.alarms",
         "das": {},
         "status": "completed",
         "progress": 100,
+        "initFetch": "2026-02-19T07:37:52.084Z",
         "lastFetch": "2026-02-19T07:38:21.263Z",
         "refreshPolicy": {
             "type": "interval",
             "params": { "refreshInterval": "1 hour" }
         },
-        "description": "FDA de alarmas del sistema"
+        "description": "FDA for system alarms",
+        "schema": [
+            { "name": "entityid", "type": "VARCHAR" },
+            { "name": "__SEVERITY__", "type": "VARCHAR" },
+            { "name": "created_at", "type": "TIMESTAMP" }
+        ]
     }
 ]
 ```
@@ -977,6 +988,9 @@ _**Request query parameters**_
 | ------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
 | `defaultDataAccess` | ✓        | Overrides the instance default and enables or disables automatic `defaultDataAccess` creation for this FDA. The default value is taken from `FDA_CREATE_DEFAULT_DATA_ACCESS`; if that env var is not set, the default is `true`. | `false` |
 
+When `validationMode` is set to `unchecked` in the request body, synchronous validation is skipped and initial
+`defaultDataAccess` generation is skipped even if this query parameter is enabled.
+
 _**Request headers**_
 
 | Header               | Optional | Description                                                          | Example            |
@@ -989,6 +1003,10 @@ _**Request payload**_
 
 The payload is a JSON object containing a FDA that follows the JSON FDA representation format (described in
 [FDA payload datamodel](#fda-payload-datamodel) section).
+
+`validationMode` set to `unchecked` is useful for heavy queries where synchronous validation could delay creation. In
+this mode FDA creation returns normally, `defaultDataAccess` is not created automatically, and DA compatibility
+validation is skipped for that FDA.
 
 _**Example Request:**_
 
@@ -1036,6 +1054,22 @@ curl -i -X POST http://localhost:8080/public/fdas \
         "query": "SELECT * FROM public.alarms",
         "description": "Only-fresh FDA",
         "cached": false
+    }'
+```
+
+_**Example Request with unchecked validation mode:**_
+
+```bash
+curl -i -X POST "http://localhost:8080/public/fdas?defaultDataAccess=true" \
+    -H "Content-Type: application/json" \
+    -H "Fiware-Service: trantor" \
+    -H "Fiware-ServicePath: /servicePath" \
+    -d '{
+        "id": "fda_heavy_query",
+        "query": "SELECT * FROM public.very_large_table",
+        "description": "Create without synchronous validation",
+        "validationMode": "unchecked",
+        "cached": true
     }'
 ```
 
@@ -1155,12 +1189,19 @@ _**Example Response:**_
     "das": {},
     "status": "completed",
     "progress": 100,
+    "initFetch": "2026-02-19T07:37:52.084Z",
     "lastFetch": "2026-02-19T07:38:21.263Z",
     "refreshPolicy": {
         "type": "interval",
         "params": { "refreshInterval": "1 hour" }
     },
-    "description": "FDA de alarmas del sistema"
+    "description": "FDA for system alarms",
+    "validationMode": "strict",
+    "schema": [
+        { "name": "entityid", "type": "VARCHAR" },
+        { "name": "__SEVERITY__", "type": "VARCHAR" },
+        { "name": "created_at", "type": "TIMESTAMP" }
+    ]
 }
 ```
 
@@ -1430,17 +1471,13 @@ curl -i -X POST http://localhost:8080/public/fdas/fda_alarms/das \
 _**Example Response:**_
 
 ```
-HTTP/1.1 200 OK
+HTTP/1.1 204 No Content
 X-Powered-By: Express
-Content-Type: text/plain; charset=utf-8
-Content-Length: 7
-
-Created
 ```
 
 _**Response code**_
 
--   Successful operation uses 200 OK
+-   Successful operation uses 204 No Content
 -   Errors use a non-2xx and (optionally) an error payload. See subsection on [Error Responses](#error-responses) for
     more details.
 
@@ -1693,12 +1730,12 @@ _**Request query parameters**_
 
 The endpoint supports two request styles:
 
-| Parameter     | Optional | Description                                                                                             | Example                  |
-| ------------- | -------- | ------------------------------------------------------------------------------------------------------- | ------------------------ |
-| `service`     | ✓        | Tenant or service. Required when using query-style context (instead of FIWARE headers).                 | `trantor`                |
-| `servicePath` | ✓        | NGSI hierarchical service path. Required when using query-style context (instead of FIWARE headers).    | `/servicePath`           |
-| `outputType`  | ✓        | Output format for query-style context. Allowed values: `json`, `ndjson`, `csv`, `xls`. Default: `json`. | `csv`                    |
-| DA params     | ✓        | DA-specific parameters declared in `params`.                                                            | `pattern=%25nosignal%25` |
+| Parameter     | Optional | Description                                                                                                    | Example                  |
+| ------------- | -------- | -------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| `service`     | ✓        | Tenant or service. Required when using query-style context (instead of FIWARE headers).                        | `trantor`                |
+| `servicePath` | ✓        | NGSI hierarchical service path. Required when using query-style context (instead of FIWARE headers).           | `/servicePath`           |
+| `outputType`  | ✓        | Output format for query-style context. Allowed values: `json`, `ndjson`, `csv`, `xls`, `cda`. Default: `json`. | `csv`                    |
+| DA params     | ✓        | DA-specific parameters declared in `params`.                                                                   | `pattern=%25nosignal%25` |
 
 _**Request headers**_
 
@@ -1748,12 +1785,28 @@ Depends on `Accept`:
 -   `text/csv`: comma-separated values file. The first row contains column names. Values containing commas,
     double-quotes or newlines are quoted.
 -   spreadsheet MIME types: Excel workbook (`.xlsx` format, Office Open XML). The first row contains column names.
+-   `application/vnd.fiware.cda+json`: CDA-compatible JSON structure:
+
+```json
+{
+    "metadata": [{ "colIndex": 0, "colName": "column1" }, ...],
+    "resultset": [["value1", "value2", ...]],
+    "queryInfo": {
+        "pageStart": 0,
+        "pageSize": 10,
+        "totalRows": 120
+    }
+}
+```
 
 _**Content negotiation and serialization notes**_
 
 -   In header-style context, response format is negotiated through the `Accept` header (using the
     [standard HTTP content negotiation mechanism](https://datatracker.ietf.org/doc/html/rfc2616#section-12)).
 -   In query-style context, response format is controlled by `outputType` query parameter.
+-   The CDA-compatible JSON representation can be requested using `outputType=cda` in query-style context or
+    `Accept: application/vnd.fiware.cda+json` in header-style context. It returns a tabular JSON payload (`metadata`,
+    `resultset`, `queryInfo`).
 -   If `Accept` does not include a supported format in header-style context, the API returns `406 NotAcceptable`.
 -   Unsupported query fields are rejected with `400 BadRequest`.
 -   `fresh` query field is rejected with `400 BadRequest`.
@@ -1814,6 +1867,12 @@ _**Example Request (query-style context):**_
 
 ```bash
 curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_filter_by_name/data?service=trantor&servicePath=%2FservicePath&pattern=%25nosignal%25"
+```
+
+_**Example Request (query-style CDA-compatible JSON):**_
+
+```bash
+curl -i -X GET "http://localhost:8080/public/fdas/fda_alarms/das/da_filter_by_name/data?service=trantor&servicePath=%2FservicePath&outputType=cda&pattern=%25nosignal%25"
 ```
 
 _**Example Request (CSV output):**_

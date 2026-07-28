@@ -71,6 +71,7 @@ import {
   DEFAULT_OUTPUT_TYPE,
   rowsToCsv,
   rowsToXlsx,
+  toCdaJson,
 } from './lib/utils/outputFormat.js';
 import {
   onRequestStart,
@@ -92,6 +93,7 @@ const DATA_CONTENT_TYPES = [
   'text/csv',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/vnd.ms-excel',
+  'application/vnd.fiware.cda+json',
 ];
 
 const DATA_ACCEPT_CONTENT_TYPE_TO_OUTPUT = {
@@ -100,9 +102,36 @@ const DATA_ACCEPT_CONTENT_TYPE_TO_OUTPUT = {
   'text/csv': 'csv',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xls',
   'application/vnd.ms-excel': 'xls',
+  'application/vnd.fiware.cda+json': 'cda',
 };
 
-const QUERY_STYLE_OUTPUT_TYPES = ['json', 'ndjson', 'csv', 'xls'];
+const QUERY_STYLE_OUTPUT_TYPES = ['json', 'ndjson', 'csv', 'xls', 'cda'];
+const VALIDATION_MODES = ['strict', 'unchecked'];
+
+function parseValidationMode(value) {
+  if (value === undefined) {
+    return 'strict';
+  }
+
+  if (typeof value !== 'string') {
+    throw new FDAError(
+      400,
+      'BadRequest',
+      'Body field "validationMode" must be a string.',
+    );
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (!VALIDATION_MODES.includes(normalized)) {
+    throw new FDAError(
+      400,
+      'BadRequest',
+      `Body field "validationMode" must be one of: ${VALIDATION_MODES.join(', ')}.`,
+    );
+  }
+
+  return normalized;
+}
 
 function throwRequestStyleConflictIfMixed(hasHeaderContext, hasQueryContext) {
   if (hasHeaderContext && hasQueryContext) {
@@ -120,7 +149,7 @@ function getOutputTypeFromAcceptHeader(req) {
     throw new FDAError(
       406,
       'NotAcceptable',
-      'Accept header must allow application/json, application/x-ndjson, text/csv, or application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Accept header must allow application/json, application/x-ndjson, text/csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, or application/vnd.fiware.cda+json',
     );
   }
 
@@ -316,6 +345,7 @@ app.post('/:visibility/fdas', async (req, res) => {
     'objStgConf',
     'cached',
     'datasourceId',
+    'validationMode',
   ]);
   const {
     id,
@@ -326,6 +356,7 @@ app.post('/:visibility/fdas', async (req, res) => {
     objStgConf,
     cached,
     datasourceId,
+    validationMode,
   } = body;
   const service = req.get('Fiware-Service');
   const servicePath = req.get('Fiware-ServicePath');
@@ -343,6 +374,7 @@ app.post('/:visibility/fdas', async (req, res) => {
     cached === undefined
       ? true
       : parseBooleanQueryParam(cached, 'cached', true);
+  const resolvedValidationMode = parseValidationMode(validationMode);
 
   if (!id || !query || !service || !servicePath || !visibility) {
     return res.status(400).json({
@@ -367,6 +399,7 @@ app.post('/:visibility/fdas', async (req, res) => {
     defaultDataAccessEnabled,
     cachedEnabled,
     datasourceId,
+    resolvedValidationMode,
   );
 
   return res.status(202).json({
@@ -643,7 +676,7 @@ app.post('/:visibility/fdas/:fdaId/das', async (req, res) => {
     visibility,
     servicePath,
   );
-  return res.sendStatus(200);
+  return res.sendStatus(204);
 });
 
 app.get('/:visibility/fdas/:fdaId/das/:daId', async (req, res) => {
@@ -756,7 +789,10 @@ app.get('/:visibility/fdas/:fdaId/das/:daId/data', async (req, res) => {
     params,
   });
 
-  return sendRowsByOutputType(res, rows, outputType);
+  const responseRows =
+    outputType === 'cda' ? toCdaJson(rows, queryParams) : rows;
+
+  return sendRowsByOutputType(res, responseRows, outputType);
 });
 
 app.get('/:visibility/fdas/:fdaId/data', async (req, res) => {
@@ -817,24 +853,30 @@ app.get('/:visibility/fdas/:fdaId/data', async (req, res) => {
     fdaId,
   });
 
-  return sendRowsByOutputType(res, rows, outputType);
+  const responseRows = outputType === 'cda' ? toCdaJson(rows) : rows;
+
+  return sendRowsByOutputType(res, responseRows, outputType);
 });
 
 app.post('/datasources', async (req, res) => {
   const service = req.get('Fiware-Service');
   const body = req.body ?? {};
   validateAllowedFieldsBody(body, ['datasourceId', 'type', 'config']);
-  const { datasourceId, type, config: dsConfig } = body;
+  let { datasourceId, type, config: dsConfig } = body;
 
-  if (!service || !datasourceId || !type || !dsConfig) {
+  if (!service || !type || !dsConfig) {
     return res.status(400).json({
       error: 'BadRequest',
       description: 'Missing required fields: datasourceId, type, config',
     });
   }
 
+  if (!datasourceId) {
+    datasourceId = 'default';
+  }
+
   await createDatasourceForService(service, datasourceId, type, dsConfig);
-  return res.sendStatus(200);
+  return res.sendStatus(204);
 });
 
 app.get('/datasources', async (req, res) => {

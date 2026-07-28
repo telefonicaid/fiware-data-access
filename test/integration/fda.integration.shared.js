@@ -42,6 +42,7 @@ import { registerDefaultDataAccessIntegrationTests } from './suites/defaultDataA
 import { registerDaDataQueriesIntegrationTests } from './suites/daDataQueries.integration.tests.js';
 import { registerDaParamsIntegrationTests } from './suites/daParams.integration.tests.js';
 import { registerFdaVariantsIntegrationTests } from './suites/fdaVariants.integration.tests.js';
+import { registerFdaTimeColumnIntegrationTests } from './suites/fdaTimeColumn.integration.tests.js';
 import { registerDaCrudIntegrationTests } from './suites/daCrud.integration.tests.js';
 import { registerFreshQueriesIntegrationTests } from './suites/freshQueries.integration.tests.js';
 import { registerQueryStyleDataIntegrationTests } from './suites/queryStyleData.integration.tests.js';
@@ -49,6 +50,7 @@ import { registerVisibilityConstraintsIntegrationTests } from './suites/visibili
 import { registerCdaCompatibilityIntegrationTests } from './suites/cdaCompatibility.integration.tests.js';
 import { registerFdaLifecycleIntegrationTests } from './suites/fdaLifecycle.integration.tests.js';
 import { registerMongoFdasIntegrationTests } from './suites/mongoFdas.integration.tests.js';
+import { registerComplexCasesIntegrationTests } from './suites/complexCases.integration.tests.js';
 import {
   httpReq,
   httpFormReq,
@@ -58,6 +60,7 @@ import {
   getFreePort,
   connectWithRetry,
   waitUntilFDACompleted,
+  waitForJobToFinish,
 } from './utils/integrationTestUtils.js';
 
 const { Client } = pg;
@@ -333,6 +336,9 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
     registerFdaCreationIntegrationTests({
       getBaseUrl: () => baseUrl,
+      getMongoUri: () => mongoUri,
+      getPgHost: () => pgHost,
+      getPgPort: () => pgPort,
       service,
       servicePath,
       visibility,
@@ -350,9 +356,11 @@ export function runFDAIntegrationSuite({ mode, label }) {
       visibility,
       httpReq,
       waitUntilFDACompleted,
+      waitForJobToFinish,
       buildDaDataUrl,
       getPgHost: () => pgHost,
       getPgPort: () => pgPort,
+      getMongoUri: () => mongoUri,
     });
 
     registerDefaultDataAccessIntegrationTests({
@@ -408,6 +416,17 @@ export function runFDAIntegrationSuite({ mode, label }) {
       httpReq,
       waitUntilFDACompleted,
       buildFdaDataUrl,
+    });
+
+    registerFdaTimeColumnIntegrationTests({
+      getBaseUrl: () => baseUrl,
+      service,
+      servicePath,
+      visibility,
+      httpReq,
+      waitUntilFDACompleted,
+      getPgHost: () => pgHost,
+      getPgPort: () => pgPort,
     });
 
     registerDaCrudIntegrationTests({
@@ -482,6 +501,17 @@ export function runFDAIntegrationSuite({ mode, label }) {
       httpReqRaw,
       waitUntilFDACompleted,
       buildDaDataUrl,
+    });
+
+    registerComplexCasesIntegrationTests({
+      getBaseUrl: () => baseUrl,
+      service,
+      servicePath,
+      visibility,
+      httpReq,
+      waitUntilFDACompleted,
+      getPgHost: () => pgHost,
+      getPgPort: () => pgPort,
     });
   });
 }

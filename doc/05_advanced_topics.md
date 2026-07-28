@@ -54,6 +54,9 @@ use the `fiware-service` value as the _database_ name.
 
 FDA can automatically create a built-in DA named `defaultDataAccess` when a new FDA is created.
 
+When `validationMode` is set to `unchecked` at FDA creation, synchronous validation is skipped and `defaultDataAccess`
+is not created at that moment, even if default DA creation is enabled.
+
 This topic covers:
 
 -   creation rules
@@ -68,8 +71,8 @@ Full documentation available at: [`Default Data Access`](/doc/AdvancedTopics/def
 
 ## FDA Execution Lifecycle
 
-Each `FDA` has **operational fields** (`status`, `progress`, `lastFetch`) that are **read-only** for clients and reflect
-its asynchronous processing state.
+Each `FDA` has **operational fields** (`status`, `progress`, `initFetch`, `lastFetch`) that are **read-only** for
+clients and reflect its asynchronous processing state.
 
 ### Status & Progress
 
@@ -83,7 +86,8 @@ its asynchronous processing state.
 
 ### Last Execution
 
-`lastFetch` records the timestamp of the last completed attempt in ISO format.
+`initFetch` records when the current/last fetch cycle started, and `lastFetch` records when the last successful cycle
+completed. The execution time for each cycle can be estimated as `lastFetch - initFetch`.
 
 ### Flow
 
@@ -106,6 +110,8 @@ This architecture:
 -   Improves scalability
 -   Enables state persistence and recovery
 -   Provides execution traceability and respects FDA `refreshPolicy` to schedule automatic refreshes.
+-   Window-based FDAs can additionally use a periodic consistency refresh to rebuild the FDA from the source and recover
+    delayed historical rows.
 
 👉 Full documentation available at:
 [`Async Processing & Job Architecture`](/doc/AdvancedTopics/async_processing_and_jobs.md)
@@ -116,6 +122,9 @@ Using **agenda** and it's job system `FDA` supports an special refresh modality.
 the user can schedule periodic jobs to retrieve data inside a specific time interval (e.g. the data of the last month).
 This functionality pairs really well with the _partitioning_ of parquet files and they are intended to be used together
 for performance optimization, but the freedom in the configuration granted to the user can cause some problems.
+
+When delayed historical data is a concern, a periodic consistency refresh can complement the incremental sliding-window
+jobs by rebuilding the FDA end to end at a lower frequency (for example, weekly or monthly).
 
 👉 Full documentation available at:
 [`Sliding windows and partitioned files`](/doc/AdvancedTopics/sliding_windows_and_partitioning.md)
@@ -240,6 +249,90 @@ Currently unsupported features:
 These may be implemented in future versions if required.
 
 Detailed reference available at: [`CDA legacy compatibility`](/doc/AdvancedTopics/cda_legacy_compatibility.md)
+
+---
+
+## Time Column Behavior
+
+The `timeColumn` parameter is used for:
+
+-   **Window refresh policies**: Determines the range of data to refresh
+-   **Partitioning**: Used to partition the Parquet file in object storage
+
+### Requirements
+
+The `timeColumn` must be of a **temporal type** (`TIMESTAMP`, `TIMESTAMPTZ`, `DATE`) for window refresh policies and
+partitioning to work correctly. The system needs to:
+
+1. Compare the column with timestamps in `WHERE` clauses
+2. Partition data by time intervals
+3. Order data chronologically
+
+**Valid temporal types:**
+
+-   `TIMESTAMP`
+-   `TIMESTAMPTZ`
+-   `DATE`
+-   `TIME`
+
+### Validation Modes
+
+The behavior of `timeColumn` validation depends on the `validationMode` setting:
+
+#### Strict Mode (default)
+
+In `strict` mode, the system validates that the `timeColumn` exists in the query result schema **before** creating the
+FDA. If the column is not present, the creation fails with a clear error message.
+
+#### Unchecked Mode
+
+In `unchecked` mode, the system **does not validate** the presence of `timeColumn` during creation. However, if the
+column is missing and you configure `refreshPolicy` or `partitioning`, the system will fail at runtime
+
+### Column Name Matching
+
+The `timeColumn` value must match the **name of the column as it appears in the result set** (after applying any
+aliases).
+
+#### Valid Examples
+
+```sql
+-- Unqualified column
+SELECT timeinstant, id, name FROM users
+-- timeColumn: "timeinstant"
+
+-- Qualified column
+SELECT u.timeinstant, u.id, u.name FROM users u
+-- timeColumn: "timeinstant"
+
+-- Column with alias (use the alias name)
+SELECT timeinstant AS ts, id, name FROM users
+-- timeColumn: "ts" (NOT "timeinstant")
+
+-- Valid: DATE_TRUNC returns TIMESTAMP
+SELECT DATE_TRUNC('year', observed_at) AS year FROM table
+
+-- SELECT * (implicitly includes all columns)
+SELECT * FROM users
+-- timeColumn: "timeinstant" (if the column exists)
+```
+
+### Error Messages
+
+When `timeColumn` validation fails in `strict` mode, the error response includes:
+
+-   HTTP status: `400 Bad Request`
+-   Error code: `InvalidParam`
+-   Description: Lists the available columns to help you correct the query
+
+Example error:
+
+```json
+{
+    "error": "InvalidParam",
+    "description": "Time column \"timeinstant\" is not present in the SELECT clause of the FDA query."
+}
+```
 
 ---
 

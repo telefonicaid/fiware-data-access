@@ -23,6 +23,7 @@
 // criminal actions it may exercise to protect its rights.
 
 import { executeQuery } from '../fda.js';
+import { toCdaJson } from '../utils/outputFormat.js';
 
 const VALID_VISIBILITIES = new Set(['public', 'private']);
 
@@ -125,40 +126,5 @@ function resolveServiceContext(pathParts) {
 }
 
 function adaptToCdaFormat(rows, { pageStart = 0, pageSize = 0 }) {
-  if (!rows.length) {
-    return {
-      metadata: [],
-      resultset: [],
-      queryInfo: {
-        pageStart,
-        pageSize,
-        totalRows: 0,
-      },
-    };
-  }
-
-  const totalRows =
-    rows[0].__total !== undefined ? Number(rows[0].__total) : rows.length;
-
-  /* eslint-disable-next-line no-unused-vars */
-  const cleanedRows = rows.map(({ __total: _, ...rest }) => rest);
-
-  const columns = Object.keys(cleanedRows[0]);
-
-  const metadata = columns.map((colName, index) => ({
-    colIndex: index,
-    colName,
-  }));
-
-  const resultset = cleanedRows.map((row) => columns.map((col) => row[col]));
-
-  return {
-    metadata,
-    resultset,
-    queryInfo: {
-      pageStart,
-      pageSize,
-      totalRows,
-    },
-  };
+  return toCdaJson(rows, { pageStart, pageSize });
 }

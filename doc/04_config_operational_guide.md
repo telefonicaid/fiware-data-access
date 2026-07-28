@@ -67,7 +67,7 @@ Datasource payload for `type=postgres`:
     "datasourceId": "default",
     "type": "postgres",
     "config": {
-        "user": "exampleUser",
+        "username": "exampleUser",
         "password": "examplePass",
         "host": "exampleHost",
         "port": 5432,

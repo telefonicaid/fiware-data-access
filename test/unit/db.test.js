@@ -217,8 +217,75 @@ describe('db utils', () => {
       status: 500,
       type: 'DuckDBServerError',
     });
+  });
 
-    expect(stmt.close).toHaveBeenCalledTimes(1);
+  test('runPreparedStatement returns empty rows when schema fallback source also has no files', async () => {
+    const { runPreparedStatement, runtimeConn } = await loadDbModule({
+      retrieveDAResult: {
+        query: 'SELECT id WHERE id = $id',
+        params: [{ name: 'id', type: 'Number' }],
+      },
+    });
+
+    retrieveFDAMock.mockResolvedValue({
+      schema: [{ name: 'id', type: 'INTEGER' }],
+      servicePath: '/sp',
+    });
+
+    runtimeConn.prepare
+      .mockRejectedValueOnce(new Error('No files found that match the pattern'))
+      .mockRejectedValueOnce(
+        new Error('No files found that match the pattern'),
+      );
+
+    const result = await runPreparedStatement(
+      runtimeConn,
+      'svc',
+      'fdaA',
+      'daA',
+      { id: 1 },
+      '/sp',
+    );
+
+    expect(result).toEqual([]);
+    expect(runtimeConn.prepare).toHaveBeenCalledTimes(2);
+  });
+
+  test('runPreparedStatementStream returns empty stream when schema fallback source has no files', async () => {
+    const { runPreparedStatementStream, runtimeConn } = await loadDbModule({
+      retrieveDAResult: {
+        query: 'SELECT id WHERE id = $id',
+        params: [{ name: 'id', type: 'Number' }],
+      },
+    });
+
+    retrieveFDAMock.mockResolvedValue({
+      schema: [{ name: 'id', type: 'INTEGER' }],
+      servicePath: '/sp',
+    });
+
+    runtimeConn.prepare
+      .mockRejectedValueOnce(new Error('No files found that match the pattern'))
+      .mockRejectedValueOnce(
+        new Error('No files found that match the pattern'),
+      );
+
+    const result = await runPreparedStatementStream(
+      runtimeConn,
+      'svc',
+      'fdaA',
+      'daA',
+      { id: 1 },
+      '/sp',
+    );
+
+    expect(result.stream.columnNames()).toEqual([]);
+    await expect(result.stream.fetchChunk()).resolves.toEqual({
+      rowCount: 0,
+      getRows: expect.any(Function),
+    });
+    expect(result.close).toEqual(expect.any(Function));
+    expect(runtimeConn.prepare).toHaveBeenCalledTimes(2);
   });
 
   test('runPreparedStatement returns InvalidQueryParam when isTypeOf coercion fails', async () => {
@@ -251,8 +318,6 @@ describe('db utils', () => {
       status: 400,
       type: 'InvalidQueryParam',
     });
-
-    expect(stmt.close).toHaveBeenCalledTimes(1);
   });
 
   test('validateDAQuery wraps prepare failures', async () => {
@@ -327,7 +392,7 @@ describe('db utils', () => {
     );
 
     expect(result).toBe(
-      "FROM read_parquet('s3://my-service/servicepath/fdaA.parquet/**/*.parquet') SELECT * WHERE id = $1",
+      "FROM read_parquet('s3://my-service/servicepath/fdaA/**/*.parquet') SELECT * WHERE id = $1",
     );
   });
 
@@ -460,6 +525,26 @@ describe('db utils', () => {
       type: 'InvalidDAQuery',
       message: 'DA query is not compatible with FDA fdaA: parse failed',
     });
+  });
+
+  test('validateDAQuery validates against stored schema when available', async () => {
+    const { validateDAQuery, runtimeConn } = await loadDbModule();
+
+    retrieveFDAMock.mockResolvedValue({
+      schema: [{ name: 'id', type: 'INTEGER' }],
+    });
+
+    const stmt = {
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+    runtimeConn.prepare.mockResolvedValueOnce(stmt);
+
+    await validateDAQuery(runtimeConn, 'svc', 'fdaA', 'SELECT id', '/sp');
+
+    expect(runtimeConn.prepare).toHaveBeenCalledWith(
+      'FROM (SELECT CAST(NULL AS INTEGER) AS "id" LIMIT 0) AS fda_schema SELECT id',
+    );
+    expect(stmt.close).toHaveBeenCalledTimes(1);
   });
 
   test('resolveDAParams throws for unknown parameter types', async () => {
@@ -657,6 +742,21 @@ describe('db utils', () => {
     expect(() =>
       resolveDAParams({ id: 'notanumber' }, [{ name: 'id', type: 'Number' }]),
     ).toThrow('Param "id" not of valid type (Number).');
+  });
+
+  test('extractDate parses year, month and week partitions and returns null for invalid paths', async () => {
+    const { extractDate } = await loadDbModule();
+
+    expect(extractDate('bucket/fda/year=2026/month=7/day=3')).toEqual(
+      new Date('2026-07-03T00:00:00.000Z'),
+    );
+    expect(extractDate('bucket/fda/year=2026/month=7')).toEqual(
+      new Date('2026-07-01T00:00:00.000Z'),
+    );
+    expect(extractDate('bucket/fda/year=2026/week=2026-02')).toEqual(
+      new Date('2026-01-08T00:00:00.000Z'),
+    );
+    expect(extractDate('bucket/fda/no-partition')).toBeNull();
   });
 
   test('toParquet builds copy SQL with no partition', async () => {

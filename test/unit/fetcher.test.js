@@ -46,6 +46,7 @@ async function loadFetcherModule() {
   processFDAAsyncMock.mockClear();
   cleanPartitionMock.mockClear();
   loggerMock.info.mockClear();
+  loggerMock.error.mockClear();
 
   await jest.unstable_mockModule('../../src/lib/jobs.js', () => ({
     getAgenda: getAgendaMock,
@@ -64,6 +65,17 @@ async function loadFetcherModule() {
 }
 
 describe('fetcher', () => {
+  function getHandler(jobName) {
+    const call = agendaMock.define.mock.calls.find(
+      ([name]) => name === jobName,
+    );
+    if (!call) {
+      throw new Error(`Handler for job "${jobName}" not found`);
+    }
+
+    return call[1];
+  }
+
   test('startFetcher registers refresh job and starts agenda', async () => {
     const { startFetcher } = await loadFetcherModule();
 
@@ -83,7 +95,7 @@ describe('fetcher', () => {
 
     await startFetcher();
 
-    const handler = agendaMock.define.mock.calls[0][1];
+    const handler = getHandler('refresh-fda');
 
     await handler({
       attrs: {
@@ -116,7 +128,7 @@ describe('fetcher', () => {
 
     await startFetcher();
 
-    const handler = agendaMock.define.mock.calls[1][1];
+    const handler = getHandler('clean-partition');
 
     await handler({
       attrs: {
@@ -148,7 +160,7 @@ describe('fetcher', () => {
 
     await startFetcher();
 
-    const handler = agendaMock.define.mock.calls[1][1];
+    const handler = getHandler('clean-partition');
 
     await handler({
       attrs: {

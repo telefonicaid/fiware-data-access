@@ -34,6 +34,8 @@ An **FDA** represents a **materialized dataset** in the system. It:
 -   Saves the file in a **bucket-based object storage system**
 -   Acts as the **base dataset** for one or more DAs
 -   Supports an optional `refreshPolicy` that defines how the FDA is automatically refreshed (none, interval or window)
+-   Window-based FDAs can also schedule a periodic consistency refresh that triggers the manual rebuild flow and helps
+    recover historical gaps.
 
 In simple terms:
 
@@ -47,7 +49,7 @@ Key characteristics:
 -   Associated with a `visibility` level (`public` or `private`) that controls access authorization
 -   Can be regenerated (manually or configured) to refresh the data
 -   Parent resource of one or more DAs
--   Has status, progress and lastFetch fields, and an optional refreshPolicy.
+-   Has status, progress, initFetch and lastFetch fields, and an optional refreshPolicy.
 
 #### Example FDA
 
@@ -163,13 +165,20 @@ Each document corresponds to one FDA:
 -   **refreshPolicy**: object defining automatic refresh behaviour (`none`, `interval`, or `window`)
 -   **status**: current execution status (`fetching`, `transforming`, `uploading`, `completed`, `failed`)
 -   **progress**: execution progress percentage (0–100)
--   **lastFetch**: timestamp of the last fetch (ISO date)
+-   **initFetch**: timestamp of the current/last fetch start (ISO date)
+-   **lastFetch**: timestamp of the last successful fetch completion (ISO date)
 -   **datasourceId**: datasource identifier used to resolve source credentials (default `default` when omitted)
+-   **validationMode**: validation mode (`strict` or `unchecked`, default `strict`)
+-   **schema**: array of column definitions (`name` and `type`) persisted from the source schema (`strict` mode only).
+    It is an optional field, by the moment used only in FDAs based in PG datasources (for other datasources we have to
+    consider how to it applies, specially for schema-less ones, see issue
+    [#235](https://github.com/telefonicaid/fiware-data-access/issues/235))
 
 Each DA contains:
 
 -   **description**: description of the DA
 -   **query**: parameterized SQL query executed on the FDA
+-   **params**: array of parameter definitions (optional)
 
 #### Example MongoDB document
 
@@ -178,24 +187,39 @@ Each DA contains:
     "_id": "695f9a3cc0d41d928f5e6a39",
     "fdaId": "fda1",
     "description": "Description for the first FDA",
-    "query": "SELECT population, timeinstant FROM exampleSchema.exampleTable",
+    "query": "SELECT population, timeinstant, gender FROM exampleSchema.exampleTable",
     "servicePath": "/servicePath",
     "service": "fiwareService",
     "progress": 10,
+    "initFetch": "2026-02-19T07:37:52.084Z",
     "lastFetch": null,
     "visibility": "public",
+    "validationMode": "strict",
+    "schema": [
+        { "name": "population", "type": "INTEGER" },
+        { "name": "timeinstant", "type": "TIMESTAMP" },
+        { "name": "gender", "type": "Text" }
+    ],
     "refreshPolicy": {
         "type": "interval",
-        "value": "1 hour"
+        "params": { "refreshInterval": "1 hour" }
     },
     "das": {
         "da1": {
             "description": "First DA querying timeInstant and population.",
-            "query": "SELECT * WHERE population = $population AND timeinstant = $timeinstant;"
+            "query": "SELECT * WHERE population = $population AND timeinstant = $timeinstant;",
+            "params": [
+                { "name": "population", "type": "Number" },
+                { "name": "timeinstant", "type": "DateTime" }
+            ]
         },
         "da2": {
             "description": "Second DA querying timeInstant and gender.",
-            "query": "SELECT * WHERE gender = $gender AND timeinstant = $timeinstant;"
+            "query": "SELECT * WHERE gender = $gender AND timeinstant = $timeinstant;",
+            "params": [
+                { "name": "gender", "type": "Text" },
+                { "name": "timeinstant", "type": "DateTime" }
+            ]
         }
     }
 }
@@ -208,7 +232,7 @@ Each document corresponds to one datasource definition for one service:
 -   **service**: FIWARE service (`fiware-service`) name
 -   **datasourceId**: datasource identifier (unique within the service)
 -   **type**: datasource type (currently `postgres`)
--   **config**: connection settings (for postgres: `user`, `password`, `host`, `port`, `database`)
+-   **config**: connection settings (for postgres: `username`, `password`, `host`, `port`, `database`)
 
 #### Example MongoDB datasource document
 
@@ -219,7 +243,7 @@ Each document corresponds to one datasource definition for one service:
     "datasourceId": "default",
     "type": "postgres",
     "config": {
-        "user": "postgres",
+        "username": "postgres",
         "password": "postgres",
         "host": "localhost",
         "port": 5432,

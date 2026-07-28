@@ -189,7 +189,10 @@ function resetModuleMocks() {
         throw err;
       }
     });
-  utilsMocks.parseBooleanQueryParam.mockReset().mockReturnValue(false);
+  utilsMocks.parseBooleanQueryParam.mockImplementation(
+    (value, _name, defaultValue) =>
+      value === undefined ? defaultValue : value === true || value === 'true',
+  );
 }
 
 async function flushAsyncWork() {
@@ -400,6 +403,54 @@ describe('index routes - validation and middleware branches', () => {
       .expect(400);
   });
 
+  test('forwards validationMode in POST /:visibility/fdas', async () => {
+    await request(app)
+      .post('/public/fdas')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .send({
+        id: 'fda_unchecked',
+        query: 'SELECT 1',
+        description: 'unchecked mode',
+        validationMode: 'unchecked',
+      })
+      .expect(202);
+
+    expect(fdaMocks.fetchFDA).toHaveBeenCalledWith(
+      'fda_unchecked',
+      'SELECT 1',
+      'svc',
+      'public',
+      '/servicepath',
+      'unchecked mode',
+      { type: 'none' },
+      undefined,
+      {},
+      true,
+      true,
+      undefined,
+      'unchecked',
+    );
+  });
+
+  test('returns 400 when validationMode is invalid in POST /:visibility/fdas', async () => {
+    const res = await request(app)
+      .post('/public/fdas')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .send({
+        id: 'fda_invalid_mode',
+        query: 'SELECT 1',
+        validationMode: 'unsupportedMode',
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({
+      error: 'BadRequest',
+    });
+    expect(fdaMocks.fetchFDA).not.toHaveBeenCalled();
+  });
+
   test('returns 400 when Fiware-Service is missing in GET /:visibility/fdas/:fdaId', async () => {
     await request(app)
       .get('/public/fdas/fda1')
@@ -561,7 +612,7 @@ describe('index routes - validation and middleware branches', () => {
       .set('Fiware-Service', 'svc')
       .set('Fiware-ServicePath', '/servicepath')
       .send({ id: 'da1', query: 'SELECT 2', description: 'da' })
-      .expect(200);
+      .expect(204);
 
     await request(app)
       .get('/public/fdas/fda1/das/da1')
@@ -605,6 +656,7 @@ describe('index routes - validation and middleware branches', () => {
       true,
       true,
       undefined,
+      'strict',
     );
     expect(fdaMocks.updateFDA).toHaveBeenCalledWith(
       'svc',
@@ -659,7 +711,23 @@ describe('index routes - validation and middleware branches', () => {
         type: 'postgres',
         config: { host: 'db' },
       })
-      .expect(200);
+      .expect(204);
+
+    await request(app)
+      .post('/datasources')
+      .set('Fiware-Service', 'svc')
+      .send({
+        type: 'postgres',
+        config: { host: 'db' },
+      })
+      .expect(204);
+
+    expect(fdaMocks.createDatasourceForService).toHaveBeenCalledWith(
+      'svc',
+      'default',
+      'postgres',
+      { host: 'db' },
+    );
 
     await request(app)
       .get('/datasources')
@@ -898,7 +966,7 @@ describe('index routes - validation and middleware branches', () => {
     expect(res.body).toEqual({
       error: 'NotAcceptable',
       description:
-        'Accept header must allow application/json, application/x-ndjson, text/csv, or application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Accept header must allow application/json, application/x-ndjson, text/csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, or application/vnd.fiware.cda+json',
     });
     expect(fdaMocks.executeFDAQuery).not.toHaveBeenCalled();
     expect(fdaMocks.executeFDAQueryStream).not.toHaveBeenCalled();
@@ -1234,7 +1302,7 @@ describe('index routes - validation and middleware branches', () => {
     expect(res.body).toEqual({
       error: 'NotAcceptable',
       description:
-        'Accept header must allow application/json, application/x-ndjson, text/csv, or application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Accept header must allow application/json, application/x-ndjson, text/csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, or application/vnd.fiware.cda+json',
     });
     expect(fdaMocks.executeQuery).not.toHaveBeenCalled();
     expect(fdaMocks.executeQueryStream).not.toHaveBeenCalled();

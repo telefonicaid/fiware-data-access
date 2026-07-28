@@ -27,7 +27,39 @@ import {
   getBucketNameFromService,
   normalizeScopedServicePath,
   getFDAStoragePath,
+  normalizeServicePath,
 } from '../../src/lib/utils/fdaScope.js';
+
+describe('normalizeServicePath', () => {
+  test('throws "Fiware-ServicePath header is required" when servicePath is missing', () => {
+    expect(() => normalizeServicePath(undefined)).toThrow(
+      expect.objectContaining({
+        status: 400,
+        type: 'InvalidServicePath',
+        message: 'Fiware-ServicePath header is required',
+      }),
+    );
+  });
+
+  test('throws "Fiware-ServicePath must be a non-root absolute path" for invalid servicePath', () => {
+    expect(() => normalizeServicePath('/')).toThrow(
+      expect.objectContaining({
+        status: 400,
+        type: 'InvalidServicePath',
+        message:
+          'Fiware-ServicePath must be a non-root absolute path (e.g. /servicepath)',
+      }),
+    );
+    expect(() => normalizeServicePath('invalid')).toThrow(
+      expect.objectContaining({
+        status: 400,
+        type: 'InvalidServicePath',
+        message:
+          'Fiware-ServicePath must be a non-root absolute path (e.g. /servicepath)',
+      }),
+    );
+  });
+});
 
 describe('fdaScope utils', () => {
   test('normalizeScopedServicePath throws when servicePath is missing', () => {

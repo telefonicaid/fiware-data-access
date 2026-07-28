@@ -32,6 +32,7 @@ import { convertRefreshIntervalToMs } from './utils.js';
 let instance = null;
 
 const logger = getBasicLogger();
+const NO_PARQUET_FILES_MATCH_ERROR = 'No files found that match the pattern';
 
 const connectionPool = [];
 
@@ -100,6 +101,125 @@ async function initDuckDB() {
   return instance;
 }
 
+async function closePreparedStatement(stmt) {
+  if (stmt && typeof stmt.close === 'function') {
+    await stmt.close();
+  }
+}
+
+function shouldReturnEmptyOnSchemaFallback(error) {
+  const message = String(error?.message ?? error);
+  return message.includes(NO_PARQUET_FILES_MATCH_ERROR);
+}
+
+function shouldTrySchemaFallback(error) {
+  const message = String(error?.message ?? error);
+  return message.includes(NO_PARQUET_FILES_MATCH_ERROR);
+}
+
+function normalizeStoredSchema(schema) {
+  if (!Array.isArray(schema)) {
+    return [];
+  }
+
+  return schema.filter(
+    (field) =>
+      typeof field?.name === 'string' &&
+      field.name.length > 0 &&
+      typeof field?.type === 'string' &&
+      field.type.length > 0,
+  );
+}
+
+function buildStoredSchemaQuery(schema, userQuery) {
+  const schemaFields = normalizeStoredSchema(schema);
+  if (schemaFields.length === 0) {
+    return null;
+  }
+
+  const selectList = schemaFields
+    .map(
+      ({ name, type }) =>
+        `CAST(NULL AS ${type}) AS "${String(name).replaceAll('"', '""')}"`,
+    )
+    .join(', ');
+
+  return `FROM (SELECT ${selectList} LIMIT 0) AS fda_schema ${userQuery.trim()}`;
+}
+
+function createEmptyPreparedStatementResult() {
+  return {
+    rows: [],
+    streamResult: {
+      stream: {
+        columnNames: () => [],
+        fetchChunk: async () =>
+          await Promise.resolve({
+            rowCount: 0,
+            getRows: () => [],
+          }),
+      },
+      close: async () => {},
+    },
+  };
+}
+
+async function executePreparedStatement(stmt, boundParams, streaming) {
+  await stmt.bind(boundParams);
+
+  if (streaming) {
+    const stream = await stmt.stream();
+    const close = async () => {
+      await closePreparedStatement(stmt);
+    };
+    return { stream, close };
+  }
+
+  const result = await stmt.run();
+  return result.getRowObjectsJson();
+}
+
+async function prepareAndRunStatementWithFallback(
+  conn,
+  query,
+  boundParams,
+  { streaming, fallbackQuery },
+) {
+  let stmt;
+
+  try {
+    stmt = await conn.prepare(query);
+    const result = await executePreparedStatement(stmt, boundParams, streaming);
+    return { stmt, result };
+  } catch (primaryError) {
+    if (!fallbackQuery || !shouldTrySchemaFallback(primaryError)) {
+      throw primaryError;
+    }
+
+    await closePreparedStatement(stmt);
+
+    try {
+      stmt = await conn.prepare(fallbackQuery);
+      const result = await executePreparedStatement(
+        stmt,
+        boundParams,
+        streaming,
+      );
+      return { stmt, result };
+    } catch (fallbackError) {
+      if (shouldReturnEmptyOnSchemaFallback(fallbackError)) {
+        const emptyResult = createEmptyPreparedStatementResult();
+        return {
+          stmt: null,
+          result: streaming ? emptyResult.streamResult : emptyResult.rows,
+        };
+      }
+
+      throw fallbackError;
+    }
+  }
+}
+
 export async function runPreparedStatement(
   conn,
   service,
@@ -128,11 +248,11 @@ export async function runPreparedStatement(
     );
   }
 
-  const { objStgConf, servicePath: storedServicePath } = await retrieveFDA(
-    service,
-    fdaId,
-    servicePath,
-  );
+  const {
+    objStgConf,
+    servicePath: storedServicePath,
+    schema,
+  } = await retrieveFDA(service, fdaId, servicePath);
   const query = buildDAQuery(
     service,
     fdaId,
@@ -141,28 +261,27 @@ export async function runPreparedStatement(
     storedServicePath ?? servicePath,
   );
 
-  const stmt = await conn.prepare(query);
+  let stmt;
 
   try {
+    validateDAParamBindings(da.query, da.params || []);
     const resolvedParams = applyParams(paramValues || {}, da.params);
     const boundParams = normalizeParamsForDuckDB(resolvedParams);
-    await stmt.bind(boundParams);
+    const prepared = await prepareAndRunStatementWithFallback(
+      conn,
+      query,
+      boundParams,
+      {
+        streaming,
+        fallbackQuery: buildStoredSchemaQuery(schema, da.query),
+      },
+    );
 
-    if (streaming) {
-      const stream = await stmt.stream();
-      const close = async () => {
-        if (typeof stmt.close === 'function') {
-          await stmt.close();
-        }
-      };
-      return { stream, close };
-    }
-
-    const result = await stmt.run();
-    return result.getRowObjectsJson();
+    stmt = prepared.stmt;
+    return prepared.result;
   } catch (e) {
-    if (streaming && typeof stmt.close === 'function') {
-      await stmt.close();
+    if (streaming) {
+      await closePreparedStatement(stmt);
     }
 
     if (e instanceof FDAError) {
@@ -176,8 +295,8 @@ export async function runPreparedStatement(
       `Error ${action} the prepared statement: ${e}`,
     );
   } finally {
-    if (!streaming && typeof stmt.close === 'function') {
-      await stmt.close();
+    if (!streaming) {
+      await closePreparedStatement(stmt);
     }
   }
 }
@@ -290,6 +409,35 @@ export function checkParams(params) {
 
     return normalizedParam;
   });
+}
+
+export function getNamedParamsFromQuery(query) {
+  if (typeof query !== 'string' || query.length === 0) {
+    return [];
+  }
+
+  return [...query.matchAll(/\$([A-Za-z_]\w*)/g)].map((match) => match[1]);
+}
+
+export function validateDAParamBindings(query, params) {
+  const queryParamNames = new Set(getNamedParamsFromQuery(query));
+  const declaredParamNames = new Set(
+    Array.isArray(params)
+      ? params
+          .map((param) => param?.name)
+          .filter((name) => typeof name === 'string' && name.length > 0)
+      : [],
+  );
+
+  for (const queryParamName of queryParamNames) {
+    if (!declaredParamNames.has(queryParamName)) {
+      throw new FDAError(
+        400,
+        'InvalidQueryParam',
+        `Query param "${queryParamName}" must be declared in DA params.`,
+      );
+    }
+  }
 }
 
 function normalizeParamDefaultForStorage(value) {
@@ -469,17 +617,14 @@ export async function toParquet(
   logger.debug({ originPath, resultPath }, '[DEBUG]: toParquet');
 
   try {
-    const { cols, partitionBy } = getPartitionConf(partitionType, timeColumn);
-    const compressionString = compression ? ', COMPRESSION ZSTD' : '';
-
-    await conn.run(`
-      COPY (
-        SELECT ${cols}
-        FROM read_csv_auto('s3://${originPath}')
-      )
-      TO 's3://${resultPath}'
-      (FORMAT PARQUET ${partitionBy} ${compressionString});
-    `);
+    return copyQueryToParquet(
+      conn,
+      `SELECT * FROM read_csv_auto('s3://${originPath}')`,
+      resultPath,
+      timeColumn,
+      partitionType,
+      compression,
+    );
   } catch (e) {
     logger.error('Error converting CSV to Parquet: ', e);
     if (e instanceof FDAError) {
@@ -498,6 +643,26 @@ export async function toParquet(
 
     throw new FDAError(500, 'ParquetError', e.message);
   }
+}
+
+export function copyQueryToParquet(
+  conn,
+  sourceQuery,
+  resultPath,
+  timeColumn,
+  partitionType,
+  compression,
+) {
+  logger.debug({ resultPath }, '[DEBUG]: copyQueryToParquet');
+
+  const { cols, partitionBy } = getPartitionConf(partitionType, timeColumn);
+  const compressionString = compression ? `, COMPRESSION ZSTD` : '';
+
+  return conn.run(
+    `COPY ( SELECT ${cols}
+                FROM (${sourceQuery}) AS fda_source) 
+      TO 's3://${resultPath}' (FORMAT PARQUET ${partitionBy} ${compressionString});`,
+  );
 }
 
 export const PARTITION_TYPES = ['day', 'week', 'month', 'year', 'none'];
@@ -613,12 +778,12 @@ export function buildDAQuery(
 
   const objectKey = getFDAStoragePath(fdaId, servicePath);
   const bucketName = getBucketNameFromService(service);
-  const parquetPath = `s3://${bucketName}/${objectKey}.parquet`;
+  const parquetPath = `s3://${bucketName}/${objectKey}`;
 
   if (partition) {
     return `FROM read_parquet('${parquetPath}/**/*.parquet') ${trimmed}`;
   } else {
-    return `FROM read_parquet('${parquetPath}') ${trimmed}`;
+    return `FROM read_parquet('${parquetPath}.parquet') ${trimmed}`;
   }
 }
 
@@ -655,8 +820,28 @@ export async function validateDAQuery(
   userQuery,
   servicePath,
 ) {
-  const { objStgConf = {} } =
+  const { objStgConf = {}, schema } =
     (await retrieveFDA(service, fdaId, servicePath)) || {};
+  const schemaQuery = buildStoredSchemaQuery(schema, userQuery);
+
+  if (schemaQuery) {
+    let schemaStmt;
+    try {
+      schemaStmt = await conn.prepare(schemaQuery);
+      return;
+    } catch (schemaError) {
+      throw new FDAError(
+        400,
+        'InvalidDAQuery',
+        `DA query is not compatible with FDA ${fdaId}: ${schemaError.message || schemaError}`,
+      );
+    } finally {
+      if (schemaStmt && typeof schemaStmt.close === 'function') {
+        await schemaStmt.close();
+      }
+    }
+  }
+
   const query = buildDAQuery(
     service,
     fdaId,

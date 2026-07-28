@@ -285,6 +285,41 @@ describe('utils', () => {
     });
   });
 
+  describe('processFetchSize', () => {
+    let processFetchSize;
+
+    beforeAll(async () => {
+      const utils = await loadUtilsModule();
+      processFetchSize = utils.processFetchSize;
+    });
+
+    test('returns a singular unit with amount 1 for a single token', () => {
+      expect(processFetchSize('day')).toEqual({ unit: 'day', amount: 1 });
+      expect(processFetchSize('days')).toEqual({ unit: 'day', amount: 1 });
+    });
+
+    test('parses explicit quantity and normalizes plural units', () => {
+      expect(processFetchSize('2 hours')).toEqual({ unit: 'hour', amount: 2 });
+      expect(processFetchSize('3 minutes')).toEqual({
+        unit: 'minute',
+        amount: 3,
+      });
+    });
+
+    test('throws for malformed time sizes', () => {
+      expect(() => processFetchSize('1 day extra')).toThrow(
+        'Invalid time size',
+      );
+      expect(() => processFetchSize('')).toThrow('Invalid unit in time size');
+    });
+
+    test('throws for non-integer amounts', () => {
+      expect(() => processFetchSize('1.5 days')).toThrow(
+        'Invalid amount in time size',
+      );
+    });
+  });
+
   describe('convertRefreshIntervalToMs', () => {
     let convertRefreshIntervalToMs;
 
@@ -389,81 +424,6 @@ describe('utils', () => {
         });
 
         expect(convertRefreshIntervalToMs('* * * * *')).toBe(3000);
-      });
-    });
-  });
-
-  describe('getTimeColumnQuery', () => {
-    let getTimeColumnQuery;
-
-    beforeAll(async () => {
-      const utils = await loadUtilsModule();
-      getTimeColumnQuery = utils.getTimeColumnQuery;
-    });
-
-    describe('invalid inputs', () => {
-      test('throws for invalid timeColumn (special chars)', () => {
-        expect(() =>
-          getTimeColumnQuery('SELECT a FROM table', 'time-column'),
-        ).toThrow('Invalid time column name');
-      });
-
-      test('throws for invalid timeColumn (empty)', () => {
-        expect(() => getTimeColumnQuery('SELECT a FROM table', '')).toThrow(
-          'Invalid time column name',
-        );
-      });
-
-      test('throws if query has no SELECT', () => {
-        expect(() => getTimeColumnQuery('DELETE FROM table', 'time')).toThrow(
-          'Missing SELECT',
-        );
-      });
-    });
-
-    describe('no modification cases', () => {
-      test('returns query if SELECT *', () => {
-        const query = 'SELECT * FROM table';
-        expect(getTimeColumnQuery(query, 'time')).toBe(query);
-      });
-
-      test('returns query if timeColumn already present', () => {
-        const query = 'SELECT time, value FROM table';
-        expect(getTimeColumnQuery(query, 'time')).toBe(query);
-      });
-
-      test('returns query if timeColumn already present (middle)', () => {
-        const query = 'SELECT value, time, other FROM table';
-        expect(getTimeColumnQuery(query, 'time')).toBe(query);
-      });
-    });
-
-    describe('insertion behavior', () => {
-      test('inserts timeColumn after SELECT', () => {
-        const result = getTimeColumnQuery('SELECT value FROM table', 'time');
-
-        expect(result).toBe('SELECT time, value FROM table');
-      });
-
-      test('handles multiple columns', () => {
-        const result = getTimeColumnQuery(
-          'SELECT value, other FROM table',
-          'time',
-        );
-
-        expect(result).toBe('SELECT time, value, other FROM table');
-      });
-
-      test('handles extra whitespace after SELECT', () => {
-        const result = getTimeColumnQuery('SELECT   value FROM table', 'time');
-
-        expect(result).toBe('SELECT   time, value FROM table');
-      });
-
-      test('handles lowercase select/from', () => {
-        const result = getTimeColumnQuery('select value from table', 'time');
-
-        expect(result).toBe('select time, value from table');
       });
     });
   });

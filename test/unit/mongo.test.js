@@ -145,7 +145,35 @@ describe('mongo utils', () => {
         cached: false,
         status: 'completed',
         progress: 100,
+        initFetch: null,
         lastFetch: null,
+      }),
+    );
+  });
+
+  test('createFDAMongo stores validationMode and schema metadata when provided', async () => {
+    const { createFDAMongo, collectionMock } = await loadMongoModule();
+
+    await createFDAMongo(
+      'fdaA',
+      'SELECT 1',
+      'svc',
+      'public',
+      '/sp',
+      'desc',
+      { type: 'none' },
+      undefined,
+      undefined,
+      true,
+      'default',
+      'strict',
+      [{ name: 'id', type: 'INTEGER' }],
+    );
+
+    expect(collectionMock.insertOne).toHaveBeenCalledWith(
+      expect.objectContaining({
+        validationMode: 'strict',
+        schema: [{ name: 'id', type: 'INTEGER' }],
       }),
     );
   });
@@ -271,7 +299,14 @@ describe('mongo utils', () => {
   test('updateFDAStatus includes optional error in update payload', async () => {
     const { updateFDAStatus, collectionMock } = await loadMongoModule();
 
-    await updateFDAStatus('svc', 'fdaA', '/sp', 'failed', 0, 'boom');
+    await updateFDAStatus({
+      service: 'svc',
+      fdaId: 'fdaA',
+      servicePath: '/sp',
+      status: 'failed',
+      progress: 0,
+      error: 'boom',
+    });
 
     expect(collectionMock.updateOne).toHaveBeenCalledWith(
       { service: 'svc', fdaId: 'fdaA', servicePath: '/sp' },
@@ -280,6 +315,29 @@ describe('mongo utils', () => {
           status: 'failed',
           progress: 0,
           error: 'boom',
+        }),
+      },
+    );
+  });
+
+  test('updateFDAStatus updates initFetch timestamp on each fetching status update', async () => {
+    const { updateFDAStatus, collectionMock } = await loadMongoModule();
+
+    await updateFDAStatus({
+      service: 'svc',
+      fdaId: 'fdaA',
+      servicePath: '/sp',
+      status: 'fetching',
+      progress: 10,
+    });
+
+    expect(collectionMock.updateOne).toHaveBeenCalledWith(
+      { service: 'svc', fdaId: 'fdaA', servicePath: '/sp' },
+      {
+        $set: expect.objectContaining({
+          status: 'fetching',
+          progress: 10,
+          initFetch: expect.any(Date),
         }),
       },
     );
@@ -595,8 +653,8 @@ describe('mongo utils', () => {
     expect(fakeClient.close).toHaveBeenCalled();
   });
 
-  test('readMongoDatasourceRows throws error for aggregation queries', async () => {
-    const { readMongoDatasourceRows } = await loadMongoModule();
+  test('createMongoCursorReader throws error for aggregation queries', async () => {
+    const { createMongoCursorReader } = await loadMongoModule();
 
     const dsConfig = {};
 
@@ -606,7 +664,7 @@ describe('mongo utils', () => {
     };
 
     await expect(
-      readMongoDatasourceRows(dsConfig, query),
+      createMongoCursorReader(dsConfig, query),
     ).rejects.toMatchObject({
       status: 400,
       type: 'NotImplemented',
@@ -614,8 +672,8 @@ describe('mongo utils', () => {
     });
   });
 
-  test('readMongoDatasourceRows throws error when neither filter nor aggregation defined', async () => {
-    const { readMongoDatasourceRows } = await loadMongoModule();
+  test('createMongoCursorReader throws error when neither filter nor aggregation defined', async () => {
+    const { createMongoCursorReader } = await loadMongoModule();
 
     const dsConfig = {};
 
@@ -625,11 +683,87 @@ describe('mongo utils', () => {
     };
 
     await expect(
-      readMongoDatasourceRows(dsConfig, query),
+      createMongoCursorReader(dsConfig, query),
     ).rejects.toMatchObject({
       status: 400,
       type: 'InvalidMongoFDAContract',
       message: 'Mongo query must define either filter or aggregation',
     });
+  });
+
+  test('createMongoCursorReader accepts empty filter with dot notation projection', async () => {
+    const { createMongoCursorReader, collectionMock } = await loadMongoModule();
+
+    const cursorMock = {
+      next: jest
+        .fn()
+        .mockResolvedValueOnce({ device: { name: 'sensor-x' }, status: 'ok' })
+        .mockResolvedValueOnce(null),
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+
+    collectionMock.find.mockReturnValueOnce(cursorMock);
+
+    const reader = await createMongoCursorReader(
+      { uri: 'mongodb://mongo:27017', database: 'test-db' },
+      {
+        collection: 'events',
+        filter: {},
+        projection: { 'device.name': 1, status: 1 },
+      },
+    );
+
+    await expect(reader.readNextChunk()).resolves.toEqual([
+      { 'device.name': 'sensor-x', status: 'ok' },
+    ]);
+
+    expect(collectionMock.find).toHaveBeenCalledWith(
+      {},
+      { projection: { 'device.name': 1, status: 1 } },
+    );
+
+    await reader.close();
+  });
+
+  test('createMongoCursorReader reads rows in chunks and closes resources', async () => {
+    const { createMongoCursorReader, collectionMock, clientMock } =
+      await loadMongoModule();
+
+    const cursorMock = {
+      next: jest
+        .fn()
+        .mockResolvedValueOnce({ device: 'dev-1', status: 'ok' })
+        .mockResolvedValueOnce({ device: 'dev-2', status: 'warn' })
+        .mockResolvedValueOnce(null),
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+
+    collectionMock.find.mockReturnValueOnce(cursorMock);
+
+    const reader = await createMongoCursorReader(
+      { uri: 'mongodb://mongo:27017', database: 'test-db' },
+      {
+        collection: 'events',
+        filter: { status: 'active' },
+        projection: { device: 1, status: 1 },
+      },
+      { chunkSize: 2 },
+    );
+
+    await expect(reader.columns).toEqual(['device', 'status']);
+    await expect(reader.readNextChunk()).resolves.toEqual([
+      { device: 'dev-1', status: 'ok' },
+      { device: 'dev-2', status: 'warn' },
+    ]);
+    await expect(reader.readNextChunk()).resolves.toEqual([]);
+
+    await reader.close();
+
+    expect(collectionMock.find).toHaveBeenCalledWith(
+      { status: 'active' },
+      { projection: { device: 1, status: 1 } },
+    );
+    expect(cursorMock.close).toHaveBeenCalled();
+    expect(clientMock.close).toHaveBeenCalled();
   });
 });
