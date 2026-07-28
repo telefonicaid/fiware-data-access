@@ -107,6 +107,7 @@ const DATA_ACCEPT_CONTENT_TYPE_TO_OUTPUT = {
 
 const QUERY_STYLE_OUTPUT_TYPES = ['json', 'ndjson', 'csv', 'xls', 'cda'];
 const VALIDATION_MODES = ['strict', 'unchecked'];
+const FDA_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
 
 function parseValidationMode(value) {
   if (value === undefined) {
@@ -131,6 +132,16 @@ function parseValidationMode(value) {
   }
 
   return normalized;
+}
+
+function validateFdaId(id) {
+  if (typeof id !== 'string' || id.length === 0 || !FDA_ID_PATTERN.test(id)) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      'FDA id must contain only alphanumeric characters, hyphens, and underscores.',
+    );
+  }
 }
 
 function throwRequestStyleConflictIfMixed(hasHeaderContext, hasQueryContext) {
@@ -383,6 +394,8 @@ app.post('/:visibility/fdas', async (req, res) => {
     });
   }
 
+  validateFdaId(id);
+
   const finalRefreshPolicy = refreshPolicy ?? { type: 'none' };
   const finalObjStgConf = objStgConf ?? {};
 
@@ -522,8 +535,8 @@ app.post('/:visibility/fdas/upload', (req, res) => {
           description: 'The file exceeds the maximum allowed size.',
         });
       }
-      return res.status(400).json({
-        error: 'BadRequest',
+      return res.status(err.status || 400).json({
+        error: err.type || 'BadRequest',
         description: err.message,
       });
     }
@@ -564,6 +577,7 @@ app.post('/:visibility/fdas/upload', (req, res) => {
         description: 'Missing "id" field in the form',
       });
     }
+    validateFdaId(id);
     if (!req.file) {
       if (req.file && req.file.path && fs.existsSync(req.file.path)) {
         try {
