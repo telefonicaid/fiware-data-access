@@ -49,3 +49,33 @@ For `GET /{visibility}/fdas/{fdaId}/das/{daId}/data`, response format is selecte
 
 The same content negotiation rules apply to `GET /{visibility}/fdas/{fdaId}/data`, which is the direct fresh FDA query
 endpoint.
+
+---
+
+### 4. Uploading CSV/XLS/XLSX with Postman
+
+To create FDAs from tabular files use `POST /{{visibility}}/fdas/upload` with **Body = form-data**:
+
+-   Required fields:
+    -   `id` (Text)
+    -   `file` (File)
+-   Optional fields:
+    -   `description` (Text)
+    -   `timeColumn` (Text)
+    -   `objStgConf` (Text, JSON object string)
+    -   `defaultDataAccess` (Text/Boolean)
+    -   `datasourceId` (Text)
+
+Example `objStgConf` value:
+
+```json
+{ "partition": "day", "compression": "zstd" }
+```
+
+Expected behavior:
+
+-   `202` when upload is accepted and processing continues asynchronously.
+-   `400` for invalid upload fields (`timeColumn`, `objStgConf.partition`, `objStgConf.compression`, malformed JSON,
+    missing `id`, missing file).
+-   `413` when file size exceeds the configured limit.
+-   `415` when file type is not CSV/XLS/XLSX.

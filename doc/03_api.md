@@ -20,6 +20,7 @@
     -   [FDAs operations](#fdas-operations)
         -   [List FDAs](#list-fdas-get-visibilityfdas)
         -   [Create FDA](#create-fda-post-visibilityfdas)
+        -   [Upload FDA](#upload-fda-post-visibilityfdasupload)
         -   [Get FDA](#get-fda-get-visibilityfdasfdaid)
         -   [Regenerate FDA](#regenerate-fda-put-visibilityfdasfdaid)
         -   [Delete FDA](#delete-fda-delete-visibilityfdasfdaid)
@@ -78,36 +79,38 @@ All error responses follow this structure:
 
 ### HTTP status codes
 
-| Code | Status                | Error Code                  | Cause                                                                                                                                                                                                                                                                                                              |
-| ---- | --------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 400  | Bad Request           | `BadRequest`                | Missing or invalid values in request body, headers, or query parameters. `Fiware-Service`, `Fiware-ServicePath`, and `visibility` (path segment) are required for all operations.                                                                                                                                  |
-| 400  | Bad Request           | `BadRequest`                | Invalid or unsupported query fields were provided (for example, using `fresh` in `GET /{visibility}/fdas/{fdaId}/das/{daId}/data` or any query string in `GET /{visibility}/fdas/{fdaId}/data`).                                                                                                                   |
-| 400  | Bad Request           | `InvalidVisibility`         | The `visibility` path segment is not one of the allowed values (`public`, `private`).                                                                                                                                                                                                                              |
-| 400  | Bad Request           | `InvalidServicePath`        | The `Fiware-ServicePath` header value is not a valid non-root absolute path (e.g. `/servicePath/site`). The root path `/` is not allowed.                                                                                                                                                                          |
-| 400  | Bad Request           | `InvalidQueryParam`         | Some of the params in the request don't comply with the [params](#params) array restrictions.                                                                                                                                                                                                                      |
-| 400  | Bad Request           | `PartitionError`            | Some of the params related to the creation of the parquet partition don't comply with the [object storage configuration](#object-storage-configuration-objstgconf) requirements.                                                                                                                                   |
-| 400  | Bad Request           | `CleaningError`             | Trying to remove a non partitioned FDA or incorrect value in the [delete interval key](#refresh-policy-object).                                                                                                                                                                                                    |
-| 400  | Bad Request           | `InvalidParam`              | [Time column is not present](/doc/05_advanced_topics.md#time-column-behavior) in the SELECT clause of the FDA query.                                                                                                                                                                                               |
-| 403  | Forbidden             | `VisibilityMismatch`        | The FDA exists but was created under a different `visibility`. Cannot access a private FDA through a public route and vice-versa.                                                                                                                                                                                  |
-| 404  | Not Found             | `FDANotFound`               | The requested FDA was not found.                                                                                                                                                                                                                                                                                   |
-| 404  | Not Found             | `DaNotFound`                | The requested Data Access (DA) was not found.                                                                                                                                                                                                                                                                      |
-| 404  | Not Found             | `DatasourceNotFound`        | The requested datasource does not exist for the provided `Fiware-Service` (for example during FDA creation, or when resolving datasource credentials for existing FDA operations). See [Operational note about DatasourceNotFound](/doc/04_config_operational_guide.md#operational-note-about-datasourcenotfound). |
-| 406  | Not Acceptable        | `NotAcceptable`             | `Accept` header does not allow any supported response format (`application/json`, `application/x-ndjson`, `text/csv`, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`).                                                                                                                        |
-| 409  | Conflict              | `DuplicatedKey`             | The resource already exists in the database. Attempting to create a duplicate resource.                                                                                                                                                                                                                            |
-| 409  | Conflict              | `FDAUnavailable`            | FDA `exampleId` is not queryable yet because the first fetch has not completed.                                                                                                                                                                                                                                    |
-| 409  | Conflict              | `FDANotOnlyFresh`           | The FDA is cached (`cached=true`) and cannot be queried through `GET /{visibility}/fdas/{fdaId}/data`; use a DA instead.                                                                                                                                                                                           |
-| 409  | Conflict              | `FDAOnlyFresh`              | The FDA was created with `cached=false`, so it does not allow DAs nor cached DA queries.                                                                                                                                                                                                                           |
-| 409  | Conflict              | `RequestStyleConflict`      | The request mixes query-style context (`service`, `servicePath` in query params) with legacy `Fiware-Service`/`Fiware-ServicePath` headers in the same data-query URL. Use only one style per request.                                                                                                             |
-| 409  | Conflict              | `DatasourceInUse`           | Attempted to delete a datasource that is currently referenced by one or more FDAs in the same `Fiware-Service`.                                                                                                                                                                                                    |
-| 429  | Too Many Requests     | `TooManyFreshQueries`       | The number of concurrent direct fresh FDA queries exceeded `FDA_MAX_CONCURRENT_FRESH_QUERIES`.                                                                                                                                                                                                                     |
-| 500  | Internal Server Error | `S3ServerError`             | An error occurred in the S3 object storage component.                                                                                                                                                                                                                                                              |
-| 500  | Internal Server Error | `DuckDBServerError`         | An error occurred in the DuckDB component.                                                                                                                                                                                                                                                                         |
-| 500  | Internal Server Error | `MongoDBServerError`        | An error occurred in the MongoDB component.                                                                                                                                                                                                                                                                        |
-| 400  | Bad Request           | `UnsupportedDatasourceType` | The referenced datasource type is not supported by the operation (supported types are `postgres` and `mongodb`).                                                                                                                                                                                                   |
-| 400  | Bad Request           | `InvalidMongoFDAContract`   | Invalid Mongo-specific FDA payload. Mongo FDAs require a Mongo query definition inside `query`, support only cached mode (`cached=true`), and do not support `refreshPolicy.type=window`.                                                                                                                          |
-| 503  | Service Unavailable   | `UploadError`               | Connection error with the PostgreSQL database component.                                                                                                                                                                                                                                                           |
-| 503  | Service Unavailable   | `SyncQueriesDisabled`       | A direct FDA query was sent but the API instance is running with `FDA_ROLE_SYNCQUERIES=false`.                                                                                                                                                                                                                     |
-| 503  | Service Unavailable   | `MongoConnectionError`      | Connection error with the MongoDB component.                                                                                                                                                                                                                                                                       |
+| Code | Status                 | Error Code                  | Cause                                                                                                                                                                                                                                                                                                              |
+| ---- | ---------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 400  | Bad Request            | `BadRequest`                | Missing or invalid values in request body, headers, or query parameters. `Fiware-Service`, `Fiware-ServicePath`, and `visibility` (path segment) are required for all operations.                                                                                                                                  |
+| 400  | Bad Request            | `BadRequest`                | Invalid or unsupported query fields were provided (for example, using `fresh` in `GET /{visibility}/fdas/{fdaId}/das/{daId}/data` or any query string in `GET /{visibility}/fdas/{fdaId}/data`).                                                                                                                   |
+| 400  | Bad Request            | `InvalidVisibility`         | The `visibility` path segment is not one of the allowed values (`public`, `private`).                                                                                                                                                                                                                              |
+| 400  | Bad Request            | `InvalidServicePath`        | The `Fiware-ServicePath` header value is not a valid non-root absolute path (e.g. `/servicePath/site`). The root path `/` is not allowed.                                                                                                                                                                          |
+| 400  | Bad Request            | `InvalidQueryParam`         | Some of the params in the request don't comply with the [params](#params) array restrictions.                                                                                                                                                                                                                      |
+| 400  | Bad Request            | `PartitionError`            | Some of the params related to the creation of the parquet partition don't comply with the [object storage configuration](#object-storage-configuration-objstgconf) requirements.                                                                                                                                   |
+| 400  | Bad Request            | `CleaningError`             | Trying to remove a non partitioned FDA or incorrect value in the [delete interval key](#refresh-policy-object).                                                                                                                                                                                                    |
+| 400  | Bad Request            | `InvalidParam`              | [Time column is not present](/doc/05_advanced_topics.md#time-column-behavior) in the SELECT clause of the FDA query.                                                                                                                                                                                               |
+| 403  | Forbidden              | `VisibilityMismatch`        | The FDA exists but was created under a different `visibility`. Cannot access a private FDA through a public route and vice-versa.                                                                                                                                                                                  |
+| 404  | Not Found              | `FDANotFound`               | The requested FDA was not found.                                                                                                                                                                                                                                                                                   |
+| 404  | Not Found              | `DaNotFound`                | The requested Data Access (DA) was not found.                                                                                                                                                                                                                                                                      |
+| 404  | Not Found              | `DatasourceNotFound`        | The requested datasource does not exist for the provided `Fiware-Service` (for example during FDA creation, or when resolving datasource credentials for existing FDA operations). See [Operational note about DatasourceNotFound](/doc/04_config_operational_guide.md#operational-note-about-datasourcenotfound). |
+| 406  | Not Acceptable         | `NotAcceptable`             | `Accept` header does not allow any supported response format (`application/json`, `application/x-ndjson`, `text/csv`, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`).                                                                                                                        |
+| 409  | Conflict               | `DuplicatedKey`             | The resource already exists in the database. Attempting to create a duplicate resource.                                                                                                                                                                                                                            |
+| 409  | Conflict               | `FDAUnavailable`            | FDA `exampleId` is not queryable yet because the first fetch has not completed.                                                                                                                                                                                                                                    |
+| 409  | Conflict               | `FDANotOnlyFresh`           | The FDA is cached (`cached=true`) and cannot be queried through `GET /{visibility}/fdas/{fdaId}/data`; use a DA instead.                                                                                                                                                                                           |
+| 409  | Conflict               | `FDAOnlyFresh`              | The FDA was created with `cached=false`, so it does not allow DAs nor cached DA queries.                                                                                                                                                                                                                           |
+| 409  | Conflict               | `RequestStyleConflict`      | The request mixes query-style context (`service`, `servicePath` in query params) with legacy `Fiware-Service`/`Fiware-ServicePath` headers in the same data-query URL. Use only one style per request.                                                                                                             |
+| 409  | Conflict               | `DatasourceInUse`           | Attempted to delete a datasource that is currently referenced by one or more FDAs in the same `Fiware-Service`.                                                                                                                                                                                                    |
+| 429  | Too Many Requests      | `TooManyFreshQueries`       | The number of concurrent direct fresh FDA queries exceeded `FDA_MAX_CONCURRENT_FRESH_QUERIES`.                                                                                                                                                                                                                     |
+| 500  | Internal Server Error  | `S3ServerError`             | An error occurred in the S3 object storage component.                                                                                                                                                                                                                                                              |
+| 500  | Internal Server Error  | `DuckDBServerError`         | An error occurred in the DuckDB component.                                                                                                                                                                                                                                                                         |
+| 500  | Internal Server Error  | `MongoDBServerError`        | An error occurred in the MongoDB component.                                                                                                                                                                                                                                                                        |
+| 400  | Bad Request            | `UnsupportedDatasourceType` | The referenced datasource type is not supported by the operation (supported types are `postgres` and `mongodb`).                                                                                                                                                                                                   |
+| 400  | Bad Request            | `InvalidMongoFDAContract`   | Invalid Mongo-specific FDA payload. Mongo FDAs require a Mongo query definition inside `query`, support only cached mode (`cached=true`), and do not support `refreshPolicy.type=window`.                                                                                                                          |
+| 413  | Payload Too Large      | `PayloadTooLarge`           | Uploaded file exceeds configured `FDA_MAX_UPLOAD_SIZE` limit (50 MB by default).                                                                                                                                                                                                                                   |
+| 415  | Unsupported Media Type | `UnsupportedMediaType`      | Upload file is not CSV/XLS/XLSX, or does not pass extension/MIME validation in upload endpoint.                                                                                                                                                                                                                    |
+| 503  | Service Unavailable    | `UploadError`               | Connection error with the PostgreSQL database component.                                                                                                                                                                                                                                                           |
+| 503  | Service Unavailable    | `SyncQueriesDisabled`       | A direct FDA query was sent but the API instance is running with `FDA_ROLE_SYNCQUERIES=false`.                                                                                                                                                                                                                     |
+| 503  | Service Unavailable    | `MongoConnectionError`      | Connection error with the MongoDB component.                                                                                                                                                                                                                                                                       |
 
 ### Common error scenarios
 
@@ -1128,6 +1131,95 @@ Content-Type: application/json; charset=utf-8
 {
     "id": "fda_alarms",
     "status": "pending"
+}
+```
+
+#### Upload FDA `POST /{visibility}/fdas/upload`
+
+Creates a cached FDA from a tabular file (`CSV`, `XLS`, or `XLSX`) using multipart form data.
+
+This endpoint always creates upload-based FDAs with `validationMode: "strict"`.
+
+_**Request path parameters**_
+
+| Parameter    | Optional | Description                                                | Example  |
+| ------------ | -------- | ---------------------------------------------------------- | -------- |
+| `visibility` |          | FDA access visibility. Allowed values: `public`, `private` | `public` |
+
+_**Request headers**_
+
+| Header               | Optional | Description                                                          | Example            |
+| -------------------- | -------- | -------------------------------------------------------------------- | ------------------ |
+| `Fiware-Service`     |          | Tenant or service, using the common mechanism of the FIWARE platform | `trantor`          |
+| `Fiware-ServicePath` |          | NGSI hierarchical service path. Stored and exact-matched on access.  | `/servicePath`     |
+| `Content-Type`       |          | Must be `multipart/form-data`                                        | multipart boundary |
+
+_**Multipart form fields**_
+
+| Field               | Optional | Type           | Description                                          |
+| ------------------- | -------- | -------------- | ---------------------------------------------------- |
+| `id`                |          | string         | FDA identifier. Must match `^[a-zA-Z0-9_-]+$`.       |
+| `file`              |          | file           | CSV/XLS/XLSX file.                                   |
+| `description`       | ✓        | string         | Optional FDA description.                            |
+| `timeColumn`        | ✓        | string         | Time column name. Must match `^[a-zA-Z0-9_]+$`.      |
+| `objStgConf`        | ✓        | JSON string    | Object storage options (`partition`, `compression`). |
+| `defaultDataAccess` | ✓        | boolean/string | Overrides default DA auto-creation for this upload.  |
+| `datasourceId`      | ✓        | string         | Optional datasource id (defaults to `upload`).       |
+
+_**Synchronous prevalidation**_
+
+-   Invalid `objStgConf` JSON/object shape returns `400`.
+-   Invalid `objStgConf.partition` returns `400`.
+-   Invalid `objStgConf.compression` returns `400`.
+-   Invalid `timeColumn` format returns `400`.
+-   Partitioning without `timeColumn` returns `400`.
+-   Unsupported file type returns `415`.
+-   File size above configured limit returns `413`.
+
+_**Asynchronous validation and processing**_
+
+If prevalidation passes, the API responds with `202 pending` and processing continues asynchronously (parse file,
+convert to parquet, create default DA if enabled). If a semantic issue is discovered while processing (for example a
+missing `timeColumn` in uploaded headers), the FDA ends in `status: failed` and the error is stored in FDA metadata.
+
+_**Example Request:**_
+
+```bash
+curl -i -X POST http://localhost:8080/public/fdas/upload \
+  -H "Fiware-Service: trantor" \
+  -H "Fiware-ServicePath: /servicePath" \
+  -F "id=upload_weather" \
+  -F "description=Weather upload" \
+  -F "timeColumn=event_date" \
+  -F 'objStgConf={"partition":"day"}' \
+  -F "defaultDataAccess=true" \
+  -F "file=@./weather.csv"
+```
+
+_**Success Response (202):**_
+
+```json
+{
+    "id": "upload_weather",
+    "status": "pending"
+}
+```
+
+_**Example validation error (400):**_
+
+```json
+{
+    "error": "InvalidParam",
+    "description": "Invalid partition type \"invalid\"."
+}
+```
+
+_**Example unsupported media error (415):**_
+
+```json
+{
+    "error": "UnsupportedMediaType",
+    "description": "Only CSV, XLS, or XLSX files are allowed"
 }
 ```
 

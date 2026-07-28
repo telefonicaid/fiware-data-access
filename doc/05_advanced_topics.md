@@ -148,8 +148,8 @@ endpoint. This feature is ideal for static datasets that do not come from a live
 -   **CSV**: Detected by MIME type `text/csv` or extension `.csv`. Parsed using `csv-parse` with automatic delimiter
     detection.
 -   **XLS / XLSX**: Detected by MIME types `application/vnd.ms-excel` and
-    `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`, or extensions `.xls`/`.xlsx`. The first sheet
-    with a valid header row is used; all data rows from that sheet are unified into a single CSV representation.
+    `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`, or extensions `.xls`/`.xlsx`. Data is read from
+    every sheet with a valid header row, headers are unioned, and rows are merged into one canonical CSV representation.
 
 #### Conversion Process
 
