@@ -569,6 +569,7 @@ function validateUploadRequest(req, res) {
     objStgConf,
     defaultDataAccess,
     datasourceId,
+    refreshPolicy,
   } = req.body;
 
   if (!id) {
@@ -594,6 +595,28 @@ function validateUploadRequest(req, res) {
   } catch {
     badRequest(res, req, 'objStgConf must be a valid JSON object');
     return null;
+  }
+
+  if (refreshPolicy !== undefined) {
+    let parsedRefreshPolicy;
+    try {
+      parsedRefreshPolicy =
+        typeof refreshPolicy === 'string'
+          ? JSON.parse(refreshPolicy)
+          : refreshPolicy;
+    } catch {
+      badRequest(res, req, 'refreshPolicy must be a valid JSON object');
+      return null;
+    }
+
+    if (!parsedRefreshPolicy || parsedRefreshPolicy.type !== 'none') {
+      badRequest(
+        res,
+        req,
+        'Upload FDAs cannot have a refreshPolicy; omit it or set {"type":"none"}',
+      );
+      return null;
+    }
   }
 
   return {

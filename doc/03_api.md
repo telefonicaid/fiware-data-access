@@ -1156,23 +1156,22 @@ _**Request headers**_
 
 _**Multipart form fields**_
 
-| Field               | Optional | Type           | Description                                          |
-| ------------------- | -------- | -------------- | ---------------------------------------------------- |
-| `id`                |          | string         | FDA identifier. Must match `^[a-zA-Z0-9_-]+$`.       |
-| `file`              |          | file           | CSV/XLS/XLSX file.                                   |
-| `description`       | ✓        | string         | Optional FDA description.                            |
-| `timeColumn`        | ✓        | string         | Time column name. Must match `^[a-zA-Z0-9_]+$`.      |
-| `objStgConf`        | ✓        | JSON string    | Object storage options (`partition`, `compression`). |
-| `defaultDataAccess` | ✓        | boolean/string | Overrides default DA auto-creation for this upload.  |
-| `datasourceId`      | ✓        | string         | Optional datasource id (defaults to `upload`).       |
+| Field               | Optional | Type           | Description                                                                                                                                                                                                           |
+| ------------------- | -------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                |          | string         | FDA identifier. Validation of allowed characters is performed during processing; the API accepts the value and returns `202 Accepted`. Invalid identifiers will cause the FDA to fail during asynchronous processing. |
+| `file`              |          | file           | CSV/XLS/XLSX file.                                                                                                                                                                                                    |
+| `description`       | ✓        | string         | Optional FDA description.                                                                                                                                                                                             |
+| `timeColumn`        | ✓        | string         | Time column name. Presence and type are validated asynchronously during processing; the API accepts the value on upload.                                                                                              |
+| `objStgConf`        | ✓        | JSON string    | Object storage options (`partition`, `compression`).                                                                                                                                                                  |
+| `defaultDataAccess` | ✓        | boolean/string | Overrides default DA auto-creation for this upload.                                                                                                                                                                   |
+| `datasourceId`      | ✓        | string         | Optional datasource id (defaults to `upload`).                                                                                                                                                                        |
 
 _**Synchronous prevalidation**_
 
 -   Invalid `objStgConf` JSON/object shape returns `400`.
 -   Invalid `objStgConf.partition` returns `400`.
 -   Invalid `objStgConf.compression` returns `400`.
--   Invalid `timeColumn` format returns `400`.
--   Partitioning without `timeColumn` returns `400`.
+-   `refreshPolicy` is not allowed on uploads; omit it or set it to `{ "type": "none" }`.
 -   Unsupported file type returns `415`.
 -   File size above configured limit returns `413`.
 
