@@ -28,6 +28,8 @@ import { parse as csvParse } from 'csv-parse/sync';
 import { CronExpressionParser } from 'cron-parser';
 
 import { FDAError } from '../fdaError.js';
+import { getBasicLogger } from './logger.js';
+const logger = getBasicLogger();
 
 export const VALID_VISIBILITIES = ['public', 'private'];
 export const VALID_VISIBILITIES_SET = new Set(VALID_VISIBILITIES);
@@ -100,6 +102,7 @@ export function validateAllowedFieldsBody(body, allowedFields) {
   const keys = Object.keys(safeBody);
   const invalid = keys.filter((k) => !allowedFields.includes(k));
   if (invalid.length > 0) {
+    logger.warn(`Invalid fields in request body: ${invalid.join(', ')}`);
     const err = new Error(`Invalid fields in request body, check your request`);
     err.status = 400;
     err.type = 'BadRequest';
@@ -297,7 +300,7 @@ function cronToIntervalMs(cron) {
   return next2 - next;
 }
 export function getTimeColumnQuery(query, timeColumn) {
-  if (typeof timeColumn !== 'string' || !/^[a-zA-Z0-9_]+$/.test(timeColumn)) {
+  if (typeof timeColumn !== 'string' || !/^\w+$/.test(timeColumn)) {
     throw new FDAError(
       400,
       'InvalidParam',
@@ -395,7 +398,7 @@ export function escapeCsvValue(value) {
     strValue.includes('\n') ||
     strValue.includes('\r')
   ) {
-    return '"' + strValue.replace(/"/g, '""') + '"';
+    return `"${strValue.replaceAll('"', '""')}"`;
   }
 
   return strValue;
@@ -423,7 +426,7 @@ function parseCsvBuffer(buffer) {
       header !== null && header !== undefined ? String(header).trim() : '',
     );
 
-    if (headers.length === 0 || headers.every((header) => header === '')) {
+    if (headers.every((header) => header === '')) {
       throw new Error('CSV header row is empty');
     }
 
@@ -449,6 +452,40 @@ function ensureBuffer(buffer) {
   return Buffer.from(buffer);
 }
 
+function getCellValue(cell) {
+  if (!cell) {
+    return '';
+  }
+
+  if (cell.v !== undefined) {
+    return cell.v;
+  }
+
+  if (cell.w !== undefined) {
+    return cell.w;
+  }
+
+  return '';
+}
+
+function readManualRow(sheet, rowIndex, decodedRange) {
+  const row = [];
+  let hasContent = false;
+
+  for (let c = decodedRange.s.c; c <= decodedRange.e.c; c++) {
+    const address = xlsx.utils.encode_cell({ r: rowIndex, c });
+    const value = getCellValue(sheet[address]);
+
+    if (value !== '' && value !== null && value !== undefined) {
+      hasContent = true;
+    }
+
+    row.push(value !== null && value !== undefined ? String(value) : '');
+  }
+
+  return hasContent ? row : null;
+}
+
 function readSheetRows(sheet) {
   // Strategy 1: Standard read
   const rows = xlsx.utils.sheet_to_json(sheet, {
@@ -471,34 +508,10 @@ function readSheetRows(sheet) {
   const decodedRange = xlsx.utils.decode_range(range);
   const manualRows = [];
 
-  for (let R = decodedRange.s.r; R <= decodedRange.e.r; R++) {
-    const row = [];
-    let hasContent = false;
+  for (let r = decodedRange.s.r; r <= decodedRange.e.r; r++) {
+    const row = readManualRow(sheet, r, decodedRange);
 
-    for (let C = decodedRange.s.c; C <= decodedRange.e.c; C++) {
-      const cellAddress = xlsx.utils.encode_cell({ r: R, c: C });
-      const cell = sheet[cellAddress];
-      let value = '';
-
-      if (cell) {
-        // Try different value formats
-        if (cell.v !== undefined) {
-          value = cell.v;
-        } else if (cell.w !== undefined) {
-          value = cell.w;
-        } else {
-          value = '';
-        }
-
-        if (value !== '' && value !== null && value !== undefined) {
-          hasContent = true;
-        }
-      }
-
-      row.push(value !== undefined && value !== null ? String(value) : '');
-    }
-
-    if (hasContent) {
+    if (row) {
       manualRows.push(row);
     }
   }
@@ -522,35 +535,29 @@ function findHeaderRow(rows) {
   return -1;
 }
 
-function parseXlsxBuffer(buffer) {
-  const fileBuffer = ensureBuffer(buffer);
-
-  let workbook;
+function readWorkbook(fileBuffer) {
   try {
-    workbook = xlsx.read(fileBuffer, {
+    return xlsx.read(fileBuffer, {
       type: 'buffer',
       cellDates: false,
       cellNF: false,
       cellText: false,
       raw: true,
     });
-  } catch (err) {
-    throw new Error(`Failed to read Excel file: ${err.message}`);
+  } catch (error) {
+    throw new Error(`Failed to read Excel file: ${error.message}`);
   }
+}
 
-  const sheetNames = workbook.SheetNames;
-  if (sheetNames.length === 0) {
-    throw new Error('XLSX file contains no sheets');
-  }
-
+function extractSheetsData(workbook) {
   const unifiedHeadersSet = new Set();
   const allSheetsData = [];
 
-  for (const sheetName of sheetNames) {
+  for (const sheetName of workbook.SheetNames) {
     const sheet = workbook.Sheets[sheetName];
 
     const rows = readSheetRows(sheet);
-    if (!rows || rows.length === 0) {
+    if (!rows.length) {
       continue;
     }
 
@@ -559,103 +566,127 @@ function parseXlsxBuffer(buffer) {
       continue;
     }
 
-    const headerRow = rows[headerRowIndex];
-    const headers = headerRow.map((h) =>
+    const headers = rows[headerRowIndex].map((h) =>
       h !== '' && h !== null && h !== undefined ? String(h).trim() : '',
     );
 
-    const validHeaders = headers.filter((h) => h !== '');
-    if (validHeaders.length === 0) {
+    const validHeaders = headers.filter(Boolean);
+
+    if (!validHeaders.length) {
       continue;
     }
 
-    const dataRows = rows.slice(headerRowIndex + 1);
     allSheetsData.push({
       headers,
-      validHeaders,
-      dataRows,
+      dataRows: rows.slice(headerRowIndex + 1),
     });
 
-    for (const h of validHeaders) {
-      unifiedHeadersSet.add(h);
-    }
+    validHeaders.forEach((h) => unifiedHeadersSet.add(h));
   }
 
-  if (unifiedHeadersSet.size === 0) {
-    throw new Error('No headers found in any sheet');
-  }
+  return {
+    unifiedHeaders: [...unifiedHeadersSet],
+    allSheetsData,
+  };
+}
 
-  const unifiedHeaders = Array.from(unifiedHeadersSet);
-
+function buildRows(unifiedHeaders, allSheetsData) {
   const allRows = [];
 
-  for (const sheetData of allSheetsData) {
-    const { headers, dataRows } = sheetData;
-
+  for (const { headers, dataRows } of allSheetsData) {
     const headerMap = headers.map((h) =>
       h === '' ? -1 : unifiedHeaders.indexOf(h),
     );
 
     for (const row of dataRows) {
-      const hasContent = row.some(
-        (cell) =>
-          cell !== '' &&
-          cell !== null &&
-          cell !== undefined &&
-          String(cell).trim() !== '',
-      );
-      if (!hasContent) {
-        continue;
-      }
+      const obj = buildRowObject(row, headerMap, unifiedHeaders);
 
-      const obj = {};
-      let hasValues = false;
-
-      const maxLen = Math.max(row.length, headerMap.length);
-      for (let j = 0; j < maxLen; j++) {
-        const unifiedIdx = j < headerMap.length ? headerMap[j] : -1;
-        if (unifiedIdx !== -1) {
-          const colName = unifiedHeaders[unifiedIdx];
-          const value =
-            j < row.length &&
-            row[j] !== '' &&
-            row[j] !== undefined &&
-            row[j] !== null
-              ? row[j]
-              : null;
-          obj[colName] = value;
-          if (value !== null) {
-            hasValues = true;
-          }
-        }
-      }
-
-      if (hasValues) {
+      if (obj) {
         allRows.push(obj);
       }
     }
   }
 
-  if (allRows.length === 0) {
+  return allRows;
+}
+
+function buildRowObject(row, headerMap, unifiedHeaders) {
+  const hasContent = row.some(
+    (cell) =>
+      cell !== '' &&
+      cell !== null &&
+      cell !== undefined &&
+      String(cell).trim() !== '',
+  );
+
+  if (!hasContent) {
+    return null;
+  }
+
+  const obj = {};
+  let hasValues = false;
+
+  const maxLen = Math.max(row.length, headerMap.length);
+
+  for (let j = 0; j < maxLen; j++) {
+    const unifiedIdx = j < headerMap.length ? headerMap[j] : -1;
+
+    if (unifiedIdx === -1) {
+      continue;
+    }
+
+    const value =
+      j < row.length && row[j] !== '' && row[j] !== undefined && row[j] !== null
+        ? row[j]
+        : null;
+
+    obj[unifiedHeaders[unifiedIdx]] = value;
+
+    if (value !== null) {
+      hasValues = true;
+    }
+  }
+
+  return hasValues ? obj : null;
+}
+
+function buildCsv(unifiedHeaders, rows) {
+  const csvRows = [unifiedHeaders.map(escapeCsvValue).join(',')];
+
+  for (const row of rows) {
+    csvRows.push(
+      unifiedHeaders
+        .map((header) => escapeCsvValue(row[header] ?? ''))
+        .join(','),
+    );
+  }
+
+  return csvRows.join('\n');
+}
+
+function parseXlsxBuffer(buffer) {
+  const workbook = readWorkbook(ensureBuffer(buffer));
+
+  if (!workbook.SheetNames.length) {
+    throw new Error('XLSX file contains no sheets');
+  }
+
+  const { unifiedHeaders, allSheetsData } = extractSheetsData(workbook);
+
+  if (!unifiedHeaders.length) {
+    throw new Error('No headers found in any sheet');
+  }
+
+  const allRows = buildRows(unifiedHeaders, allSheetsData);
+
+  if (!allRows.length) {
     throw new Error('No data rows found in any sheet');
   }
 
-  const csvRows = [];
-  csvRows.push(unifiedHeaders.map((h) => escapeCsvValue(h)).join(','));
-
-  for (const rowObj of allRows) {
-    const line = unifiedHeaders
-      .map((col) => {
-        const value = rowObj[col];
-        return escapeCsvValue(
-          value !== undefined && value !== null ? value : '',
-        );
-      })
-      .join(',');
-    csvRows.push(line);
-  }
-
-  return { csvContent: csvRows.join('\n'), headers: unifiedHeaders };
+  return {
+    csvContent: buildCsv(unifiedHeaders, allRows),
+    headers: unifiedHeaders,
+  };
 }
 
 export function parseUploadedFile(buffer, mimetype, originalname) {

@@ -23,7 +23,7 @@
 // criminal actions it may exercise to protect its rights.
 
 import { PassThrough } from 'node:stream';
-import fs from 'fs';
+import fs from 'node:fs';
 import { getAgenda } from './jobs.js';
 import {
   runPreparedStatement,
@@ -107,7 +107,7 @@ import { getBasicLogger } from './utils/logger.js';
 const logger = getBasicLogger();
 const FDA_VALIDATION_MODE_STRICT = 'strict';
 const FDA_VALIDATION_MODE_UNCHECKED = 'unchecked';
-const TIME_COLUMN_NAME_PATTERN = /^[a-zA-Z0-9_]+$/;
+const TIME_COLUMN_NAME_PATTERN = /^\w+$/;
 
 const FRESH_CURSOR_BATCH_SIZE = 250;
 
@@ -2655,9 +2655,9 @@ export async function processUploadFDAJob({
           'Temporary file deleted after reading',
         );
       }
-    } catch (cleanupErr) {
+    } catch (error) {
       logger.warn(
-        { fdaId, tempFilePath, error: cleanupErr.message },
+        { fdaId, tempFilePath, error: error.message },
         'Failed to delete temp file immediately',
       );
     }
