@@ -99,6 +99,7 @@ const utilsMocks = {
   validateAllowedFieldsBody: jest.fn(),
   validateForbiddenFieldsQuery: jest.fn(),
   parseBooleanQueryParam: jest.fn(),
+  deleteTempFile: jest.fn(),
 };
 
 const originalNodeEnv = process.env.NODE_ENV;
@@ -349,6 +350,7 @@ async function loadIndexModule({
     validateAllowedFieldsBody: utilsMocks.validateAllowedFieldsBody,
     validateForbiddenFieldsQuery: utilsMocks.validateForbiddenFieldsQuery,
     parseBooleanQueryParam: utilsMocks.parseBooleanQueryParam,
+    deleteTempFile: utilsMocks.deleteTempFile,
   }));
 
   const mod = await import('../../src/index.js');
