@@ -1648,6 +1648,18 @@ None
 
 ### Data operations
 
+> ⚠️ **Performance Note on `outputType=json`**
+>
+> The `json` output type (the default) requires the entire result set to be buffered in memory and serialized as a
+> single JSON array before the response is sent. This can lead to:
+>
+> -   **High latency and potential timeouts** for large datasets
+> -   **Blocking of other concurrent requests** while the JSON payload is being generated
+>
+> For large result sets, **strongly prefer** `ndjson` (streaming JSON lines) or `csv` (streaming CSV), which send data
+> incrementally and avoid these issues. The default output type may change in a future release; explicitly specifying
+> the desired format is recommended.
+
 #### FDA data query `GET /{visibility}/fdas/{fdaId}/data`
 
 Runs the FDA base query directly against PostgreSQL. This endpoint is always fresh and does not use the parquet cache.
