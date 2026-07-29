@@ -24,8 +24,8 @@
 
 import express from 'express';
 import multer from 'multer';
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 
 import { startFetcher } from './fetcher.js';
 import { shutdownAgenda, initAgenda } from './lib/jobs.js';
@@ -65,6 +65,7 @@ import {
   validateAllowedFieldsBody,
   validateForbiddenFieldsQuery,
   parseBooleanQueryParam,
+  deleteTempFile,
 } from './lib/utils/utils.js';
 import {
   VALID_OUTPUT_TYPES,
@@ -532,113 +533,121 @@ const upload = multer({
   },
 }).single('file'); // The form field must be named 'file'
 
+function badRequest(res, req, description) {
+  deleteTempFile(req.file);
+  return res.status(400).json({
+    error: 'BadRequest',
+    description,
+  });
+}
+
+function parseObjStgConf(objStgConf) {
+  if (!objStgConf) {
+    return {};
+  }
+
+  return typeof objStgConf === 'string' ? JSON.parse(objStgConf) : objStgConf;
+}
+
+function validateUploadRequest(req, res) {
+  const service = req.get('Fiware-Service');
+  const servicePath = req.get('Fiware-ServicePath');
+
+  if (!service || !servicePath) {
+    badRequest(
+      res,
+      req,
+      'Missing Fiware-Service and Fiware-ServicePath headers',
+    );
+    return null;
+  }
+
+  const {
+    id,
+    description,
+    timeColumn,
+    objStgConf,
+    defaultDataAccess,
+    datasourceId,
+  } = req.body;
+
+  if (!id) {
+    badRequest(res, req, 'Missing "id" field in the form');
+    return null;
+  }
+
+  validateFdaId(id);
+
+  if (!req.file) {
+    badRequest(res, req, 'Missing file (form field "file")');
+    return null;
+  }
+
+  const defaultDataAccessBool =
+    defaultDataAccess === undefined
+      ? config.defaultDataAccess?.enabled ?? true
+      : parseBooleanQueryParam(defaultDataAccess, 'defaultDataAccess', true);
+
+  let objStgConfParsed;
+  try {
+    objStgConfParsed = parseObjStgConf(objStgConf);
+  } catch {
+    badRequest(res, req, 'objStgConf must be a valid JSON object');
+    return null;
+  }
+
+  return {
+    service,
+    servicePath,
+    id,
+    description,
+    timeColumn,
+    datasourceId,
+    defaultDataAccessBool,
+    objStgConfParsed,
+  };
+}
+
 app.post('/:visibility/fdas/upload', (req, res) => {
   upload(req, res, async (err) => {
     if (err) {
-      if (req.file && req.file.path && fs.existsSync(req.file.path)) {
-        try {
-          fs.unlinkSync(req.file.path);
-        } catch (e) {}
-      }
+      deleteTempFile(req.file);
+
       if (err.code === 'LIMIT_FILE_SIZE') {
         return res.status(413).json({
           error: 'PayloadTooLarge',
           description: 'The file exceeds the maximum allowed size.',
         });
       }
+
       return res.status(err.status || 400).json({
         error: err.type || 'BadRequest',
         description: err.message,
       });
     }
 
+    const uploadData = validateUploadRequest(req, res);
+    if (!uploadData) {
+      return;
+    }
+
     const { visibility } = req.params;
-    const service = req.get('Fiware-Service');
-    const servicePath = req.get('Fiware-ServicePath');
-
-    if (!service || !servicePath) {
-      if (req.file && req.file.path && fs.existsSync(req.file.path)) {
-        try {
-          fs.unlinkSync(req.file.path);
-        } catch (e) {}
-      }
-      return res.status(400).json({
-        error: 'BadRequest',
-        description: 'Missing Fiware-Service and Fiware-ServicePath headers',
-      });
-    }
-
-    const {
-      id,
-      description,
-      timeColumn,
-      objStgConf,
-      defaultDataAccess,
-      datasourceId,
-    } = req.body;
-
-    if (!id) {
-      if (req.file && req.file.path && fs.existsSync(req.file.path)) {
-        try {
-          fs.unlinkSync(req.file.path);
-        } catch (e) {}
-      }
-      return res.status(400).json({
-        error: 'BadRequest',
-        description: 'Missing "id" field in the form',
-      });
-    }
-    validateFdaId(id);
-    if (!req.file) {
-      if (req.file && req.file.path && fs.existsSync(req.file.path)) {
-        try {
-          fs.unlinkSync(req.file.path);
-        } catch (e) {}
-      }
-      return res.status(400).json({
-        error: 'BadRequest',
-        description: 'Missing file (form field "file")',
-      });
-    }
-
-    const defaultDataAccessBool =
-      defaultDataAccess === undefined
-        ? config.defaultDataAccess?.enabled ?? true
-        : parseBooleanQueryParam(defaultDataAccess, 'defaultDataAccess', true);
-
-    let objStgConfParsed = {};
-    if (objStgConf) {
-      try {
-        objStgConfParsed =
-          typeof objStgConf === 'string' ? JSON.parse(objStgConf) : objStgConf;
-      } catch {
-        if (req.file && req.file.path && fs.existsSync(req.file.path)) {
-          try {
-            fs.unlinkSync(req.file.path);
-          } catch (e) {}
-        }
-        return res.status(400).json({
-          error: 'BadRequest',
-          description: 'objStgConf must be a valid JSON object',
-        });
-      }
-    }
 
     try {
       const result = await uploadFDA({
-        fdaId: id,
+        fdaId: uploadData.id,
         tempFilePath: req.file.path,
         originalname: req.file.originalname,
         mimetype: req.file.mimetype,
-        service,
+        service: uploadData.service,
         visibility,
-        servicePath,
-        description,
-        timeColumn,
-        objStgConf: objStgConfParsed,
+        servicePath: uploadData.servicePath,
+        description: uploadData.description,
+        timeColumn: uploadData.timeColumn,
+        objStgConf: uploadData.objStgConfParsed,
         cached: true,
-        defaultDataAccessEnabled: defaultDataAccessBool,
-        datasourceId: datasourceId || 'upload',
+        defaultDataAccessEnabled: uploadData.defaultDataAccessBool,
+        datasourceId: uploadData.datasourceId || 'upload',
       });
 
       return res.status(202).json({
@@ -646,13 +655,9 @@ app.post('/:visibility/fdas/upload', (req, res) => {
         status: result.status,
       });
     } catch (error) {
-      if (req.file && req.file.path && fs.existsSync(req.file.path)) {
-        try {
-          fs.unlinkSync(req.file.path);
-        } catch (e) {}
-      }
-      const status = error.status || 500;
-      return res.status(status).json({
+      deleteTempFile(req.file);
+
+      return res.status(error.status || 500).json({
         error: error.type || 'InternalServerError',
         description: error.message,
       });
@@ -1069,11 +1074,11 @@ async function startup() {
 
   if (config.roles.apiServer) {
     try {
-      if (!fs.existsSync(UPLOAD_TMP_DIR)) {
+      if (fs.existsSync(UPLOAD_TMP_DIR)) {
+        logger.debug(`[INIT] Upload temp directory exists: ${UPLOAD_TMP_DIR}`);
+      } else {
         fs.mkdirSync(UPLOAD_TMP_DIR, { recursive: true });
         logger.info(`[INIT] Created upload temp directory: ${UPLOAD_TMP_DIR}`);
-      } else {
-        logger.debug(`[INIT] Upload temp directory exists: ${UPLOAD_TMP_DIR}`);
       }
     } catch (err) {
       logger.error(

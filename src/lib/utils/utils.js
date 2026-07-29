@@ -23,6 +23,7 @@
 // criminal actions it may exercise to protect its rights.
 
 import xlsx from 'xlsx';
+import fs from 'node:fs';
 import { parse as csvParse } from 'csv-parse/sync';
 import { CronExpressionParser } from 'cron-parser';
 
@@ -733,4 +734,16 @@ export function toFDAApiResponse(fda, { includeId }) {
     id: fdaId,
     ...response,
   };
+}
+
+export function deleteTempFile(file) {
+  if (!file?.path || !fs.existsSync(file.path)) {
+    return;
+  }
+
+  try {
+    fs.unlinkSync(file.path);
+  } catch (error) {
+    logger.warn(`Unable to delete temporary file ${file.path}`, error);
+  }
 }
