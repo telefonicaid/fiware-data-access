@@ -609,7 +609,7 @@ function validateUploadRequest(req, res) {
       return null;
     }
 
-    if (!parsedRefreshPolicy || parsedRefreshPolicy.type !== 'none') {
+    if (parsedRefreshPolicy?.type !== 'none') {
       badRequest(
         res,
         req,
