@@ -1659,6 +1659,8 @@ None
 > For large result sets, **strongly prefer** `ndjson` (streaming JSON lines) or `csv` (streaming CSV), which send data
 > incrementally and avoid these issues. The default output type may change in a future release; explicitly specifying
 > the desired format is recommended.
+>
+> Moreover, `outputType=json` could be discontinued in the future, so you can have backward compatibility issues is you still use it.
 
 #### FDA data query `GET /{visibility}/fdas/{fdaId}/data`
 
