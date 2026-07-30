@@ -24,6 +24,7 @@
 
 import { jest, describe, beforeAll, afterAll } from '@jest/globals';
 import { GenericContainer, Wait } from 'testcontainers';
+import { once } from 'node:events';
 import {
   S3Client,
   CreateBucketCommand,
@@ -303,10 +304,27 @@ export function runFDAIntegrationSuite({ mode, label }) {
         return;
       }
 
+      if (proc.exitCode !== null || proc.signalCode !== null) {
+        return;
+      }
+
       proc.kill('SIGTERM');
-      await wait(500);
-      if (!proc.killed) {
+
+      try {
+        await Promise.race([
+          once(proc, 'exit'),
+          wait(5000).then(() => {
+            throw new Error('timeout waiting process exit');
+          }),
+        ]);
+      } catch {
         proc.kill('SIGKILL');
+        await Promise.race([
+          once(proc, 'exit'),
+          wait(2000).then(() => {
+            throw new Error('timeout waiting forced process exit');
+          }),
+        ]);
       }
     }
 

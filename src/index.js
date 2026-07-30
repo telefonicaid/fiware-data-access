@@ -1122,7 +1122,7 @@ async function startup() {
       );
       throw err;
     }
-    setInterval(() => {
+    uploadTmpCleanupTimer = setInterval(() => {
       try {
         const files = fs.readdirSync(UPLOAD_TMP_DIR);
         const now = Date.now();
@@ -1140,12 +1140,14 @@ async function startup() {
         logger.warn('[CLEANUP] Failed to clean temp directory', err);
       }
     }, 3600000); // Run cleanup every hour
+    uploadTmpCleanupTimer.unref?.();
   }
 
   getInitialLogger(config).fatal('[INIT]: Initializing app');
 }
 
 let shuttingDown = false;
+let uploadTmpCleanupTimer;
 async function shutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
@@ -1153,6 +1155,11 @@ async function shutdown() {
   logger.info('[SHUTDOWN] Graceful shutdown started');
 
   try {
+    if (uploadTmpCleanupTimer) {
+      clearInterval(uploadTmpCleanupTimer);
+      uploadTmpCleanupTimer = undefined;
+    }
+
     if (config.roles.fetcher) {
       await shutdownAgenda();
     }
