@@ -23,6 +23,7 @@
 // criminal actions it may exercise to protect its rights.
 
 import { beforeEach, describe, expect, jest, test } from '@jest/globals';
+import { FDAError } from '../../src/lib/fdaError.js';
 
 const retrieveDAMock = jest.fn();
 const retrieveFDAMock = jest.fn();
@@ -554,7 +555,13 @@ describe('db utils', () => {
       resolveDAParams({ custom: 'x' }, [
         { name: 'custom', type: 'UnknownType', required: true },
       ]),
-    ).toThrow('Invalid type value in params.');
+    ).toThrow(
+      expect.objectContaining({
+        status: 400,
+        type: 'InvalidQueryParam',
+        message: 'Invalid type value in params.',
+      }),
+    );
   });
 
   test('checkParams does nothing when params is null or undefined', async () => {
@@ -827,5 +834,41 @@ describe('db utils', () => {
       type: 'InvalidTimeColumn',
       message: 'Column "reading" cannot be interpreted as a timestamp.',
     });
+  });
+
+  test('toParquet rethrows existing FDAError values unchanged', async () => {
+    const { toParquet } = await loadDbModule();
+    const conn = {
+      run: jest.fn(),
+    };
+
+    const expectedError = new FDAError(503, 'UploadError', 'boom');
+    conn.run.mockRejectedValueOnce(expectedError);
+
+    await expect(
+      toParquet(conn, 'a', 'b', 'ts', 'none', false),
+    ).rejects.toEqual(expectedError);
+  });
+
+  test('toParquet throws InvalidTimeColumn when DuckDB conversion error occurs', async () => {
+    const { toParquet } = await loadDbModule();
+    const conn = {
+      run: jest.fn(),
+    };
+
+    const conversionError = new Error(
+      'Conversion Error: Unimplemented type for cast (DOUBLE -> TIMESTAMP) when casting from source column reading',
+    );
+    conn.run.mockRejectedValueOnce(conversionError);
+
+    await expect(
+      toParquet(conn, 'source', 'target', 'reading', 'day', false),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidTimeColumn',
+      message: 'Column "reading" cannot be interpreted as a timestamp.',
+    });
+
+    expect(conn.run).toHaveBeenCalled();
   });
 });

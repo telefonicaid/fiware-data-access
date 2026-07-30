@@ -1784,6 +1784,48 @@ describe('index upload route', () => {
   });
 });
 
+describe('index upload route - direct validation coverage', () => {
+  let app;
+
+  beforeEach(async () => {
+    ({ app } = await loadIndexModule({
+      nodeEnv: 'test',
+      roles: { apiServer: true, fetcher: false },
+    }));
+  });
+
+  test('validateUploadRequest returns 400 when id is missing (even with file)', async () => {
+    // Enviamos archivo pero omitimos el campo "id"
+    const res = await request(app)
+      .post('/public/fdas/upload')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .attach('file', Buffer.from('id,value\n1,10\n'), 'data.csv')
+      .expect(400);
+
+    expect(res.body).toEqual({
+      error: 'BadRequest',
+      description: 'Missing "id" field in the form',
+    });
+    expect(fdaMocks.uploadFDA).not.toHaveBeenCalled();
+  });
+
+  test('validateUploadRequest returns 400 when file is missing (even with id)', async () => {
+    const res = await request(app)
+      .post('/public/fdas/upload')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .field('id', 'csv_upload_demo')
+      .expect(400);
+
+    expect(res.body).toEqual({
+      error: 'BadRequest',
+      description: 'Missing file (form field "file")',
+    });
+    expect(fdaMocks.uploadFDA).not.toHaveBeenCalled();
+  });
+});
+
 describe('index upload route file size limit', () => {
   let app;
 
