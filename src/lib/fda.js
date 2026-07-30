@@ -1857,7 +1857,6 @@ async function uploadTableToObjStg(
     });
 
     // DuckDB cant overwrite files in Minio, so for partitioned files we upload them in a tmp file and then move them.
-    // Keep the final layout aligned with the rest of the code: `${path}.parquet/...`.
     const parquetPath = objStgConf?.partition
       ? getPath(bucket, `tmp/${path}.parquet`, '')
       : getPath(bucket, path, '.parquet');
