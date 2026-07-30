@@ -1856,10 +1856,10 @@ async function uploadTableToObjStg(
       progress: 60,
     });
 
-    // DuckDB cant overwrite files in Minio, so for partitioned files we upload them in a tmp file and the move them
-    // This includes first upload because the one row parquet is also partitioned
+    // DuckDB cant overwrite files in Minio, so for partitioned files we upload them in a tmp file and then move them.
+    // Keep the final layout aligned with the rest of the code: `${path}.parquet/...`.
     const parquetPath = objStgConf?.partition
-      ? getPath(bucket, 'tmp/' + path, '')
+      ? getPath(bucket, `tmp/${path}.parquet`, '')
       : getPath(bucket, path, '.parquet');
 
     const csvPath = getPath(bucket, path, '.csv');
@@ -1884,7 +1884,11 @@ async function uploadTableToObjStg(
     }
 
     if (objStgConf?.partition) {
-      const objectsList = await listObjects(s3Client, bucket, `tmp/${path}/`);
+      const objectsList = await listObjects(
+        s3Client,
+        bucket,
+        `tmp/${path}.parquet/`,
+      );
       const hasRealPartitionedParquet = objectsList.some((key) =>
         key.endsWith('.parquet'),
       );
