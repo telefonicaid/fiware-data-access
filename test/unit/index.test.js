@@ -1765,6 +1765,23 @@ describe('index upload route', () => {
         description: 'FDA already exists',
       });
   });
+
+  test('POST /:visibility/fdas/upload returns 400 for invalid FDA id', async () => {
+    await request(app)
+      .post('/public/fdas/upload')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .field('id', 'invalid_id!@#')
+      .attach('file', Buffer.from('id,value\n1,10\n'), 'data.csv')
+      .expect(400)
+      .expect({
+        error: 'BadRequest',
+        description:
+          'FDA id must contain only alphanumeric characters, hyphens, and underscores.',
+      });
+
+    expect(fdaMocks.uploadFDA).not.toHaveBeenCalled();
+  });
 });
 
 describe('index upload route file size limit', () => {

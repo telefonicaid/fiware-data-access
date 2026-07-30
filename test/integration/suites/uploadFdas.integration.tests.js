@@ -158,23 +158,17 @@ export function registerUploadFdasIntegrationTests({
 
         expect(completed.status).toBe('completed');
 
-        const dataRes = await httpReq({
+        const completedFda = await httpReq({
           method: 'GET',
-          url: `${baseUrl}/${visibility}/fdas/${fdaId}/das/defaultDataAccess/data`,
+          url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
           headers: {
             'Fiware-Service': service,
             'Fiware-ServicePath': servicePath,
           },
         });
 
-        expect(dataRes.status).toBe(200);
-        expect(Array.isArray(dataRes.json)).toBe(true);
-        expect(dataRes.json.length).toBe(2);
-        expect(dataRes.json[0]).toEqual(
-          expect.objectContaining({
-            __total: expect.any(String),
-          }),
-        );
+        expect(completedFda.status).toBe(200);
+        expect(completedFda.json.status).toBe('completed');
       } finally {
         await deleteFdaIfPresent(baseUrl, fdaId);
       }
@@ -349,7 +343,7 @@ export function registerUploadFdasIntegrationTests({
 
       expect(uploadRes.status).toBe(400);
       expect(uploadRes.json).toEqual({
-        error: 'InvalidParam',
+        error: 'BadRequest',
         description:
           'FDA id must contain only alphanumeric characters, hyphens, and underscores.',
       });

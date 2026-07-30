@@ -483,6 +483,14 @@ app.delete('/:visibility/fdas/:fdaId', async (req, res) => {
 
 // Multer configuration for file uploads
 const UPLOAD_TMP_DIR = config.fileUpload?.tmpDir || '/tmp/fda_uploads';
+
+function ensureUploadTmpDir() {
+  if (!fs.existsSync(UPLOAD_TMP_DIR)) {
+    fs.mkdirSync(UPLOAD_TMP_DIR, { recursive: true });
+  }
+}
+
+ensureUploadTmpDir();
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, UPLOAD_TMP_DIR);
@@ -577,7 +585,12 @@ function validateUploadRequest(req, res) {
     return null;
   }
 
-  validateFdaId(id);
+  try {
+    validateFdaId(id);
+  } catch (error) {
+    badRequest(res, req, error.message);
+    return null;
+  }
 
   if (!req.file) {
     badRequest(res, req, 'Missing file (form field "file")');
@@ -1100,7 +1113,7 @@ async function startup() {
       if (fs.existsSync(UPLOAD_TMP_DIR)) {
         logger.debug(`[INIT] Upload temp directory exists: ${UPLOAD_TMP_DIR}`);
       } else {
-        fs.mkdirSync(UPLOAD_TMP_DIR, { recursive: true });
+        ensureUploadTmpDir();
         logger.info(`[INIT] Created upload temp directory: ${UPLOAD_TMP_DIR}`);
       }
     } catch (err) {
