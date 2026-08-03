@@ -33,6 +33,7 @@
     "agenda": "~6.2.5",
     "ajv": "~8.17.1",
     "cron-parser": "~5.5.0",
+    "csv-parse": "~7.0.0",
     "dotenv": "~17.2.3",
     "exceljs": "~4.4.0",
     "express": "5.1.0",
@@ -44,8 +45,7 @@
     "pg-copy-streams": "~7.0.0",
     "pg-cursor": "~2.19.0",
     "uuid": "~11.1.0",
-    "xlsx": "~0.18.5",
-    "csv-parse": "~7.0.0"
+    "xlsx": "~0.18.5"
   },
   "devDependencies": {
     "c8": "~10.1.3",
