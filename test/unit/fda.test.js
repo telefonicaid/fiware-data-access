@@ -2196,13 +2196,12 @@ describe('uploadFDA', () => {
       timeColumn: 'event_date',
       objStgConf: { partition: 'day' },
       defaultDataAccessEnabled: false,
-      datasourceId: 'upload',
     });
 
     expect(response).toEqual({ id: 'fda-upload', status: 'pending' });
     expect(mongoMocks.createFDAMongo).toHaveBeenCalledWith(
       'fda-upload',
-      'uploaded data',
+      null,
       'svc',
       'public',
       '/servicepath',
@@ -2211,7 +2210,7 @@ describe('uploadFDA', () => {
       'event_date',
       { partition: 'day' },
       true,
-      'upload',
+      null,
       'strict',
     );
     expect(agenda.now).toHaveBeenCalledWith(
@@ -2226,6 +2225,9 @@ describe('uploadFDA', () => {
         defaultDataAccessEnabled: false,
       }),
     );
+
+    const [, jobData] = agenda.now.mock.calls[0];
+    expect(jobData).not.toHaveProperty('datasourceId');
   });
 
   test('rejects invalid objStgConf.partition before enqueueing the upload job', async () => {
@@ -2378,7 +2380,6 @@ describe('processUploadFDAJob', () => {
         objStgConf: {},
         cached: true,
         defaultDataAccessEnabled: false,
-        datasourceId: 'upload',
       });
 
       expect(dbMocks.toParquet).toHaveBeenCalledWith(
@@ -2426,7 +2427,6 @@ describe('processUploadFDAJob', () => {
           objStgConf: {},
           cached: true,
           defaultDataAccessEnabled: false,
-          datasourceId: 'upload',
         }),
       ).rejects.toMatchObject({
         status: 400,
@@ -2466,7 +2466,6 @@ describe('processUploadFDAJob', () => {
           objStgConf: {},
           cached: true,
           defaultDataAccessEnabled: false,
-          datasourceId: 'upload',
         }),
       ).rejects.toMatchObject({
         status: 500,

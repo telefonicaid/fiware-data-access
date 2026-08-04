@@ -1645,7 +1645,6 @@ describe('index upload route', () => {
       .field('timeColumn', 'event_date')
       .field('objStgConf', '{"partition":"day"}')
       .field('defaultDataAccess', 'false')
-      .field('datasourceId', 'upload')
       .attach('file', Buffer.from('id,value\n1,10\n'), 'data.csv')
       .expect(202);
 
@@ -1660,10 +1659,12 @@ describe('index upload route', () => {
         timeColumn: 'event_date',
         objStgConf: { partition: 'day' },
         defaultDataAccessEnabled: false,
-        datasourceId: 'upload',
         originalname: 'data.csv',
       }),
     );
+
+    const [uploadFDAArgs] = fdaMocks.uploadFDA.mock.calls;
+    expect(uploadFDAArgs).not.toHaveProperty('datasourceId');
 
     const [{ tempFilePath }] = fdaMocks.uploadFDA.mock.calls[0];
     if (tempFilePath && fs.existsSync(tempFilePath)) {

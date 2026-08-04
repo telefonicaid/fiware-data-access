@@ -143,6 +143,9 @@ coordination, role-based scaling, query lifecycle behavior, fresh-query limits, 
 FDA supports publishing tabular data directly from CSV, XLS, or XLSX files via the `POST /{visibility}/fdas/upload`
 endpoint. This feature is ideal for static datasets that do not come from a live database.
 
+Uploaded FDAs are datasource-less. They do not reference a PostgreSQL or MongoDB datasource, so their `datasourceId` and
+`query` metadata fields are stored as `null`.
+
 #### File Format Support
 
 -   **CSV**: Detected by MIME type `text/csv` or extension `.csv`. Parsed using `csv-parse` with automatic delimiter

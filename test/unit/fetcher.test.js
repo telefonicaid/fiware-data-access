@@ -205,7 +205,6 @@ describe('fetcher', () => {
           objStgConf: { partition: 'day' },
           cached: true,
           defaultDataAccessEnabled: false,
-          datasourceId: 'upload',
         },
       },
     });
@@ -223,7 +222,6 @@ describe('fetcher', () => {
       objStgConf: { partition: 'day' },
       cached: true,
       defaultDataAccessEnabled: false,
-      datasourceId: 'upload',
     });
   });
 

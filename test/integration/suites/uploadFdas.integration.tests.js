@@ -48,7 +48,7 @@ export function registerUploadFdasIntegrationTests({
       expect([204, 404]).toContain(res.status);
     }
 
-    test('POST /{visibility}/fdas/upload creates a CSV FDA and defaultDataAccess is queryable', async () => {
+    test('POST /{visibility}/fdas/upload creates a datasource-less CSV FDA and defaultDataAccess is queryable', async () => {
       const baseUrl = getBaseUrl();
       const fdaId = `upload_csv_${Date.now()}`;
       const csvBuffer = Buffer.from(
@@ -86,8 +86,9 @@ export function registerUploadFdasIntegrationTests({
         });
 
         expect(completed.status).toBe('completed');
-        expect(completed.datasourceId).toBe('upload');
         expect(completed.validationMode).toBe('strict');
+        expect(completed.datasourceId).toBeNull();
+        expect(completed.query).toBeNull();
 
         const dataRes = await httpReq({
           method: 'GET',

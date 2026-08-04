@@ -73,7 +73,6 @@ To create FDAs from tabular files use `POST /{{visibility}}/fdas/upload` with **
     -   `timeColumn` (Text)
     -   `objStgConf` (Text, JSON object string)
     -   `defaultDataAccess` (Text/Boolean)
-    -   `datasourceId` (Text)
 
 Example `objStgConf` value:
 
