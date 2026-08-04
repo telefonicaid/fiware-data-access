@@ -2583,20 +2583,18 @@ export async function uploadFDA({
   objStgConf = {},
   cached = true,
   defaultDataAccessEnabled = config.defaultDataAccess?.enabled ?? true,
-  datasourceId = 'upload',
 }) {
   const normalizedVisibility = normalizeVisibility(visibility);
   const normalizedServicePath = normalizeServicePath(servicePath);
 
   logger.debug({ fdaId, service }, 'Starting upload FDA');
 
-  const query = 'uploaded data'; // placeholder
   const refreshPolicy = { type: 'none' };
   validateUploadOptions(timeColumn, objStgConf);
   validateScheduledOptions(refreshPolicy, objStgConf);
   await createFDAMongo(
     fdaId,
-    query,
+    null,
     service,
     normalizedVisibility,
     normalizedServicePath,
@@ -2605,7 +2603,7 @@ export async function uploadFDA({
     timeColumn,
     objStgConf,
     cached,
-    datasourceId,
+    null,
     FDA_VALIDATION_MODE_STRICT,
   );
 
@@ -2624,7 +2622,6 @@ export async function uploadFDA({
     objStgConf,
     cached,
     defaultDataAccessEnabled,
-    datasourceId,
   });
 
   return { id: fdaId, status: 'pending' };

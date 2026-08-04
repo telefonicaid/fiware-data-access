@@ -576,7 +576,6 @@ function validateUploadRequest(req, res) {
     timeColumn,
     objStgConf,
     defaultDataAccess,
-    datasourceId,
     refreshPolicy,
   } = req.body;
 
@@ -638,7 +637,6 @@ function validateUploadRequest(req, res) {
     id,
     description,
     timeColumn,
-    datasourceId,
     defaultDataAccessBool,
     objStgConfParsed,
   };
@@ -683,7 +681,6 @@ app.post('/:visibility/fdas/upload', (req, res) => {
         objStgConf: uploadData.objStgConfParsed,
         cached: true,
         defaultDataAccessEnabled: uploadData.defaultDataAccessBool,
-        datasourceId: uploadData.datasourceId || 'upload',
       });
 
       return res.status(202).json({

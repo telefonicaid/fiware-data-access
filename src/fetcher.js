@@ -93,7 +93,6 @@ export async function startFetcher() {
       objStgConf,
       cached,
       defaultDataAccessEnabled,
-      datasourceId,
     } = job.attrs.data;
 
     try {
@@ -110,7 +109,6 @@ export async function startFetcher() {
         objStgConf,
         cached,
         defaultDataAccessEnabled,
-        datasourceId,
       });
     } catch (e) {
       logger.error('Fetcher error: ', e);
