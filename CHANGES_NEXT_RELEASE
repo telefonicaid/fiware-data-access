@@ -1,1 +1,2 @@
 - Add: file upload endpoint POST /{visibility}/fdas/upload supporting CSV, XLS and XLSX files with configurable size limit (FDA_MAX_UPLOAD_SIZE) and automatic Parquet conversion (#301)
+- Update: mongodb dependency version from 7.0.0 to 7.5.0
