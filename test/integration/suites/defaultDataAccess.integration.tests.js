@@ -135,14 +135,14 @@ export function registerDefaultDataAccessIntegrationTests({
           multiValueFdaId,
           'defaultDataAccess',
           {
-            name: 'ana,bob',
+            age: '20,40',
           },
         ),
         headers: { 'Fiware-Service': service },
       });
 
       expect(multiValueRes.status).toBe(200);
-      expect(multiValueRes.json.map((row) => row.id)).toEqual([1, 2]);
+      expect(multiValueRes.json.map((row) => row.id)).toEqual([2, 3]);
     } finally {
       await httpReq({
         method: 'DELETE',
