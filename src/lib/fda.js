@@ -2255,7 +2255,7 @@ async function buildDefaultDataAccessDefinition(
       );
     } else {
       filters.push(
-        `($${paramName} IS NULL OR ${quotedColumnName} = $${paramName})`,
+        `($${paramName} IS NULL OR ${quotedColumnName} IN (SELECT unnest(string_split($${paramName}, ','))))`,
       );
     }
   }
