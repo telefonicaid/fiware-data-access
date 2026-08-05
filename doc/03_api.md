@@ -1154,6 +1154,11 @@ _**Request headers**_
 | `Fiware-ServicePath` |          | NGSI hierarchical service path. Stored and exact-matched on access.  | `/servicePath`     |
 | `Content-Type`       |          | Must be `multipart/form-data`                                        | multipart boundary |
 
+The `Content-Type` header refers to the HTTP request as a whole. Since this endpoint uses `multipart/form-data`, the
+request contains separate form-data parts. The uploaded `file` part has its own MIME type, which can be `text/csv` for
+CSV files, `application/vnd.ms-excel` for XLS files, or
+`application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` for XLSX files.
+
 _**Multipart form fields**_
 
 | Field               | Optional | Type           | Description                                                                                                                                                                                                           |
