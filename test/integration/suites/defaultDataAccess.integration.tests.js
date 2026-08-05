@@ -100,6 +100,61 @@ export function registerDefaultDataAccessIntegrationTests({
     }
   });
 
+  test('defaultDataAccess supports multi-value filters in cached mode', async () => {
+    const baseUrl = getBaseUrl();
+    const multiValueFdaId = 'fda_default_da_multi_value';
+
+    try {
+      const createFda = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: multiValueFdaId,
+          query:
+            'SELECT id, name, age, authorized FROM public.users ORDER BY id',
+          description: 'default DA multi-value test',
+        },
+      });
+
+      expect(createFda.status).toBe(202);
+      await waitUntilFDACompleted({
+        baseUrl,
+        service,
+        fdaId: multiValueFdaId,
+      });
+
+      const multiValueRes = await httpReq({
+        method: 'GET',
+        url: buildDaDataUrl(
+          baseUrl,
+          servicePath,
+          multiValueFdaId,
+          'defaultDataAccess',
+          {
+            name: 'ana,bob',
+          },
+        ),
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect(multiValueRes.status).toBe(200);
+      expect(multiValueRes.json.map((row) => row.id)).toEqual([1, 2]);
+    } finally {
+      await httpReq({
+        method: 'DELETE',
+        url: `${baseUrl}/${visibility}/fdas/${multiValueFdaId}`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+      });
+    }
+  });
+
   test('defaultDataAccess includes start/finish and pageSize/pageStart when FDA has timeColumn', async () => {
     const baseUrl = getBaseUrl();
     const timedFdaId = 'fda_default_da_timed';

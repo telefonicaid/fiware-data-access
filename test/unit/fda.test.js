@@ -1195,7 +1195,7 @@ describe('fetchFDA', () => {
       '/servicepath',
       'defaultDataAccess',
       'Default Data Access providing access to whole FDA data. It has parameters for all columns in the FDA.',
-      'SELECT *, COUNT(*) OVER() as __total WHERE ($entity_id IS NULL OR "entity-id" = $entity_id) AND ($limit IS NULL OR "limit" = $limit) AND ($timeinstant IS NULL OR DATE_TRUNC(\'millisecond\', CAST("timeinstant" AS TIMESTAMP)) = DATE_TRUNC(\'millisecond\', CAST($timeinstant AS TIMESTAMP))) AND ($start IS NULL OR CAST("timeinstant" AS TIMESTAMP) >= CAST($start AS TIMESTAMP)) AND ($finish IS NULL OR CAST("timeinstant" AS TIMESTAMP) <= CAST($finish AS TIMESTAMP)) LIMIT CAST($pageSize AS BIGINT) OFFSET CAST($pageStart AS BIGINT)',
+      `SELECT *, COUNT(*) OVER() as __total WHERE ($entity_id IS NULL OR "entity-id" IN (SELECT unnest(string_split($entity_id, ',')))) AND ($limit IS NULL OR "limit" IN (SELECT unnest(string_split($limit, ',')))) AND ($timeinstant IS NULL OR DATE_TRUNC('millisecond', CAST("timeinstant" AS TIMESTAMP)) = DATE_TRUNC('millisecond', CAST($timeinstant AS TIMESTAMP))) AND ($start IS NULL OR CAST("timeinstant" AS TIMESTAMP) >= CAST($start AS TIMESTAMP)) AND ($finish IS NULL OR CAST("timeinstant" AS TIMESTAMP) <= CAST($finish AS TIMESTAMP)) LIMIT CAST($pageSize AS BIGINT) OFFSET CAST($pageStart AS BIGINT)`,
       [
         { name: 'entity_id', default: null },
         { name: 'limit', default: null },
@@ -1378,7 +1378,7 @@ describe('fetchFDA', () => {
       '/servicepath',
       'defaultDataAccess',
       'Default Data Access providing access to whole FDA data. It has parameters for all columns in the FDA.',
-      'SELECT *, COUNT(*) OVER() as __total WHERE ($name IS NULL OR "name" = $name) LIMIT CAST($pageSize AS BIGINT) OFFSET CAST($pageStart AS BIGINT)',
+      `SELECT *, COUNT(*) OVER() as __total WHERE ($name IS NULL OR "name" IN (SELECT unnest(string_split($name, ',')))) LIMIT CAST($pageSize AS BIGINT) OFFSET CAST($pageStart AS BIGINT)`,
       [
         { name: 'name', default: null },
         { name: 'pageSize', default: '9223372036854775807' },
@@ -1430,7 +1430,7 @@ describe('fetchFDA', () => {
       '/servicepath',
       'defaultDataAccess',
       'Default Data Access providing access to whole FDA data. It has parameters for all columns in the FDA.',
-      'SELECT *, COUNT(*) OVER() as __total WHERE ($timeinstant IS NULL OR DATE_TRUNC(\'millisecond\', CAST("TimeInstant" AS TIMESTAMP)) = DATE_TRUNC(\'millisecond\', CAST($timeinstant AS TIMESTAMP))) AND ($name IS NULL OR "name" = $name) AND ($start IS NULL OR CAST("TimeInstant" AS TIMESTAMP) >= CAST($start AS TIMESTAMP)) AND ($finish IS NULL OR CAST("TimeInstant" AS TIMESTAMP) <= CAST($finish AS TIMESTAMP)) LIMIT CAST($pageSize AS BIGINT) OFFSET CAST($pageStart AS BIGINT)',
+      `SELECT *, COUNT(*) OVER() as __total WHERE ($timeinstant IS NULL OR DATE_TRUNC('millisecond', CAST("TimeInstant" AS TIMESTAMP)) = DATE_TRUNC('millisecond', CAST($timeinstant AS TIMESTAMP))) AND ($name IS NULL OR "name" IN (SELECT unnest(string_split($name, ',')))) AND ($start IS NULL OR CAST("TimeInstant" AS TIMESTAMP) >= CAST($start AS TIMESTAMP)) AND ($finish IS NULL OR CAST("TimeInstant" AS TIMESTAMP) <= CAST($finish AS TIMESTAMP)) LIMIT CAST($pageSize AS BIGINT) OFFSET CAST($pageStart AS BIGINT)`,
       [
         { name: 'timeinstant', default: null },
         { name: 'name', default: null },
@@ -1485,7 +1485,7 @@ describe('fetchFDA', () => {
       '/servicepath',
       'defaultDataAccess',
       'Default Data Access providing access to whole FDA data. It has parameters for all columns in the FDA.',
-      'SELECT *, COUNT(*) OVER() as __total WHERE ($timeinstant IS NULL OR "timeinstant" = $timeinstant) AND ($name IS NULL OR "name" = $name) LIMIT CAST($pageSize AS BIGINT) OFFSET CAST($pageStart AS BIGINT)',
+      `SELECT *, COUNT(*) OVER() as __total WHERE ($timeinstant IS NULL OR "timeinstant" IN (SELECT unnest(string_split($timeinstant, ',')))) AND ($name IS NULL OR "name" IN (SELECT unnest(string_split($name, ',')))) LIMIT CAST($pageSize AS BIGINT) OFFSET CAST($pageStart AS BIGINT)`,
       [
         { name: 'timeinstant', default: null },
         { name: 'name', default: null },
@@ -1588,7 +1588,7 @@ describe('fetchFDA', () => {
       '/servicepath',
       'defaultDataAccess',
       'Default Data Access providing access to whole FDA data. It has parameters for all columns in the FDA.',
-      'SELECT *, COUNT(*) OVER() as __total WHERE ($col_123value IS NULL OR "123value" = $col_123value) AND ($col IS NULL OR "!!!" = $col) AND ($offset IS NULL OR "offset" = $offset) AND ($my_col IS NULL OR "my""col" = $my_col) LIMIT CAST($pageSize AS BIGINT) OFFSET CAST($pageStart AS BIGINT)',
+      `SELECT *, COUNT(*) OVER() as __total WHERE ($col_123value IS NULL OR "123value" IN (SELECT unnest(string_split($col_123value, ',')))) AND ($col IS NULL OR "!!!" IN (SELECT unnest(string_split($col, ',')))) AND ($offset IS NULL OR "offset" IN (SELECT unnest(string_split($offset, ',')))) AND ($my_col IS NULL OR "my""col" IN (SELECT unnest(string_split($my_col, ',')))) LIMIT CAST($pageSize AS BIGINT) OFFSET CAST($pageStart AS BIGINT)`,
       [
         { name: 'col_123value', default: null },
         { name: 'col', default: null },
