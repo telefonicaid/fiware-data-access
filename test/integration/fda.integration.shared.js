@@ -24,6 +24,7 @@
 
 import { jest, describe, beforeAll, afterAll } from '@jest/globals';
 import { GenericContainer, Wait } from 'testcontainers';
+import { once } from 'node:events';
 import {
   S3Client,
   CreateBucketCommand,
@@ -51,9 +52,11 @@ import { registerCdaCompatibilityIntegrationTests } from './suites/cdaCompatibil
 import { registerFdaLifecycleIntegrationTests } from './suites/fdaLifecycle.integration.tests.js';
 import { registerMongoFdasIntegrationTests } from './suites/mongoFdas.integration.tests.js';
 import { registerComplexCasesIntegrationTests } from './suites/complexCases.integration.tests.js';
+import { registerUploadFdasIntegrationTests } from './suites/uploadFdas.integration.tests.js';
 import {
   httpReq,
   httpFormReq,
+  httpMultipartReq,
   httpReqRaw,
   buildDaDataUrl,
   buildFdaDataUrl,
@@ -301,10 +304,27 @@ export function runFDAIntegrationSuite({ mode, label }) {
         return;
       }
 
+      if (proc.exitCode !== null || proc.signalCode !== null) {
+        return;
+      }
+
       proc.kill('SIGTERM');
-      await wait(500);
-      if (!proc.killed) {
+
+      try {
+        await Promise.race([
+          once(proc, 'exit'),
+          wait(5000).then(() => {
+            throw new Error('timeout waiting process exit');
+          }),
+        ]);
+      } catch {
         proc.kill('SIGKILL');
+        await Promise.race([
+          once(proc, 'exit'),
+          wait(2000).then(() => {
+            throw new Error('timeout waiting forced process exit');
+          }),
+        ]);
       }
     }
 
@@ -515,6 +535,16 @@ export function runFDAIntegrationSuite({ mode, label }) {
       waitUntilFDACompleted,
       getPgHost: () => pgHost,
       getPgPort: () => pgPort,
+    });
+
+    registerUploadFdasIntegrationTests({
+      getBaseUrl: () => baseUrl,
+      service,
+      servicePath,
+      visibility,
+      httpReq,
+      httpMultipartReq,
+      waitUntilFDACompleted,
     });
   });
 }

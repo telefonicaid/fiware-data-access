@@ -61,7 +61,7 @@ export function createChildLogger(config) {
 
 export function getInitialLogger(config) {
   return logger.child({
-    envVars: `[pgHost=${config.pg.host} pgUsr=${config.pg.usr} objStgHost=${
+    envVars: `[objStgHost=${
       config.objstg.protocol + '://' + config.objstg.endpoint
     } objStgUsr=${config.objstg.usr}]`,
     dependencies: `@aws-sdk/lib-storage:${packageInfo.dependencies['@aws-sdk/lib-storage']} @duckdb/node-api:${packageInfo.dependencies['@duckdb/node-api']} express:${packageInfo.dependencies.express} mongodb:${packageInfo.dependencies.mongodb} pg:${packageInfo.dependencies.pg}`,

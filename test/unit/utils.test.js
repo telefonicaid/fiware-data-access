@@ -23,6 +23,7 @@
 // criminal actions it may exercise to protect its rights.
 
 import { beforeEach, describe, expect, jest, test } from '@jest/globals';
+import xlsx from 'xlsx';
 
 const loggerMock = {
   debug: jest.fn(),
@@ -48,6 +49,11 @@ async function loadUtilsModule() {
 
   await jest.unstable_mockModule('cron-parser', () => ({
     CronExpressionParser: cronParserMock,
+  }));
+
+  await jest.unstable_mockModule('xlsx', () => ({
+    default: xlsx,
+    ...xlsx,
   }));
 
   return import('../../src/lib/utils/utils.js');
@@ -317,6 +323,198 @@ describe('utils', () => {
       expect(() => processFetchSize('1.5 days')).toThrow(
         'Invalid amount in time size',
       );
+    });
+  });
+
+  describe('parseUploadedFile', () => {
+    test('parses CSV files with comma delimiter', async () => {
+      const { parseUploadedFile } = await loadUtilsModule();
+
+      const parsed = parseUploadedFile(
+        Buffer.from('device,status\nsensor-a,ok\n'),
+        'text/csv',
+        'data.csv',
+      );
+
+      expect(parsed.headers).toEqual(['device', 'status']);
+      expect(parsed.csvContent).toContain('sensor-a,ok');
+    });
+
+    test('parses CSV files from Uint8Array input', async () => {
+      const { parseUploadedFile } = await loadUtilsModule();
+
+      const parsed = parseUploadedFile(
+        new TextEncoder().encode('device,status\nsensor-a,ok\n'),
+        'text/csv',
+        'data.csv',
+      );
+
+      expect(parsed.headers).toEqual(['device', 'status']);
+      expect(parsed.csvContent).toContain('sensor-a,ok');
+    });
+
+    test('parses CSV files from wrapped buffer objects', async () => {
+      const { parseUploadedFile } = await loadUtilsModule();
+
+      const raw = Buffer.from('device,status\nsensor-a,ok\n');
+      const wrapped = {
+        buffer: raw.buffer,
+        byteOffset: raw.byteOffset,
+        byteLength: raw.byteLength,
+      };
+
+      const parsed = parseUploadedFile(wrapped, 'text/csv', 'data.csv');
+
+      expect(parsed.headers).toEqual(['device', 'status']);
+      expect(parsed.csvContent).toContain('sensor-a,ok');
+    });
+
+    test('parses CSV files from string input', async () => {
+      const { parseUploadedFile } = await loadUtilsModule();
+
+      const parsed = parseUploadedFile(
+        'device,status\nsensor-a,ok\n',
+        'text/csv',
+        'data.csv',
+      );
+
+      expect(parsed.headers).toEqual(['device', 'status']);
+      expect(parsed.csvContent).toContain('sensor-a,ok');
+    });
+
+    test('rejects CSV files with an empty header row', async () => {
+      const { parseUploadedFile } = await loadUtilsModule();
+
+      expect(() =>
+        parseUploadedFile(Buffer.from(',,\n1,2,3\n'), 'text/csv', 'data.csv'),
+      ).toThrow('Invalid CSV format: CSV header row is empty');
+    });
+
+    test('rejects empty CSV files', async () => {
+      const { parseUploadedFile } = await loadUtilsModule();
+
+      expect(() =>
+        parseUploadedFile(Buffer.from(''), 'text/csv', 'data.csv'),
+      ).toThrow('Invalid CSV format: CSV file has no header row');
+    });
+
+    test('parses CSV files with semicolon delimiter', async () => {
+      const { parseUploadedFile } = await loadUtilsModule();
+
+      const parsed = parseUploadedFile(
+        Buffer.from('device;status\nsensor-a;ok\n'),
+        'text/csv',
+        'data.csv',
+      );
+
+      expect(parsed.headers).toEqual(['device', 'status']);
+      expect(parsed.csvContent).toContain('sensor-a;ok');
+    });
+
+    test('parses CSV files with UTF-8 BOM', async () => {
+      const { parseUploadedFile } = await loadUtilsModule();
+
+      const parsed = parseUploadedFile(
+        Buffer.concat([
+          Buffer.from([0xef, 0xbb, 0xbf]),
+          Buffer.from('device,status\nsensor-a,ok\n'),
+        ]),
+        'text/csv',
+        'data.csv',
+      );
+
+      expect(parsed.headers).toEqual(['device', 'status']);
+      expect(parsed.csvContent).toContain('sensor-a,ok');
+    });
+
+    test('rejects malformed CSV with inconsistent columns', async () => {
+      const { parseUploadedFile } = await loadUtilsModule();
+
+      expect(() =>
+        parseUploadedFile(
+          Buffer.from('value1,value2\nonly_one_column\n'),
+          'text/csv',
+          'broken.csv',
+        ),
+      ).toThrow('Invalid CSV format:');
+    });
+
+    test('parses XLSX files combining rows from multiple sheets', async () => {
+      const { parseUploadedFile } = await loadUtilsModule();
+
+      const workbook = xlsx.utils.book_new();
+      const mainSheet = xlsx.utils.aoa_to_sheet([
+        ['device', 'reading'],
+        ['sensor-a', 10],
+      ]);
+      const otherSheet = xlsx.utils.aoa_to_sheet([
+        ['id', 'value'],
+        ['row-b', 20],
+      ]);
+      xlsx.utils.book_append_sheet(workbook, mainSheet, 'Main');
+      xlsx.utils.book_append_sheet(workbook, otherSheet, 'Other');
+
+      const xlsxBuffer = xlsx.write(workbook, {
+        type: 'buffer',
+        bookType: 'xlsx',
+      });
+
+      const parsed = parseUploadedFile(
+        xlsxBuffer,
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'data.xlsx',
+      );
+
+      expect(parsed.headers).toEqual(
+        expect.arrayContaining(['device', 'reading', 'id', 'value']),
+      );
+      expect(parsed.csvContent).toContain('sensor-a');
+      expect(parsed.csvContent).toContain('row-b');
+    });
+
+    test('parses XLSX files through the manual cell fallback', async () => {
+      const { parseUploadedFile } = await loadUtilsModule();
+
+      const readSpy = jest.spyOn(xlsx, 'read').mockReturnValue({
+        SheetNames: ['Sheet1'],
+        Sheets: {
+          Sheet1: {
+            '!ref': 'A1:C3',
+            A1: { v: 'device' },
+            B1: { w: 'reading' },
+            A2: { v: 'sensor-a' },
+            B2: { w: '10' },
+            A3: {},
+            B3: {},
+            C3: {},
+          },
+        },
+      });
+      const sheetToJsonSpy = jest
+        .spyOn(xlsx.utils, 'sheet_to_json')
+        .mockReturnValue([]);
+
+      try {
+        const parsed = parseUploadedFile(
+          Buffer.from([0x50, 0x4b, 0x03, 0x04]),
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'data.xlsx',
+        );
+
+        expect(parsed.headers).toEqual(['device', 'reading']);
+        expect(parsed.csvContent).toContain('sensor-a,10');
+      } finally {
+        readSpy.mockRestore();
+        sheetToJsonSpy.mockRestore();
+      }
+    });
+
+    test('rejects unsupported upload media types', async () => {
+      const { parseUploadedFile } = await loadUtilsModule();
+
+      expect(() =>
+        parseUploadedFile(Buffer.from('hello'), 'text/plain', 'file.txt'),
+      ).toThrow('Only CSV, XLS, or XLSX files are allowed');
     });
   });
 

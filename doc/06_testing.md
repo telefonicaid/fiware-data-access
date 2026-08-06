@@ -75,6 +75,7 @@ Unit tests validate, among others:
 -   DA/FDA query composition
 -   error propagation and cleanup behavior
 -   API route wiring and request validation
+-   multipart upload endpoint validation (`/fdas/upload`) including file-type, size and form-field checks
 
 Integration tests validate:
 
@@ -84,6 +85,7 @@ Integration tests validate:
 -   End-to-end API behavior using real data
 -   direct FDA fresh execution over PostgreSQL
 -   default DA behavior including automatic creation and optional filters
+-   multipart upload flow (CSV/XLS/XLSX) from API ingestion to parquet generation and queryability
 
 ---
 
@@ -111,6 +113,7 @@ Current integration structure:
 -   `test/integration/suites/platform.integration.tests.js`: platform endpoints (`/health`, `/metrics`)
 -   `test/integration/suites/fdaCreation.integration.tests.js`: FDA creation and basic lifecycle creation checks
 -   `test/integration/suites/slidingWindows.integration.tests.js`: sliding-window and partitioning checks
+-   `test/integration/suites/uploadFdas.integration.tests.js`: multipart upload endpoint and upload-processing scenarios
 
 ---
 

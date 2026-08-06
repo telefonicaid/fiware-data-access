@@ -23,6 +23,9 @@
 // criminal actions it may exercise to protect its rights.
 
 import express from 'express';
+import multer from 'multer';
+import fs from 'node:fs';
+import path from 'node:path';
 
 import { startFetcher } from './fetcher.js';
 import { shutdownAgenda, initAgenda } from './lib/jobs.js';
@@ -37,6 +40,7 @@ import {
   getFDA,
   updateFDA,
   deleteFDA,
+  uploadFDA,
   getDAs,
   getDA,
   putDA,
@@ -61,6 +65,7 @@ import {
   validateAllowedFieldsBody,
   validateForbiddenFieldsQuery,
   parseBooleanQueryParam,
+  deleteTempFile,
 } from './lib/utils/utils.js';
 import {
   VALID_OUTPUT_TYPES,
@@ -103,6 +108,7 @@ const DATA_ACCEPT_CONTENT_TYPE_TO_OUTPUT = {
 
 const QUERY_STYLE_OUTPUT_TYPES = ['json', 'ndjson', 'csv', 'xls', 'cda'];
 const VALIDATION_MODES = ['strict', 'unchecked'];
+const FDA_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
 
 function parseValidationMode(value) {
   if (value === undefined) {
@@ -127,6 +133,16 @@ function parseValidationMode(value) {
   }
 
   return normalized;
+}
+
+function validateFdaId(id) {
+  if (typeof id !== 'string' || id.length === 0 || !FDA_ID_PATTERN.test(id)) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      'FDA id must contain only alphanumeric characters, hyphens, and underscores.',
+    );
+  }
 }
 
 function throwRequestStyleConflictIfMixed(hasHeaderContext, hasQueryContext) {
@@ -379,6 +395,8 @@ app.post('/:visibility/fdas', async (req, res) => {
     });
   }
 
+  validateFdaId(id);
+
   const finalRefreshPolicy = refreshPolicy ?? { type: 'none' };
   const finalObjStgConf = objStgConf ?? {};
 
@@ -463,6 +481,223 @@ app.delete('/:visibility/fdas/:fdaId', async (req, res) => {
   return res.sendStatus(204);
 });
 
+// Multer configuration for file uploads
+const UPLOAD_TMP_DIR = config.fileUpload?.tmpDir || '/tmp/fda_uploads';
+
+function ensureUploadTmpDir() {
+  if (!fs.existsSync(UPLOAD_TMP_DIR)) {
+    fs.mkdirSync(UPLOAD_TMP_DIR, { recursive: true });
+  }
+}
+
+ensureUploadTmpDir();
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, UPLOAD_TMP_DIR);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    const ext = path.extname(file.originalname);
+    cb(null, file.fieldname + '-' + uniqueSuffix + ext);
+  },
+});
+
+const originalRemoveFile = storage._removeFile?.bind(storage);
+if (originalRemoveFile) {
+  storage._removeFile = (req, file, cb) => {
+    if (!file || typeof file.path !== 'string') {
+      return cb(null);
+    }
+
+    return originalRemoveFile(req, file, cb);
+  };
+}
+
+const upload = multer({
+  storage: storage,
+  limits: { fileSize: config.fileUpload?.maxSize || 50 * 1024 * 1024 }, // 50 MB by default
+  fileFilter: (req, file, cb) => {
+    const allowedMimes = [
+      'text/csv',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ];
+    const allowedExtensions = /\.(csv|xls|xlsx)$/i;
+    if (
+      allowedMimes.includes(file.mimetype) ||
+      allowedExtensions.test(file.originalname)
+    ) {
+      cb(null, true);
+    } else {
+      cb(
+        new FDAError(
+          415,
+          'UnsupportedMediaType',
+          'Only CSV, XLS, or XLSX files are allowed',
+        ),
+        false,
+      );
+    }
+  },
+}).single('file'); // The form field must be named 'file'
+
+function badRequest(res, req, description) {
+  deleteTempFile(req.file);
+  return res.status(400).json({
+    error: 'BadRequest',
+    description,
+  });
+}
+
+function parseObjStgConf(objStgConf) {
+  if (!objStgConf) {
+    return {};
+  }
+
+  return typeof objStgConf === 'string' ? JSON.parse(objStgConf) : objStgConf;
+}
+
+function validateUploadRequest(req, res) {
+  const service = req.get('Fiware-Service');
+  const servicePath = req.get('Fiware-ServicePath');
+
+  if (!service || !servicePath) {
+    badRequest(
+      res,
+      req,
+      'Missing Fiware-Service and Fiware-ServicePath headers',
+    );
+    return null;
+  }
+
+  const {
+    id,
+    description,
+    timeColumn,
+    objStgConf,
+    defaultDataAccess,
+    refreshPolicy,
+  } = req.body;
+
+  if (!id) {
+    badRequest(res, req, 'Missing "id" field in the form');
+    return null;
+  }
+
+  try {
+    validateFdaId(id);
+  } catch (error) {
+    badRequest(res, req, error.message);
+    return null;
+  }
+
+  if (!req.file) {
+    badRequest(res, req, 'Missing file (form field "file")');
+    return null;
+  }
+
+  const defaultDataAccessBool =
+    defaultDataAccess === undefined
+      ? config.defaultDataAccess?.enabled ?? true
+      : parseBooleanQueryParam(defaultDataAccess, 'defaultDataAccess', true);
+
+  let objStgConfParsed;
+  try {
+    objStgConfParsed = parseObjStgConf(objStgConf);
+  } catch {
+    badRequest(res, req, 'objStgConf must be a valid JSON object');
+    return null;
+  }
+
+  if (refreshPolicy !== undefined) {
+    let parsedRefreshPolicy;
+    try {
+      parsedRefreshPolicy =
+        typeof refreshPolicy === 'string'
+          ? JSON.parse(refreshPolicy)
+          : refreshPolicy;
+    } catch {
+      badRequest(res, req, 'refreshPolicy must be a valid JSON object');
+      return null;
+    }
+
+    if (parsedRefreshPolicy?.type !== 'none') {
+      badRequest(
+        res,
+        req,
+        'Upload FDAs cannot have a refreshPolicy; omit it or set {"type":"none"}',
+      );
+      return null;
+    }
+  }
+
+  return {
+    service,
+    servicePath,
+    id,
+    description,
+    timeColumn,
+    defaultDataAccessBool,
+    objStgConfParsed,
+  };
+}
+
+app.post('/:visibility/fdas/upload', (req, res) => {
+  upload(req, res, async (err) => {
+    if (err) {
+      deleteTempFile(req.file);
+
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({
+          error: 'PayloadTooLarge',
+          description: 'The file exceeds the maximum allowed size.',
+        });
+      }
+
+      return res.status(err.status || 400).json({
+        error: err.type || 'BadRequest',
+        description: err.message,
+      });
+    }
+
+    const uploadData = validateUploadRequest(req, res);
+    if (!uploadData) {
+      return;
+    }
+
+    const { visibility } = req.params;
+
+    try {
+      const result = await uploadFDA({
+        fdaId: uploadData.id,
+        tempFilePath: req.file.path,
+        originalname: req.file.originalname,
+        mimetype: req.file.mimetype,
+        service: uploadData.service,
+        visibility,
+        servicePath: uploadData.servicePath,
+        description: uploadData.description,
+        timeColumn: uploadData.timeColumn,
+        objStgConf: uploadData.objStgConfParsed,
+        cached: true,
+        defaultDataAccessEnabled: uploadData.defaultDataAccessBool,
+      });
+
+      return res.status(202).json({
+        id: result.id,
+        status: result.status,
+      });
+    } catch (error) {
+      deleteTempFile(req.file);
+
+      return res.status(error.status || 500).json({
+        error: error.type || 'InternalServerError',
+        description: error.message,
+      });
+    }
+  });
+});
+
 app.get('/:visibility/fdas/:fdaId/das', async (req, res) => {
   const service = req.get('Fiware-Service');
   const servicePath = req.get('Fiware-ServicePath');
@@ -493,6 +728,8 @@ app.post('/:visibility/fdas/:fdaId/das', async (req, res) => {
       description: 'Missing params in the request',
     });
   }
+
+  validateFdaId(id);
 
   await createDA(
     service,
@@ -703,6 +940,8 @@ app.post('/datasources', async (req, res) => {
     datasourceId = 'default';
   }
 
+  validateFdaId(datasourceId);
+
   await createDatasourceForService(service, datasourceId, type, dsConfig);
   return res.sendStatus(204);
 });
@@ -866,10 +1105,46 @@ async function startup() {
     await initAgenda();
   }
 
+  if (config.roles.apiServer) {
+    try {
+      if (fs.existsSync(UPLOAD_TMP_DIR)) {
+        logger.debug(`[INIT] Upload temp directory exists: ${UPLOAD_TMP_DIR}`);
+      } else {
+        ensureUploadTmpDir();
+        logger.info(`[INIT] Created upload temp directory: ${UPLOAD_TMP_DIR}`);
+      }
+    } catch (err) {
+      logger.error(
+        `[INIT] Failed to create upload temp directory: ${err.message}`,
+      );
+      throw err;
+    }
+    uploadTmpCleanupTimer = setInterval(() => {
+      try {
+        const files = fs.readdirSync(UPLOAD_TMP_DIR);
+        const now = Date.now();
+        const maxAge = 12 * 60 * 60 * 1000; // 12 hours
+
+        files.forEach((file) => {
+          const filePath = path.join(UPLOAD_TMP_DIR, file);
+          const stats = fs.statSync(filePath);
+          if (now - stats.mtimeMs > maxAge) {
+            fs.unlinkSync(filePath);
+            logger.debug(`[CLEANUP] Removed old temp file: ${file}`);
+          }
+        });
+      } catch (err) {
+        logger.warn('[CLEANUP] Failed to clean temp directory', err);
+      }
+    }, 3600000); // Run cleanup every hour
+    uploadTmpCleanupTimer.unref?.();
+  }
+
   getInitialLogger(config).fatal('[INIT]: Initializing app');
 }
 
 let shuttingDown = false;
+let uploadTmpCleanupTimer;
 async function shutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
@@ -877,6 +1152,11 @@ async function shutdown() {
   logger.info('[SHUTDOWN] Graceful shutdown started');
 
   try {
+    if (uploadTmpCleanupTimer) {
+      clearInterval(uploadTmpCleanupTimer);
+      uploadTmpCleanupTimer = undefined;
+    }
+
     if (config.roles.fetcher) {
       await shutdownAgenda();
     }

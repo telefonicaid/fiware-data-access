@@ -164,6 +164,12 @@ function createEmptyPreparedStatementResult() {
   };
 }
 
+function cleanDuckDBErrorMessage(error) {
+  return String(error?.message ?? error)
+    .split(/\n\s*\n/)[0]
+    .trim();
+}
+
 async function executePreparedStatement(stmt, boundParams, streaming) {
   await stmt.bind(boundParams);
 
@@ -606,7 +612,7 @@ function isInEnum(value, enumValues) {
   return enumValues.includes(value);
 }
 
-export function toParquet(
+export async function toParquet(
   conn,
   originPath,
   resultPath,
@@ -616,14 +622,33 @@ export function toParquet(
 ) {
   logger.debug({ originPath, resultPath }, '[DEBUG]: toParquet');
 
-  return copyQueryToParquet(
-    conn,
-    `SELECT * FROM read_csv_auto('s3://${originPath}')`,
-    resultPath,
-    timeColumn,
-    partitionType,
-    compression,
-  );
+  try {
+    return await copyQueryToParquet(
+      conn,
+      `SELECT * FROM read_csv_auto('s3://${originPath}')`,
+      resultPath,
+      timeColumn,
+      partitionType,
+      compression,
+    );
+  } catch (e) {
+    logger.error?.('Error converting CSV to Parquet: ', e);
+    if (e instanceof FDAError) {
+      throw e;
+    }
+    if (
+      e.message?.includes('Conversion Error') &&
+      e.message?.includes('TIMESTAMP')
+    ) {
+      throw new FDAError(
+        400,
+        'InvalidTimeColumn',
+        `Column "${timeColumn}" cannot be interpreted as a timestamp.`,
+      );
+    }
+
+    throw new FDAError(500, 'ParquetError', cleanDuckDBErrorMessage(e));
+  }
 }
 
 export function copyQueryToParquet(
@@ -742,10 +767,7 @@ export function buildDAQuery(
   partition,
   servicePath,
 ) {
-  logger.debug(
-    { service, fdaId, userQuery, partition },
-    '[DEBUG]: buildDAQuery',
-  );
+  logger.debug({ service, fdaId }, '[DEBUG]: buildDAQuery');
   if (!userQuery || typeof userQuery !== 'string') {
     throw new FDAError(400, 'BadRequest', 'Invalid DA query');
   }
@@ -765,7 +787,7 @@ export function buildDAQuery(
   const parquetPath = `s3://${bucketName}/${objectKey}`;
 
   if (partition) {
-    return `FROM read_parquet('${parquetPath}/**/*.parquet') ${trimmed}`;
+    return `FROM read_parquet('${parquetPath}.parquet/**/*.parquet') ${trimmed}`;
   } else {
     return `FROM read_parquet('${parquetPath}.parquet') ${trimmed}`;
   }
@@ -817,7 +839,7 @@ export async function validateDAQuery(
       throw new FDAError(
         400,
         'InvalidDAQuery',
-        `DA query is not compatible with FDA ${fdaId}: ${schemaError.message || schemaError}`,
+        `DA query is not compatible with FDA ${fdaId}: ${cleanDuckDBErrorMessage(schemaError)}`,
       );
     } finally {
       if (schemaStmt && typeof schemaStmt.close === 'function') {
@@ -841,7 +863,7 @@ export async function validateDAQuery(
     throw new FDAError(
       400,
       'InvalidDAQuery',
-      `DA query is not compatible with FDA ${fdaId}: ${e.message || e}`,
+      `DA query is not compatible with FDA ${fdaId}: ${cleanDuckDBErrorMessage(e)}`,
     );
   } finally {
     if (stmt && typeof stmt.close === 'function') {
