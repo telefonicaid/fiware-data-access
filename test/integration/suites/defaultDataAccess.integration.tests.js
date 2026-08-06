@@ -23,9 +23,13 @@
 // criminal actions it may exercise to protect its rights.
 
 import { test, expect } from '@jest/globals';
+import { MongoClient } from 'mongodb';
 
 export function registerDefaultDataAccessIntegrationTests({
   getBaseUrl,
+  getMongoUri,
+  getPgHost,
+  getPgPort,
   service,
   servicePath,
   visibility,
@@ -34,17 +38,6 @@ export function registerDefaultDataAccessIntegrationTests({
   buildDaDataUrl,
 }) {
   describe('Default Data Access', () => {
-    function createPgClient() {
-      return new Client({
-        host: getPgHost(),
-        port: getPgPort(),
-        user: 'postgres',
-        password: 'postgres',
-        database: service,
-        connectionTimeoutMillis: 10_000,
-      });
-    }
-
     async function ensureDefaultDatasource(baseUrl) {
       const createRes = await httpReq({
         method: 'POST',
@@ -75,7 +68,6 @@ export function registerDefaultDataAccessIntegrationTests({
 
     const datasourceId = 'mongo-cache-ds';
     const fdaId = 'mongo_cached_fda';
-    const daId = 'mongo_cached_da';
     const collectionName = 'mongo_cached_fda_events';
 
     beforeAll(async () => {

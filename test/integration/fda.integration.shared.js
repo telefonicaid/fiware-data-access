@@ -365,6 +365,9 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
     registerDefaultDataAccessIntegrationTests({
       getBaseUrl: () => baseUrl,
+      getMongoUri: () => mongoUri,
+      getPgHost: () => pgHost,
+      getPgPort: () => pgPort,
       service,
       servicePath,
       visibility,
