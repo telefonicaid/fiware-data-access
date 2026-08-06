@@ -45,8 +45,8 @@ The query follows this pattern:
 
 ```sql
 SELECT *, COUNT(*) OVER() as __total
-WHERE ($col1 IS NULL OR col1 IN (SELECT unnest(string_split($col1, ','))))
-    AND ($col2 IS NULL OR col2 IN (SELECT unnest(string_split($col2, ','))))
+WHERE ($col1 IS NULL OR col1 IN (SELECT CAST(value AS VARCHAR) FROM unnest(string_split($col1, ',')) AS split(value)))
+    AND ($col2 IS NULL OR col2 IN (SELECT CAST(value AS VARCHAR) FROM unnest(string_split($col2, ',')) AS split(value)))
 LIMIT CAST($pageSize AS BIGINT)
 OFFSET CAST($pageStart AS BIGINT)
 ```
@@ -59,9 +59,19 @@ Each FDA column gets one optional filter parameter with:
 -   `default: null`
 -   no explicit `type`
 
-When the column type is known, the generated filter accepts one value or a comma-separated list of values and casts the
-split values to that type before applying `IN`. When the type is not available, the generator keeps the previous
-equality comparison shape to avoid binder errors.
+When schema information is available (e.g. PostgreSQL-backed FDAs), the generated filter accepts either a single value
+or a comma-separated list of values. Values are cast to the corresponding column type before applying `IN`.
+
+When schema information is not available (e.g. MongoDB-backed FDAs), the generator preserves the previous equality
+comparison shape to avoid binder errors.
+
+```sql
+SELECT *, COUNT(*) OVER() as __total
+WHERE ($col1 IS NULL OR col1 = $col1)
+    AND ($col2 IS NULL OR col2 = $col2)
+LIMIT CAST($pageSize AS BIGINT)
+OFFSET CAST($pageStart AS BIGINT)
+```
 
 Parameter names are sanitized to alphanumeric and underscore format. If a generated name collides with reserved
 parameters, a numeric suffix is added.
