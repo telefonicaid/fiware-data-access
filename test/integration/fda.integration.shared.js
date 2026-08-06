@@ -392,6 +392,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       servicePath,
       visibility,
       httpReq,
+      httpMultipartReq,
       waitUntilFDACompleted,
       buildDaDataUrl,
     });

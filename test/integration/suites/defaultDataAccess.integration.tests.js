@@ -34,6 +34,7 @@ export function registerDefaultDataAccessIntegrationTests({
   servicePath,
   visibility,
   httpReq,
+  httpMultipartReq,
   waitUntilFDACompleted,
   buildDaDataUrl,
 }) {
@@ -270,7 +271,7 @@ export function registerDefaultDataAccessIntegrationTests({
 
     test('defaultDataAccess does not support multi-value filters in mongo strict cached mode', async () => {
       const baseUrl = getBaseUrl();
-      const multiValueFdaId = 'fda_default_da_multi_value_mongo';
+      const mongoFdaId = 'fda_default_da_mongo';
 
       try {
         const createFdaRes = await httpReq({
@@ -282,7 +283,7 @@ export function registerDefaultDataAccessIntegrationTests({
             'Fiware-ServicePath': servicePath,
           },
           body: {
-            id: multiValueFdaId,
+            id: mongoFdaId,
             query: {
               collection: collectionName,
               filter: { site: 'lab' },
@@ -307,7 +308,7 @@ export function registerDefaultDataAccessIntegrationTests({
         const completedFDA = await waitUntilFDACompleted({
           baseUrl,
           service,
-          fdaId: multiValueFdaId,
+          fdaId: mongoFdaId,
           visibility,
         });
 
@@ -329,7 +330,75 @@ export function registerDefaultDataAccessIntegrationTests({
       } finally {
         await httpReq({
           method: 'DELETE',
-          url: `${baseUrl}/${visibility}/fdas/${multiValueFdaId}`,
+          url: `${baseUrl}/${visibility}/fdas/${mongoFdaId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+      }
+    });
+
+    test('defaultDataAccess does not support multi-value filters in upload csv mode', async () => {
+      const baseUrl = getBaseUrl();
+      const uploadFdaId = 'fda_default_da_upload';
+
+      try {
+        const csvBuffer = Buffer.from(
+          [
+            'device,status,reading',
+            'sensor-a,ok,21.5',
+            'sensor-b,warn,19.2',
+          ].join('\n'),
+        );
+
+        const uploadRes = await httpMultipartReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas/upload`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          fields: {
+            id: uploadFdaId,
+            description: 'upload default da',
+          },
+          file: {
+            fieldName: 'file',
+            filename: 'upload.csv',
+            contentType: 'text/csv',
+            content: csvBuffer,
+          },
+        });
+
+        expect(uploadRes.status).toBe(202);
+
+        const completedFDA = await waitUntilFDACompleted({
+          baseUrl,
+          service,
+          fdaId: uploadFdaId,
+          visibility,
+        });
+
+        expect(completedFDA.status).toBe('completed');
+
+        const defaultDa = completedFDA.das.defaultDataAccess;
+        expect(defaultDa).toBeDefined();
+
+        expect(defaultDa.query).toContain('COUNT(*) OVER() as __total');
+        expect(defaultDa.query).toContain('LIMIT CAST($pageSize AS BIGINT)');
+
+        // Upload FDAs keeps equality filters
+        expect(defaultDa.query).toContain('= $status');
+
+        // and must not generate multi-value SQL
+        expect(defaultDa.query).not.toContain('string_split');
+        expect(defaultDa.query).not.toContain('unnest');
+        expect(defaultDa.query).not.toContain(' IN (');
+      } finally {
+        await httpReq({
+          method: 'DELETE',
+          url: `${baseUrl}/${visibility}/fdas/${uploadFdaId}`,
           headers: {
             'Fiware-Service': service,
             'Fiware-ServicePath': servicePath,
