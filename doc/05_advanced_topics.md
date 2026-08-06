@@ -138,6 +138,44 @@ coordination, role-based scaling, query lifecycle behavior, fresh-query limits, 
 
 ---
 
+## Uploading Tabular Data
+
+FDA supports publishing tabular data directly from CSV, XLS, or XLSX files via the `POST /{visibility}/fdas/upload`
+endpoint. This feature is ideal for static datasets that do not come from a live database.
+
+Uploaded FDAs are datasource-less. They do not reference a PostgreSQL or MongoDB datasource, so their `datasourceId` and
+`query` metadata fields are stored as `null`.
+
+#### File Format Support
+
+-   **CSV**: Detected by MIME type `text/csv` or extension `.csv`. Parsed using `csv-parse` with automatic delimiter
+    detection.
+-   **XLS / XLSX**: Detected by MIME types `application/vnd.ms-excel` and
+    `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`, or extensions `.xls`/`.xlsx`. Data is read from
+    every sheet with a valid header row, headers are unioned, and rows are merged into one canonical CSV representation.
+
+#### Conversion Process
+
+1. The file is stored temporarily (either on disk or in object storage) to avoid keeping the entire buffer in memory or
+   in the job queue.
+2. The content is parsed and converted to a canonical CSV format.
+3. The CSV is uploaded to object storage under a temporary key (`<fdaId>_<timestamp>.csv`). The directory used to store that temporarly file is set by the env var `FDA_UPLOAD_TMP_DIR`.
+4. DuckDB reads the CSV using `read_csv_auto` and exports it to Parquet with optional partitioning and compression.
+5. The temporary CSV is deleted.
+
+#### Handling Large Files
+
+The maximum file size is controlled by the environment variable `FDA_MAX_UPLOAD_SIZE` (default 50 MB). This limit can be
+adjusted to suit your infrastructure. For larger files, consider using direct S3 uploads or chunked streaming, but the
+current implementation is designed for moderate-sized datasets.
+
+#### Automatic DA Creation
+
+If the instance default or the request enables it, a `defaultDataAccess` DA is created after a successful upload. This
+DA provides basic querying capabilities (e.g., `SELECT * LIMIT 10`) and can be extended with custom parameters.
+
+---
+
 ## Pentaho CDA Compatibility Layer
 
 FDA includes a compatibility layer to support legacy Pentaho CDA clients.

@@ -131,6 +131,87 @@ export function httpFormReq({ method, url, headers, form }) {
   });
 }
 
+export function httpMultipartReq({ method, url, headers, fields, file }) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const finalHeaders = withDefaultServicePath(headers || {});
+    const boundary = `----fda-boundary-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+    const bodyParts = [];
+
+    for (const [name, value] of Object.entries(fields || {})) {
+      bodyParts.push(
+        Buffer.from(
+          `--${boundary}\r\n` +
+            `Content-Disposition: form-data; name="${name}"\r\n\r\n` +
+            `${value}\r\n`,
+        ),
+      );
+    }
+
+    const files = Array.isArray(file) ? file : file ? [file] : [];
+
+    for (const currentFile of files) {
+      const content = Buffer.isBuffer(currentFile.content)
+        ? currentFile.content
+        : Buffer.from(String(currentFile.content || ''));
+
+      bodyParts.push(
+        Buffer.from(
+          `--${boundary}\r\n` +
+            `Content-Disposition: form-data; name="${currentFile.fieldName || 'file'}"; filename="${currentFile.filename || 'upload.bin'}"\r\n` +
+            `Content-Type: ${currentFile.contentType || 'application/octet-stream'}\r\n\r\n`,
+        ),
+      );
+      bodyParts.push(content);
+      bodyParts.push(Buffer.from('\r\n'));
+    }
+
+    bodyParts.push(Buffer.from(`--${boundary}--\r\n`));
+
+    const payload = Buffer.concat(bodyParts);
+
+    const req = http.request(
+      {
+        method,
+        hostname: u.hostname,
+        port: u.port,
+        path: u.pathname + u.search,
+        headers: {
+          ...finalHeaders,
+          'Content-Type': `multipart/form-data; boundary=${boundary}`,
+          'Content-Length': payload.length,
+        },
+        timeout: 30_000,
+      },
+      (res) => {
+        let data = '';
+        res.setEncoding('utf8');
+        res.on('data', (c) => (data += c));
+        res.on('end', () => {
+          resolve({
+            status: res.statusCode,
+            headers: res.headers,
+            text: data,
+            json: (() => {
+              try {
+                return JSON.parse(data);
+              } catch {
+                return null;
+              }
+            })(),
+          });
+        });
+      },
+    );
+
+    req.on('timeout', () => req.destroy(new Error('timeout')));
+    req.on('error', reject);
+    req.write(payload);
+    req.end();
+  });
+}
+
 export function httpReqRaw({ method, url, headers, body, form }) {
   return new Promise((resolve, reject) => {
     const u = new URL(url);

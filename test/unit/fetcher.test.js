@@ -31,6 +31,7 @@ const agendaMock = {
 
 const getAgendaMock = jest.fn(() => agendaMock);
 const processFDAAsyncMock = jest.fn().mockResolvedValue(undefined);
+const processUploadFDAJobMock = jest.fn().mockResolvedValue(undefined);
 const loggerMock = {
   info: jest.fn(),
   error: jest.fn(),
@@ -44,6 +45,7 @@ async function loadFetcherModule() {
   agendaMock.start.mockClear();
   getAgendaMock.mockClear();
   processFDAAsyncMock.mockClear();
+  processUploadFDAJobMock.mockClear();
   cleanPartitionMock.mockClear();
   loggerMock.info.mockClear();
   loggerMock.error.mockClear();
@@ -55,6 +57,7 @@ async function loadFetcherModule() {
   await jest.unstable_mockModule('../../src/lib/fda.js', () => ({
     processFDAAsync: processFDAAsyncMock,
     cleanPartition: cleanPartitionMock,
+    processUploadFDAJob: processUploadFDAJobMock,
   }));
 
   await jest.unstable_mockModule('../../src/lib/utils/logger.js', () => ({
@@ -170,6 +173,73 @@ describe('fetcher', () => {
           servicePath: '/public',
           windowSize: 'day',
           objStgConf: {},
+        },
+      },
+    });
+
+    expect(loggerMock.error).toHaveBeenCalledWith(
+      'Fetcher error: ',
+      expect.any(Error),
+    );
+  });
+
+  test('registered upload handler delegates to processUploadFDAJob', async () => {
+    const { startFetcher } = await loadFetcherModule();
+
+    await startFetcher();
+
+    const handler = getHandler('upload-fda');
+
+    await handler({
+      attrs: {
+        data: {
+          fdaId: 'fdaUploadA',
+          service: 'svcA',
+          servicePath: '/public',
+          visibility: 'public',
+          tempFilePath: '/tmp/file.csv',
+          originalname: 'file.csv',
+          mimetype: 'text/csv',
+          description: 'upload test',
+          timeColumn: 'event_date',
+          objStgConf: { partition: 'day' },
+          cached: true,
+          defaultDataAccessEnabled: false,
+        },
+      },
+    });
+
+    expect(processUploadFDAJobMock).toHaveBeenCalledWith({
+      fdaId: 'fdaUploadA',
+      service: 'svcA',
+      servicePath: '/public',
+      visibility: 'public',
+      tempFilePath: '/tmp/file.csv',
+      originalname: 'file.csv',
+      mimetype: 'text/csv',
+      description: 'upload test',
+      timeColumn: 'event_date',
+      objStgConf: { partition: 'day' },
+      cached: true,
+      defaultDataAccessEnabled: false,
+    });
+  });
+
+  test('registered upload handler catches errors', async () => {
+    const { startFetcher } = await loadFetcherModule();
+
+    processUploadFDAJobMock.mockRejectedValueOnce(new Error('upload failed'));
+
+    await startFetcher();
+
+    const handler = getHandler('upload-fda');
+
+    await handler({
+      attrs: {
+        data: {
+          fdaId: 'fdaUploadA',
+          service: 'svcA',
+          servicePath: '/public',
         },
       },
     });

@@ -51,8 +51,38 @@ For `GET /{visibility}/fdas/{fdaId}/das/{daId}/data`, response format is selecte
 The same content negotiation rules apply to `GET /{visibility}/fdas/{fdaId}/data`, which is the direct fresh FDA query
 endpoint.
 
+---
+
 ### 4. Authentication
 
 FIWARE-data-access does not implement any specific security mechanisms, it offers the `visibility` property so the user
 can build his auth system on top. For those cases we added an optional `auth_token` variable to the requests thats gonna
 be mapped to the `X-Auth-Token` header, in case the user has a system that requires token-based auth.
+
+---
+
+### 5. Uploading CSV/XLS/XLSX with Postman
+
+To create FDAs from tabular files use `POST /{{visibility}}/fdas/upload` with **Body = form-data**:
+
+-   Required fields:
+    -   `id` (Text)
+    -   `file` (File)
+-   Optional fields:
+    -   `description` (Text)
+    -   `timeColumn` (Text)
+    -   `objStgConf` (Text, JSON object string)
+    -   `defaultDataAccess` (Text/Boolean)
+
+Example `objStgConf` value:
+
+```json
+{ "partition": "day", "compression": "zstd" }
+```
+
+Expected behavior:
+
+-   `202` when upload is accepted and processing continues asynchronously.
+-   `400` for invalid upload fields (`objStgConf.partition`, `objStgConf.compression`, malformed JSON, missing file).
+-   `413` when file size exceeds the configured limit.
+-   `415` when file type is not CSV/XLS/XLSX.

@@ -30,6 +30,7 @@ import {
   jest,
   test,
 } from '@jest/globals';
+import fs from 'node:fs';
 import request from 'supertest';
 import { FDAError } from '../../src/lib/fdaError.js';
 
@@ -45,6 +46,7 @@ const jobsMocks = {
 const fdaMocks = {
   getFDAs: jest.fn(),
   fetchFDA: jest.fn(),
+  uploadFDA: jest.fn(),
   executeQuery: jest.fn(),
   executeFDAQuery: jest.fn(),
   executeQueryStream: jest.fn(),
@@ -97,6 +99,7 @@ const utilsMocks = {
   validateAllowedFieldsBody: jest.fn(),
   validateForbiddenFieldsQuery: jest.fn(),
   parseBooleanQueryParam: jest.fn(),
+  deleteTempFile: jest.fn(),
 };
 
 const originalNodeEnv = process.env.NODE_ENV;
@@ -109,6 +112,9 @@ function resetModuleMocks() {
 
   fdaMocks.getFDAs.mockReset().mockResolvedValue([]);
   fdaMocks.fetchFDA.mockReset().mockResolvedValue(undefined);
+  fdaMocks.uploadFDA
+    .mockReset()
+    .mockResolvedValue({ id: 'upload-fda-id', status: 'pending' });
   fdaMocks.executeQuery.mockReset().mockResolvedValue([{ ok: true }]);
   fdaMocks.executeFDAQuery.mockReset().mockResolvedValue([{ ok: 'fda' }]);
   fdaMocks.executeQueryStream
@@ -210,6 +216,7 @@ async function loadIndexModule({
   disconnectError,
   destroyS3Error,
   mockListen = false,
+  fileUploadMaxSize,
 } = {}) {
   jest.resetModules();
   resetModuleMocks();
@@ -286,6 +293,7 @@ async function loadIndexModule({
     executeQueryStream: fdaMocks.executeQueryStream,
     executeFDAQueryStream: fdaMocks.executeFDAQueryStream,
     assertFDAAccess: jest.fn(),
+    uploadFDA: fdaMocks.uploadFDA,
     createDA: fdaMocks.createDA,
     getFDA: fdaMocks.getFDA,
     updateFDA: fdaMocks.updateFDA,
@@ -321,6 +329,10 @@ async function loadIndexModule({
       port: 0,
       logger: { resSize: 120 },
       roles,
+      fileUpload:
+        fileUploadMaxSize === undefined
+          ? undefined
+          : { maxSize: fileUploadMaxSize, tmpDir: '/tmp/fda_uploads_test' },
     },
   }));
 
@@ -338,6 +350,7 @@ async function loadIndexModule({
     validateAllowedFieldsBody: utilsMocks.validateAllowedFieldsBody,
     validateForbiddenFieldsQuery: utilsMocks.validateForbiddenFieldsQuery,
     parseBooleanQueryParam: utilsMocks.parseBooleanQueryParam,
+    deleteTempFile: utilsMocks.deleteTempFile,
   }));
 
   const mod = await import('../../src/index.js');
@@ -1604,6 +1617,239 @@ describe('index routes - validation and middleware branches', () => {
         outputType: 'json',
       }),
     );
+  });
+});
+
+describe('index upload route', () => {
+  let app;
+
+  beforeEach(async () => {
+    ({ app } = await loadIndexModule({
+      nodeEnv: 'test',
+      roles: { apiServer: true, fetcher: false },
+    }));
+  });
+
+  test('POST /:visibility/fdas/upload forwards fields to uploadFDA and returns pending response', async () => {
+    fdaMocks.uploadFDA.mockResolvedValueOnce({
+      id: 'csv_upload_demo',
+      status: 'pending',
+    });
+
+    const res = await request(app)
+      .post('/public/fdas/upload')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .field('id', 'csv_upload_demo')
+      .field('description', 'CSV upload test')
+      .field('timeColumn', 'event_date')
+      .field('objStgConf', '{"partition":"day"}')
+      .field('defaultDataAccess', 'false')
+      .attach('file', Buffer.from('id,value\n1,10\n'), 'data.csv')
+      .expect(202);
+
+    expect(res.body).toEqual({ id: 'csv_upload_demo', status: 'pending' });
+    expect(fdaMocks.uploadFDA).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fdaId: 'csv_upload_demo',
+        service: 'svc',
+        visibility: 'public',
+        servicePath: '/servicepath',
+        description: 'CSV upload test',
+        timeColumn: 'event_date',
+        objStgConf: { partition: 'day' },
+        defaultDataAccessEnabled: false,
+        originalname: 'data.csv',
+      }),
+    );
+
+    const [uploadFDAArgs] = fdaMocks.uploadFDA.mock.calls;
+    expect(uploadFDAArgs).not.toHaveProperty('datasourceId');
+
+    const [{ tempFilePath }] = fdaMocks.uploadFDA.mock.calls[0];
+    if (tempFilePath && fs.existsSync(tempFilePath)) {
+      fs.unlinkSync(tempFilePath);
+    }
+  });
+
+  test('POST /:visibility/fdas/upload returns 400 when Fiware headers are missing', async () => {
+    await request(app)
+      .post('/public/fdas/upload')
+      .field('id', 'csv_upload_demo')
+      .attach('file', Buffer.from('id,value\n1,10\n'), 'data.csv')
+      .expect(400)
+      .expect({
+        error: 'BadRequest',
+        description: 'Missing Fiware-Service and Fiware-ServicePath headers',
+      });
+
+    expect(fdaMocks.uploadFDA).not.toHaveBeenCalled();
+  });
+
+  test('POST /:visibility/fdas/upload returns 400 when id is missing', async () => {
+    await request(app)
+      .post('/public/fdas/upload')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .attach('file', Buffer.from('id,value\n1,10\n'), 'data.csv')
+      .expect(400)
+      .expect({
+        error: 'BadRequest',
+        description: 'Missing "id" field in the form',
+      });
+
+    expect(fdaMocks.uploadFDA).not.toHaveBeenCalled();
+  });
+
+  test('POST /:visibility/fdas/upload returns 400 when file is missing', async () => {
+    await request(app)
+      .post('/public/fdas/upload')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .field('id', 'csv_upload_demo')
+      .expect(400)
+      .expect({
+        error: 'BadRequest',
+        description: 'Missing file (form field "file")',
+      });
+
+    expect(fdaMocks.uploadFDA).not.toHaveBeenCalled();
+  });
+
+  test('POST /:visibility/fdas/upload returns 400 for invalid objStgConf JSON', async () => {
+    await request(app)
+      .post('/public/fdas/upload')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .field('id', 'csv_upload_demo')
+      .field('objStgConf', '{invalid json')
+      .attach('file', Buffer.from('id,value\n1,10\n'), 'data.csv')
+      .expect(400)
+      .expect({
+        error: 'BadRequest',
+        description: 'objStgConf must be a valid JSON object',
+      });
+
+    expect(fdaMocks.uploadFDA).not.toHaveBeenCalled();
+  });
+
+  test('POST /:visibility/fdas/upload returns 415 for unsupported file types', async () => {
+    await request(app)
+      .post('/public/fdas/upload')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .field('id', 'upload_bad_type')
+      .attach('file', Buffer.from('hello'), 'invalid.txt')
+      .expect(415)
+      .expect({
+        error: 'UnsupportedMediaType',
+        description: 'Only CSV, XLS, or XLSX files are allowed',
+      });
+
+    expect(fdaMocks.uploadFDA).not.toHaveBeenCalled();
+  });
+
+  test('POST /:visibility/fdas/upload returns propagated FDAError from uploadFDA', async () => {
+    fdaMocks.uploadFDA.mockRejectedValueOnce(
+      new FDAError(409, 'DuplicatedKey', 'FDA already exists'),
+    );
+
+    await request(app)
+      .post('/public/fdas/upload')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .field('id', 'csv_upload_demo')
+      .attach('file', Buffer.from('id,value\n1,10\n'), 'data.csv')
+      .expect(409)
+      .expect({
+        error: 'DuplicatedKey',
+        description: 'FDA already exists',
+      });
+  });
+
+  test('POST /:visibility/fdas/upload returns 400 for invalid FDA id', async () => {
+    await request(app)
+      .post('/public/fdas/upload')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .field('id', 'invalid_id!@#')
+      .attach('file', Buffer.from('id,value\n1,10\n'), 'data.csv')
+      .expect(400)
+      .expect({
+        error: 'BadRequest',
+        description:
+          'FDA id must contain only alphanumeric characters, hyphens, and underscores.',
+      });
+
+    expect(fdaMocks.uploadFDA).not.toHaveBeenCalled();
+  });
+});
+
+describe('index upload route - direct validation coverage', () => {
+  let app;
+
+  beforeEach(async () => {
+    ({ app } = await loadIndexModule({
+      nodeEnv: 'test',
+      roles: { apiServer: true, fetcher: false },
+    }));
+  });
+
+  test('validateUploadRequest returns 400 when id is missing (even with file)', async () => {
+    // Enviamos archivo pero omitimos el campo "id"
+    const res = await request(app)
+      .post('/public/fdas/upload')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .attach('file', Buffer.from('id,value\n1,10\n'), 'data.csv')
+      .expect(400);
+
+    expect(res.body).toEqual({
+      error: 'BadRequest',
+      description: 'Missing "id" field in the form',
+    });
+    expect(fdaMocks.uploadFDA).not.toHaveBeenCalled();
+  });
+
+  test('validateUploadRequest returns 400 when file is missing (even with id)', async () => {
+    const res = await request(app)
+      .post('/public/fdas/upload')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .field('id', 'csv_upload_demo')
+      .expect(400);
+
+    expect(res.body).toEqual({
+      error: 'BadRequest',
+      description: 'Missing file (form field "file")',
+    });
+    expect(fdaMocks.uploadFDA).not.toHaveBeenCalled();
+  });
+});
+
+describe('index upload route file size limit', () => {
+  let app;
+
+  beforeEach(async () => {
+    ({ app } = await loadIndexModule({
+      nodeEnv: 'test',
+      roles: { apiServer: true, fetcher: false },
+      fileUploadMaxSize: 1,
+    }));
+  });
+
+  test('POST /:visibility/fdas/upload returns 413 when file exceeds configured limit', async () => {
+    await request(app)
+      .post('/public/fdas/upload')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .field('id', 'upload_too_large')
+      .attach('file', Buffer.from('id,value\n1,10\n'), 'data.csv')
+      .expect(413)
+      .expect({
+        error: 'PayloadTooLarge',
+        description: 'The file exceeds the maximum allowed size.',
+      });
   });
 });
 

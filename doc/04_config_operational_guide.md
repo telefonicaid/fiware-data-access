@@ -121,6 +121,15 @@ Variables related to MongoDB:
 | --------------- | -------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `FDA_MONGO_URI` |          | string | Mongodb connection URI to connect to the `MongoDB`. More details in [MongoDb connection URI](https://www.mongodb.com/docs/drivers/node/current/connect/mongoclient/#connection-uri) |
 
+### Uploads
+
+Environment variables related to file uploads:
+
+| Variable              | Optional | Type   | Description                                                                                               |
+| --------------------- | -------- | ------ | --------------------------------------------------------------------------------------------------------- |
+| `FDA_MAX_UPLOAD_SIZE` | ✓        | number | Maximum allowed upload size in bytes. Default `52428800` (50 MB).                                         |
+| `FDA_UPLOAD_TMP_DIR`  | ✓        | string | Directory used to temporarily store uploaded files before they are processed. Default `/tmp/fda_uploads`. |
+
 ### Logger
 
 | Variable           | Optional | Type   | Description                                                                                      |
@@ -160,6 +169,10 @@ FDA_OBJSTG_MAX_POOL_SIZE=10
 
 # MONGODB
 FDA_MONGO_URI=mongodb://exampleUser:examplePassword@endpoint:port
+
+# Uploads
+FDA_MAX_UPLOAD_SIZE=52428800
+FDA_UPLOAD_TMP_DIR=/tmp/fda_uploads
 
 # Logger
 FDA_LOG_LEVEL=INFO
