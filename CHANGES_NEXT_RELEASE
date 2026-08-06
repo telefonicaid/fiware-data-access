@@ -1,1 +1,2 @@
+Add: generated defaultDataAccess now supports comma-separated values for equality filters when schema is available, while remaining fully backward compatible (#253)
 - Update: mongodb dependency version from 7.0.0 to 7.5.0
