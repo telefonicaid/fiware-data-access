@@ -297,7 +297,6 @@ app.use((req, res, next) => {
       {
         method: req.method,
         path: req.originalUrl,
-        fiwareService: req.get('Fiware-Service'),
         reqParams: `${JSON.stringify(req.params)}`,
         reqQuery: `${JSON.stringify(req.query)}`,
         reqBody: `${JSON.stringify(req.body)}`,

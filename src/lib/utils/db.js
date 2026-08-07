@@ -240,8 +240,8 @@ export async function runPreparedStatement(
     : 'runPreparedStatement';
   logger.debug(
     streaming
-      ? { service, fdaId, daId, paramValues }
-      : { service, fdaId, daId, paramValues: JSON.stringify(paramValues) },
+      ? { fdaId, daId, paramValues }
+      : { fdaId, daId, paramValues: JSON.stringify(paramValues) },
     `[DEBUG]: ${method}`,
   );
 
@@ -455,7 +455,7 @@ function normalizeParamDefaultForStorage(value) {
 }
 
 function applyParams(reqParams, params) {
-  logger.debug({ reqParams, params }, '[DEBUG]: applyParams start');
+  logger.debug({ params }, '[DEBUG]: applyParams start');
 
   if (!Array.isArray(params) || params.length === 0) {
     return {};
@@ -620,7 +620,7 @@ export async function toParquet(
   partitionType,
   compression,
 ) {
-  logger.debug({ originPath, resultPath }, '[DEBUG]: toParquet');
+  logger.debug({ resultPath }, '[DEBUG]: toParquet');
 
   try {
     return await copyQueryToParquet(
@@ -673,10 +673,7 @@ export function copyQueryToParquet(
 
 export const PARTITION_TYPES = ['day', 'week', 'month', 'year', 'none'];
 export function refreshIntervalPartitionCheck(refreshInterval, partition) {
-  logger.debug(
-    { refreshInterval, partition },
-    '[DEBUG]: refreshIntervalPartitionCheck',
-  );
+  logger.debug({ partition }, '[DEBUG]: refreshIntervalPartitionCheck');
 
   if (!partition || partition === 'none') {
     return true;
@@ -767,7 +764,7 @@ export function buildDAQuery(
   partition,
   servicePath,
 ) {
-  logger.debug({ service, fdaId }, '[DEBUG]: buildDAQuery');
+  logger.debug({ fdaId }, '[DEBUG]: buildDAQuery');
   if (!userQuery || typeof userQuery !== 'string') {
     throw new FDAError(400, 'BadRequest', 'Invalid DA query');
   }
