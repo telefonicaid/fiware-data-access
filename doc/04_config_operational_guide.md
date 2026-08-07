@@ -469,14 +469,10 @@ If a job fails, the log will include `err` with detailed context.
     (e.g., Kubernetes, systemd, Docker) captures these streams and forwards them to your centralised logging system
     (ELK, Loki, CloudWatch, etc.). No additional configuration is required inside the application.
 
--   **Agenda job logs in MongoDB**:  
-    Agenda stores job history in the `agendaJobs` collection. You can query this collection to review past job
-    executions, failures, and locks. The `/metrics` endpoint exposes aggregated job statistics (total, failed, locked,
-    by name) for monitoring.
-
 -   **Correlation**:  
-    Use the `corr` field to correlate logs from a single job execution across different components (e.g., database
-    queries, object storage operations). For API requests, the `trans` field serves a similar purpose.
+    Use the `trans` field to correlate logs from a single API request across different components. Use the `corr` field
+    to correlate logs from a single job execution. For tracking a complete user operation that spans both an API request
+    and a background job (e.g., FDA creation with caching), look for common fields like `fdaId`, `srv`, and `subsrv`.
 
 -   **Log level**:  
     Set `FDA_LOG_LEVEL` to `DEBUG` during troubleshooting to get detailed operational logs, but use `INFO` or higher in
