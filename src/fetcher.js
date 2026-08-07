@@ -28,7 +28,12 @@ import {
   processFDAAsync,
   processUploadFDAJob,
 } from './lib/fda.js';
-import { getBasicLogger } from './lib/utils/logger.js';
+import {
+  getBasicLogger,
+  createChildLogger,
+  runWithLogger,
+} from './lib/utils/logger.js';
+import { v4 as uuidv4 } from 'uuid';
 
 const logger = getBasicLogger();
 
@@ -46,40 +51,59 @@ export async function startFetcher() {
       objStgConf,
       datasourceId,
     } = job.attrs.data;
-    // Should agenda also log errors?
-    try {
-      await processFDAAsync(
-        fdaId,
-        query,
-        service,
-        servicePath,
-        timeColumn,
-        refreshPolicy,
-        objStgConf,
-        datasourceId,
-      );
-    } catch (e) {
-      logger.error('Fetcher error: ', e);
-    }
+
+    const jobLogger = createChildLogger({
+      service: service || 'n/a',
+      subservice: servicePath || 'n/a',
+      op: 'refresh-fda',
+      corr: `job-${job.attrs._id}` || uuidv4(),
+    });
+
+    await runWithLogger(jobLogger, async () => {
+      try {
+        await processFDAAsync(
+          fdaId,
+          query,
+          service,
+          servicePath,
+          timeColumn,
+          refreshPolicy,
+          objStgConf,
+          datasourceId,
+        );
+      } catch (e) {
+        jobLogger.error({ err: e }, 'Fetcher error in refreshFDA');
+      }
+    });
   };
 
   const cleanPartitionFDA = async (job) => {
     const { fdaId, service, servicePath, windowSize, objStgConf } =
       job.attrs.data;
-    try {
-      await cleanPartition(service, fdaId, windowSize, objStgConf, servicePath);
-    } catch (e) {
-      logger.error('Fetcher error: ', e);
-    }
+
+    const jobLogger = createChildLogger({
+      service: service || 'n/a',
+      subservice: servicePath || 'n/a',
+      op: 'clean-partition',
+      corr: `job-${job.attrs._id}` || uuidv4(),
+    });
+
+    await runWithLogger(jobLogger, async () => {
+      try {
+        await cleanPartition(
+          service,
+          fdaId,
+          windowSize,
+          objStgConf,
+          servicePath,
+        );
+      } catch (e) {
+        jobLogger.error({ err: e }, 'Fetcher error in cleanPartition');
+      }
+    });
   };
 
-  agenda.define('refresh-fda', refreshFDA);
-  agenda.define('refresh-fda-recurring', refreshFDA);
-  agenda.define('consistency-refresh-fda-recurring', refreshFDA);
-  agenda.define('clean-partition', cleanPartitionFDA);
-  agenda.define('clean-partition-recurring', cleanPartitionFDA);
-
-  agenda.define('upload-fda', async (job) => {
+  const uploadFDAJob = async (job) => {
     const {
       fdaId,
       service,
@@ -95,25 +119,41 @@ export async function startFetcher() {
       defaultDataAccessEnabled,
     } = job.attrs.data;
 
-    try {
-      await processUploadFDAJob({
-        fdaId,
-        service,
-        servicePath,
-        visibility,
-        tempFilePath,
-        originalname,
-        mimetype,
-        description,
-        timeColumn,
-        objStgConf,
-        cached,
-        defaultDataAccessEnabled,
-      });
-    } catch (e) {
-      logger.error('Fetcher error: ', e);
-    }
-  });
+    const jobLogger = createChildLogger({
+      service: service || 'n/a',
+      subservice: servicePath || 'n/a',
+      op: 'upload-fda',
+      corr: `job-${job.attrs._id}` || uuidv4(),
+    });
+
+    await runWithLogger(jobLogger, async () => {
+      try {
+        await processUploadFDAJob({
+          fdaId,
+          service,
+          servicePath,
+          visibility,
+          tempFilePath,
+          originalname,
+          mimetype,
+          description,
+          timeColumn,
+          objStgConf,
+          cached,
+          defaultDataAccessEnabled,
+        });
+      } catch (e) {
+        jobLogger.error({ err: e }, 'Fetcher error in uploadFDA');
+      }
+    });
+  };
+
+  agenda.define('refresh-fda', refreshFDA);
+  agenda.define('refresh-fda-recurring', refreshFDA);
+  agenda.define('consistency-refresh-fda-recurring', refreshFDA);
+  agenda.define('clean-partition', cleanPartitionFDA);
+  agenda.define('clean-partition-recurring', cleanPartitionFDA);
+  agenda.define('upload-fda', uploadFDAJob);
 
   await agenda.start();
   logger.info('[Fetcher] Agenda started');
