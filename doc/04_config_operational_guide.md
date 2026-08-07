@@ -393,6 +393,97 @@ The following table summarizes the main metrics exposed by `GET /metrics`, their
 
 ---
 
+## Logging and Traceability
+
+FIWARE Data Access generates structured logs that include context from FIWARE headers (`Fiware-Service`,
+`Fiware-ServicePath`, `Fiware-Correlator`) to enable end‑to‑end tracing across requests and background jobs.
+
+### Log Structure
+
+All logs share a common set of fields:
+
+| Field    | Description                                                         | Example                        |
+| -------- | ------------------------------------------------------------------- | ------------------------------ |
+| `time`   | ISO‑8601 timestamp (UTC).                                           | `2026-08-07T10:43:40.750Z`     |
+| `lvl`    | Log level: `DEBUG`, `INFO`, `WARN`, `ERROR`, `FATAL`.               | `INFO`                         |
+| `corr`   | Correlation ID (from `Fiware-Correlator` header or auto‑generated). | `job-6a75b6d8274b35c6f47b367a` |
+| `trans`  | Transaction ID (auto‑generated per request or job).                 | `6182670e-9489-4312-b85d...`   |
+| `op`     | Operation name (e.g., HTTP route, job name).                        | `refresh-fda`                  |
+| `ver`    | Application version.                                                | `1.2.0-next`                   |
+| `comp`   | Component name (configurable via `FDA_LOG_COMP`).                   | `Fda`                          |
+| `srv`    | FIWARE service (from `Fiware-Service` header or job data).          | `trantor`                      |
+| `subsrv` | FIWARE service path (from `Fiware-ServicePath` header or job data). | `/public`                      |
+| `msg`    | Human‑readable log message.                                         | `Job completed successfully`   |
+
+### Context Propagation
+
+-   **API requests**:  
+    The middleware captures `Fiware-Service`, `Fiware-ServicePath`, and `Fiware-Correlator` headers (if present) and
+    creates a child logger with those values. This logger is used for all logs generated during the request, including
+    database and storage operations.  
+    If a header is missing, the corresponding field defaults to `n/a`.
+
+-   **Fetcher jobs**:  
+    Each Agenda job defines its own child logger with `srv`, `subsrv`, `op` (job type), and a unique `corr` (job
+    identifier). This ensures that all logs emitted during job execution carry the correct tenant context, making it
+    easy to trace operations for a specific FDA.
+
+### API Request Logs
+
+Every API request produces a final log entry with the following metadata:
+
+-   HTTP method, path, request parameters, query, body (truncated after `FDA_LOG_RES_SIZE`).
+-   Response status code, message, size, and body (truncated).
+-   Duration in milliseconds.
+-   Client IP and User‑Agent.
+
+Example:
+
+```
+time=2026-08-07T10:43:36.436Z | lvl=INFO | corr=n/a | trans=cfbbed00-e869-42b9-8087-a2943fa1a89f | op=n/a | ver=1.2.0-next | comp=Fda | srv=trantor | subsrv=/public | method=POST | path=/public/fdas | reqParams={"visibility":"public"} | reqQuery={} | reqBody={"id":"fda_alarms",...} | resCode=202 | resMsg=Accepted | durationMs=249 | ip=::1 | userAgent=curl/8.14.1 | resSize=38 | resBody={"id":"fda_alarms","status":"pending"} | msg=API request completed
+```
+
+### Fetcher Job Logs
+
+Agenda jobs log their start, successful completion, and failures, including:
+
+-   Job type (`op`: `refresh-fda`, `clean-partition`, `upload-fda`, etc.)
+-   Affected FDA ID.
+-   Duration.
+-   Detailed error information (status, type, message, stack for 5xx errors) when a failure occurs.
+
+Example of a successful refresh:
+
+```
+time=2026-08-07T10:43:40.750Z | lvl=DEBUG | corr=job-6a75b6d8274b35c6f47b367a | trans=6182670e-9489-4312-b85d-0743f2529a1f | op=refresh-fda | ver=1.2.0-next | comp=Fda | srv=trantor | subsrv=/public | msg=Job started: refresh-fda
+...
+time=2026-08-07T10:43:40.893Z | lvl=DEBUG | corr=job-6a75b6d8274b35c6f47b367a | trans=... | op=refresh-fda | ... | msg=Job completed successfully: refresh-fda
+```
+
+If a job fails, the log will include `err` with detailed context.
+
+### Observability and Deployment Considerations
+
+-   **stdout/stderr**:  
+    The application writes all logs to `stdout` (and `stderr` for errors). Ensure that your deployment environment
+    (e.g., Kubernetes, systemd, Docker) captures these streams and forwards them to your centralised logging system
+    (ELK, Loki, CloudWatch, etc.). No additional configuration is required inside the application.
+
+-   **Agenda job logs in MongoDB**:  
+    Agenda stores job history in the `agendaJobs` collection. You can query this collection to review past job
+    executions, failures, and locks. The `/metrics` endpoint exposes aggregated job statistics (total, failed, locked,
+    by name) for monitoring.
+
+-   **Correlation**:  
+    Use the `corr` field to correlate logs from a single job execution across different components (e.g., database
+    queries, object storage operations). For API requests, the `trans` field serves a similar purpose.
+
+-   **Log level**:  
+    Set `FDA_LOG_LEVEL` to `DEBUG` during troubleshooting to get detailed operational logs, but use `INFO` or higher in
+    production to avoid excessive log volume.
+
+---
+
 ## 🧭 Navigation
 
 -   [⬅️ Previous: Architecture](/doc/02_architecture.md)
