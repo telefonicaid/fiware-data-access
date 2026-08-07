@@ -58,6 +58,8 @@ import { config } from './lib/fdaConfig.js';
 import {
   initLogger,
   getBasicLogger,
+  createChildLogger,
+  runWithLogger,
   getInitialLogger,
 } from './lib/utils/logger.js';
 import { handleCdaQuery } from './lib/compat/cdaAdapter.js';
@@ -254,6 +256,11 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use((req, res, next) => {
   const reqStartMs = onRequestStart();
+  req.log = createChildLogger({
+    corr: req.get('Fiware-Correlator') || 'n/a',
+    service: req.get('Fiware-Service') || 'n/a',
+    subservice: req.get('Fiware-ServicePath') || 'n/a',
+  });
   const oldSend = res.send;
   const oldJson = res.json;
 
@@ -286,7 +293,7 @@ app.use((req, res, next) => {
   res.on('finish', () => {
     onRequestFinish(req, res, reqStartMs);
 
-    logger.info(
+    req.log.info(
       {
         method: req.method,
         path: req.originalUrl,
@@ -306,7 +313,7 @@ app.use((req, res, next) => {
     );
   });
 
-  next();
+  return runWithLogger(req.log, () => next());
 });
 
 app.get('/health', async (req, res) => {
@@ -1056,10 +1063,26 @@ app.get('/plugin/cda/api/doQuery', handleCdaDoQuery);
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
   const status = err.status || 500;
+  const requestLogger = req.log || logger;
+
+  const logData = {
+    status: err.status,
+    type: err.type || 'InternalServerError',
+    message: err.message,
+  };
+
+  if (status >= 500 || process.env.NODE_ENV === 'development') {
+    logData.stack = err.stack;
+  }
+
+  if (err.details) {
+    logData.details = err.details;
+  }
+
   if (status < 500) {
-    logger.warn(err);
+    requestLogger.warn(logData, 'Client error');
   } else {
-    logger.error(err);
+    requestLogger.error(logData, 'Server error');
   }
 
   return res.status(status).json({
