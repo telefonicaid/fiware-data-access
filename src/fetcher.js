@@ -60,6 +60,8 @@ export async function startFetcher() {
     });
 
     await runWithLogger(jobLogger, async () => {
+      const start = Date.now();
+      jobLogger.info({ fdaId }, 'Job started: refresh-fda');
       try {
         await processFDAAsync(
           fdaId,
@@ -71,8 +73,15 @@ export async function startFetcher() {
           objStgConf,
           datasourceId,
         );
+        jobLogger.info(
+          { fdaId, durationMs: Date.now() - start },
+          'Job completed successfully: refresh-fda',
+        );
       } catch (e) {
-        jobLogger.error({ err: e }, 'Fetcher error in refreshFDA');
+        jobLogger.error(
+          { err: e, fdaId, durationMs: Date.now() - start },
+          'Job failed: refresh-fda',
+        );
       }
     });
   };
@@ -89,6 +98,8 @@ export async function startFetcher() {
     });
 
     await runWithLogger(jobLogger, async () => {
+      const start = Date.now();
+      jobLogger.info({ fdaId }, 'Job started: clean-partition');
       try {
         await cleanPartition(
           service,
@@ -97,8 +108,15 @@ export async function startFetcher() {
           objStgConf,
           servicePath,
         );
+        jobLogger.info(
+          { fdaId, durationMs: Date.now() - start },
+          'Job completed successfully: clean-partition',
+        );
       } catch (e) {
-        jobLogger.error({ err: e }, 'Fetcher error in cleanPartition');
+        jobLogger.error(
+          { err: e, fdaId, durationMs: Date.now() - start },
+          'Job failed: clean-partition',
+        );
       }
     });
   };
@@ -127,6 +145,8 @@ export async function startFetcher() {
     });
 
     await runWithLogger(jobLogger, async () => {
+      const start = Date.now();
+      jobLogger.info({ fdaId }, 'Job started: upload-fda');
       try {
         await processUploadFDAJob({
           fdaId,
@@ -142,8 +162,15 @@ export async function startFetcher() {
           cached,
           defaultDataAccessEnabled,
         });
+        jobLogger.info(
+          { fdaId, durationMs: Date.now() - start },
+          'Job completed successfully: upload-fda',
+        );
       } catch (e) {
-        jobLogger.error({ err: e }, 'Fetcher error in uploadFDA');
+        jobLogger.error(
+          { err: e, fdaId, durationMs: Date.now() - start },
+          'Job failed: upload-fda',
+        );
       }
     });
   };
@@ -157,4 +184,8 @@ export async function startFetcher() {
 
   await agenda.start();
   logger.info('[Fetcher] Agenda started');
+
+  setInterval(() => {
+    logger.debug('[Fetcher] Heartbeat: alive');
+  }, 60000);
 }
