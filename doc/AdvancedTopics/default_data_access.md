@@ -62,8 +62,9 @@ Each FDA column gets one optional filter parameter with:
 When schema information is available (e.g. PostgreSQL-backed FDAs), the generated filter accepts either a single value
 or a comma-separated list of values. Values are cast to the corresponding column type before applying `IN`.
 
-When schema information is not available (for example MongoDB-backed or uploaded CSV/XLS FDAs), the generator preserves
-the previous equality comparison shape to avoid binder errors.
+When schema information is not available (for example MongoDB-backed or uploaded CSV/XLS FDAs), the generated filter
+uses a simple equality comparison (`column = $param`). This avoids binder errors, since the generator cannot determine
+the target column types required to cast values produced by `string_split()`.
 
 ```sql
 SELECT *, COUNT(*) OVER() as __total
