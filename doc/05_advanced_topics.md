@@ -159,7 +159,8 @@ Uploaded FDAs are datasource-less. They do not reference a PostgreSQL or MongoDB
 1. The file is stored temporarily (either on disk or in object storage) to avoid keeping the entire buffer in memory or
    in the job queue.
 2. The content is parsed and converted to a canonical CSV format.
-3. The CSV is uploaded to object storage under a temporary key (`<fdaId>_<timestamp>.csv`). The directory used to store that temporarly file is set by the env var `FDA_UPLOAD_TMP_DIR`.
+3. The CSV is uploaded to object storage under a temporary key (`<fdaId>_<timestamp>.csv`). The directory used to store
+   that temporarly file is set by the env var `FDA_UPLOAD_TMP_DIR`.
 4. DuckDB reads the CSV using `read_csv_auto` and exports it to Parquet with optional partitioning and compression.
 5. The temporary CSV is deleted.
 

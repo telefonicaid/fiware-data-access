@@ -45,19 +45,34 @@ The query follows this pattern:
 
 ```sql
 SELECT *, COUNT(*) OVER() as __total
-WHERE ($col1 IS NULL OR col1 = $col1)
-  AND ($col2 IS NULL OR col2 = $col2)
+WHERE ($col1 IS NULL OR col1 IN (SELECT CAST(value AS VARCHAR) FROM unnest(string_split($col1, ',')) AS split(value)))
+    AND ($col2 IS NULL OR col2 IN (SELECT CAST(value AS VARCHAR) FROM unnest(string_split($col2, ',')) AS split(value)))
 LIMIT CAST($pageSize AS BIGINT)
 OFFSET CAST($pageStart AS BIGINT)
 ```
 
 The generated DA includes `__total` via `COUNT(*) OVER()` so clients can read total row count for pagination flows.
 
-Each FDA column gets one optional equality filter parameter with:
+Each FDA column gets one optional filter parameter with:
 
 -   `required: false` implicitly
 -   `default: null`
 -   no explicit `type`
+
+When schema information is available (e.g. PostgreSQL-backed FDAs), the generated filter accepts either a single value
+or a comma-separated list of values. Values are cast to the corresponding column type before applying `IN`.
+
+When schema information is not available (for example MongoDB-backed or uploaded CSV/XLS FDAs), the generated filter
+uses a simple equality comparison (`column = $param`). This avoids binder errors, since the generator cannot determine
+the target column types required to cast values produced by `string_split()`.
+
+```sql
+SELECT *, COUNT(*) OVER() as __total
+WHERE ($col1 IS NULL OR col1 = $col1)
+    AND ($col2 IS NULL OR col2 = $col2)
+LIMIT CAST($pageSize AS BIGINT)
+OFFSET CAST($pageStart AS BIGINT)
+```
 
 Parameter names are sanitized to alphanumeric and underscore format. If a generated name collides with reserved
 parameters, a numeric suffix is added.
@@ -81,9 +96,8 @@ Current generated predicate shape:
 Important note about temporal columns:
 
 -   If an FDA includes a temporal column that is not declared as timeColumn, that column is treated as a regular
-    optional equality filter.
--   In that case, exact equality comparisons may be unreliable because of timestamp precision and representation
-    differences.
+    optional filter. If its type is available, the generated default DA casts the split values to that temporal type
+    before applying `IN`; otherwise it keeps the old equality comparison shape.
 -   For reliable temporal filtering, declare the FDA timeColumn and use start and finish parameters.
 -   If a column is declared as `timeColumn`, the equality filter shape is:
     `($${paramName} IS NULL OR DATE_TRUNC('millisecond', CAST(${quotedColumnName} AS TIMESTAMP)) = DATE_TRUNC('millisecond', CAST($${paramName} AS TIMESTAMP)))`.
