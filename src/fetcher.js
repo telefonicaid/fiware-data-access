@@ -57,7 +57,7 @@ export async function startFetcher() {
       service: service || 'n/a',
       subservice: servicePath || 'n/a',
       op: 'refresh-fda',
-      corr: `job-${job.attrs._id}` || uuidv4(),
+      corr: job.attrs._id ? `job-${job.attrs._id}` : uuidv4(),
     });
 
     await runWithLogger(jobLogger, async () => {
@@ -95,7 +95,7 @@ export async function startFetcher() {
       service: service || 'n/a',
       subservice: servicePath || 'n/a',
       op: 'clean-partition',
-      corr: `job-${job.attrs._id}` || uuidv4(),
+      corr: job.attrs._id ? `job-${job.attrs._id}` : uuidv4(),
     });
 
     await runWithLogger(jobLogger, async () => {
@@ -142,7 +142,7 @@ export async function startFetcher() {
       service: service || 'n/a',
       subservice: servicePath || 'n/a',
       op: 'upload-fda',
-      corr: `job-${job.attrs._id}` || uuidv4(),
+      corr: job.attrs._id ? `job-${job.attrs._id}` : uuidv4(),
     });
 
     await runWithLogger(jobLogger, async () => {

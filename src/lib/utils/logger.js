@@ -77,11 +77,11 @@ export function runWithLogger(requestLogger, callback) {
 export function createChildLogger(config) {
   const loggerCtx = logger.getContext();
   return logger.child({
-    op: (config && config.op) || loggerCtx.op,
-    corr: (config && config.corr) || uuidv4(),
-    trans: (config && config.trans) || uuidv4(),
-    srv: (config && config.service) || 'n/a',
-    subsrv: (config && config.subservice) || 'n/a',
+    op: config?.op || loggerCtx.op,
+    corr: config?.corr || uuidv4(),
+    trans: config?.trans || uuidv4(),
+    srv: config?.service || 'n/a',
+    subsrv: config?.subservice || 'n/a',
   });
 }
 
