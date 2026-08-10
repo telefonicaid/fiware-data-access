@@ -2183,19 +2183,8 @@ async function buildDefaultDataAccessDefinition(
   objStgConf,
   schemaOverride,
 ) {
-  let overrideColumns = [];
-
-  if (Array.isArray(schemaOverride?.columns)) {
-    overrideColumns = schemaOverride.columns;
-  } else if (Array.isArray(schemaOverride)) {
-    overrideColumns = schemaOverride
-      .map((column) => (typeof column === 'string' ? column : column?.name))
-      .filter((column) => typeof column === 'string');
-  }
-
-  const normalizedOverrideColumns = overrideColumns.filter(
-    (name) => typeof name === 'string' && name.length > 0,
-  );
+  const schemaFields = normalizeDefaultDASchemaFields(schemaOverride);
+  const normalizedOverrideColumns = schemaFields.map(({ name }) => name);
 
   const columns =
     normalizedOverrideColumns.length > 0
@@ -2206,6 +2195,11 @@ async function buildDefaultDataAccessDefinition(
           servicePath,
           objStgConf,
         );
+  const columnTypes = new Map(
+    schemaFields
+      .filter(({ type }) => typeof type === 'string' && type.length > 0)
+      .map(({ name, type }) => [name, type]),
+  );
 
   const resolvedTimeColumn = resolveDefaultDATimeColumnName(
     timeColumn,
@@ -2252,6 +2246,11 @@ async function buildDefaultDataAccessDefinition(
       filters.push(
         `($${paramName} IS NULL OR DATE_TRUNC('millisecond', CAST(${quotedColumnName} AS TIMESTAMP)) = DATE_TRUNC('millisecond', CAST($${paramName} AS TIMESTAMP)))`,
       );
+    } else if (columnTypes.has(columnName)) {
+      const columnType = columnTypes.get(columnName);
+      filters.push(
+        `($${paramName} IS NULL OR ${quotedColumnName} IN (SELECT CAST(value AS ${columnType}) FROM unnest(string_split($${paramName}, ',')) AS split(value)))`,
+      );
     } else {
       filters.push(
         `($${paramName} IS NULL OR ${quotedColumnName} = $${paramName})`,
@@ -2280,6 +2279,48 @@ async function buildDefaultDataAccessDefinition(
   return {
     query: `SELECT *, COUNT(*) OVER() as __total${whereClause} LIMIT CAST($pageSize AS BIGINT) OFFSET CAST($pageStart AS BIGINT)`,
     params,
+  };
+}
+
+function normalizeDefaultDASchemaFields(schemaOverride) {
+  if (Array.isArray(schemaOverride?.fields)) {
+    return schemaOverride.fields
+      .map((field) => normalizeDefaultDASchemaField(field, 'duckdbType'))
+      .filter(Boolean);
+  }
+
+  if (Array.isArray(schemaOverride?.columns)) {
+    return schemaOverride.columns
+      .map((field) => normalizeDefaultDASchemaField(field, 'type'))
+      .filter(Boolean);
+  }
+
+  if (Array.isArray(schemaOverride)) {
+    return schemaOverride
+      .map((field) => normalizeDefaultDASchemaField(field, 'type'))
+      .filter(Boolean);
+  }
+
+  return [];
+}
+
+function normalizeDefaultDASchemaField(field, typeKey) {
+  if (typeof field === 'string') {
+    return { name: field, type: null };
+  }
+
+  const name = field?.name;
+  if (typeof name !== 'string' || name.length === 0) {
+    return null;
+  }
+
+  const type = field?.[typeKey] ?? field?.duckdbType ?? field?.type ?? null;
+  return {
+    name,
+    type:
+      typeof type === 'string' && type.length > 0 && isValidDuckDBType(type)
+        ? type
+        : null,
   };
 }
 

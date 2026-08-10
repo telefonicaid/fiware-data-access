@@ -1027,6 +1027,7 @@ describe('fetchFDA', () => {
     dbMocks.getDBConnection.mockResolvedValue({});
     dbMocks.releaseDBConnection.mockResolvedValue(undefined);
     dbMocks.toParquet.mockResolvedValue(undefined);
+    dbMocks.copyQueryToParquet.mockResolvedValue(undefined);
     pgMocks.uploadTable.mockResolvedValue(undefined);
     jobsMocks.getAgenda.mockReturnValue(agenda);
     agenda.now.mockResolvedValue(undefined);
@@ -1155,6 +1156,82 @@ describe('fetchFDA', () => {
     expect(agenda.create).not.toHaveBeenCalled();
   });
 
+  test('creates typed default DA filters when sourceSchema provides duckdb types', async () => {
+    const validatePostgresQueryResult = {
+      columns: ['age', 'timeinstant', 'name'],
+      fields: [
+        { name: 'age', duckdbType: 'INTEGER' },
+        { name: 'timeinstant', duckdbType: 'TIMESTAMP' },
+        { name: 'name', duckdbType: 'VARCHAR' },
+      ],
+    };
+
+    pgMocks.validatePostgresQuery.mockResolvedValueOnce(
+      validatePostgresQueryResult,
+    );
+    dbMocks.getDBConnection.mockReset().mockResolvedValueOnce({});
+    dbMocks.releaseDBConnection.mockReset().mockResolvedValue(undefined);
+    dbMocks.validateDAQuery.mockReset().mockResolvedValue(undefined);
+    dbMocks.checkParams.mockImplementation((params) => params);
+    mongoMocks.retrieveDatasource.mockResolvedValue({
+      datasourceId: 'default',
+      type: 'postgres',
+      config: {
+        username: 'u',
+        password: 'p',
+        host: 'h',
+        port: 5432,
+        database: 'svc',
+      },
+    });
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      visibility: 'public',
+      servicePath: '/servicepath',
+    });
+    mongoMocks.retrieveDA.mockResolvedValue(null);
+
+    await fetchFDA(
+      'fda1',
+      'SELECT age, timeinstant, name FROM users;',
+      'svc',
+      'public',
+      '/servicepath',
+      'test FDA',
+      {
+        type: 'none',
+      },
+      'timeinstant',
+      undefined,
+      true,
+    );
+
+    expect(dbMocks.copyQueryToParquet).toHaveBeenCalledWith(
+      {},
+      'SELECT CAST(NULL AS INTEGER) AS "age", CAST(NULL AS TIMESTAMP) AS "timeinstant", CAST(NULL AS VARCHAR) AS "name" WHERE FALSE',
+      'svc/servicepath/fda1.parquet',
+      'timeinstant',
+      undefined,
+      undefined,
+    );
+    expect(mongoMocks.storeDA).toHaveBeenCalledWith(
+      'svc',
+      'fda1',
+      '/servicepath',
+      'defaultDataAccess',
+      'Default Data Access providing access to whole FDA data. It has parameters for all columns in the FDA.',
+      `SELECT *, COUNT(*) OVER() as __total WHERE ($age IS NULL OR "age" IN (SELECT CAST(value AS INTEGER) FROM unnest(string_split($age, ',')) AS split(value))) AND ($timeinstant IS NULL OR DATE_TRUNC('millisecond', CAST("timeinstant" AS TIMESTAMP)) = DATE_TRUNC('millisecond', CAST($timeinstant AS TIMESTAMP))) AND ($name IS NULL OR "name" IN (SELECT CAST(value AS VARCHAR) FROM unnest(string_split($name, ',')) AS split(value))) AND ($start IS NULL OR CAST("timeinstant" AS TIMESTAMP) >= CAST($start AS TIMESTAMP)) AND ($finish IS NULL OR CAST("timeinstant" AS TIMESTAMP) <= CAST($finish AS TIMESTAMP)) LIMIT CAST($pageSize AS BIGINT) OFFSET CAST($pageStart AS BIGINT)`,
+      [
+        { name: 'age', default: null },
+        { name: 'timeinstant', default: null },
+        { name: 'name', default: null },
+        { name: 'start', default: null },
+        { name: 'finish', default: null },
+        { name: 'pageSize', default: '9223372036854775807' },
+        { name: 'pageStart', default: 0 },
+      ],
+    );
+  });
+
   test('creates default DA with optional filters, time range and pagination params', async () => {
     const describeRun = jest.fn().mockResolvedValue({
       getRowObjectsJson: () => [
@@ -1202,7 +1279,7 @@ describe('fetchFDA', () => {
       '/servicepath',
       'defaultDataAccess',
       'Default Data Access providing access to whole FDA data. It has parameters for all columns in the FDA.',
-      'SELECT *, COUNT(*) OVER() as __total WHERE ($entity_id IS NULL OR "entity-id" = $entity_id) AND ($limit IS NULL OR "limit" = $limit) AND ($timeinstant IS NULL OR DATE_TRUNC(\'millisecond\', CAST("timeinstant" AS TIMESTAMP)) = DATE_TRUNC(\'millisecond\', CAST($timeinstant AS TIMESTAMP))) AND ($start IS NULL OR CAST("timeinstant" AS TIMESTAMP) >= CAST($start AS TIMESTAMP)) AND ($finish IS NULL OR CAST("timeinstant" AS TIMESTAMP) <= CAST($finish AS TIMESTAMP)) LIMIT CAST($pageSize AS BIGINT) OFFSET CAST($pageStart AS BIGINT)',
+      `SELECT *, COUNT(*) OVER() as __total WHERE ($entity_id IS NULL OR "entity-id" = $entity_id) AND ($limit IS NULL OR "limit" = $limit) AND ($timeinstant IS NULL OR DATE_TRUNC('millisecond', CAST("timeinstant" AS TIMESTAMP)) = DATE_TRUNC('millisecond', CAST($timeinstant AS TIMESTAMP))) AND ($start IS NULL OR CAST("timeinstant" AS TIMESTAMP) >= CAST($start AS TIMESTAMP)) AND ($finish IS NULL OR CAST("timeinstant" AS TIMESTAMP) <= CAST($finish AS TIMESTAMP)) LIMIT CAST($pageSize AS BIGINT) OFFSET CAST($pageStart AS BIGINT)`,
       [
         { name: 'entity_id', default: null },
         { name: 'limit', default: null },
@@ -1385,7 +1462,7 @@ describe('fetchFDA', () => {
       '/servicepath',
       'defaultDataAccess',
       'Default Data Access providing access to whole FDA data. It has parameters for all columns in the FDA.',
-      'SELECT *, COUNT(*) OVER() as __total WHERE ($name IS NULL OR "name" = $name) LIMIT CAST($pageSize AS BIGINT) OFFSET CAST($pageStart AS BIGINT)',
+      `SELECT *, COUNT(*) OVER() as __total WHERE ($name IS NULL OR "name" = $name) LIMIT CAST($pageSize AS BIGINT) OFFSET CAST($pageStart AS BIGINT)`,
       [
         { name: 'name', default: null },
         { name: 'pageSize', default: '9223372036854775807' },
@@ -1437,7 +1514,7 @@ describe('fetchFDA', () => {
       '/servicepath',
       'defaultDataAccess',
       'Default Data Access providing access to whole FDA data. It has parameters for all columns in the FDA.',
-      'SELECT *, COUNT(*) OVER() as __total WHERE ($timeinstant IS NULL OR DATE_TRUNC(\'millisecond\', CAST("TimeInstant" AS TIMESTAMP)) = DATE_TRUNC(\'millisecond\', CAST($timeinstant AS TIMESTAMP))) AND ($name IS NULL OR "name" = $name) AND ($start IS NULL OR CAST("TimeInstant" AS TIMESTAMP) >= CAST($start AS TIMESTAMP)) AND ($finish IS NULL OR CAST("TimeInstant" AS TIMESTAMP) <= CAST($finish AS TIMESTAMP)) LIMIT CAST($pageSize AS BIGINT) OFFSET CAST($pageStart AS BIGINT)',
+      `SELECT *, COUNT(*) OVER() as __total WHERE ($timeinstant IS NULL OR DATE_TRUNC('millisecond', CAST("TimeInstant" AS TIMESTAMP)) = DATE_TRUNC('millisecond', CAST($timeinstant AS TIMESTAMP))) AND ($name IS NULL OR "name" = $name) AND ($start IS NULL OR CAST("TimeInstant" AS TIMESTAMP) >= CAST($start AS TIMESTAMP)) AND ($finish IS NULL OR CAST("TimeInstant" AS TIMESTAMP) <= CAST($finish AS TIMESTAMP)) LIMIT CAST($pageSize AS BIGINT) OFFSET CAST($pageStart AS BIGINT)`,
       [
         { name: 'timeinstant', default: null },
         { name: 'name', default: null },
@@ -1492,7 +1569,7 @@ describe('fetchFDA', () => {
       '/servicepath',
       'defaultDataAccess',
       'Default Data Access providing access to whole FDA data. It has parameters for all columns in the FDA.',
-      'SELECT *, COUNT(*) OVER() as __total WHERE ($timeinstant IS NULL OR "timeinstant" = $timeinstant) AND ($name IS NULL OR "name" = $name) LIMIT CAST($pageSize AS BIGINT) OFFSET CAST($pageStart AS BIGINT)',
+      `SELECT *, COUNT(*) OVER() as __total WHERE ($timeinstant IS NULL OR "timeinstant" = $timeinstant) AND ($name IS NULL OR "name" = $name) LIMIT CAST($pageSize AS BIGINT) OFFSET CAST($pageStart AS BIGINT)`,
       [
         { name: 'timeinstant', default: null },
         { name: 'name', default: null },
@@ -1595,7 +1672,7 @@ describe('fetchFDA', () => {
       '/servicepath',
       'defaultDataAccess',
       'Default Data Access providing access to whole FDA data. It has parameters for all columns in the FDA.',
-      'SELECT *, COUNT(*) OVER() as __total WHERE ($col_123value IS NULL OR "123value" = $col_123value) AND ($col IS NULL OR "!!!" = $col) AND ($offset IS NULL OR "offset" = $offset) AND ($my_col IS NULL OR "my""col" = $my_col) LIMIT CAST($pageSize AS BIGINT) OFFSET CAST($pageStart AS BIGINT)',
+      `SELECT *, COUNT(*) OVER() as __total WHERE ($col_123value IS NULL OR "123value" = $col_123value) AND ($col IS NULL OR "!!!" = $col) AND ($offset IS NULL OR "offset" = $offset) AND ($my_col IS NULL OR "my""col" = $my_col) LIMIT CAST($pageSize AS BIGINT) OFFSET CAST($pageStart AS BIGINT)`,
       [
         { name: 'col_123value', default: null },
         { name: 'col', default: null },

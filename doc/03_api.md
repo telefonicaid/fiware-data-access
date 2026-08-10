@@ -1164,7 +1164,7 @@ _**Multipart form fields**_
 | Field               | Optional | Type           | Description                                                                                                                                                                                                           |
 | ------------------- | -------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`                |          | string         | FDA identifier. Validation of allowed characters is performed during processing; the API accepts the value and returns `202 Accepted`. Invalid identifiers will cause the FDA to fail during asynchronous processing. |
-| `file`              |          | file           | CSV/XLS/XLSX file content.                                                                                                                                                                                                    |
+| `file`              |          | file           | CSV/XLS/XLSX file content.                                                                                                                                                                                            |
 | `description`       | ✓        | string         | Optional FDA description.                                                                                                                                                                                             |
 | `timeColumn`        | ✓        | string         | Time column name. Presence and type are validated asynchronously during processing; the API accepts the value on upload.                                                                                              |
 | `objStgConf`        | ✓        | JSON string    | Object storage options (`partition`, `compression`).                                                                                                                                                                  |
@@ -1758,7 +1758,8 @@ None
 > incrementally and avoid these issues. The default output type may change in a future release; explicitly specifying
 > the desired format is recommended.
 >
-> Moreover, `outputType=json` could be discontinued in the future, so you can have backward compatibility issues is you still use it.
+> Moreover, `outputType=json` could be discontinued in the future, so you can have backward compatibility issues is you
+> still use it.
 
 #### FDA data query `GET /{visibility}/fdas/{fdaId}/data`
 
