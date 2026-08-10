@@ -185,7 +185,10 @@ export async function startFetcher() {
   await agenda.start();
   logger.info('[Fetcher] Agenda started');
 
-  setInterval(() => {
+  let heartbeatTimer;
+  heartbeatTimer = setInterval(() => {
     logger.debug('[Fetcher] Heartbeat: alive');
   }, 60000);
+
+  heartbeatTimer.unref();
 }
