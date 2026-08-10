@@ -37,17 +37,18 @@ Variables related to the environment of the application:
 | `FDA_NODE_ENV`    | ✓        | string | Level of the node environment. Possible values are `development` and `production`. Value is `development` by default. |
 | `FDA_SERVER_PORT` | ✓        | number | Port used by FDA server. Value is `8080` by default.                                                                  |
 
-#### Instance Roles
+### Instance Roles
 
 Variables that define which components of the application are executed by this instance:
 
-| Variable                           | Optional | Type    | Description                                                                                                                                                          |
-| ---------------------------------- | -------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `FDA_ROLE_APISERVER`               | ✓        | boolean | If `true`, the instance runs the API server to handle HTTP requests. Default `true`.                                                                                 |
-| `FDA_ROLE_FETCHER`                 | ✓        | boolean | If `true`, the instance runs the fetcher responsible for regenerating and updating FDAs. Default `true`.                                                             |
-| `FDA_ROLE_SYNCQUERIES`             | ✓        | boolean | If `true`, the API instance accepts creation of fresh queries, `GET /{visibility}/fdas/{fdaId}/data` and executes FDAs directly against PostgreSQL. Default `false`. |
-| `FDA_MAX_CONCURRENT_FRESH_QUERIES` | ✓        | number  | Maximum number of concurrent direct fresh FDA queries accepted by the API instance. Additional requests return `429 TooManyFreshQueries`. Default `5`.               |
-| `FDA_CREATE_DEFAULT_DATA_ACCESS`   | ✓        | boolean | If `true`, FDA creation also creates a built-in `defaultDataAccess` DA unless the request overrides it. Default `true`.                                              |
+| Variable                            | Optional | Type    | Description                                                                                                                                                          |
+| ----------------------------------- | -------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FDA_ROLE_APISERVER`                | ✓        | boolean | If `true`, the instance runs the API server to handle HTTP requests. Default `true`.                                                                                 |
+| `FDA_ROLE_FETCHER`                  | ✓        | boolean | If `true`, the instance runs the fetcher responsible for regenerating and updating FDAs. Default `true`.                                                             |
+| `FDA_ROLE_SYNCQUERIES`              | ✓        | boolean | If `true`, the API instance accepts creation of fresh queries, `GET /{visibility}/fdas/{fdaId}/data` and executes FDAs directly against PostgreSQL. Default `false`. |
+| `FDA_MAX_CONCURRENT_FRESH_QUERIES`  | ✓        | number  | Maximum number of concurrent direct fresh FDA queries accepted by the API instance. Additional requests return `429 TooManyFreshQueries`. Default `5`.               |
+| `FDA_CREATE_DEFAULT_DATA_ACCESS`    | ✓        | boolean | If `true`, FDA creation also creates a built-in `defaultDataAccess` DA unless the request overrides it. Default `true`.                                              |
+| `FDA_FETCHER_HEARTBEAT_INTERVAL_MS` | ✓        | number  | Interval in milliseconds between Fetcher heartbeat logs. Default `60000`. Set to `0` to disable the heartbeat.                                                       |
 
 > Note: By default, an instance runs both roles (API server and Fetcher). You can disable one to separate
 > responsibilities.
@@ -153,6 +154,7 @@ FDA_ROLE_FETCHER=true
 FDA_ROLE_SYNCQUERIES=true
 FDA_MAX_CONCURRENT_FRESH_QUERIES=5
 FDA_CREATE_DEFAULT_DATA_ACCESS=true
+FDA_FETCHER_HEARTBEAT_INTERVAL_MS=60000
 
 # POSTGRESQL POOL
 FDA_PG_POOL_MAX=10
