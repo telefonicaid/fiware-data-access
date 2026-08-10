@@ -33,9 +33,16 @@ const getAgendaMock = jest.fn(() => agendaMock);
 const processFDAAsyncMock = jest.fn().mockResolvedValue(undefined);
 const processUploadFDAJobMock = jest.fn().mockResolvedValue(undefined);
 const loggerMock = {
+  debug: jest.fn(),
   info: jest.fn(),
   error: jest.fn(),
 };
+const childLoggerMock = {
+  warn: jest.fn(),
+  info: jest.fn(),
+  error: jest.fn(),
+};
+const runWithLoggerMock = jest.fn(async (logger, fn) => fn());
 const cleanPartitionMock = jest.fn();
 
 async function loadFetcherModule() {
@@ -47,8 +54,13 @@ async function loadFetcherModule() {
   processFDAAsyncMock.mockClear();
   processUploadFDAJobMock.mockClear();
   cleanPartitionMock.mockClear();
+  loggerMock.debug.mockClear();
   loggerMock.info.mockClear();
   loggerMock.error.mockClear();
+  childLoggerMock.warn.mockClear();
+  childLoggerMock.info.mockClear();
+  childLoggerMock.error.mockClear();
+  runWithLoggerMock.mockClear();
 
   await jest.unstable_mockModule('../../src/lib/jobs.js', () => ({
     getAgenda: getAgendaMock,
@@ -62,6 +74,8 @@ async function loadFetcherModule() {
 
   await jest.unstable_mockModule('../../src/lib/utils/logger.js', () => ({
     getBasicLogger: () => loggerMock,
+    createChildLogger: jest.fn(() => childLoggerMock),
+    runWithLogger: runWithLoggerMock,
   }));
 
   return import('../../src/fetcher.js');
@@ -177,9 +191,12 @@ describe('fetcher', () => {
       },
     });
 
-    expect(loggerMock.error).toHaveBeenCalledWith(
-      'Fetcher error: ',
-      expect.any(Error),
+    expect(childLoggerMock.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        err: expect.any(Error),
+        fdaId: 'fdaA',
+      }),
+      'Job failed: clean-partition',
     );
   });
 
@@ -244,9 +261,12 @@ describe('fetcher', () => {
       },
     });
 
-    expect(loggerMock.error).toHaveBeenCalledWith(
-      'Fetcher error: ',
-      expect.any(Error),
+    expect(childLoggerMock.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        err: expect.any(Error),
+        fdaId: 'fdaUploadA',
+      }),
+      'Job failed: upload-fda',
     );
   });
 });
