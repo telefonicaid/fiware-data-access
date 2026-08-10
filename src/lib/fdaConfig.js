@@ -111,6 +111,10 @@ const envVarsSchema = {
       type: 'boolean',
       default: false,
     },
+    FDA_FETCHER_HEARTBEAT_INTERVAL_MS: {
+      type: 'number',
+      default: 60000,
+    },
     FDA_MAX_CONCURRENT_FRESH_QUERIES: {
       type: 'number',
       default: 5,
@@ -170,6 +174,9 @@ export const config = {
     apiServer: envVars.FDA_ROLE_APISERVER,
     fetcher: envVars.FDA_ROLE_FETCHER,
     syncQueries: envVars.FDA_ROLE_SYNCQUERIES,
+  },
+  fetcher: {
+    heartbeatIntervalMs: envVars.FDA_FETCHER_HEARTBEAT_INTERVAL_MS,
   },
   freshQueries: {
     maxConcurrent: envVars.FDA_MAX_CONCURRENT_FRESH_QUERIES,

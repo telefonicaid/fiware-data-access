@@ -33,6 +33,7 @@ import {
   createChildLogger,
   runWithLogger,
 } from './lib/utils/logger.js';
+import { config } from './lib/fdaConfig.js';
 import { v4 as uuidv4 } from 'uuid';
 
 const logger = getBasicLogger();
@@ -186,9 +187,11 @@ export async function startFetcher() {
   logger.info('[Fetcher] Agenda started');
 
   let heartbeatTimer;
-  heartbeatTimer = setInterval(() => {
-    logger.debug('[Fetcher] Heartbeat: alive');
-  }, 60000);
+  if (config.fetcher.heartbeatIntervalMs > 0) {
+    heartbeatTimer = setInterval(() => {
+      logger.debug('[Fetcher] Heartbeat: alive');
+    }, config.fetcher.heartbeatIntervalMs);
 
-  heartbeatTimer.unref();
+    heartbeatTimer.unref();
+  }
 }
