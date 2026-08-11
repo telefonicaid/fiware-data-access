@@ -257,7 +257,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use((req, res, next) => {
   const reqStartMs = onRequestStart();
   req.log = createChildLogger({
-    corr: req.get('Fiware-Correlator') || 'n/a',
+    corr: req.get('Fiware-Correlator'),
     service: req.get('Fiware-Service') || 'n/a',
     subservice: req.get('Fiware-ServicePath') || 'n/a',
   });
