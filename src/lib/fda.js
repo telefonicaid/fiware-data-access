@@ -113,6 +113,7 @@ const FRESH_CURSOR_BATCH_SIZE = 250;
 
 const DEFAULT_DATASOURCE_ID = 'default';
 const SUPPORTED_DATASOURCE_TYPES = new Set(['postgres', 'mongodb']);
+const DISALLOWED_MONGO_AGGREGATION_STAGES = new Set(['$out', '$merge']);
 
 function assertSupportedDatasourceType(type) {
   if (!SUPPORTED_DATASOURCE_TYPES.has(type)) {
@@ -135,7 +136,7 @@ export function validateMongoFDAContract(query, timeColumn, cached) {
   if (queryType === 'find') {
     validateFindQuery(filter, projection, timeColumn);
   } else if (queryType === 'aggregation') {
-    validateAggregationQuery(aggregation);
+    validateAggregationQuery(aggregation, timeColumn);
   }
 
   validateCacheSupport(cached);
@@ -218,7 +219,7 @@ function validateTimeColumnInProjection(timeColumn, projection) {
   }
 }
 
-function validateAggregationQuery(aggregation) {
+function validateAggregationQuery(aggregation, timeColumn) {
   if (!Array.isArray(aggregation) || aggregation.length === 0) {
     throw new FDAError(
       400,
@@ -226,11 +227,69 @@ function validateAggregationQuery(aggregation) {
       'Mongo FDA aggregation must be a non-empty array',
     );
   }
-  throw new FDAError(
-    400,
-    'MongoAggregationNotSupported',
-    'Aggregation pipelines are not supported yet',
-  );
+
+  for (const stage of aggregation) {
+    if (!stage || typeof stage !== 'object' || Array.isArray(stage)) {
+      throw new FDAError(
+        400,
+        'InvalidMongoFDAContract',
+        'Mongo FDA aggregation stages must be JSON objects',
+      );
+    }
+
+    const stageNames = Object.keys(stage);
+    if (stageNames.length !== 1) {
+      throw new FDAError(
+        400,
+        'InvalidMongoFDAContract',
+        'Mongo FDA aggregation stages must define a single operator',
+      );
+    }
+
+    const stageName = stageNames[0];
+    if (DISALLOWED_MONGO_AGGREGATION_STAGES.has(stageName)) {
+      throw new FDAError(
+        400,
+        'InvalidMongoFDAContract',
+        `Mongo FDA aggregation stage ${stageName} is not allowed`,
+      );
+    }
+  }
+
+  validateTimeColumnInAggregationProjection(timeColumn, aggregation);
+}
+
+function validateTimeColumnInAggregationProjection(timeColumn, aggregation) {
+  if (!timeColumn) {
+    return;
+  }
+
+  const finalStage = aggregation[aggregation.length - 1];
+  const finalProjectStage = finalStage?.$project;
+
+  if (!finalProjectStage) {
+    return;
+  }
+
+  if (
+    finalProjectStage === null ||
+    typeof finalProjectStage !== 'object' ||
+    Array.isArray(finalProjectStage)
+  ) {
+    throw new FDAError(
+      400,
+      'InvalidMongoFDAContract',
+      'Mongo FDA final $project stage must be an object',
+    );
+  }
+
+  if (!(timeColumn in finalProjectStage)) {
+    throw new FDAError(
+      400,
+      'InvalidMongoFDAContract',
+      'Mongo FDA timeColumn must be included in final aggregation $project stage',
+    );
+  }
 }
 
 function validateCacheSupport(cached) {
