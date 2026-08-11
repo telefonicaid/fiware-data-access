@@ -417,6 +417,10 @@ All logs share a common set of fields:
 | `subsrv` | FIWARE service path (from `Fiware-ServicePath` header or job data). | `/public`                      |
 | `msg`    | Human‑readable log message.                                         | `Job completed successfully`   |
 
+> _Fiware-Correlator_: If provided, its value is used as the `corr` field. If not provided, the system automatically
+> generates a UUID as the correlator to enable internal traceability. The trans field is always generated as a separate
+> transaction ID.
+
 ### Context Propagation
 
 -   **API requests**:  
