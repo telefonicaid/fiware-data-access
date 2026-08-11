@@ -29,7 +29,7 @@
     "@agendajs/mongo-backend": "~4.0.2",
     "@aws-sdk/client-s3": "~3.972.0",
     "@aws-sdk/lib-storage": "~3.934.0",
-    "@duckdb/node-api": "~1.5.2-r.1",
+    "@duckdb/node-api": "~1.5.5-r.4",
     "agenda": "~6.2.5",
     "ajv": "~8.17.1",
     "cron-parser": "~5.5.0",
