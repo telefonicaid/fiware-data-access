@@ -811,11 +811,12 @@ A FDA is represented by a JSON object with the following fields:
 
 For MongoDB datasources, `query` is an object with the following keys:
 
-| Field        | Type   | Description                                                                |
-| ------------ | ------ | -------------------------------------------------------------------------- |
-| `collection` | string | MongoDB collection name.                                                   |
-| `filter`     | object | MongoDB filter document.                                                   |
-| `projection` | object | MongoDB projection document defining the fields materialized into the FDA. |
+| Field         | Type   | Description                                                                                             |
+| ------------- | ------ | ------------------------------------------------------------------------------------------------------- |
+| `collection`  | string | MongoDB collection name.                                                                                |
+| `filter`      | object | MongoDB filter document. Mutually exclusive with `aggregation`.                                         |
+| `projection`  | object | MongoDB projection document defining the fields materialized into the FDA (used with `filter`).         |
+| `aggregation` | array  | MongoDB aggregation pipeline. Mutually exclusive with `filter`. Each stage must be a single-key object. |
 
 In MongoDB, projection can include more complex operators like `$slice` or `$elemMatch`. See the
 [MongoDB projection documentation](https://www.mongodb.com/docs/manual/tutorial/project-fields-from-query-results/) for
@@ -838,12 +839,25 @@ For example:
 -   Column: `device.name`
 -   Parameter: `device_name`
 
+Example Mongo aggregation query:
+
+```json
+{
+    "collection": "sensors",
+    "aggregation": [{ "$match": { "site": "lab" } }, { "$group": { "_id": "$category", "n": { "$sum": 1 } } }]
+}
+```
+
 Datasource-specific constraints:
 
 -   Mongo datasource FDAs are currently cached-only (`cached=true`).
 -   Mongo datasource FDAs do not support `refreshPolicy.type=window`.
--   If `timeColumn` is provided for Mongo FDAs, it must be included in `query.projection` (or the `query.projection`
-    omitted at all as in this case no projection is done and all fields are retrieved).
+-   `filter` and `aggregation` are mutually exclusive. Exactly one of them must be provided.
+-   Aggregation pipelines are read-only. Stages `$out` and `$merge` are not allowed.
+-   For `filter` queries, if `timeColumn` is provided and `query.projection` is present, the projection must include
+    `timeColumn`.
+-   For `aggregation` queries, if `timeColumn` is provided and the final stage is `$project`, that final projection must
+    include `timeColumn`.
 
 #### Refresh Policy object
 
