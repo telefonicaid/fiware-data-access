@@ -385,5 +385,170 @@ export function registerMongoFdasIntegrationTests({
         });
       }
     });
+
+    test('POST /fdas supports Mongo aggregation pipelines', async () => {
+      const baseUrl = getBaseUrl();
+      const aggFdaId = 'mongo_cached_fda_agg';
+      const aggDaId = 'mongo_cached_da_agg';
+
+      try {
+        const createFdaRes = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Content-Type': 'application/json',
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: aggFdaId,
+            query: {
+              collection: collectionName,
+              aggregation: [
+                { $match: { site: 'lab' } },
+                { $group: { _id: '$status', n: { $sum: 1 } } },
+              ],
+            },
+            description: 'mongo cached aggregation fda integration fixture',
+            cached: true,
+            datasourceId,
+          },
+        });
+
+        if (createFdaRes.status >= 400) {
+          console.error(
+            'Failed creating aggregation Mongo FDA fixture:',
+            createFdaRes.status,
+            createFdaRes.json ?? createFdaRes.text,
+          );
+        }
+        expect(createFdaRes.status).toBe(202);
+
+        await waitUntilFDACompleted({
+          baseUrl,
+          service,
+          fdaId: aggFdaId,
+          visibility,
+        });
+
+        const createDaRes = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas/${aggFdaId}/das`,
+          headers: { 'Fiware-Service': service },
+          body: {
+            id: aggDaId,
+            description: 'mongo cached aggregation da integration fixture',
+            query: `
+              SELECT _id, n
+              ORDER BY _id
+            `,
+            params: [],
+          },
+        });
+
+        if (createDaRes.status >= 400) {
+          console.error(
+            'Failed creating aggregation Mongo DA fixture:',
+            createDaRes.status,
+            createDaRes.json ?? createDaRes.text,
+          );
+        }
+        expect(createDaRes.status).toBe(204);
+
+        const queryRes = await httpReq({
+          method: 'GET',
+          url: buildDaDataUrl(baseUrl, servicePath, aggFdaId, aggDaId),
+          headers: { 'Fiware-Service': service },
+        });
+
+        if (queryRes.status >= 400) {
+          console.error(
+            'Mongo cached aggregation DA JSON query failed:',
+            queryRes.status,
+            queryRes.json ?? queryRes.text,
+          );
+        }
+
+        expect(queryRes.status).toBe(200);
+        expect(queryRes.json).toEqual([
+          { _id: 'ok', n: '1' },
+          { _id: 'warn', n: '1' },
+        ]);
+      } finally {
+        await httpReq({
+          method: 'DELETE',
+          url: `${baseUrl}/${visibility}/fdas/${aggFdaId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+      }
+    });
+
+    test('POST /fdas rejects disallowed aggregation stages', async () => {
+      const baseUrl = getBaseUrl();
+
+      const res = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Content-Type': 'application/json',
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: 'mongo_agg_out_not_allowed',
+          query: {
+            collection: collectionName,
+            aggregation: [
+              { $match: { site: 'lab' } },
+              { $out: 'forbidden_target' },
+            ],
+          },
+          description: 'mongo aggregation out not allowed',
+          cached: true,
+          datasourceId,
+        },
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.json.error).toBe('InvalidMongoFDAContract');
+      expect(res.json.description).toContain('stage $out is not allowed');
+    });
+
+    test('POST /fdas rejects aggregation final $project without timeColumn', async () => {
+      const baseUrl = getBaseUrl();
+
+      const res = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Content-Type': 'application/json',
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: 'mongo_agg_timecolumn_missing',
+          query: {
+            collection: collectionName,
+            aggregation: [
+              { $match: { site: 'lab' } },
+              { $project: { status: 1 } },
+            ],
+          },
+          timeColumn: 'reading',
+          description: 'mongo aggregation missing timeColumn in final project',
+          cached: true,
+          datasourceId,
+        },
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.json.error).toBe('InvalidMongoFDAContract');
+      expect(res.json.description).toContain(
+        'timeColumn must be included in final aggregation $project stage',
+      );
+    });
   });
 }
