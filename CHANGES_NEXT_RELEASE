@@ -1,4 +1,4 @@
-- Add: use notification fiware headers values (srv, subsrv, corr) in logs (#188)
+- Add: use FIWARE headers (`srv`, `subsrv`, `corr`) provided in API requests for logging, with a generated correlation ID when `corr` is not provided (#188)
 - Add: improve fetcher logging (Agenda jobs) and add Heartbeat with configurable interval (`FDA_FETCHER_HEARTBEAT_INTERVAL_MS`) (#214)
 - Add: generated defaultDataAccess now supports comma-separated values for equality filters when schema is available, while remaining fully backward compatible (#253)
 - Add: file upload endpoint POST /{visibility}/fdas/upload supporting CSV, XLS and XLSX files with configurable size limit (FDA_MAX_UPLOAD_SIZE) and automatic Parquet conversion (#57)
