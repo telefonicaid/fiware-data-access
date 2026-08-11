@@ -473,6 +473,12 @@ If a job fails, the log will include `err` with detailed context.
 The Fetcher periodically logs a heartbeat message to indicate that it is alive. The interval can be configured using
 `FDA_FETCHER_HEARTBEAT_INTERVAL_MS`.
 
+Example:
+
+```
+time=2026-08-11T08:36:01.785Z | lvl=DEBUG | corr=n/a | trans=n/a | op=n/a | ver=1.2.0-next | comp=Fda | srv=n/a | subsrv=n/a | msg=[Fetcher] Heartbeat: alive
+```
+
 The heartbeat is enabled when the configured interval is greater than `0`. Set it to `0` (or a negative value) to
 disable the heartbeat.
 
