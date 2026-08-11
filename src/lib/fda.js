@@ -2628,7 +2628,7 @@ export async function uploadFDA({
   const normalizedVisibility = normalizeVisibility(visibility);
   const normalizedServicePath = normalizeServicePath(servicePath);
 
-  logger.debug({ fdaId, service }, 'Starting upload FDA');
+  logger.debug({ fdaId }, 'Starting upload FDA');
 
   const refreshPolicy = { type: 'none' };
   validateUploadOptions(timeColumn, objStgConf);

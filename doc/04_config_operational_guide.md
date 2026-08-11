@@ -37,17 +37,18 @@ Variables related to the environment of the application:
 | `FDA_NODE_ENV`    | ✓        | string | Level of the node environment. Possible values are `development` and `production`. Value is `development` by default. |
 | `FDA_SERVER_PORT` | ✓        | number | Port used by FDA server. Value is `8080` by default.                                                                  |
 
-#### Instance Roles
+### Instance Roles
 
 Variables that define which components of the application are executed by this instance:
 
-| Variable                           | Optional | Type    | Description                                                                                                                                                          |
-| ---------------------------------- | -------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `FDA_ROLE_APISERVER`               | ✓        | boolean | If `true`, the instance runs the API server to handle HTTP requests. Default `true`.                                                                                 |
-| `FDA_ROLE_FETCHER`                 | ✓        | boolean | If `true`, the instance runs the fetcher responsible for regenerating and updating FDAs. Default `true`.                                                             |
-| `FDA_ROLE_SYNCQUERIES`             | ✓        | boolean | If `true`, the API instance accepts creation of fresh queries, `GET /{visibility}/fdas/{fdaId}/data` and executes FDAs directly against PostgreSQL. Default `false`. |
-| `FDA_MAX_CONCURRENT_FRESH_QUERIES` | ✓        | number  | Maximum number of concurrent direct fresh FDA queries accepted by the API instance. Additional requests return `429 TooManyFreshQueries`. Default `5`.               |
-| `FDA_CREATE_DEFAULT_DATA_ACCESS`   | ✓        | boolean | If `true`, FDA creation also creates a built-in `defaultDataAccess` DA unless the request overrides it. Default `true`.                                              |
+| Variable                            | Optional | Type    | Description                                                                                                                                                          |
+| ----------------------------------- | -------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FDA_ROLE_APISERVER`                | ✓        | boolean | If `true`, the instance runs the API server to handle HTTP requests. Default `true`.                                                                                 |
+| `FDA_ROLE_FETCHER`                  | ✓        | boolean | If `true`, the instance runs the fetcher responsible for regenerating and updating FDAs. Default `true`.                                                             |
+| `FDA_ROLE_SYNCQUERIES`              | ✓        | boolean | If `true`, the API instance accepts creation of fresh queries, `GET /{visibility}/fdas/{fdaId}/data` and executes FDAs directly against PostgreSQL. Default `false`. |
+| `FDA_MAX_CONCURRENT_FRESH_QUERIES`  | ✓        | number  | Maximum number of concurrent direct fresh FDA queries accepted by the API instance. Additional requests return `429 TooManyFreshQueries`. Default `5`.               |
+| `FDA_CREATE_DEFAULT_DATA_ACCESS`    | ✓        | boolean | If `true`, FDA creation also creates a built-in `defaultDataAccess` DA unless the request overrides it. Default `true`.                                              |
+| `FDA_FETCHER_HEARTBEAT_INTERVAL_MS` | ✓        | number  | Interval in milliseconds between Fetcher heartbeat logs. Default `60000`. Set to `0` to disable the heartbeat.                                                       |
 
 > Note: By default, an instance runs both roles (API server and Fetcher). You can disable one to separate
 > responsibilities.
@@ -153,6 +154,7 @@ FDA_ROLE_FETCHER=true
 FDA_ROLE_SYNCQUERIES=true
 FDA_MAX_CONCURRENT_FRESH_QUERIES=5
 FDA_CREATE_DEFAULT_DATA_ACCESS=true
+FDA_FETCHER_HEARTBEAT_INTERVAL_MS=60000
 
 # POSTGRESQL POOL
 FDA_PG_POOL_MAX=10
@@ -390,6 +392,113 @@ The following table summarizes the main metrics exposed by `GET /metrics`, their
 | `fda_process_resident_memory_bytes`         | gauge   | none                                                                                     | RSS memory usage in bytes.                                        | sustained growth / threshold                |
 | `fda_process_heap_total_bytes`              | gauge   | none                                                                                     | Total V8 heap allocation.                                         | no alert by itself                          |
 | `fda_process_heap_used_bytes`               | gauge   | none                                                                                     | Used V8 heap memory.                                              | sustained growth / threshold                |
+
+---
+
+## Logging and Traceability
+
+FIWARE Data Access generates structured logs that include context from FIWARE headers (`Fiware-Service`,
+`Fiware-ServicePath`, `Fiware-Correlator`) to enable end‑to‑end tracing across requests and background jobs.
+
+### Log Structure
+
+All logs share a common set of fields:
+
+| Field    | Description                                                         | Example                        |
+| -------- | ------------------------------------------------------------------- | ------------------------------ |
+| `time`   | ISO‑8601 timestamp (UTC).                                           | `2026-08-07T10:43:40.750Z`     |
+| `lvl`    | Log level: `DEBUG`, `INFO`, `WARN`, `ERROR`, `FATAL`.               | `INFO`                         |
+| `corr`   | Correlation ID (from `Fiware-Correlator` header or auto‑generated). | `job-6a75b6d8274b35c6f47b367a` |
+| `trans`  | Transaction ID (auto‑generated per request or job).                 | `6182670e-9489-4312-b85d...`   |
+| `op`     | Operation name (e.g., HTTP route, job name).                        | `refresh-fda`                  |
+| `ver`    | Application version.                                                | `1.2.0-next`                   |
+| `comp`   | Component name (configurable via `FDA_LOG_COMP`).                   | `Fda`                          |
+| `srv`    | FIWARE service (from `Fiware-Service` header or job data).          | `trantor`                      |
+| `subsrv` | FIWARE service path (from `Fiware-ServicePath` header or job data). | `/public`                      |
+| `msg`    | Human‑readable log message.                                         | `Job completed successfully`   |
+
+> _Fiware-Correlator_: If provided, its value is used as the `corr` field. If not provided, the system automatically
+> generates a UUID as the correlator to enable internal traceability. The trans field is always generated as a separate
+> transaction ID.
+
+### Context Propagation
+
+-   **API requests**:  
+    The middleware captures `Fiware-Service`, `Fiware-ServicePath`, and `Fiware-Correlator` headers (if present) and
+    creates a child logger with those values. This logger is used for all logs generated during the request, including
+    database and storage operations.  
+    If a header is missing, the corresponding field defaults to `n/a`.
+
+-   **Fetcher jobs**:  
+    Each Agenda job defines its own child logger with `srv`, `subsrv`, `op` (job type), and a unique `corr` (job
+    identifier). This ensures that all logs emitted during job execution carry the correct tenant context, making it
+    easy to trace operations for a specific FDA.
+
+### API Request Logs
+
+Every API request produces a final log entry with the following metadata:
+
+-   HTTP method, path, request parameters, query, body (truncated after `FDA_LOG_RES_SIZE`).
+-   Response status code, message, size, and body (truncated).
+-   Duration in milliseconds.
+-   Client IP and User‑Agent.
+
+Example:
+
+```
+time=2026-08-07T10:43:36.436Z | lvl=INFO | corr=n/a | trans=cfbbed00-e869-42b9-8087-a2943fa1a89f | op=n/a | ver=1.2.0-next | comp=Fda | srv=trantor | subsrv=/public | method=POST | path=/public/fdas | reqParams={"visibility":"public"} | reqQuery={} | reqBody={"id":"fda_alarms",...} | resCode=202 | resMsg=Accepted | durationMs=249 | ip=::1 | userAgent=curl/8.14.1 | resSize=38 | resBody={"id":"fda_alarms","status":"pending"} | msg=API request completed
+```
+
+### Fetcher Job Logs
+
+Agenda jobs log their start, successful completion, and failures, including:
+
+-   Job type (`op`: `refresh-fda`, `clean-partition`, `upload-fda`, etc.)
+-   Affected FDA ID.
+-   Duration.
+-   Detailed error information (status, type, message, stack for 5xx errors) when a failure occurs.
+
+Example of a successful refresh:
+
+```
+time=2026-08-07T10:43:40.750Z | lvl=DEBUG | corr=job-6a75b6d8274b35c6f47b367a | trans=6182670e-9489-4312-b85d-0743f2529a1f | op=refresh-fda | ver=1.2.0-next | comp=Fda | srv=trantor | subsrv=/public | msg=Job started: refresh-fda
+...
+time=2026-08-07T10:43:40.893Z | lvl=DEBUG | corr=job-6a75b6d8274b35c6f47b367a | trans=... | op=refresh-fda | ... | msg=Job completed successfully: refresh-fda
+```
+
+If a job fails, the log will include `err` with detailed context.
+
+### Fetcher heartbeat
+
+The Fetcher periodically logs a heartbeat message to indicate that it is alive. The interval can be configured using
+`FDA_FETCHER_HEARTBEAT_INTERVAL_MS`.
+
+Example:
+
+```
+time=2026-08-11T08:36:01.785Z | lvl=DEBUG | corr=n/a | trans=n/a | op=n/a | ver=1.2.0-next | comp=Fda | srv=n/a | subsrv=n/a | msg=[Fetcher] Heartbeat: alive
+```
+
+The heartbeat is enabled when the configured interval is greater than `0`. Set it to `0` (or a negative value) to
+disable the heartbeat.
+
+The default interval is `60000` milliseconds (1 minute).
+
+### Observability and Deployment Considerations
+
+-   **stdout/stderr**:  
+    The application writes all logs to `stdout` (and `stderr` for errors). Ensure that your deployment environment
+    (e.g., Kubernetes, systemd, Docker) captures these streams and forwards them to your centralised logging system
+    (ELK, Loki, CloudWatch, etc.). No additional configuration is required inside the application.
+
+-   **Correlation**:  
+    Use the `trans` field to correlate logs from a single API request across different components. Use the `corr` field
+    to correlate logs from a single job execution. For tracking a complete user operation that spans both an API request
+    and a background job (e.g., FDA creation with caching), look for common fields like `fdaId`, `srv`, and `subsrv`.
+
+-   **Log level**:  
+    Set `FDA_LOG_LEVEL` to `DEBUG` during troubleshooting to get detailed operational logs, but use `INFO` or higher in
+    production to avoid excessive log volume.
 
 ---
 
