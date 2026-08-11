@@ -653,8 +653,17 @@ describe('mongo utils', () => {
     expect(fakeClient.close).toHaveBeenCalled();
   });
 
-  test('createMongoCursorReader throws error for aggregation queries', async () => {
-    const { createMongoCursorReader } = await loadMongoModule();
+  test('createMongoCursorReader executes aggregation queries and appends internal limit', async () => {
+    const { createMongoCursorReader, collectionMock } = await loadMongoModule();
+
+    const cursorMock = {
+      next: jest
+        .fn()
+        .mockResolvedValueOnce({ category: 'lab', n: 2 })
+        .mockResolvedValueOnce(null),
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+    collectionMock.aggregate.mockReturnValueOnce(cursorMock);
 
     const dsConfig = {};
 
@@ -663,12 +672,35 @@ describe('mongo utils', () => {
       aggregation: [{ $match: { status: 'active' } }],
     };
 
+    const reader = await createMongoCursorReader(dsConfig, query, { limit: 5 });
+
+    expect(collectionMock.aggregate).toHaveBeenCalledWith([
+      { $match: { status: 'active' } },
+      { $limit: 5 },
+    ]);
+    await expect(reader.columns).toEqual(['category', 'n']);
+    await expect(reader.readNextChunk()).resolves.toEqual([
+      { category: 'lab', n: 2 },
+    ]);
+    await expect(reader.readNextChunk()).resolves.toEqual([]);
+    await reader.close();
+  });
+
+  test('createMongoCursorReader rejects disallowed aggregation write stages', async () => {
+    const { createMongoCursorReader } = await loadMongoModule();
+
     await expect(
-      createMongoCursorReader(dsConfig, query),
+      createMongoCursorReader(
+        {},
+        {
+          collection: 'testCollection',
+          aggregation: [{ $match: { status: 'active' } }, { $merge: 'sink' }],
+        },
+      ),
     ).rejects.toMatchObject({
       status: 400,
-      type: 'NotImplemented',
-      message: 'Mongo aggregation queries are not supported yet',
+      type: 'InvalidMongoFDAContract',
+      message: 'Mongo FDA aggregation stage $merge is not allowed',
     });
   });
 
