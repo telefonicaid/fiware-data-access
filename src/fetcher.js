@@ -176,9 +176,24 @@ export async function startFetcher() {
     });
   };
 
-  agenda.define('refresh-fda', refreshFDA);
-  agenda.define('refresh-fda-recurring', refreshFDA);
-  agenda.define('consistency-refresh-fda-recurring', refreshFDA);
+  const refreshConcurrency =
+    Number(config.fetcher?.maxConcurrentRefreshJobs) || 1;
+
+  agenda.define(
+    'refresh-fda',
+    { concurrency: refreshConcurrency, lockLimit: refreshConcurrency },
+    refreshFDA,
+  );
+  agenda.define(
+    'refresh-fda-recurring',
+    { concurrency: refreshConcurrency, lockLimit: refreshConcurrency },
+    refreshFDA,
+  );
+  agenda.define(
+    'consistency-refresh-fda-recurring',
+    { concurrency: refreshConcurrency, lockLimit: refreshConcurrency },
+    refreshFDA,
+  );
   agenda.define('clean-partition', cleanPartitionFDA);
   agenda.define('clean-partition-recurring', cleanPartitionFDA);
   agenda.define('upload-fda', uploadFDAJob);

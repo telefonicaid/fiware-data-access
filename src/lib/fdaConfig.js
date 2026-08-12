@@ -102,6 +102,10 @@ const envVarsSchema = {
       type: 'string',
       default: '10GB',
     },
+    FDA_MAX_CONCURRENT_REFRESH_JOBS: {
+      type: 'number',
+      default: 1,
+    },
     FDA_UPLOAD_PART_SIZE_MB: {
       type: 'number',
       default: 10,
