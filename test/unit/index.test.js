@@ -652,7 +652,7 @@ describe('index routes - validation and middleware branches', () => {
       .post('/plugin/cda/api/doQuery')
       .set('Fiware-Service', 'svc')
       .set('Fiware-ServicePath', '/servicepath')
-      .send({ path: '/public/svc', dataAccessId: 'da1' })
+      .send({ path: '/public/svc', dataAccessId: 'da1', outputType: 'json' })
       .expect(200)
       .expect({ rows: [] });
 
@@ -1030,6 +1030,7 @@ describe('index routes - validation and middleware branches', () => {
         service: 'svc',
         servicePath: '/servicepath',
         minAge: '18',
+        outputType: 'json',
       })
       .expect(200);
 
@@ -1074,6 +1075,7 @@ describe('index routes - validation and middleware branches', () => {
       .query({
         service: 'svc',
         servicePath: '/servicepath',
+        outputType: 'json',
       })
       .expect(200);
 
@@ -1209,7 +1211,7 @@ describe('index routes - validation and middleware branches', () => {
       .post('/plugin/cda/api/doQuery')
       .set('Fiware-Service', 'svc')
       .set('Fiware-ServicePath', '/servicepath')
-      .send({ path: '/public/svc', dataAccessId: 'da1' });
+      .send({ path: '/public/svc', dataAccessId: 'da1', outputType: 'json' });
 
     expect(res.status).toBe(500);
     expect(res.body).toEqual({
