@@ -57,6 +57,7 @@ export function registerCdaCompatibilityIntegrationTests({
           id: cdaFdaId,
           query: 'SELECT id, name, age FROM public.users ORDER BY id',
           description: 'users dataset for CDA',
+          outputType: 'json',
         },
       });
 
@@ -96,6 +97,7 @@ export function registerCdaCompatibilityIntegrationTests({
           paramminAge: '0',
           pageSize: '2',
           pageStart: '0',
+          outputType: 'json',
         },
       });
 
@@ -129,6 +131,7 @@ export function registerCdaCompatibilityIntegrationTests({
           dataAccessId: cdaDaId,
           pageSize: '2',
           pageStart: '0',
+          outputType: 'json',
         },
       });
 
@@ -146,6 +149,7 @@ export function registerCdaCompatibilityIntegrationTests({
       url.searchParams.set('paramminAge', '25');
       url.searchParams.set('pageSize', '2');
       url.searchParams.set('pageStart', '0');
+      url.searchParams.set('outputType', 'json');
 
       const res = await httpReq({
         method: 'GET',
@@ -204,6 +208,7 @@ export function registerCdaCompatibilityIntegrationTests({
           id: privateFdaId,
           query: 'SELECT id, name, age FROM public.users ORDER BY id',
           description: 'users dataset for CDA private scope',
+          outputType: 'json',
         },
       });
 
@@ -241,6 +246,7 @@ export function registerCdaCompatibilityIntegrationTests({
           path: `/public/${service}/verticals/sql/${privateFdaId}`,
           dataAccessId: privateDaId,
           paramminAge: '0',
+          outputType: 'json',
         },
       });
 
@@ -410,6 +416,7 @@ export function registerCdaCompatibilityIntegrationTests({
             dataAccessId: cdaDaId,
             pageSize: '10',
             pageStart: '0',
+            outputType: 'json',
           },
         });
 
