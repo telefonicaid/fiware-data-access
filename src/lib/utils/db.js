@@ -73,10 +73,35 @@ async function initDuckDB() {
     logger.debug('Initializing DuckDB global instance...');
     // Lazy import: avoid  "module is already linked" in Jest ESM/VM
     const { DuckDBInstance } = await import('@duckdb/node-api');
-    instance = await DuckDBInstance.create(':memory:');
+    const duckdbDir = String(config.duckdb?.dir || '/tmp/duckdb');
+    const dbPath = path.join(duckdbDir, 'database.db');
+
+    if (!fs.existsSync(duckdbDir)) {
+      fs.mkdirSync(duckdbDir, { recursive: true });
+    }
+
+    instance = await DuckDBInstance.create(dbPath);
 
     // Init connection for config
     const configConn = await instance.connect();
+
+    // Apply configurable DuckDB settings
+    const memoryLimit = String(config.duckdb?.memoryLimit || '1.0GB');
+    const tempDir = String(config.duckdb?.tempDir || '/tmp/duckdb/temp');
+    const maxTemp = String(config.duckdb?.maxTempSize || '10GB');
+
+    await configConn.run(`
+      SET memory_limit='${memoryLimit}';
+    `);
+
+    await configConn.run(`
+      SET temp_directory='${tempDir}';
+    `);
+
+    await configConn.run(`
+      SET max_temp_directory_size='${maxTemp}';
+    `);
+
     await configConn.run(`
       SET extension_directory = '${config.objstg.extensionsDir}';
     `);
