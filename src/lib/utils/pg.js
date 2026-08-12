@@ -26,7 +26,9 @@ import pg from 'pg';
 import { promisify } from 'node:util';
 import { to as copyTo } from 'pg-copy-streams';
 import Cursor from 'pg-cursor';
-import { newUpload } from './aws.js';
+import { Upload } from '@aws-sdk/lib-storage';
+import { pipeline } from 'node:stream/promises';
+import { PassThrough } from 'node:stream';
 import { config } from '../fdaConfig.js';
 import { FDAError } from '../fdaError.js';
 import { getBasicLogger } from './logger.js';
@@ -220,6 +222,7 @@ export async function uploadTable(
   query,
   path,
 ) {
+  const start = Date.now();
   const { username, password, host, port, database } = pgCredentials;
   logger.debug({ bucket, database, query, path }, '[DEBUG]: uploadTable');
   const key = getPoolKey(username, password, host, port, database);
@@ -229,31 +232,49 @@ export async function uploadTable(
   const baseQuery = `COPY (${query}) TO STDOUT WITH CSV HEADER`;
   const pgStream = pgClient.query(copyTo(baseQuery));
 
-  const parallelUploads3 = newUpload(
-    s3Client,
-    bucket,
-    `${path}.csv`,
-    pgStream,
-    25,
-    1,
-  );
+  // PassThrough to enforce backpressure and limit in-flight buffers
+  const passThrough = new PassThrough({ highWaterMark: 64 * 1024 }); // 64KB
 
-  parallelUploads3.on('httpUploadProgress', (progress) => {
+  const partSizeMB = Number(config.fileUpload?.partSizeMB) || 10;
+  const queueSize = Number(config.fileUpload?.queueSize) || 1;
+
+  const upload = new Upload({
+    client: s3Client,
+    params: {
+      Bucket: bucket,
+      Key: `${path}.csv`,
+      Body: passThrough,
+    },
+    partSize: partSizeMB * 1024 * 1024,
+    queueSize,
+  });
+
+  upload.on('httpUploadProgress', (progress) => {
     logger.info(progress, 'Uploading table');
   });
 
   try {
-    await parallelUploads3.done();
+    // Run pipeline (pgStream -> passThrough) and upload concurrently.
+    await Promise.all([pipeline(pgStream, passThrough), upload.done()]);
+
     logger.debug('Upload completed successfully');
   } catch (e) {
-    pgStream.destroy(e);
+    // Ensure PG stream is closed
+    try {
+      pgStream.destroy(e);
+    } catch {
+      // ignore
+    }
+
     throw new FDAError(
       503,
       'UploadError',
       `Error uploading FDA to object storage: ${e.message}`,
     );
   } finally {
-    pgStream.destroy();
+    try {
+      passThrough.destroy();
+    } catch {}
     releasePgClient(key, pgClient);
   }
 }
