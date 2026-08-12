@@ -1616,6 +1616,7 @@ describe('index routes - validation and middleware branches', () => {
           path: '/public/svc/verticals/sql/fda1',
           dataAccessId: 'da1',
         }),
+        outputType: 'ndjson',
       }),
     );
   });
