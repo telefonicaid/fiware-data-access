@@ -1232,7 +1232,7 @@ describe('index routes - validation and middleware branches', () => {
       .post('/plugin/cda/api/doQuery')
       .set('Fiware-Service', 'svc')
       .set('Fiware-ServicePath', '/servicepath')
-      .send({ path: '/public/svc', dataAccessId: 'da1' })
+      .send({ path: '/public/svc', dataAccessId: 'da1', outputType: 'json' })
       .expect(422);
 
     expect(res.body).toEqual({
@@ -1248,7 +1248,7 @@ describe('index routes - validation and middleware branches', () => {
       .get('/public/fdas/fda1/das/da1/data')
       .set('Fiware-Service', 'svc')
       .set('Fiware-ServicePath', '/servicepath')
-      .query({});
+      .query({ outputType: 'json' });
 
     expect(res.status).toBe(500);
     expect(res.body.error).toBe('InternalServerError');
