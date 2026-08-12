@@ -28,6 +28,8 @@ import { getBasicLogger } from './logger.js';
 import { config } from '../fdaConfig.js';
 import { getBucketNameFromService, getFDAStoragePath } from './fdaScope.js';
 import { convertRefreshIntervalToMs } from './utils.js';
+import fs from 'node:fs';
+import path from 'node:path';
 
 let instance = null;
 
