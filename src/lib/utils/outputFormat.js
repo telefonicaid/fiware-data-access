@@ -25,7 +25,7 @@
 import ExcelJS from 'exceljs';
 
 export const VALID_OUTPUT_TYPES = ['json', 'csv', 'xls'];
-export const DEFAULT_OUTPUT_TYPE = 'json';
+export const DEFAULT_OUTPUT_TYPE = 'ndjson';
 
 /**
  * Converts an array of row objects to a CSV string.
