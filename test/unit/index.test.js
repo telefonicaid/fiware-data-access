@@ -1250,7 +1250,7 @@ describe('index routes - validation and middleware branches', () => {
       .get('/public/fdas/fda1/das/da1/data')
       .set('Fiware-Service', 'svc')
       .set('Fiware-ServicePath', '/servicepath')
-      .query({ outputType: 'json' });
+      .query({});
 
     expect(res.status).toBe(500);
     expect(res.body.error).toBe('InternalServerError');
@@ -1616,7 +1616,6 @@ describe('index routes - validation and middleware branches', () => {
           path: '/public/svc/verticals/sql/fda1',
           dataAccessId: 'da1',
         }),
-        outputType: 'ndjson',
       }),
     );
   });
