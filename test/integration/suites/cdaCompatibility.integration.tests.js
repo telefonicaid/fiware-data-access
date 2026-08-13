@@ -96,6 +96,7 @@ export function registerCdaCompatibilityIntegrationTests({
           paramminAge: '0',
           pageSize: '2',
           pageStart: '0',
+          outputType: 'json',
         },
       });
 
@@ -129,12 +130,14 @@ export function registerCdaCompatibilityIntegrationTests({
           dataAccessId: cdaDaId,
           pageSize: '2',
           pageStart: '0',
+          outputType: 'ndjson',
         },
       });
 
       expect(ndjsonAttempt.status).toBe(200);
       expect(ndjsonAttempt.text.includes('\n')).toBe(false);
-      expect(ndjsonAttempt.json).toHaveProperty('resultset');
+      expect(Array.isArray(ndjsonAttempt.json)).toBe(true);
+      expect(ndjsonAttempt.json.length).toBeGreaterThan(0);
     });
 
     test('GET /plugin/cda/api/doQuery supports query params without FIWARE headers', async () => {
@@ -146,6 +149,7 @@ export function registerCdaCompatibilityIntegrationTests({
       url.searchParams.set('paramminAge', '25');
       url.searchParams.set('pageSize', '2');
       url.searchParams.set('pageStart', '0');
+      url.searchParams.set('outputType', 'json');
 
       const res = await httpReq({
         method: 'GET',
@@ -241,6 +245,7 @@ export function registerCdaCompatibilityIntegrationTests({
           path: `/public/${service}/verticals/sql/${privateFdaId}`,
           dataAccessId: privateDaId,
           paramminAge: '0',
+          outputType: 'json',
         },
       });
 
@@ -410,6 +415,7 @@ export function registerCdaCompatibilityIntegrationTests({
             dataAccessId: cdaDaId,
             pageSize: '10',
             pageStart: '0',
+            outputType: 'json',
           },
         });
 

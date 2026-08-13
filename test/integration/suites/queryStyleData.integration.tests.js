@@ -127,6 +127,7 @@ export function registerQueryStyleDataIntegrationTests({
         url: buildDaDataUrl(baseUrl, servicePath, fixtureFdaId, fixtureDaId, {
           service,
           servicePath,
+          outputType: 'json',
           minAge: 25,
         }),
         headers: { Accept: 'application/json' },
@@ -250,7 +251,7 @@ export function registerQueryStyleDataIntegrationTests({
 
       const freshRes = await httpReq({
         method: 'GET',
-        url: `${buildFdaDataUrl(baseUrl, servicePath, fdaQueryStyleId)}?service=${encodeURIComponent(service)}&servicePath=${encodeURIComponent(servicePath)}`,
+        url: `${buildFdaDataUrl(baseUrl, servicePath, fdaQueryStyleId)}?service=${encodeURIComponent(service)}&servicePath=${encodeURIComponent(servicePath)}&outputType=json`,
       });
 
       expect(freshRes.status).toBe(200);

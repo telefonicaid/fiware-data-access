@@ -1762,8 +1762,8 @@ None
 
 > ⚠️ **Performance Note on `outputType=json`**
 >
-> The `json` output type (the default) requires the entire result set to be buffered in memory and serialized as a
-> single JSON array before the response is sent. This can lead to:
+> The `json` output type requires the entire result set to be buffered in memory and serialized as a single JSON array
+> before the response is sent. This can lead to:
 >
 > -   **High latency and potential timeouts** for large datasets
 > -   **Blocking of other concurrent requests** while the JSON payload is being generated
@@ -1790,11 +1790,11 @@ _**Request query parameters**_
 
 The endpoint supports two request styles:
 
-| Parameter     | Optional | Description                                                                                             | Example        |
-| ------------- | -------- | ------------------------------------------------------------------------------------------------------- | -------------- |
-| `service`     | ✓        | Tenant or service. Required when using query-style context (instead of FIWARE headers).                 | `trantor`      |
-| `servicePath` | ✓        | NGSI hierarchical service path. Required when using query-style context (instead of FIWARE headers).    | `/servicePath` |
-| `outputType`  | ✓        | Output format for query-style context. Allowed values: `json`, `ndjson`, `csv`, `xls`. Default: `json`. | `csv`          |
+| Parameter     | Optional | Description                                                                                               | Example        |
+| ------------- | -------- | --------------------------------------------------------------------------------------------------------- | -------------- |
+| `service`     | ✓        | Tenant or service. Required when using query-style context (instead of FIWARE headers).                   | `trantor`      |
+| `servicePath` | ✓        | NGSI hierarchical service path. Required when using query-style context (instead of FIWARE headers).      | `/servicePath` |
+| `outputType`  | ✓        | Output format for query-style context. Allowed values: `json`, `ndjson`, `csv`, `xls`. Default: `ndjson`. | `csv`          |
 
 When using header-style context, any query string parameter is rejected with `400 BadRequest`.
 
@@ -1857,12 +1857,12 @@ _**Request query parameters**_
 
 The endpoint supports two request styles:
 
-| Parameter     | Optional | Description                                                                                                    | Example                  |
-| ------------- | -------- | -------------------------------------------------------------------------------------------------------------- | ------------------------ |
-| `service`     | ✓        | Tenant or service. Required when using query-style context (instead of FIWARE headers).                        | `trantor`                |
-| `servicePath` | ✓        | NGSI hierarchical service path. Required when using query-style context (instead of FIWARE headers).           | `/servicePath`           |
-| `outputType`  | ✓        | Output format for query-style context. Allowed values: `json`, `ndjson`, `csv`, `xls`, `cda`. Default: `json`. | `csv`                    |
-| DA params     | ✓        | DA-specific parameters declared in `params`.                                                                   | `pattern=%25nosignal%25` |
+| Parameter     | Optional | Description                                                                                                      | Example                  |
+| ------------- | -------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| `service`     | ✓        | Tenant or service. Required when using query-style context (instead of FIWARE headers).                          | `trantor`                |
+| `servicePath` | ✓        | NGSI hierarchical service path. Required when using query-style context (instead of FIWARE headers).             | `/servicePath`           |
+| `outputType`  | ✓        | Output format for query-style context. Allowed values: `json`, `ndjson`, `csv`, `xls`, `cda`. Default: `ndjson`. | `csv`                    |
+| DA params     | ✓        | DA-specific parameters declared in `params`.                                                                     | `pattern=%25nosignal%25` |
 
 _**Request headers**_
 
@@ -2047,11 +2047,11 @@ Supported methods:
 
 _**Request headers**_
 
-| Header           | Optional | Description                                                              | Example            |
-| ---------------- | -------- | ------------------------------------------------------------------------ | ------------------ |
-| `Content-Type`   | ✓        | For `POST`, should be `application/x-www-form-urlencoded`                | —                  |
-| `Fiware-Service` | ✓        | Tenant/service name. If not present, it is derived from the `path` field | `trantor`          |
-| `Accept`         | ✓        | Ignored when `outputType` is provided. If omitted, defaults to JSON      | `application/json` |
+| Header           | Optional | Description                                                              | Example                |
+| ---------------- | -------- | ------------------------------------------------------------------------ | ---------------------- |
+| `Content-Type`   | ✓        | For `POST`, should be `application/x-www-form-urlencoded`                | —                      |
+| `Fiware-Service` | ✓        | Tenant/service name. If not present, it is derived from the `path` field | `trantor`              |
+| `Accept`         | ✓        | Ignored when `outputType` is provided. If omitted, defaults to JSON      | `application/x-ndjson` |
 
 ---
 
@@ -2094,7 +2094,8 @@ _**Response headers**_
 
 | `outputType` value | `Content-Type`                                                      | `Content-Disposition`                 |
 | ------------------ | ------------------------------------------------------------------- | ------------------------------------- |
-| `json` (default)   | `application/json`                                                  | —                                     |
+| `ndjson` (default) | `application/x-ndjson`                                              | —                                     |
+| `json`             | `application/json`                                                  | —                                     |
 | `csv`              | `text/csv`                                                          | `attachment; filename="results.csv"`  |
 | `xls`              | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` | `attachment; filename="results.xlsx"` |
 
@@ -2102,7 +2103,7 @@ _**Response payload**_
 
 Depends on `outputType`:
 
--   `json` (default): CDA-compatible structure:
+-   `json`: CDA-compatible structure:
 
 ```json
 {
@@ -2119,7 +2120,7 @@ Depends on `outputType`:
 -   `csv`: comma-separated values file with column names in the first row.
 -   `xls`: Excel workbook (`.xlsx` format, Office Open XML) with column names in the first row.
 
-_**Example Request (JSON, default):**_
+_**Example Request (JSON):**_
 
 ```bash
 curl -i -X POST "http://localhost:8085/plugin/cda/api/doQuery" \
@@ -2130,7 +2131,7 @@ curl -i -X POST "http://localhost:8085/plugin/cda/api/doQuery" \
   -d "pageSize=10"
 ```
 
-_**Example Request (GET + query params, JSON default):**_
+_**Example Request (GET + query params, JSON):**_
 
 ```bash
 curl -i -X GET "http://localhost:8085/plugin/cda/api/doQuery?path=/public/trantor/verticals/sql/fda1&dataAccessId=da1&paramminAge=25&pageSize=10&pageStart=0"

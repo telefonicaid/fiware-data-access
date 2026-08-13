@@ -28,7 +28,13 @@ import {
   processFDAAsync,
   processUploadFDAJob,
 } from './lib/fda.js';
-import { getBasicLogger } from './lib/utils/logger.js';
+import {
+  getBasicLogger,
+  createChildLogger,
+  runWithLogger,
+} from './lib/utils/logger.js';
+import { config } from './lib/fdaConfig.js';
+import { v4 as uuidv4 } from 'uuid';
 
 const logger = getBasicLogger();
 
@@ -46,40 +52,77 @@ export async function startFetcher() {
       objStgConf,
       datasourceId,
     } = job.attrs.data;
-    // Should agenda also log errors?
-    try {
-      await processFDAAsync(
-        fdaId,
-        query,
-        service,
-        servicePath,
-        timeColumn,
-        refreshPolicy,
-        objStgConf,
-        datasourceId,
-      );
-    } catch (e) {
-      logger.error('Fetcher error: ', e);
-    }
+
+    const jobLogger = createChildLogger({
+      service: service || 'n/a',
+      subservice: servicePath || 'n/a',
+      op: 'refresh-fda',
+      corr: job.attrs._id ? `job-${job.attrs._id}` : uuidv4(),
+    });
+
+    await runWithLogger(jobLogger, async () => {
+      const start = Date.now();
+      jobLogger.info({ fdaId }, 'Job started: refresh-fda');
+      try {
+        await processFDAAsync(
+          fdaId,
+          query,
+          service,
+          servicePath,
+          timeColumn,
+          refreshPolicy,
+          objStgConf,
+          datasourceId,
+        );
+        jobLogger.info(
+          { fdaId, durationMs: Date.now() - start },
+          'Job completed successfully: refresh-fda',
+        );
+      } catch (e) {
+        jobLogger.error(
+          { err: e, fdaId, durationMs: Date.now() - start },
+          'Job failed: refresh-fda',
+        );
+      }
+    });
   };
 
   const cleanPartitionFDA = async (job) => {
     const { fdaId, service, servicePath, windowSize, objStgConf } =
       job.attrs.data;
-    try {
-      await cleanPartition(service, fdaId, windowSize, objStgConf, servicePath);
-    } catch (e) {
-      logger.error('Fetcher error: ', e);
-    }
+
+    const jobLogger = createChildLogger({
+      service: service || 'n/a',
+      subservice: servicePath || 'n/a',
+      op: 'clean-partition',
+      corr: job.attrs._id ? `job-${job.attrs._id}` : uuidv4(),
+    });
+
+    await runWithLogger(jobLogger, async () => {
+      const start = Date.now();
+      jobLogger.info({ fdaId }, 'Job started: clean-partition');
+      try {
+        await cleanPartition(
+          service,
+          fdaId,
+          windowSize,
+          objStgConf,
+          servicePath,
+        );
+        jobLogger.info(
+          { fdaId, durationMs: Date.now() - start },
+          'Job completed successfully: clean-partition',
+        );
+      } catch (e) {
+        jobLogger.error(
+          { err: e, fdaId, durationMs: Date.now() - start },
+          'Job failed: clean-partition',
+        );
+      }
+    });
   };
 
-  agenda.define('refresh-fda', refreshFDA);
-  agenda.define('refresh-fda-recurring', refreshFDA);
-  agenda.define('consistency-refresh-fda-recurring', refreshFDA);
-  agenda.define('clean-partition', cleanPartitionFDA);
-  agenda.define('clean-partition-recurring', cleanPartitionFDA);
-
-  agenda.define('upload-fda', async (job) => {
+  const uploadFDAJob = async (job) => {
     const {
       fdaId,
       service,
@@ -95,26 +138,60 @@ export async function startFetcher() {
       defaultDataAccessEnabled,
     } = job.attrs.data;
 
-    try {
-      await processUploadFDAJob({
-        fdaId,
-        service,
-        servicePath,
-        visibility,
-        tempFilePath,
-        originalname,
-        mimetype,
-        description,
-        timeColumn,
-        objStgConf,
-        cached,
-        defaultDataAccessEnabled,
-      });
-    } catch (e) {
-      logger.error('Fetcher error: ', e);
-    }
-  });
+    const jobLogger = createChildLogger({
+      service: service || 'n/a',
+      subservice: servicePath || 'n/a',
+      op: 'upload-fda',
+      corr: job.attrs._id ? `job-${job.attrs._id}` : uuidv4(),
+    });
+
+    await runWithLogger(jobLogger, async () => {
+      const start = Date.now();
+      jobLogger.info({ fdaId }, 'Job started: upload-fda');
+      try {
+        await processUploadFDAJob({
+          fdaId,
+          service,
+          servicePath,
+          visibility,
+          tempFilePath,
+          originalname,
+          mimetype,
+          description,
+          timeColumn,
+          objStgConf,
+          cached,
+          defaultDataAccessEnabled,
+        });
+        jobLogger.info(
+          { fdaId, durationMs: Date.now() - start },
+          'Job completed successfully: upload-fda',
+        );
+      } catch (e) {
+        jobLogger.error(
+          { err: e, fdaId, durationMs: Date.now() - start },
+          'Job failed: upload-fda',
+        );
+      }
+    });
+  };
+
+  agenda.define('refresh-fda', refreshFDA);
+  agenda.define('refresh-fda-recurring', refreshFDA);
+  agenda.define('consistency-refresh-fda-recurring', refreshFDA);
+  agenda.define('clean-partition', cleanPartitionFDA);
+  agenda.define('clean-partition-recurring', cleanPartitionFDA);
+  agenda.define('upload-fda', uploadFDAJob);
 
   await agenda.start();
   logger.info('[Fetcher] Agenda started');
+
+  let heartbeatTimer;
+  if (config.fetcher.heartbeatIntervalMs > 0) {
+    heartbeatTimer = setInterval(() => {
+      logger.debug('[Fetcher] Heartbeat: alive');
+    }, config.fetcher.heartbeatIntervalMs);
+
+    heartbeatTimer.unref();
+  }
 }

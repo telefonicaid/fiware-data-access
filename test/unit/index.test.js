@@ -87,6 +87,14 @@ const loggerMock = {
   debug: jest.fn(),
 };
 
+const childLoggerMock = {
+  info: jest.fn(),
+  warn: jest.fn(),
+  error: jest.fn(),
+};
+
+const runWithLoggerMock = jest.fn(async (logger, fn) => fn());
+
 const initialLoggerMock = {
   fatal: jest.fn(),
 };
@@ -174,7 +182,11 @@ function resetModuleMocks() {
   loggerMock.warn.mockReset();
   loggerMock.error.mockReset();
   loggerMock.debug.mockReset();
+  childLoggerMock.info.mockReset();
+  childLoggerMock.warn.mockReset();
+  childLoggerMock.error.mockReset();
   initialLoggerMock.fatal.mockReset();
+  runWithLoggerMock.mockClear();
 
   cdaMocks.handleCdaQuery.mockReset().mockResolvedValue({ rows: [] });
 
@@ -339,7 +351,9 @@ async function loadIndexModule({
   await jest.unstable_mockModule('../../src/lib/utils/logger.js', () => ({
     initLogger: jest.fn(),
     getBasicLogger: () => loggerMock,
+    createChildLogger: jest.fn(() => childLoggerMock),
     getInitialLogger: () => initialLoggerMock,
+    runWithLogger: runWithLoggerMock,
   }));
 
   await jest.unstable_mockModule('../../src/lib/compat/cdaAdapter.js', () => ({
@@ -652,7 +666,7 @@ describe('index routes - validation and middleware branches', () => {
       .post('/plugin/cda/api/doQuery')
       .set('Fiware-Service', 'svc')
       .set('Fiware-ServicePath', '/servicepath')
-      .send({ path: '/public/svc', dataAccessId: 'da1' })
+      .send({ path: '/public/svc', dataAccessId: 'da1', outputType: 'json' })
       .expect(200)
       .expect({ rows: [] });
 
@@ -1030,6 +1044,7 @@ describe('index routes - validation and middleware branches', () => {
         service: 'svc',
         servicePath: '/servicepath',
         minAge: '18',
+        outputType: 'json',
       })
       .expect(200);
 
@@ -1074,6 +1089,7 @@ describe('index routes - validation and middleware branches', () => {
       .query({
         service: 'svc',
         servicePath: '/servicepath',
+        outputType: 'json',
       })
       .expect(200);
 
@@ -1209,7 +1225,7 @@ describe('index routes - validation and middleware branches', () => {
       .post('/plugin/cda/api/doQuery')
       .set('Fiware-Service', 'svc')
       .set('Fiware-ServicePath', '/servicepath')
-      .send({ path: '/public/svc', dataAccessId: 'da1' });
+      .send({ path: '/public/svc', dataAccessId: 'da1', outputType: 'json' });
 
     expect(res.status).toBe(500);
     expect(res.body).toEqual({
@@ -1232,7 +1248,7 @@ describe('index routes - validation and middleware branches', () => {
       .post('/plugin/cda/api/doQuery')
       .set('Fiware-Service', 'svc')
       .set('Fiware-ServicePath', '/servicepath')
-      .send({ path: '/public/svc', dataAccessId: 'da1' })
+      .send({ path: '/public/svc', dataAccessId: 'da1', outputType: 'json' })
       .expect(422);
 
     expect(res.body).toEqual({
@@ -1267,7 +1283,14 @@ describe('index routes - validation and middleware branches', () => {
       error: 'InternalServerError',
       description: 'unexpected failure',
     });
-    expect(loggerMock.error).toHaveBeenCalledWith(expect.any(Error));
+
+    expect(childLoggerMock.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'unexpected failure',
+        type: 'InternalServerError',
+      }),
+      'Server error',
+    );
   });
 
   test('uses error middleware warning branch for handled 4xx errors', async () => {
@@ -1286,7 +1309,12 @@ describe('index routes - validation and middleware branches', () => {
       error: 'NotFound',
       description: 'missing fda',
     });
-    expect(loggerMock.warn).toHaveBeenCalledWith(expect.any(Error));
+    expect(childLoggerMock.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 404,
+      }),
+      'Client error',
+    );
   });
 
   test('rejects outputType query param on data endpoint', async () => {
@@ -1588,7 +1616,7 @@ describe('index routes - validation and middleware branches', () => {
     );
   });
 
-  test('returns JSON CDA payload on GET /plugin/cda/api/doQuery when outputType is omitted', async () => {
+  test('returns NDJSON payload on GET /plugin/cda/api/doQuery when outputType is omitted', async () => {
     cdaMocks.handleCdaQuery.mockResolvedValueOnce({
       metadata: [{ colIndex: 0, colName: 'col1' }],
       resultset: [['x']],
@@ -1614,7 +1642,7 @@ describe('index routes - validation and middleware branches', () => {
           path: '/public/svc/verticals/sql/fda1',
           dataAccessId: 'da1',
         }),
-        outputType: 'json',
+        outputType: 'ndjson',
       }),
     );
   });
