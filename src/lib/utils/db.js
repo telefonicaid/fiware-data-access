@@ -108,9 +108,6 @@ async function initDuckDB() {
       SET extension_directory = '${config.objstg.extensionsDir}';
     `);
 
-    //await configConn.run(`SET threads=2;`);
-    //await configConn.run(`SET preserve_insertion_order=false;`);
-
     await configConn.run('INSTALL httpfs;');
     await configConn.run('LOAD httpfs;');
 
