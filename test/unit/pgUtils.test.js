@@ -50,7 +50,13 @@ const cursorCtorMock = jest.fn(function MockCursor(text, values) {
   this.values = values;
 });
 
-const newUploadMock = jest.fn();
+const uploadCtorMock = jest.fn(function MockUpload(options) {
+  this.options = options;
+  this.on = jest.fn();
+  this.done = jest.fn();
+  return this;
+});
+const pipelineMock = jest.fn(async () => undefined);
 
 const loggerMock = {
   debug: jest.fn(),
@@ -93,8 +99,12 @@ await jest.unstable_mockModule('pg-cursor', () => ({
   default: cursorCtorMock,
 }));
 
-await jest.unstable_mockModule('../../src/lib/utils/aws.js', () => ({
-  newUpload: newUploadMock,
+await jest.unstable_mockModule('@aws-sdk/lib-storage', () => ({
+  Upload: uploadCtorMock,
+}));
+
+await jest.unstable_mockModule('node:stream/promises', () => ({
+  pipeline: pipelineMock,
 }));
 
 await jest.unstable_mockModule('../../src/lib/utils/logger.js', () => ({
@@ -402,7 +412,7 @@ describe('pg utils', () => {
       on: jest.fn(),
       done: jest.fn().mockRejectedValue(new Error('upload exploded')),
     };
-    newUploadMock.mockReturnValue(uploader);
+    uploadCtorMock.mockImplementationOnce(() => uploader);
 
     const creds = {
       username: 'u',
@@ -423,7 +433,7 @@ describe('pg utils', () => {
       'COPY (SELECT * FROM t) TO STDOUT WITH CSV HEADER',
     );
     expect(stream.destroy).toHaveBeenCalledWith(expect.any(Error));
-    expect(stream.destroy).toHaveBeenCalledTimes(2);
+    expect(stream.destroy).toHaveBeenCalledTimes(1);
     expect(currentClient.release).toHaveBeenCalledTimes(1);
   });
 
@@ -437,7 +447,7 @@ describe('pg utils', () => {
       on: jest.fn(),
       done: jest.fn().mockResolvedValue(undefined),
     };
-    newUploadMock.mockReturnValue(uploader);
+    uploadCtorMock.mockImplementationOnce(() => uploader);
 
     const creds = {
       username: 'u',
@@ -451,7 +461,7 @@ describe('pg utils', () => {
     expect(loggerMock.debug).toHaveBeenCalledWith(
       'Upload completed successfully',
     );
-    expect(stream.destroy).toHaveBeenCalledTimes(1);
+    expect(stream.destroy).not.toHaveBeenCalled();
     expect(currentClient.release).toHaveBeenCalledTimes(1);
   });
 
