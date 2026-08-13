@@ -289,7 +289,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
         FDA_OBJSTG_PROTOCOL: 'http',
         FDA_OBJSTG_ENDPOINT: minioHostPort,
         FDA_MONGO_URI: mongoUri,
-        FDA_MAX_CONCURRENT_FRESH_QUERIES: '1',
+        FDA_MAX_CONCURRENT_FRESH_QUERIES: '5',
         ...overrides,
       };
     }
