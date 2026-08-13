@@ -23,6 +23,7 @@
 // criminal actions it may exercise to protect its rights.
 
 import logger from 'logops';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { v4 as uuidv4 } from 'uuid';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -33,6 +34,12 @@ const __dirname = dirname(__filename);
 const packageInfo = JSON.parse(
   readFileSync(join(__dirname, '../../../package.json'), 'utf8'),
 );
+const requestLoggerStore = new AsyncLocalStorage();
+let basicLoggerProxy = null;
+
+function getCurrentLogger() {
+  return requestLoggerStore.getStore() || logger;
+}
 
 export function initLogger(config) {
   logger.format = logger.formatters.pipe;
@@ -44,18 +51,37 @@ export function initLogger(config) {
     trans: 'n/a',
     comp: config.logger.comp,
     op: 'n/a',
+    srv: 'n/a',
+    subsrv: 'n/a',
   });
 }
 
 export function getBasicLogger() {
-  return logger;
+  if (!basicLoggerProxy) {
+    basicLoggerProxy = new Proxy(logger, {
+      get(target, property) {
+        const currentLogger = getCurrentLogger();
+        const value = currentLogger[property] ?? target[property];
+        return typeof value === 'function' ? value.bind(currentLogger) : value;
+      },
+    });
+  }
+
+  return basicLoggerProxy;
+}
+
+export function runWithLogger(requestLogger, callback) {
+  return requestLoggerStore.run(requestLogger, callback);
 }
 
 export function createChildLogger(config) {
   const loggerCtx = logger.getContext();
   return logger.child({
-    op: (config && config.op) || loggerCtx.op,
-    corr: (config && config.corr) || uuidv4(),
+    op: config?.op || loggerCtx.op,
+    corr: config?.corr || uuidv4(),
+    trans: config?.trans || uuidv4(),
+    srv: config?.service || 'n/a',
+    subsrv: config?.subservice || 'n/a',
   });
 }
 

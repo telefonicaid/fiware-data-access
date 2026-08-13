@@ -1,5 +1,8 @@
 - Update: make default outputType `ndjson` instead of `json`
+- Add: use FIWARE headers (`srv`, `subsrv`, `corr`) provided in API requests for logging, with a generated correlation ID when `corr` is not provided (#188)
+- Add: improve fetcher logging (Agenda jobs) and add Heartbeat with configurable interval (`FDA_FETCHER_HEARTBEAT_INTERVAL_MS`) (#214)
 - Add: generated defaultDataAccess now supports comma-separated values for equality filters when schema is available, while remaining fully backward compatible (#253)
 - Add: file upload endpoint POST /{visibility}/fdas/upload supporting CSV, XLS and XLSX files with configurable size limit (FDA_MAX_UPLOAD_SIZE) and automatic Parquet conversion (#57)
 - Add: new env var FDA_UPLOAD_TMP_DIR to set upload temporal directorio it MinIO (#57)
 - Update: mongodb dependency version from 7.0.0 to 7.5.0
+- Update: @duckdb/node-api dependency version from 1.5.2-r.1 to 1.5.5-r.4
