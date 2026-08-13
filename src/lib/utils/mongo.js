@@ -34,6 +34,7 @@ let isConnected = false;
 const DEFAULT_DATASOURCE_ID = 'default';
 const MONGO_CONNECTION_TIMEOUT_MS = 5000;
 const DEFAULT_MONGO_CURSOR_CHUNK_SIZE = 1000;
+const DISALLOWED_MONGO_AGGREGATION_STAGES = new Set(['$out', '$merge']);
 
 async function getDb() {
   if (!isConnected) {
@@ -145,7 +146,7 @@ export async function validateMongoDatasourceConnection(dsConfig) {
 
 function validateMongoCursorQuery(filter, aggregation) {
   const hasFilter = filter !== undefined;
-  const hasAggregation = aggregation !== undefined && aggregation.length > 0;
+  const hasAggregation = aggregation !== undefined;
 
   if (
     filter !== undefined &&
@@ -158,15 +159,47 @@ function validateMongoCursorQuery(filter, aggregation) {
     );
   }
 
-  if (hasAggregation) {
+  if (
+    hasAggregation &&
+    (!Array.isArray(aggregation) || aggregation.length === 0)
+  ) {
     throw new FDAError(
       400,
-      'NotImplemented',
-      'Mongo aggregation queries are not supported yet',
+      'InvalidMongoFDAContract',
+      'Mongo FDA aggregation must be a non-empty array',
     );
   }
 
-  if (!hasFilter) {
+  if (hasAggregation) {
+    for (const stage of aggregation) {
+      if (!stage || typeof stage !== 'object' || Array.isArray(stage)) {
+        throw new FDAError(
+          400,
+          'InvalidMongoFDAContract',
+          'Mongo FDA aggregation stages must be JSON objects',
+        );
+      }
+
+      const stageNames = Object.keys(stage);
+      if (stageNames.length !== 1) {
+        throw new FDAError(
+          400,
+          'InvalidMongoFDAContract',
+          'Mongo FDA aggregation stages must define a single operator',
+        );
+      }
+
+      if (DISALLOWED_MONGO_AGGREGATION_STAGES.has(stageNames[0])) {
+        throw new FDAError(
+          400,
+          'InvalidMongoFDAContract',
+          `Mongo FDA aggregation stage ${stageNames[0]} is not allowed`,
+        );
+      }
+    }
+  }
+
+  if (hasFilter === hasAggregation) {
     throw new FDAError(
       400,
       'InvalidMongoFDAContract',
@@ -185,8 +218,8 @@ function getMongoProjectionColumns(projection) {
   return Object.keys(projection).filter((column) => projection[column]);
 }
 
-function getMongoColumnsFromDocument(doc) {
-  return Object.keys(doc).filter((column) => column !== '_id');
+function getMongoColumnsFromDocument(doc, { includeId = false } = {}) {
+  return Object.keys(doc).filter((column) => includeId || column !== '_id');
 }
 
 function mapMongoRow(doc, columns) {
@@ -199,7 +232,11 @@ function mapMongoRow(doc, columns) {
   return mappedRow;
 }
 
-async function initializeMongoCursorReader(cursor, projection) {
+async function initializeMongoCursorReader(
+  cursor,
+  projection,
+  { includeId = false } = {},
+) {
   if (isMongoProjection(projection)) {
     return {
       columns: getMongoProjectionColumns(projection),
@@ -215,7 +252,7 @@ async function initializeMongoCursorReader(cursor, projection) {
     };
   }
 
-  const columns = getMongoColumnsFromDocument(firstRow);
+  const columns = getMongoColumnsFromDocument(firstRow, { includeId });
   return {
     columns,
     bufferedRows: [mapMongoRow(firstRow, columns)],
@@ -298,17 +335,28 @@ export async function createMongoCursorReader(
     await client.connect();
     validateMongoCursorQuery(filter, aggregation);
 
-    const cursor = client
-      .db(dsConfig.database)
-      .collection(collection)
-      .find(filter ?? {}, {
-        ...(projection ? { projection } : {}),
-        ...(Number.isFinite(limit) && limit > 0 ? { limit } : {}),
-      });
+    const isAggregationQuery = Array.isArray(aggregation);
+
+    const cursor = isAggregationQuery
+      ? client
+          .db(dsConfig.database)
+          .collection(collection)
+          .aggregate([
+            ...aggregation,
+            ...(Number.isFinite(limit) && limit > 0 ? [{ $limit: limit }] : []),
+          ])
+      : client
+          .db(dsConfig.database)
+          .collection(collection)
+          .find(filter ?? {}, {
+            ...(projection ? { projection } : {}),
+            ...(Number.isFinite(limit) && limit > 0 ? { limit } : {}),
+          });
 
     const { columns, bufferedRows } = await initializeMongoCursorReader(
       cursor,
-      projection,
+      isAggregationQuery ? undefined : projection,
+      { includeId: isAggregationQuery },
     );
 
     return createMongoReaderHandlers({
