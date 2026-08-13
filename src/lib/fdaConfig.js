@@ -211,6 +211,7 @@ export const config = {
   },
   fetcher: {
     heartbeatIntervalMs: envVars.FDA_FETCHER_HEARTBEAT_INTERVAL_MS,
+    maxConcurrentRefreshJobs: envVars.FDA_MAX_CONCURRENT_REFRESH_JOBS,
   },
   freshQueries: {
     maxConcurrent: envVars.FDA_MAX_CONCURRENT_FRESH_QUERIES,
