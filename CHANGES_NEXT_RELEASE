@@ -1,3 +1,4 @@
+- Update: make default outputType `ndjson` instead of `json`
 - Add: generated defaultDataAccess now supports comma-separated values for equality filters when schema is available, while remaining fully backward compatible (#253)
 - Add: file upload endpoint POST /{visibility}/fdas/upload supporting CSV, XLS and XLSX files with configurable size limit (FDA_MAX_UPLOAD_SIZE) and automatic Parquet conversion (#57)
 - Add: new env var FDA_UPLOAD_TMP_DIR to set upload temporal directorio it MinIO (#57)
