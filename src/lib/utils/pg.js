@@ -222,7 +222,6 @@ export async function uploadTable(
   query,
   path,
 ) {
-  const start = Date.now();
   const { username, password, host, port, database } = pgCredentials;
   logger.debug({ bucket, database, query, path }, '[DEBUG]: uploadTable');
   const key = getPoolKey(username, password, host, port, database);
@@ -274,7 +273,9 @@ export async function uploadTable(
   } finally {
     try {
       passThrough.destroy();
-    } catch {}
+    } catch {
+      // Ignore
+    }
     releasePgClient(key, pgClient);
   }
 }
