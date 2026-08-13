@@ -57,7 +57,6 @@ export function registerCdaCompatibilityIntegrationTests({
           id: cdaFdaId,
           query: 'SELECT id, name, age FROM public.users ORDER BY id',
           description: 'users dataset for CDA',
-          outputType: 'json',
         },
       });
 
@@ -131,7 +130,7 @@ export function registerCdaCompatibilityIntegrationTests({
           dataAccessId: cdaDaId,
           pageSize: '2',
           pageStart: '0',
-          outputType: 'json',
+          outputType: 'ndjson',
         },
       });
 
@@ -208,7 +207,6 @@ export function registerCdaCompatibilityIntegrationTests({
           id: privateFdaId,
           query: 'SELECT id, name, age FROM public.users ORDER BY id',
           description: 'users dataset for CDA private scope',
-          outputType: 'json',
         },
       });
 
