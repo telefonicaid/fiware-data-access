@@ -136,7 +136,8 @@ export function registerCdaCompatibilityIntegrationTests({
 
       expect(ndjsonAttempt.status).toBe(200);
       expect(ndjsonAttempt.text.includes('\n')).toBe(false);
-      expect(ndjsonAttempt.json).toHaveProperty('resultset');
+      expect(Array.isArray(ndjsonAttempt.json)).toBe(true);
+      expect(ndjsonAttempt.json.length).toBeGreaterThan(0);
     });
 
     test('GET /plugin/cda/api/doQuery supports query params without FIWARE headers', async () => {
