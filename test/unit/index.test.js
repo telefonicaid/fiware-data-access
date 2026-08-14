@@ -666,7 +666,7 @@ describe('index routes - validation and middleware branches', () => {
       .post('/plugin/cda/api/doQuery')
       .set('Fiware-Service', 'svc')
       .set('Fiware-ServicePath', '/servicepath')
-      .send({ path: '/public/svc', dataAccessId: 'da1' })
+      .send({ path: '/public/svc', dataAccessId: 'da1', outputType: 'json' })
       .expect(200)
       .expect({ rows: [] });
 
@@ -1044,6 +1044,7 @@ describe('index routes - validation and middleware branches', () => {
         service: 'svc',
         servicePath: '/servicepath',
         minAge: '18',
+        outputType: 'json',
       })
       .expect(200);
 
@@ -1088,6 +1089,7 @@ describe('index routes - validation and middleware branches', () => {
       .query({
         service: 'svc',
         servicePath: '/servicepath',
+        outputType: 'json',
       })
       .expect(200);
 
@@ -1223,7 +1225,7 @@ describe('index routes - validation and middleware branches', () => {
       .post('/plugin/cda/api/doQuery')
       .set('Fiware-Service', 'svc')
       .set('Fiware-ServicePath', '/servicepath')
-      .send({ path: '/public/svc', dataAccessId: 'da1' });
+      .send({ path: '/public/svc', dataAccessId: 'da1', outputType: 'json' });
 
     expect(res.status).toBe(500);
     expect(res.body).toEqual({
@@ -1246,7 +1248,7 @@ describe('index routes - validation and middleware branches', () => {
       .post('/plugin/cda/api/doQuery')
       .set('Fiware-Service', 'svc')
       .set('Fiware-ServicePath', '/servicepath')
-      .send({ path: '/public/svc', dataAccessId: 'da1' })
+      .send({ path: '/public/svc', dataAccessId: 'da1', outputType: 'json' })
       .expect(422);
 
     expect(res.body).toEqual({
@@ -1614,7 +1616,7 @@ describe('index routes - validation and middleware branches', () => {
     );
   });
 
-  test('returns JSON CDA payload on GET /plugin/cda/api/doQuery when outputType is omitted', async () => {
+  test('returns NDJSON payload on GET /plugin/cda/api/doQuery when outputType is omitted', async () => {
     cdaMocks.handleCdaQuery.mockResolvedValueOnce({
       metadata: [{ colIndex: 0, colName: 'col1' }],
       resultset: [['x']],
@@ -1640,7 +1642,7 @@ describe('index routes - validation and middleware branches', () => {
           path: '/public/svc/verticals/sql/fda1',
           dataAccessId: 'da1',
         }),
-        outputType: 'json',
+        outputType: 'ndjson',
       }),
     );
   });

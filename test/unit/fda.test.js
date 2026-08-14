@@ -4538,18 +4538,147 @@ describe('validateMongoFDAContract functions', () => {
     );
   });
 
-  test('validateAggregationQuery throws with aggregation not supported message', () => {
+  test('validateAggregationQuery accepts a valid aggregation pipeline', () => {
     expect(() =>
       validateMongoFDAContract(
-        { collection: 'col', aggregation: [{ $match: { status: 'ok' } }] },
+        {
+          collection: 'col',
+          aggregation: [
+            { $match: { status: 'ok' } },
+            { $group: { _id: '$status', n: { $sum: 1 } } },
+          ],
+        },
+        'time',
+        true,
+      ),
+    ).not.toThrow();
+  });
+
+  test('validateAggregationQuery rejects non-object stages', () => {
+    expect(() =>
+      validateMongoFDAContract(
+        { collection: 'col', aggregation: [null] },
         'time',
         true,
       ),
     ).toThrow(
       expect.objectContaining({
         status: 400,
-        type: 'MongoAggregationNotSupported',
-        message: 'Aggregation pipelines are not supported yet',
+        type: 'InvalidMongoFDAContract',
+        message: 'Mongo FDA aggregation stages must be JSON objects',
+      }),
+    );
+  });
+
+  test('validateAggregationQuery rejects stages with multiple operators', () => {
+    expect(() =>
+      validateMongoFDAContract(
+        {
+          collection: 'col',
+          aggregation: [{ $match: { status: 'ok' }, $sort: { ts: -1 } }],
+        },
+        'time',
+        true,
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        status: 400,
+        type: 'InvalidMongoFDAContract',
+        message: 'Mongo FDA aggregation stages must define a single operator',
+      }),
+    );
+  });
+
+  test('validateAggregationQuery rejects disallowed write stages', () => {
+    expect(() =>
+      validateMongoFDAContract(
+        {
+          collection: 'col',
+          aggregation: [{ $match: { status: 'ok' } }, { $out: 'target' }],
+        },
+        'time',
+        true,
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        status: 400,
+        type: 'InvalidMongoFDAContract',
+        message: 'Mongo FDA aggregation stage $out is not allowed',
+      }),
+    );
+  });
+
+  test('validateAggregationQuery validates timeColumn against final $project', () => {
+    expect(() =>
+      validateMongoFDAContract(
+        {
+          collection: 'col',
+          aggregation: [
+            { $match: { status: 'ok' } },
+            { $project: { status: 1 } },
+          ],
+        },
+        'time',
+        true,
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        status: 400,
+        type: 'InvalidMongoFDAContract',
+        message:
+          'Mongo FDA timeColumn must be included in final aggregation $project stage',
+      }),
+    );
+  });
+
+  test('validateAggregationQuery accepts timeColumn in final $project', () => {
+    expect(() =>
+      validateMongoFDAContract(
+        {
+          collection: 'col',
+          aggregation: [
+            { $match: { status: 'ok' } },
+            { $project: { status: 1, time: 1 } },
+          ],
+        },
+        'time',
+        true,
+      ),
+    ).not.toThrow();
+  });
+
+  test('validateAggregationQuery allows timeColumn when final stage is not $project', () => {
+    expect(() =>
+      validateMongoFDAContract(
+        {
+          collection: 'col',
+          aggregation: [
+            { $match: { status: 'ok' } },
+            { $group: { _id: '$status' } },
+          ],
+        },
+        'time',
+        true,
+      ),
+    ).not.toThrow();
+  });
+
+  test('validateMongoFDAContract rejects filter and aggregation together', () => {
+    expect(() =>
+      validateMongoFDAContract(
+        {
+          collection: 'col',
+          filter: { status: 'ok' },
+          aggregation: [{ $match: { status: 'ok' } }],
+        },
+        'time',
+        true,
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        status: 400,
+        type: 'InvalidMongoFDAContract',
+        message: 'Mongo FDA query must define either filter or aggregation',
       }),
     );
   });
