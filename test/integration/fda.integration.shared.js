@@ -265,7 +265,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
         FDA_OBJSTG_PROTOCOL: 'http',
         FDA_OBJSTG_ENDPOINT: minioHostPort,
         FDA_MONGO_URI: mongoUri,
-        FDA_MAX_CONCURRENT_FRESH_QUERIES: '5',
+        FDA_MAX_CONCURRENT_FRESH_QUERIES: '1',
         FDA_DUCKDB_MEMORY_LIMIT: '0.5GB',
         FDA_DUCKDB_MAX_THREADS: 1,
         FDA_DUCKDB_PRESERVE_INSERTION_ORDER: false,
