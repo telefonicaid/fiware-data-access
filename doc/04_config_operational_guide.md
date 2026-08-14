@@ -118,12 +118,14 @@ Variabes related to the object bucket-based storage system:
 
 Configuration variables for DuckDB runtime and temporary storage:
 
-| Variable                   | Optional | Type   | Description                                                                    |
-| -------------------------- | -------- | ------ | ------------------------------------------------------------------------------ |
-| `FDA_DUCKDB_DIR`           | ✓        | string | Directory used to store the DuckDB database file. Default `/tmp/duckdb`.       |
-| `FDA_DUCKDB_MEMORY_LIMIT`  | ✓        | string | DuckDB `memory_limit` configuration (e.g., `1.0GB`). Default `1.0GB`.          |
-| `FDA_DUCKDB_TEMP_DIR`      | ✓        | string | Directory used by DuckDB for temporary files. Default `/tmp/duckdb/temp`.      |
-| `FDA_DUCKDB_MAX_TEMP_SIZE` | ✓        | string | Maximum size allowed for DuckDB temp directory (e.g., `10GB`). Default `10GB`. |
+| Variable                              | Optional | Type    | Description                                                                                                                                                                                                                                 |
+| ------------------------------------- | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FDA_DUCKDB_DIR`                      | ✓        | string  | Directory used to store the DuckDB database file. Default `/tmp/duckdb`.                                                                                                                                                                    |
+| `FDA_DUCKDB_MEMORY_LIMIT`             | ✓        | string  | DuckDB `memory_limit` configuration (e.g., `1.0GB`). Default `1.0GB`.                                                                                                                                                                       |
+| `FDA_DUCKDB_TEMP_DIR`                 | ✓        | string  | Directory used by DuckDB for temporary files. Default `/tmp/duckdb/temp`.                                                                                                                                                                   |
+| `FDA_DUCKDB_MAX_TEMP_SIZE`            | ✓        | string  | Maximum size allowed for DuckDB temp directory (e.g., `10GB`). Default `10GB`.                                                                                                                                                              |
+| `FDA_DUCKDB_MAX_THREADS`              | ✓        | number  | Maximum number of threads DuckDB can use to execute queries in parallel. Lower values reduce memory consumption and resource contention, while higher values may improve performance for complex analytical queries. Default `2`.           |
+| `FDA_DUCKDB_PRESERVE_INSERTION_ORDER` | ✓        | boolean | Controls whether DuckDB preserves the original row insertion order during query execution. Setting it to `false` can reduce memory usage and improve performance for analytical workloads where row order is not important. Default `true`. |
 
 ### MongoDB
 

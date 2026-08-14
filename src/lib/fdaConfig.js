@@ -102,6 +102,14 @@ const envVarsSchema = {
       type: 'string',
       default: '10GB',
     },
+    FDA_DUCKDB_MAX_THREADS: {
+      type: 'number',
+      default: 2,
+    },
+    FDA_DUCKDB_PRESERVE_INSERTION_ORDER: {
+      type: 'boolean',
+      default: true,
+    },
     FDA_MAX_CONCURRENT_REFRESH_JOBS: {
       type: 'number',
       default: 1,
@@ -195,6 +203,8 @@ export const config = {
     memoryLimit: envVars.FDA_DUCKDB_MEMORY_LIMIT,
     tempDir: envVars.FDA_DUCKDB_TEMP_DIR,
     maxTempSize: envVars.FDA_DUCKDB_MAX_TEMP_SIZE,
+    maxThreads: envVars.FDA_DUCKDB_MAX_THREADS,
+    preserveInsertionOrder: envVars.FDA_DUCKDB_PRESERVE_INSERTION_ORDER,
   },
   mongo: {
     uri: envVars.FDA_MONGO_URI,
