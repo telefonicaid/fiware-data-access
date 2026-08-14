@@ -119,6 +119,9 @@ services:
       - FDA_ROLE_APISERVER=true
       - FDA_ROLE_FETCHER=true
       - FDA_CREATE_DEFAULT_DATA_ACCESS=true
+      - FDA_DUCKDB_MEMORY_LIMIT=0.5GB
+      - FDA_DUCKDB_MAX_THREADS=1
+      - FDA_DUCKDB_PRESERVE_INSERTION_ORDER=false
     command: ['npm', 'start']
     logging:
       driver: "json-file"

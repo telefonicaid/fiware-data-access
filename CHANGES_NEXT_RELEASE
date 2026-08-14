@@ -1,3 +1,4 @@
+- Fix: OOM Kill when no memory for duckdb by control memory options added: memoryLimit, tempDir, maxTempSize, maxTrheads, preserveInsertionOrder (#261)
 - Add: use FIWARE headers (`srv`, `subsrv`, `corr`) provided in API requests for logging, with a generated correlation ID when `corr` is not provided (#188)
 - Add: improve fetcher logging (Agenda jobs) and add Heartbeat with configurable interval (`FDA_FETCHER_HEARTBEAT_INTERVAL_MS`) (#214)
 - Add: generated defaultDataAccess now supports comma-separated values for equality filters when schema is available, while remaining fully backward compatible (#253)
