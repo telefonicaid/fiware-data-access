@@ -280,6 +280,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
     }
 
     function buildCommonEnv(overrides = {}) {
+      const duckdbDir = `/tmp/duckdb-${process.pid}-${Date.now()}`;
       return {
         ...process.env,
         NODE_ENV: 'integration',
@@ -290,6 +291,8 @@ export function runFDAIntegrationSuite({ mode, label }) {
         FDA_OBJSTG_ENDPOINT: minioHostPort,
         FDA_MONGO_URI: mongoUri,
         FDA_MAX_CONCURRENT_FRESH_QUERIES: '1',
+        FDA_DUCKDB_DIR: duckdbDir,
+        FDA_DUCKDB_TEMP_DIR: '${duckdbDir}/temp',
         ...overrides,
       };
     }

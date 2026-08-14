@@ -256,6 +256,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
     }
 
     function buildCommonEnv(overrides = {}) {
+      const duckdbDir = `/tmp/duckdb-${process.pid}-${Date.now()}`;
       return {
         ...process.env,
         NODE_ENV: 'integration',
@@ -269,6 +270,9 @@ export function runFDAIntegrationSuite({ mode, label }) {
         FDA_DUCKDB_MEMORY_LIMIT: '0.5GB',
         FDA_DUCKDB_MAX_THREADS: '1',
         FDA_DUCKDB_PRESERVE_INSERTION_ORDER: 'false',
+        FDA_DUCKDB_DIR: duckdbDir,
+        FDA_DUCKDB_TEMP_DIR: '${duckdbDir}/temp',
+        FDA_MAX_CONCURRENT_REFRESH_JOBS: '1',
         ...overrides,
       };
     }
