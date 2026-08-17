@@ -256,122 +256,137 @@ export function registerLargeFdaPerformanceTests({
   test(
     'Create large air quality FDA',
     async () => {
-      const baseUrl = getBaseUrl();
-      const fdaId = `fda-air-quality-large-${Date.now()}`;
-      const datasetInfo = await ensureLargeAirQualityTable(pgClient);
-      console.log(
-        `[PERF] Source dataset: ${datasetInfo.rows.toLocaleString()} rows ` +
-          `(table=${datasetInfo.tableSize}, total=${datasetInfo.totalSize})`,
-      );
-      validateDatasetInfo(datasetInfo);
-      logDatasetInfo({ fdaId, datasetInfo });
+      let fdaId;
+      try {
+        const baseUrl = getBaseUrl();
+        fdaId = `fda-air-quality-large-${Date.now()}`;
+        const datasetInfo = await ensureLargeAirQualityTable(pgClient);
+        console.log(
+          `[PERF] Source dataset: ${datasetInfo.rows.toLocaleString()} rows ` +
+            `(table=${datasetInfo.tableSize}, total=${datasetInfo.totalSize})`,
+        );
+        validateDatasetInfo(datasetInfo);
+        logDatasetInfo({ fdaId, datasetInfo });
 
-      const res = await httpReq({
-        method: 'POST',
-        url: `${baseUrl}/${visibility}/fdas`,
-        headers: {
-          'Fiware-Service': service,
-          'Fiware-ServicePath': servicePath,
-        },
-        body: buildLargeFdaBody({ fdaId, datasetInfo }),
-      });
+        const res = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: buildLargeFdaBody({ fdaId, datasetInfo }),
+        });
 
-      if (res.status >= 400) {
-        console.error('POST /fdas failed:', res.status, res.json ?? res.text);
+        if (res.status >= 400) {
+          console.error('POST /fdas failed:', res.status, res.json ?? res.text);
+        }
+
+        expect(res.status).toBe(202);
+
+        const markPrefix = `large-fda-${fdaId}`;
+
+        performance.mark(`${markPrefix}-start`);
+
+        await waitUntilFDAStatus({
+          baseUrl,
+          service,
+          fdaId,
+          visibility,
+          timeout: maxWaitMs(),
+          status: 'fetching',
+          progress: 20,
+          httpReq,
+        });
+
+        performance.mark(`${markPrefix}-fetch-start`);
+
+        await waitUntilFDAStatus({
+          baseUrl,
+          service,
+          fdaId,
+          visibility,
+          timeout: maxWaitMs(),
+          status: 'transforming',
+          progress: 60,
+          httpReq,
+        });
+
+        performance.mark(`${markPrefix}-fetch-end`);
+
+        await waitUntilFDAStatus({
+          baseUrl,
+          service,
+          fdaId,
+          visibility,
+          timeout: maxWaitMs(),
+          status: 'uploading',
+          progress: 80,
+          httpReq,
+        });
+
+        performance.mark(`${markPrefix}-upload-start`);
+
+        await waitUntilFDACompleted({
+          baseUrl,
+          service,
+          fdaId,
+          visibility,
+          timeout: maxWaitMs(),
+        });
+
+        performance.mark(`${markPrefix}-end`);
+
+        const creationMeasureName = `Large FDA creation - ${fdaId}`;
+        const fetchMeasureName = `Large FDA fetch - ${fdaId}`;
+        const transformUploadMeasureName = `Large FDA transform/upload - ${fdaId}`;
+
+        performance.measure(
+          creationMeasureName,
+          `${markPrefix}-start`,
+          `${markPrefix}-end`,
+        );
+
+        performance.measure(
+          fetchMeasureName,
+          `${markPrefix}-fetch-start`,
+          `${markPrefix}-fetch-end`,
+        );
+
+        performance.measure(
+          transformUploadMeasureName,
+          `${markPrefix}-fetch-end`,
+          `${markPrefix}-upload-start`,
+        );
+
+        const creationDuration = getMeasureDuration(creationMeasureName);
+        const fetchDuration = getMeasureDuration(fetchMeasureName);
+        const transformUploadDuration = getMeasureDuration(
+          transformUploadMeasureName,
+        );
+
+        console.log(
+          `[PERF] Large FDA creation took ${creationDuration.toFixed(
+            2,
+          )}ms for ${formatNumber(datasetInfo.rows)} rows, ${
+            datasetInfo.columns
+          } columns, source size ${datasetInfo.size} (fetch: ${fetchDuration.toFixed(
+            2,
+          )}ms) (transform/upload: ${transformUploadDuration.toFixed(2)}ms)`,
+        );
+      } finally {
+        if (fdaId) {
+          const deleteRes = await httpReq({
+            method: 'DELETE',
+            url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
+            headers: {
+              'Fiware-Service': service,
+              'Fiware-ServicePath': servicePath,
+            },
+          });
+          console.log(`[PERF] Cleanup FDA ${fdaId}: ${deleteRes.status}`);
+        }
       }
-
-      expect(res.status).toBe(202);
-
-      const markPrefix = `large-fda-${fdaId}`;
-
-      performance.mark(`${markPrefix}-start`);
-
-      await waitUntilFDAStatus({
-        baseUrl,
-        service,
-        fdaId,
-        visibility,
-        timeout: maxWaitMs(),
-        status: 'fetching',
-        progress: 20,
-        httpReq,
-      });
-
-      performance.mark(`${markPrefix}-fetch-start`);
-
-      await waitUntilFDAStatus({
-        baseUrl,
-        service,
-        fdaId,
-        visibility,
-        timeout: maxWaitMs(),
-        status: 'transforming',
-        progress: 60,
-        httpReq,
-      });
-
-      performance.mark(`${markPrefix}-fetch-end`);
-
-      await waitUntilFDAStatus({
-        baseUrl,
-        service,
-        fdaId,
-        visibility,
-        timeout: maxWaitMs(),
-        status: 'uploading',
-        progress: 80,
-        httpReq,
-      });
-
-      performance.mark(`${markPrefix}-upload-start`);
-
-      await waitUntilFDACompleted({
-        baseUrl,
-        service,
-        fdaId,
-        visibility,
-        timeout: maxWaitMs(),
-      });
-
-      performance.mark(`${markPrefix}-end`);
-
-      const creationMeasureName = `Large FDA creation - ${fdaId}`;
-      const fetchMeasureName = `Large FDA fetch - ${fdaId}`;
-      const transformUploadMeasureName = `Large FDA transform/upload - ${fdaId}`;
-
-      performance.measure(
-        creationMeasureName,
-        `${markPrefix}-start`,
-        `${markPrefix}-end`,
-      );
-
-      performance.measure(
-        fetchMeasureName,
-        `${markPrefix}-fetch-start`,
-        `${markPrefix}-fetch-end`,
-      );
-
-      performance.measure(
-        transformUploadMeasureName,
-        `${markPrefix}-fetch-end`,
-        `${markPrefix}-upload-start`,
-      );
-
-      const creationDuration = getMeasureDuration(creationMeasureName);
-      const fetchDuration = getMeasureDuration(fetchMeasureName);
-      const transformUploadDuration = getMeasureDuration(
-        transformUploadMeasureName,
-      );
-
-      console.log(
-        `[PERF] Large FDA creation took ${creationDuration.toFixed(
-          2,
-        )}ms for ${formatNumber(datasetInfo.rows)} rows, ${
-          datasetInfo.columns
-        } columns, source size ${datasetInfo.size} (fetch: ${fetchDuration.toFixed(
-          2,
-        )}ms) (transform/upload: ${transformUploadDuration.toFixed(2)}ms)`,
-      );
     },
     maxWaitMs(),
   );
