@@ -91,9 +91,9 @@ async function initDuckDB() {
     const memoryLimit = String(config.duckdb?.memoryLimit || '1.0GB');
     const tempDir = String(config.duckdb?.tempDir || '/tmp/duckdb/temp');
     const maxTemp = String(config.duckdb?.maxTempSize || '10GB');
-    const maxThreads = String(config.duckdb?.maxThreads || '2');
+    const maxThreads = String(config.duckdb?.maxThreads ?? '2');
     const preserveInsertionOrder = String(
-      config.duckdb?.preserveInsertionOrder || 'true',
+      config.duckdb?.preserveInsertionOrder ?? 'true',
     );
 
     await configConn.run(`
