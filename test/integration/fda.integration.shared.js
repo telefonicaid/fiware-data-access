@@ -256,6 +256,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
     }
 
     function buildCommonEnv(overrides = {}) {
+      // Avoid lock same db file by using different file each execution
       const duckdbDir = `/tmp/duckdb-${process.pid}-${Date.now()}`;
       return {
         ...process.env,

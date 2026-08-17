@@ -35,6 +35,7 @@ import { MongoClient } from 'mongodb';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { registerFdaCreationPerformanceTests } from './suites/fdaCreation.performance.tests.js';
+import { registerLargeFdaPerformanceTests } from './suites/fdaLargeCreation.performance.tests.js';
 import { registerFdaLoadPerformanceTests } from './suites/fdaLoad.performance.tests.js';
 import { registerFdaQueryPerformanceTests } from './suites/fdaQuery.performance.tests.js';
 import {
@@ -280,6 +281,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
     }
 
     function buildCommonEnv(overrides = {}) {
+      // Avoid lock same db file by using different file each execution
       const duckdbDir = `/tmp/duckdb-${process.pid}-${Date.now()}`;
       return {
         ...process.env,
@@ -460,6 +462,16 @@ export function runFDAIntegrationSuite({ mode, label }) {
       servicePath: '/public',
       visibility: 'public',
       fdaId: `perf-test`,
+      httpReq,
+      waitUntilFDACompleted,
+      maxWaitMs: () => maxTimeoutMs,
+    });
+
+    registerLargeFdaPerformanceTests({
+      getBaseUrl: () => baseUrl,
+      service,
+      servicePath: '/public',
+      visibility: 'public',
       httpReq,
       waitUntilFDACompleted,
       maxWaitMs: () => maxTimeoutMs,
