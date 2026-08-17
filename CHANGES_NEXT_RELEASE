@@ -1,4 +1,4 @@
-- Fix: OOM Kill when no memory for duckdb by control memory options added: memoryLimit, tempDir, maxTempSize, maxTrheads, preserveInsertionOrder (#261)
+- Fix: OOM Kill when no memory for duckdb by control memory and threads options added: memoryLimit, tempDir, maxTempSize, maxThreads, preserveInsertionOrder (#261)
 - Add `FDA_MAX_CONCURRENT_REFRESH_JOBS` Maximum number of concurrent refresh jobs done by fetcher to preserve memory (#261)
 - Add control backpresure between pg and minio and add `FDA_UPLOAD_PART_SIZE_MB` and `FDA_UPLOAD_QUEUE_SIZE` to control concurrent in-flight parts to preserve memory (#261)
 - Add: support for MongoDB aggregation pipelines in FDA queries, with proper validation and read-only stages (#197)
