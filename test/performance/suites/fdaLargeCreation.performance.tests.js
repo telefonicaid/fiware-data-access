@@ -26,6 +26,224 @@ import { test, expect } from '@jest/globals';
 import { performance } from 'node:perf_hooks';
 import { waitUntilFDAStatus } from '../utils/performanceTestUtils';
 
+const DEFAULT_LARGE_TABLE_MIN_ROWS = 5_000_000;
+
+function formatNumber(value) {
+  if (value === undefined || value === null) {
+    return 'unknown';
+  }
+
+  return Number(value).toLocaleString();
+}
+
+function formatValue(value) {
+  if (value === undefined || value === null) {
+    return 'unknown';
+  }
+
+  return value;
+}
+
+function getMinimumRows() {
+  return Number(
+    process.env.PERFORMANCE_LARGE_TABLE_MIN_ROWS ??
+      DEFAULT_LARGE_TABLE_MIN_ROWS,
+  );
+}
+
+function validateDatasetInfo(datasetInfo) {
+  const minimumRows = getMinimumRows();
+
+  if (!datasetInfo) {
+    throw new Error(
+      [
+        'Large FDA dataset info is missing.',
+        'Make sure public.air_quality_test is created in the parent beforeAll',
+        'and pass getDatasetInfo: () => largeTableInfo to registerLargeFdaPerformanceTests.',
+      ].join(' '),
+    );
+  }
+
+  if (!datasetInfo.query) {
+    throw new Error('Large FDA dataset query is missing.');
+  }
+
+  if (!datasetInfo.rows || Number(datasetInfo.rows) < minimumRows) {
+    throw new Error(
+      [
+        `Large FDA dataset is too small.`,
+        `Current rows: ${formatNumber(datasetInfo.rows)}.`,
+        `Minimum expected rows: ${formatNumber(minimumRows)}.`,
+        'Create or recreate public.air_quality_test before running this test.',
+      ].join(' '),
+    );
+  }
+}
+
+function logDatasetInfo({ fdaId, datasetInfo }) {
+  console.log('\n[PERF] Starting large FDA creation benchmark');
+
+  console.table({
+    FDA: fdaId,
+    Table: formatValue(datasetInfo.tableName),
+    Query: formatValue(datasetInfo.query),
+    Rows: formatNumber(datasetInfo.rows),
+    Columns: formatValue(datasetInfo.columns),
+    'Source table size': formatValue(datasetInfo.size),
+    'Source table bytes': formatValue(datasetInfo.bytes),
+    'Min timeinstant': formatValue(datasetInfo.minTimeinstant),
+    'Max timeinstant': formatValue(datasetInfo.maxTimeinstant),
+    Partition: formatValue(datasetInfo.partition),
+    Compression: String(datasetInfo.compression),
+    Cached: String(datasetInfo.cached),
+  });
+}
+
+function buildLargeFdaBody({ fdaId, datasetInfo }) {
+  return {
+    id: fdaId,
+    query: datasetInfo.query,
+    description: 'Performance test: large air quality dataset',
+    timeColumn: 'timeinstant',
+    objStgConf: {
+      partition: datasetInfo.partition ?? 'year',
+      compression: datasetInfo.compression ?? false,
+    },
+    datasourceId: datasetInfo.datasourceId ?? 'default',
+    cached: datasetInfo.cached ?? false,
+  };
+}
+
+function getMeasureDuration(name) {
+  return performance.getEntriesByName(name)[0]?.duration ?? 0;
+}
+
+async function ensureLargeAirQualityTable(pgClient) {
+  const minimumRows = Number(
+    process.env.PERFORMANCE_LARGE_TABLE_MIN_ROWS ?? 5_000_000,
+  );
+
+  await pgClient.query(`
+    CREATE TABLE IF NOT EXISTS public.air_quality_test (
+      timeinstant timestamptz,
+      location text,
+      address text,
+      dataprovider text,
+      name text,
+      no2 double precision,
+      o3 double precision,
+      so2 double precision,
+      co double precision,
+      co2 double precision,
+      pm10 double precision,
+      pm25 double precision,
+      month int,
+      year int
+    );
+  `);
+
+  const currentRowsResult = await pgClient.query(`
+    SELECT COUNT(*)::bigint AS total_rows
+    FROM public.air_quality_test;
+  `);
+
+  const currentRows = Number(currentRowsResult.rows[0].total_rows);
+
+  if (currentRows < minimumRows) {
+    console.log(
+      `[TEST] air_quality_test has ${currentRows.toLocaleString()} rows. Recreating large dataset...`,
+    );
+
+    await pgClient.query(`
+      DROP TABLE IF EXISTS public.air_quality_test;
+    `);
+
+    await pgClient.query(`
+      CREATE TABLE public.air_quality_test (
+        timeinstant timestamptz,
+        location text,
+        address text,
+        dataprovider text,
+        name text,
+        no2 double precision,
+        o3 double precision,
+        so2 double precision,
+        co double precision,
+        co2 double precision,
+        pm10 double precision,
+        pm25 double precision,
+        month int,
+        year int
+      );
+    `);
+
+    await pgClient.query(`
+      INSERT INTO public.air_quality_test
+      SELECT
+        gs AS timeinstant,
+        'loc-' || (i % 10) AS location,
+        'addr' AS address,
+        'prov' AS dataprovider,
+        'name' AS name,
+        random() * 100 AS no2,
+        random() * 100 AS o3,
+        random() * 50 AS so2,
+        random() * 200 AS co,
+        random() * 1000 AS co2,
+        random() * 200 AS pm10,
+        random() * 100 AS pm25,
+        EXTRACT(MONTH FROM gs)::int AS month,
+        EXTRACT(YEAR FROM gs)::int AS year
+      FROM (
+        SELECT generate_series(
+          '2024-01-01'::timestamptz,
+          '2024-06-30'::timestamptz,
+          '5 minutes'
+        ) AS gs
+      ) t
+      CROSS JOIN generate_series(1, 100) AS s(i);
+    `);
+  } else {
+    console.log(
+      `[TEST] Reusing existing air_quality_test with ${currentRows.toLocaleString()} rows`,
+    );
+  }
+
+  const infoResult = await pgClient.query(`
+    SELECT
+      COUNT(*)::bigint AS rows,
+      pg_total_relation_size('public.air_quality_test')::bigint AS bytes,
+      pg_size_pretty(
+        pg_total_relation_size('public.air_quality_test')
+      ) AS size
+    FROM public.air_quality_test;
+  `);
+
+  const columnsResult = await pgClient.query(`
+    SELECT COUNT(*)::int AS columns
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'air_quality_test';
+  `);
+
+  const minMaxResult = await pgClient.query(`
+    SELECT
+      MIN(timeinstant) AS min_timeinstant,
+      MAX(timeinstant) AS max_timeinstant
+    FROM public.air_quality_test;
+  `);
+
+  return {
+    tableName: 'public.air_quality_test',
+    query: 'SELECT * FROM public.air_quality_test',
+    rows: Number(infoResult.rows[0].rows),
+    columns: Number(columnsResult.rows[0].columns),
+    bytes: Number(infoResult.rows[0].bytes),
+    size: infoResult.rows[0].size,
+    minTimeinstant: minMaxResult.rows[0],
+  };
+}
+
 export function registerLargeFdaPerformanceTests({
   getBaseUrl,
   service,
@@ -39,8 +257,14 @@ export function registerLargeFdaPerformanceTests({
     'Create large air quality FDA',
     async () => {
       const baseUrl = getBaseUrl();
-      //const fdaId = 'fda-air-quality-large';
       const fdaId = `fda-air-quality-large-${Date.now()}`;
+      const datasetInfo = await ensureLargeAirQualityTable(pgClient);
+      console.log(
+        `[PERF] Source dataset: ${datasetInfo.rows.toLocaleString()} rows ` +
+          `(table=${datasetInfo.tableSize}, total=${datasetInfo.totalSize})`,
+      );
+      validateDatasetInfo(datasetInfo);
+      logDatasetInfo({ fdaId, datasetInfo });
 
       const res = await httpReq({
         method: 'POST',
@@ -49,18 +273,7 @@ export function registerLargeFdaPerformanceTests({
           'Fiware-Service': service,
           'Fiware-ServicePath': servicePath,
         },
-        body: {
-          id: fdaId,
-          query: 'SELECT * FROM public.air_quality_test',
-          description: 'Performance test: large air quality dataset',
-          timeColumn: 'timeinstant',
-          objStgConf: {
-            partition: 'year',
-            compression: false,
-          },
-          datasourceId: 'default',
-          cached: false,
-        },
+        body: buildLargeFdaBody({ fdaId, datasetInfo }),
       });
 
       if (res.status >= 400) {
@@ -69,7 +282,9 @@ export function registerLargeFdaPerformanceTests({
 
       expect(res.status).toBe(202);
 
-      performance.mark('large-fda-start');
+      const markPrefix = `large-fda-${fdaId}`;
+
+      performance.mark(`${markPrefix}-start`);
 
       await waitUntilFDAStatus({
         baseUrl,
@@ -82,7 +297,7 @@ export function registerLargeFdaPerformanceTests({
         httpReq,
       });
 
-      performance.mark('large-fda-fetch-start');
+      performance.mark(`${markPrefix}-fetch-start`);
 
       await waitUntilFDAStatus({
         baseUrl,
@@ -95,7 +310,7 @@ export function registerLargeFdaPerformanceTests({
         httpReq,
       });
 
-      performance.mark('large-fda-fetch-end');
+      performance.mark(`${markPrefix}-fetch-end`);
 
       await waitUntilFDAStatus({
         baseUrl,
@@ -108,7 +323,7 @@ export function registerLargeFdaPerformanceTests({
         httpReq,
       });
 
-      performance.mark('large-fda-upload-start');
+      performance.mark(`${markPrefix}-upload-start`);
 
       await waitUntilFDACompleted({
         baseUrl,
@@ -118,41 +333,44 @@ export function registerLargeFdaPerformanceTests({
         timeout: maxWaitMs(),
       });
 
-      performance.mark('large-fda-end');
+      performance.mark(`${markPrefix}-end`);
+
+      const creationMeasureName = `Large FDA creation - ${fdaId}`;
+      const fetchMeasureName = `Large FDA fetch - ${fdaId}`;
+      const transformUploadMeasureName = `Large FDA transform/upload - ${fdaId}`;
 
       performance.measure(
-        'Large FDA creation',
-        'large-fda-start',
-        'large-fda-end',
+        creationMeasureName,
+        `${markPrefix}-start`,
+        `${markPrefix}-end`,
       );
 
       performance.measure(
-        'Large FDA fetch',
-        'large-fda-fetch-start',
-        'large-fda-fetch-end',
+        fetchMeasureName,
+        `${markPrefix}-fetch-start`,
+        `${markPrefix}-fetch-end`,
       );
 
       performance.measure(
-        'Large FDA parquet+upload',
-        'large-fda-fetch-end',
-        'large-fda-upload-start',
+        transformUploadMeasureName,
+        `${markPrefix}-fetch-end`,
+        `${markPrefix}-upload-start`,
       );
 
-      const creationTime =
-        performance.getEntriesByName('Large FDA creation')[0];
-
-      const fetchTime = performance.getEntriesByName('Large FDA fetch')[0];
-
-      const parquetTime = performance.getEntriesByName(
-        'Large FDA parquet+upload',
-      )[0];
+      const creationDuration = getMeasureDuration(creationMeasureName);
+      const fetchDuration = getMeasureDuration(fetchMeasureName);
+      const transformUploadDuration = getMeasureDuration(
+        transformUploadMeasureName,
+      );
 
       console.log(
-        `[PERF] Large FDA creation took ${creationTime.duration.toFixed(
+        `[PERF] Large FDA creation took ${creationDuration.toFixed(
           2,
-        )}ms (fetch: ${fetchTime.duration.toFixed(
+        )}ms for ${formatNumber(datasetInfo.rows)} rows, ${
+          datasetInfo.columns
+        } columns, source size ${datasetInfo.size} (fetch: ${fetchDuration.toFixed(
           2,
-        )}ms) (transform/upload: ${parquetTime.duration.toFixed(2)}ms)`,
+        )}ms) (transform/upload: ${transformUploadDuration.toFixed(2)}ms)`,
       );
     },
     maxWaitMs(),
