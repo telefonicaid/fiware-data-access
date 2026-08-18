@@ -434,7 +434,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
         );
       }
 
-      expect(createRes.status).toBe(200);
+      expect(createRes.status).toBe(204);
 
       const getRes = await httpReq({
         method: 'GET',
