@@ -35,6 +35,7 @@ import { MongoClient } from 'mongodb';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { registerFdaCreationPerformanceTests } from './suites/fdaCreation.performance.tests.js';
+import { registerLargeFdaPerformanceTests } from './suites/fdaLargeCreation.performance.tests.js';
 import { registerFdaLoadPerformanceTests } from './suites/fdaLoad.performance.tests.js';
 import { registerFdaQueryPerformanceTests } from './suites/fdaQuery.performance.tests.js';
 import {
@@ -280,20 +281,20 @@ export function runFDAIntegrationSuite({ mode, label }) {
     }
 
     function buildCommonEnv(overrides = {}) {
+      // Avoid lock same db file by using different file each execution
+      const duckdbDir = `/tmp/duckdb-${process.pid}-${Date.now()}`;
       return {
         ...process.env,
         NODE_ENV: 'integration',
         FDA_NODE_ENV: 'development',
-        FDA_PG_USER: 'postgres',
-        FDA_PG_PASSWORD: 'postgres',
-        FDA_PG_HOST: pgHost,
-        FDA_PG_PORT: String(pgPort),
         FDA_OBJSTG_USER: 'admin',
         FDA_OBJSTG_PASSWORD: 'admin123',
         FDA_OBJSTG_PROTOCOL: 'http',
         FDA_OBJSTG_ENDPOINT: minioHostPort,
         FDA_MONGO_URI: mongoUri,
         FDA_MAX_CONCURRENT_FRESH_QUERIES: '1',
+        FDA_DUCKDB_DIR: duckdbDir,
+        FDA_DUCKDB_TEMP_DIR: '${duckdbDir}/temp',
         ...overrides,
       };
     }
@@ -461,6 +462,16 @@ export function runFDAIntegrationSuite({ mode, label }) {
       servicePath: '/public',
       visibility: 'public',
       fdaId: `perf-test`,
+      httpReq,
+      waitUntilFDACompleted,
+      maxWaitMs: () => maxTimeoutMs,
+    });
+
+    registerLargeFdaPerformanceTests({
+      getBaseUrl: () => baseUrl,
+      service,
+      servicePath: '/public',
+      visibility: 'public',
       httpReq,
       waitUntilFDACompleted,
       maxWaitMs: () => maxTimeoutMs,

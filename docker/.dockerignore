@@ -1,0 +1,4 @@
+docker/postgis-data
+docker/data
+node_modules
+.git

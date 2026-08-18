@@ -49,6 +49,7 @@ Variables that define which components of the application are executed by this i
 | `FDA_MAX_CONCURRENT_FRESH_QUERIES`  | ✓        | number  | Maximum number of concurrent direct fresh FDA queries accepted by the API instance. Additional requests return `429 TooManyFreshQueries`. Default `5`.               |
 | `FDA_CREATE_DEFAULT_DATA_ACCESS`    | ✓        | boolean | If `true`, FDA creation also creates a built-in `defaultDataAccess` DA unless the request overrides it. Default `true`.                                              |
 | `FDA_FETCHER_HEARTBEAT_INTERVAL_MS` | ✓        | number  | Interval in milliseconds between Fetcher heartbeat logs. Default `60000`. Set to `0` to disable the heartbeat.                                                       |
+| `FDA_MAX_CONCURRENT_REFRESH_JOBS`   | ✓        | number  | Maximum number of concurrent refresh jobs done by fetcher. Memory consuption is incresed when concurrent refresh jobs grows. Default `1`.                            |
 
 > Note: By default, an instance runs both roles (API server and Fetcher). You can disable one to separate
 > responsibilities.
@@ -114,6 +115,19 @@ Variabes related to the object bucket-based storage system:
 | `FDA_OBJSTG_MAX_POOL_SIZE`  | ✓        | number | Max Pool size for connections pool for object storage. Default is 10                                 |
 | `FDA_OBJSTG_EXTENSIONS_DIR` | ✓        | string | Path to the directory to store the `duckDb` extensions. Default value `./duckdb_extensions`          |
 
+### DuckDB
+
+Configuration variables for DuckDB runtime and temporary storage:
+
+| Variable                              | Optional | Type    | Description                                                                                                                                                                                                                                 |
+| ------------------------------------- | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FDA_DUCKDB_DIR`                      | ✓        | string  | Directory used to store the DuckDB database file. Default `/tmp/duckdb`.                                                                                                                                                                    |
+| `FDA_DUCKDB_MEMORY_LIMIT`             | ✓        | string  | DuckDB `memory_limit` configuration (e.g., `1.0GB`). Default `1.0GB`.                                                                                                                                                                       |
+| `FDA_DUCKDB_TEMP_DIR`                 | ✓        | string  | Directory used by DuckDB for temporary files. Default `/tmp/duckdb/temp`.                                                                                                                                                                   |
+| `FDA_DUCKDB_MAX_TEMP_SIZE`            | ✓        | string  | Maximum size allowed for DuckDB temp directory (e.g., `10GB`). Default `10GB`.                                                                                                                                                              |
+| `FDA_DUCKDB_MAX_THREADS`              | ✓        | number  | Maximum number of threads DuckDB can use to execute queries in parallel. Lower values reduce memory consumption and resource contention, while higher values may improve performance for complex analytical queries. Default `2`.           |
+| `FDA_DUCKDB_PRESERVE_INSERTION_ORDER` | ✓        | boolean | Controls whether DuckDB preserves the original row insertion order during query execution. Setting it to `false` can reduce memory usage and improve performance for analytical workloads where row order is not important. Default `true`. |
+
 ### MongoDB
 
 Variables related to MongoDB:
@@ -130,6 +144,13 @@ Environment variables related to file uploads:
 | --------------------- | -------- | ------ | --------------------------------------------------------------------------------------------------------- |
 | `FDA_MAX_UPLOAD_SIZE` | ✓        | number | Maximum allowed upload size in bytes. Default `52428800` (50 MB).                                         |
 | `FDA_UPLOAD_TMP_DIR`  | ✓        | string | Directory used to temporarily store uploaded files before they are processed. Default `/tmp/fda_uploads`. |
+
+Additional upload tuning variables:
+
+| Variable                  | Optional | Type   | Description                                                                                               |
+| ------------------------- | -------- | ------ | --------------------------------------------------------------------------------------------------------- |
+| `FDA_UPLOAD_PART_SIZE_MB` | ✓        | number | Multipart upload part size in megabytes. Default `10`. Smaller values reduce per-part native buffer size. |
+| `FDA_UPLOAD_QUEUE_SIZE`   | ✓        | number | Multipart upload queue size (concurrent in-flight parts). Default `1`. Lower values reduce memory usage.  |
 
 ### Logger
 

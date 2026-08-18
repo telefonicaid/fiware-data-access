@@ -102,6 +102,26 @@ describe('fetcher', () => {
     expect(agendaMock.define).toHaveBeenCalledWith(
       'refresh-fda',
       expect.any(Function),
+      expect.objectContaining({
+        concurrency: 1,
+        lockLimit: 1,
+      }),
+    );
+    expect(agendaMock.define).toHaveBeenCalledWith(
+      'refresh-fda-recurring',
+      expect.any(Function),
+      expect.objectContaining({
+        concurrency: 1,
+        lockLimit: 1,
+      }),
+    );
+    expect(agendaMock.define).toHaveBeenCalledWith(
+      'consistency-refresh-fda-recurring',
+      expect.any(Function),
+      expect.objectContaining({
+        concurrency: 1,
+        lockLimit: 1,
+      }),
     );
     expect(agendaMock.start).toHaveBeenCalledTimes(1);
     expect(loggerMock.info).toHaveBeenCalledWith('[Fetcher] Agenda started');

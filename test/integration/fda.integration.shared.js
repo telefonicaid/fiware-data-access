@@ -28,8 +28,11 @@ import { once } from 'node:events';
 import {
   S3Client,
   CreateBucketCommand,
+  DeleteBucketCommand,
+  DeleteObjectsCommand,
   HeadBucketCommand,
   ListBucketsCommand,
+  ListObjectsV2Command,
 } from '@aws-sdk/client-s3';
 import pg from 'pg';
 import { MongoClient } from 'mongodb';
@@ -146,7 +149,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
         console.log('[TEST] Mongo OK');
       }
 
-      // Health MinIO + bucket
+      // Health MinIO + ensure clean bucket at startup
       {
         const s3 = new S3Client({
           endpoint: minioUrl,
@@ -157,6 +160,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
         await s3.send(new ListBucketsCommand({}));
         try {
           await s3.send(new HeadBucketCommand({ Bucket: service }));
+          await resetMinioBucket();
         } catch {
           await s3.send(new CreateBucketCommand({ Bucket: service }));
         }
@@ -202,25 +206,74 @@ export function runFDAIntegrationSuite({ mode, label }) {
       await Promise.allSettled([minio?.stop(), mongo?.stop(), postgis?.stop()]);
     });
 
+    async function resetMinioBucket() {
+      const s3 = new S3Client({
+        endpoint: minioUrl,
+        region: 'us-east-1',
+        credentials: { accessKeyId: 'admin', secretAccessKey: 'admin123' },
+        forcePathStyle: true,
+      });
+
+      try {
+        const bucketList = await s3.send(new ListBucketsCommand({}));
+        const bucketExists = (bucketList.Buckets ?? []).some(
+          (bucket) => bucket.Name === service,
+        );
+
+        if (bucketExists) {
+          const listed = await s3.send(
+            new ListObjectsV2Command({ Bucket: service, MaxKeys: 1000 }),
+          );
+
+          const keys = (listed.Contents ?? [])
+            .map(({ Key }) => Key)
+            .filter(Boolean);
+          if (keys.length > 0) {
+            await s3.send(
+              new DeleteObjectsCommand({
+                Bucket: service,
+                Delete: {
+                  Objects: keys.map((Key) => ({ Key })),
+                  Quiet: true,
+                },
+              }),
+            );
+          }
+
+          await s3
+            .send(new DeleteBucketCommand({ Bucket: service }))
+            .catch(() => {});
+        }
+      } finally {
+        await s3
+          .send(new CreateBucketCommand({ Bucket: service }))
+          .catch(() => {});
+      }
+    }
+
     function wait(ms) {
       return new Promise((resolve) => setTimeout(resolve, ms));
     }
 
     function buildCommonEnv(overrides = {}) {
+      // Avoid lock same db file by using different file each execution
+      const duckdbDir = `/tmp/duckdb-${process.pid}-${Date.now()}`;
       return {
         ...process.env,
         NODE_ENV: 'integration',
         FDA_NODE_ENV: 'development',
-        FDA_PG_USER: 'postgres',
-        FDA_PG_PASSWORD: 'postgres',
-        FDA_PG_HOST: pgHost,
-        FDA_PG_PORT: String(pgPort),
         FDA_OBJSTG_USER: 'admin',
         FDA_OBJSTG_PASSWORD: 'admin123',
         FDA_OBJSTG_PROTOCOL: 'http',
         FDA_OBJSTG_ENDPOINT: minioHostPort,
         FDA_MONGO_URI: mongoUri,
         FDA_MAX_CONCURRENT_FRESH_QUERIES: '1',
+        FDA_DUCKDB_MEMORY_LIMIT: '0.5GB',
+        FDA_DUCKDB_MAX_THREADS: '1',
+        FDA_DUCKDB_PRESERVE_INSERTION_ORDER: 'false',
+        FDA_DUCKDB_DIR: duckdbDir,
+        FDA_DUCKDB_TEMP_DIR: '${duckdbDir}/temp',
+        FDA_MAX_CONCURRENT_REFRESH_JOBS: '1',
         ...overrides,
       };
     }

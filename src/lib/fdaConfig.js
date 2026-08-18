@@ -86,6 +86,42 @@ const envVarsSchema = {
       type: 'string',
       default: null,
     },
+    FDA_DUCKDB_DIR: {
+      type: 'string',
+      default: '/tmp/duckdb',
+    },
+    FDA_DUCKDB_MEMORY_LIMIT: {
+      type: 'string',
+      default: '1.0GB',
+    },
+    FDA_DUCKDB_TEMP_DIR: {
+      type: 'string',
+      default: '/tmp/duckdb/temp',
+    },
+    FDA_DUCKDB_MAX_TEMP_SIZE: {
+      type: 'string',
+      default: '10GB',
+    },
+    FDA_DUCKDB_MAX_THREADS: {
+      type: 'number',
+      default: 2,
+    },
+    FDA_DUCKDB_PRESERVE_INSERTION_ORDER: {
+      type: 'boolean',
+      default: true,
+    },
+    FDA_MAX_CONCURRENT_REFRESH_JOBS: {
+      type: 'number',
+      default: 1,
+    },
+    FDA_UPLOAD_PART_SIZE_MB: {
+      type: 'number',
+      default: 10,
+    },
+    FDA_UPLOAD_QUEUE_SIZE: {
+      type: 'number',
+      default: 1,
+    },
     FDA_LOG_LEVEL: {
       type: 'string',
       default: 'INFO',
@@ -162,6 +198,14 @@ export const config = {
     maxPoolSize: envVars.FDA_OBJSTG_MAX_POOL_SIZE,
     extensionsDir: envVars.FDA_OBJSTG_EXTENSIONS_DIR,
   },
+  duckdb: {
+    dir: envVars.FDA_DUCKDB_DIR,
+    memoryLimit: envVars.FDA_DUCKDB_MEMORY_LIMIT,
+    tempDir: envVars.FDA_DUCKDB_TEMP_DIR,
+    maxTempSize: envVars.FDA_DUCKDB_MAX_TEMP_SIZE,
+    maxThreads: envVars.FDA_DUCKDB_MAX_THREADS,
+    preserveInsertionOrder: envVars.FDA_DUCKDB_PRESERVE_INSERTION_ORDER,
+  },
   mongo: {
     uri: envVars.FDA_MONGO_URI,
   },
@@ -177,6 +221,7 @@ export const config = {
   },
   fetcher: {
     heartbeatIntervalMs: envVars.FDA_FETCHER_HEARTBEAT_INTERVAL_MS,
+    maxConcurrentRefreshJobs: envVars.FDA_MAX_CONCURRENT_REFRESH_JOBS,
   },
   freshQueries: {
     maxConcurrent: envVars.FDA_MAX_CONCURRENT_FRESH_QUERIES,
@@ -187,5 +232,7 @@ export const config = {
   fileUpload: {
     maxSize: envVars.FDA_MAX_UPLOAD_SIZE,
     tmpDir: envVars.FDA_UPLOAD_TMP_DIR,
+    partSizeMB: envVars.FDA_UPLOAD_PART_SIZE_MB,
+    queueSize: envVars.FDA_UPLOAD_QUEUE_SIZE,
   },
 };
