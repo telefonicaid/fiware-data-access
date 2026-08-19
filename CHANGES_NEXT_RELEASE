@@ -1,1 +1,2 @@
 
+- Update: change default output type from NDJSON to JSON for legacy doQuery operation. 
