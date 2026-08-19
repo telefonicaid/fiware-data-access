@@ -1,3 +1,7 @@
+1.4.0 (August 19th, 2026)
+
+- Update: change default output type from `ndjson` to `json` for legacy doQuery operation (#252)
+
 1.3.0 (August 18th, 2026)
 
 - Add `FDA_MAX_CONCURRENT_REFRESH_JOBS` Maximum number of concurrent refresh jobs done by fetcher to preserve memory (#261)
