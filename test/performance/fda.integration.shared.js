@@ -234,6 +234,73 @@ export function runFDAIntegrationSuite({ mode, label }) {
         );
         tableSize = sizeResult.rows[0].size;
 
+        await pgClient.query(
+          `CREATE TABLE IF NOT EXISTS public.air_quality_test (
+      timeinstant timestamptz,
+      location text,
+      address text,
+      dataprovider text,
+      name text,
+      no2 double precision,
+      o3 double precision,
+      so2 double precision,
+      co double precision,
+      co2 double precision,
+      pm10 double precision,
+      pm25 double precision,
+      month int,
+      year int
+    );
+  `,
+        );
+        await pgClient.query(`
+      DROP TABLE IF EXISTS public.air_quality_test;
+    `);
+        await pgClient.query(`
+      CREATE TABLE public.air_quality_test (
+        timeinstant timestamptz,
+        location text,
+        address text,
+        dataprovider text,
+        name text,
+        no2 double precision,
+        o3 double precision,
+        so2 double precision,
+        co double precision,
+        co2 double precision,
+        pm10 double precision,
+         pm25 double precision,
+        month int,
+        year int
+      );
+    `);
+
+        await pgClient.query(`
+      INSERT INTO public.air_quality_test
+      SELECT
+        gs AS timeinstant,
+        'loc-' || (i % 10) AS location,
+        'addr' AS address,
+        'prov' AS dataprovider,
+        'name' AS name,
+        random() * 100 AS no2,
+        random() * 100 AS o3,
+        random() * 50 AS so2,
+        random() * 200 AS co,
+        random() * 1000 AS co2,
+        random() * 200 AS pm10,
+        random() * 100 AS pm25,
+        EXTRACT(MONTH FROM gs)::int AS month,
+        EXTRACT(YEAR FROM gs)::int AS year
+      FROM (
+        SELECT generate_series(
+          '2024-01-01'::timestamptz,
+          '2024-06-30'::timestamptz,
+          '5 minutes'
+        ) AS gs
+      ) t
+      CROSS JOIN generate_series(1, 100) AS s(i);
+    `);
         await pgClient.end();
         console.log('[TEST] Postgres OK');
       }
