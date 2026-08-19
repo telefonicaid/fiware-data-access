@@ -2051,7 +2051,7 @@ _**Request headers**_
 | ---------------- | -------- | ------------------------------------------------------------------------ | ---------------------- |
 | `Content-Type`   | ✓        | For `POST`, should be `application/x-www-form-urlencoded`                | —                      |
 | `Fiware-Service` | ✓        | Tenant/service name. If not present, it is derived from the `path` field | `trantor`              |
-| `Accept`         | ✓        | Ignored when `outputType` is provided. If omitted, defaults to JSON      | `application/x-ndjson` |
+| `Accept`         | ✓        | Ignored when `outputType` is provided. If omitted, defaults to NDJSON      | `application/x-ndjson` |
 
 ---
 
