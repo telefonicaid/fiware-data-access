@@ -1616,7 +1616,7 @@ describe('index routes - validation and middleware branches', () => {
     );
   });
 
-  test('returns NDJSON payload on GET /plugin/cda/api/doQuery when outputType is omitted', async () => {
+  test('returns JSON payload on GET /plugin/cda/api/doQuery when outputType is omitted', async () => {
     cdaMocks.handleCdaQuery.mockResolvedValueOnce({
       metadata: [{ colIndex: 0, colName: 'col1' }],
       resultset: [['x']],
@@ -1642,7 +1642,7 @@ describe('index routes - validation and middleware branches', () => {
           path: '/public/svc/verticals/sql/fda1',
           dataAccessId: 'da1',
         }),
-        outputType: 'ndjson',
+        outputType: 'json',
       }),
     );
   });

@@ -2047,11 +2047,11 @@ Supported methods:
 
 _**Request headers**_
 
-| Header           | Optional | Description                                                              | Example                |
-| ---------------- | -------- | ------------------------------------------------------------------------ | ---------------------- |
-| `Content-Type`   | ✓        | For `POST`, should be `application/x-www-form-urlencoded`                | —                      |
-| `Fiware-Service` | ✓        | Tenant/service name. If not present, it is derived from the `path` field | `trantor`              |
-| `Accept`         | ✓        | Ignored when `outputType` is provided. If omitted, defaults to JSON      | `application/x-ndjson` |
+| Header           | Optional | Description                                                              | Example            |
+| ---------------- | -------- | ------------------------------------------------------------------------ | ------------------ |
+| `Content-Type`   | ✓        | For `POST`, should be `application/x-www-form-urlencoded`                | —                  |
+| `Fiware-Service` | ✓        | Tenant/service name. If not present, it is derived from the `path` field | `trantor`          |
+| `Accept`         | ✓        | Ignored when `outputType` is provided. If omitted, defaults to JSON      | `application/json` |
 
 ---
 
