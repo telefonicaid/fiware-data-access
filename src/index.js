@@ -72,6 +72,7 @@ import {
 import {
   VALID_OUTPUT_TYPES,
   DEFAULT_OUTPUT_TYPE,
+  LEGACY_DEFAULT_OUTPUT_TYPE,
   rowsToCsv,
   rowsToXlsx,
   toCdaJson,
@@ -1029,7 +1030,7 @@ async function handleCdaDoQuery(req, res) {
     });
   }
 
-  const rawOutputType = requestParams.outputType || DEFAULT_OUTPUT_TYPE;
+  const rawOutputType = requestParams.outputType || LEGACY_DEFAULT_OUTPUT_TYPE;
 
   if (!VALID_OUTPUT_TYPES.includes(rawOutputType)) {
     return res.status(400).json({
