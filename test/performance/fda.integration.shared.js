@@ -234,25 +234,6 @@ export function runFDAIntegrationSuite({ mode, label }) {
         );
         tableSize = sizeResult.rows[0].size;
 
-        await pgClient.query(
-          `CREATE TABLE IF NOT EXISTS public.air_quality_test (
-      timeinstant timestamptz,
-      location text,
-      address text,
-      dataprovider text,
-      name text,
-      no2 double precision,
-      o3 double precision,
-      so2 double precision,
-      co double precision,
-      co2 double precision,
-      pm10 double precision,
-      pm25 double precision,
-      month int,
-      year int
-    );
-  `,
-        );
         await pgClient.query(`
       DROP TABLE IF EXISTS public.air_quality_test;
     `);
@@ -295,7 +276,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       FROM (
         SELECT generate_series(
           '2024-01-01'::timestamptz,
-          '2024-06-30'::timestamptz,
+          '2024-12-31'::timestamptz,
           '5 minutes'
         ) AS gs
       ) t
