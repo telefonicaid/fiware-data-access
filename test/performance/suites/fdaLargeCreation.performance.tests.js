@@ -26,6 +26,13 @@ import { test, expect } from '@jest/globals';
 import { performance } from 'node:perf_hooks';
 import { waitUntilFDAStatus } from '../utils/performanceTestUtils';
 
+function formatNumber(value) {
+  if (value === undefined || value === null) {
+    return 'unknown';
+  }
+  return Number(value).toLocaleString();
+}
+
 function buildLargeFdaBody({ fdaId, datasetInfo }) {
   return {
     id: fdaId,
