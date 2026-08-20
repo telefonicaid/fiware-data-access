@@ -25,9 +25,6 @@
 import { test, expect } from '@jest/globals';
 import { performance } from 'node:perf_hooks';
 import { waitUntilFDAStatus } from '../utils/performanceTestUtils';
-import { connectWithRetry } from '../../integration/utils/integrationTestUtils.js';
-import pg from 'pg';
-const { Client } = pg;
 
 function buildLargeFdaBody({ fdaId, datasetInfo }) {
   return {
