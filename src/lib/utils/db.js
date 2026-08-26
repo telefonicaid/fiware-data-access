@@ -71,6 +71,9 @@ export async function getDBConnection() {
 }
 
 async function logDuckDBConfig(conn) {
+  if (typeof conn.runAndReadAll !== 'function') {
+    return;
+  }
   const settings = [
     'memory_limit',
     'temp_directory',
@@ -78,16 +81,12 @@ async function logDuckDBConfig(conn) {
     'threads',
     'preserve_insertion_order',
   ];
-
   logger.info('DuckDB effective configuration:');
-
   for (const setting of settings) {
     const reader = await conn.runAndReadAll(
       `SELECT current_setting('${setting}') AS value`,
     );
-
     const rows = reader.getRowObjects();
-
     logger.info(
       {
         setting,
