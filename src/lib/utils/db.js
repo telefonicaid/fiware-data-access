@@ -70,6 +70,34 @@ export async function getDBConnection() {
   return conn;
 }
 
+async function logDuckDBConfig(conn) {
+  const settings = [
+    'memory_limit',
+    'temp_directory',
+    'max_temp_directory_size',
+    'threads',
+    'preserve_insertion_order',
+  ];
+
+  logger.info('DuckDB effective configuration:');
+
+  for (const setting of settings) {
+    const reader = await conn.runAndReadAll(
+      `SELECT current_setting('${setting}') AS value`,
+    );
+
+    const rows = reader.getRowObjects();
+
+    logger.info(
+      {
+        setting,
+        value: rows[0]?.value,
+      },
+      'DuckDB setting',
+    );
+  }
+}
+
 async function initDuckDB() {
   if (!instance) {
     logger.debug('Initializing DuckDB global instance...');
@@ -96,6 +124,10 @@ async function initDuckDB() {
       config.duckdb?.preserveInsertionOrder ?? 'true',
     );
 
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+
     await configConn.run(`
       SET memory_limit='${memoryLimit}';
     `);
@@ -116,6 +148,9 @@ async function initDuckDB() {
     await configConn.run(
       `SET preserve_insertion_order='${preserveInsertionOrder}';`,
     );
+
+    // Log efective config for duckdb
+    await logDuckDBConfig(configConn);
 
     await configConn.run('INSTALL httpfs;');
     await configConn.run('LOAD httpfs;');
