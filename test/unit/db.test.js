@@ -34,8 +34,12 @@ const loggerMock = {
 };
 
 function createDuckContext({ withDisconnect = true } = {}) {
+  const fakeReader = {
+    getRowObjects: () => [{ value: 'mock-value' }],
+  };
   const configConn = {
     run: jest.fn().mockResolvedValue(undefined),
+    runAndReadAll: jest.fn().mockResolvedValue(fakeReader),
   };
 
   if (withDisconnect) {
@@ -70,6 +74,7 @@ async function loadDbModule({ retrieveDAResult, duckContext } = {}) {
   retrieveFDAMock.mockReset().mockResolvedValue({});
   duckCreateMock.mockReset();
   loggerMock.debug.mockReset();
+  loggerMock.info.mockReset();
 
   const context = duckContext ?? createDuckContext();
   duckCreateMock.mockResolvedValue(context.instance);

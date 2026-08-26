@@ -71,9 +71,6 @@ export async function getDBConnection() {
 }
 
 async function logDuckDBConfig(conn) {
-  if (typeof conn.runAndReadAll !== 'function') {
-    return;
-  }
   const settings = [
     'memory_limit',
     'temp_directory',
