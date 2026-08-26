@@ -30,6 +30,7 @@ const retrieveFDAMock = jest.fn();
 const duckCreateMock = jest.fn();
 const loggerMock = {
   debug: jest.fn(),
+  info: jest.fn(),
 };
 
 function createDuckContext({ withDisconnect = true } = {}) {
