@@ -275,8 +275,8 @@ export function runFDAIntegrationSuite({ mode, label }) {
         EXTRACT(YEAR FROM gs)::int AS year
       FROM (
         SELECT generate_series(
-          '2024-01-01'::timestamptz,
-          '2024-12-31'::timestamptz,
+          NOW() - INTERVAL '12 months',
+          NOW(),
           '5 minutes'
         ) AS gs
       ) t
