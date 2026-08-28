@@ -41,7 +41,7 @@ function buildLargeFdaBody({ fdaId, datasetInfo }) {
       datasetInfo.description || 'Performance test: large air quality dataset',
     timeColumn: 'timeinstant',
     objStgConf: {
-      partition: datasetInfo.partition ?? 'year',
+      partition: datasetInfo.partition ?? 'month',
       compression: datasetInfo.compression ?? false,
     },
     datasourceId: datasetInfo.datasourceId ?? 'default',
@@ -222,7 +222,7 @@ export function registerLargeFdaPerformanceTests({
             type: 'window',
             params: {
               refreshInterval: '1 minute',
-              fetchSize: 'year',
+              fetchSize: 'month',
               windowSize: '6 months',
             },
           },
