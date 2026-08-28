@@ -71,23 +71,25 @@ export async function getDBConnection() {
 }
 
 async function logDuckDBConfig(conn) {
-  const settings = [
-    'memory_limit',
-    'temp_directory',
-    'max_temp_directory_size',
-    'threads',
-    'preserve_insertion_order',
-  ];
+  const reader = await conn.runAndReadAll(`
+    SELECT name, value
+    FROM duckdb_settings()
+    WHERE name IN (
+      'memory_limit',
+      'temp_directory',
+      'max_temp_directory_size',
+      'threads',
+      'preserve_insertion_order'
+    )
+    ORDER BY name
+  `);
+  const rows = reader.getRowObjects();
   logger.info('DuckDB effective configuration:');
-  for (const setting of settings) {
-    const reader = await conn.runAndReadAll(
-      `SELECT current_setting('${setting}') AS value`,
-    );
-    const rows = reader.getRowObjects();
+  for (const row of rows) {
     logger.info(
       {
-        setting,
-        value: rows[0]?.value,
+        setting: row.name,
+        value: row.value,
       },
       'DuckDB setting',
     );
