@@ -1994,7 +1994,6 @@ async function uploadTableToObjStg(
 async function preparePartitionPath(s3Client, bucket, tmpPath) {
   // We need to clean tmp folder in case of previous failed attempts temporary parquets
   const remnantTempFiles = await listObjects(s3Client, bucket, `${tmpPath}/`);
-  console.log(remnantTempFiles, '###################################');
   for (const tempPartition of remnantTempFiles) {
     await dropFile(s3Client, bucket, tempPartition);
   }
