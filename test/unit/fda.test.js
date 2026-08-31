@@ -2950,8 +2950,9 @@ describe('processFDAAsync', () => {
     );
   });
 
-  test('marks FDA as failed and rethrows when upload fails', async () => {
+  test('marks FDA as failed, cleans tmp folder, and rethrows when upload fails', async () => {
     pgMocks.uploadTable.mockRejectedValue(new Error('upload failed'));
+    awsMocks.listObjects.mockResolvedValue(['servicepath/fdaA.parquet']);
 
     await expect(
       processFDAAsync('fda2', 'SELECT 2', 'svc', '/servicepath'),
@@ -2965,6 +2966,12 @@ describe('processFDAAsync', () => {
       progress: 0,
       error: 'upload failed',
     });
+    expect(awsMocks.getS3Client).toHaveBeenCalled();
+    expect(awsMocks.dropFile).toHaveBeenCalledWith(
+      {},
+      'svc',
+      'servicepath/fdaA.parquet',
+    );
   });
 
   test('uploads Mongo datasource rows as CSV before parquet conversion', async () => {
