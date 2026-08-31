@@ -1917,7 +1917,7 @@ async function uploadTableToObjStg(
 
     // DuckDB cant overwrite files in Minio, so for partitioned files we upload them in a tmp file and then move them.
     const parquetPath = objStgConf?.partition
-      ? getPath(bucket, `tmp/${path}.parquet`, '')
+      ? await preparePartitionPath(s3Client, bucket, `tmp/${path}.parquet`)
       : getPath(bucket, path, '.parquet');
 
     const csvPath = getPath(bucket, path, '.csv');
@@ -1989,6 +1989,16 @@ async function uploadTableToObjStg(
   } finally {
     await releaseDBConnection(conn);
   }
+}
+
+async function preparePartitionPath(s3Client, bucket, tmpPath) {
+  // We need to clean tmp folder in case of previous failed attempts temporary parquets
+  const remnantTempFiles = await listObjects(s3Client, bucket, `${tmpPath}/`);
+  console.log(remnantTempFiles, '###################################');
+  for (const tempPartition of remnantTempFiles) {
+    await dropFile(s3Client, bucket, tempPartition);
+  }
+  return getPath(bucket, tmpPath, '');
 }
 
 async function ensureFDAReadyForQuery(service, fdaId, visibility, servicePath) {
