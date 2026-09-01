@@ -1233,8 +1233,12 @@ describe('index routes - validation and middleware branches', () => {
       description: 'adapter exploded',
     });
     expect(loggerMock.error).toHaveBeenCalledWith(
-      'Error executing query:',
-      expect.any(Error),
+      expect.objectContaining({
+        path: '/public/svc',
+        dataAccessId: 'da1',
+        err: expect.any(Error),
+      }),
+      'Error executing query',
     );
   });
 
