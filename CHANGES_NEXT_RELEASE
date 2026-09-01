@@ -1,2 +1,1 @@
-- Fix: clean partitioned temp files of the FDA before creating to avoid collisions (#265)
-- ADD: force to create temp dir for duckdb and log duckdb effective configuration
+
