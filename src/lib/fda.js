@@ -1489,7 +1489,21 @@ export async function processFDAAsync(
       progress: 0,
       error: err.message,
     });
+    const s3Client = getS3Client(
+      `${config.objstg.protocol}://${config.objstg.endpoint}`,
+      config.objstg.usr,
+      config.objstg.pass,
+    );
+    await cleanTmpFolder(s3Client, bucketName, `tmp/${storagePath}.parquet`);
     throw err;
+  }
+}
+
+async function cleanTmpFolder(s3Client, bucket, tmpPath) {
+  // We need to clean tmp folder in failed attempts to avoid accumulation of temp files in S3
+  const remnantTempFiles = await listObjects(s3Client, bucket, `${tmpPath}/`);
+  for (const tempPartition of remnantTempFiles) {
+    await dropFile(s3Client, bucket, tempPartition);
   }
 }
 
