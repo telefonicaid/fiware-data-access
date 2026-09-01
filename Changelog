@@ -1,8 +1,7 @@
 1.5.0 (September 1st, 2026)
 
 - ADD: force to create temp dir for duckdb and log duckdb effective configuration
-- Fix: clean partitioned temp files of the FDA before creating to avoid collisions (#265)
-
+- Fix: clean partitioned temp files of the FDA in case of failure to avoid leftover tmp files (#265)
 
 1.4.0 (August 19th, 2026)
 
