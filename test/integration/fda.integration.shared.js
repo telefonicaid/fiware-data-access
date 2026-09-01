@@ -100,6 +100,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
     const visibility = 'public';
     const fdaId = 'fda1';
     const fdaId3 = 'fda3';
+    const fdaIdSleep = 'fda-sleep';
     const daId = 'da1';
 
     beforeAll(async () => {
@@ -562,7 +563,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       visibility,
       fdaId,
       fdaId2: 'fda2',
-      fdaId3,
+      fdaIdSleep,
       httpReq,
       waitUntilFDACompleted,
       getMongoUri: () => mongoUri,

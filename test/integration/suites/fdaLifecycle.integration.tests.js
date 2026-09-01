@@ -32,7 +32,7 @@ export function registerFdaLifecycleIntegrationTests({
   visibility,
   fdaId,
   fdaId2,
-  fdaId3,
+  fdaIdSleep,
   httpReq,
   waitUntilFDACompleted,
   getMongoUri,
@@ -116,24 +116,50 @@ export function registerFdaLifecycleIntegrationTests({
     expect(afterInitFetchMs).toBeGreaterThanOrEqual(beforeLastFetchMs);
   });
 
-  test('PUT /fdas/:fdaId triggers AlreadyFetching if concurrent', async () => {
+  test('PUT /fdas/:fdaId triggers AlreadyFetching if concurrent after creation', async () => {
     const baseUrl = getBaseUrl();
-    httpReq({
-      method: 'PUT',
-      url: `${baseUrl}/${visibility}/fdas/${fdaId3}`,
+
+    await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/${visibility}/fdas`,
       headers: { 'Fiware-Service': service },
+      body: {
+        id: fdaIdSleep,
+        query: 'SELECT id, pg_sleep(1) FROM public.users',
+        description: 'Sleep FDA for testing concurrent fetches',
+      },
     });
 
     const put2 = await httpReq({
       method: 'PUT',
-      url: `${baseUrl}/${visibility}/fdas/${fdaId3}`,
+      url: `${baseUrl}/${visibility}/fdas/${fdaIdSleep}`,
       headers: { 'Fiware-Service': service },
     });
 
     expect(put2.status).toBe(409);
     expect(put2.json.error).toBe('AlreadyFetching');
 
-    await waitUntilFDACompleted({ baseUrl, service, fdaId: fdaId3 });
+    await waitUntilFDACompleted({ baseUrl, service, fdaId: fdaIdSleep });
+  });
+
+  test('PUT /fdas/:fdaId triggers AlreadyFetching if concurrent after refresh', async () => {
+    const baseUrl = getBaseUrl();
+    httpReq({
+      method: 'PUT',
+      url: `${baseUrl}/${visibility}/fdas/${fdaIdSleep}`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    const put2 = await httpReq({
+      method: 'PUT',
+      url: `${baseUrl}/${visibility}/fdas/${fdaIdSleep}`,
+      headers: { 'Fiware-Service': service },
+    });
+
+    expect(put2.status).toBe(409);
+    expect(put2.json.error).toBe('AlreadyFetching');
+
+    await waitUntilFDACompleted({ baseUrl, service, fdaId: fdaIdSleep });
   });
 
   test('PUT /fdas/:fdaId throws InvalidState if FDA in unexpected status', async () => {
@@ -143,13 +169,13 @@ export function registerFdaLifecycleIntegrationTests({
     const collection = client.db().collection('fdas');
 
     await collection.updateOne(
-      { fdaId: fdaId3, service },
+      { fdaId: fdaIdSleep, service },
       { $set: { status: 'transforming' } },
     );
 
     const res = await httpReq({
       method: 'PUT',
-      url: `${baseUrl}/${visibility}/fdas/${fdaId3}`,
+      url: `${baseUrl}/${visibility}/fdas/${fdaIdSleep}`,
       headers: { 'Fiware-Service': service },
     });
 
@@ -157,7 +183,7 @@ export function registerFdaLifecycleIntegrationTests({
     expect(res.json.error).toBe('InvalidState');
 
     await collection.updateOne(
-      { fdaId: fdaId3, service },
+      { fdaId: fdaIdSleep, service },
       { $set: { status: 'completed' } },
     );
     await client.close();
