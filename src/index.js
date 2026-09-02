@@ -1047,7 +1047,14 @@ async function handleCdaDoQuery(req, res) {
 
     return sendRowsByOutputType(res, result, rawOutputType);
   } catch (err) {
-    logger.error('Error executing query:', err);
+    logger.error(
+      {
+        path,
+        dataAccessId,
+        err,
+      },
+      'Error executing query',
+    );
     const status = err.status || 500;
 
     return res.status(status).json({

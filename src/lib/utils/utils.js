@@ -698,7 +698,7 @@ export function normalizeVisibility(visibility) {
     throw new FDAError(
       400,
       'InvalidVisibility',
-      'Visibility must be public or private',
+      `Visibility must be public or private (got ${JSON.stringify(visibility)})`,
     );
   }
 
