@@ -17,7 +17,7 @@
 - Add: generated defaultDataAccess now supports comma-separated values for equality filters when schema is available, while remaining fully backward compatible (#253)
 - Add: file upload endpoint POST /{visibility}/fdas/upload supporting CSV, XLS and XLSX files with configurable size limit (FDA_MAX_UPLOAD_SIZE) and automatic Parquet conversion (#57)
 - Add: new env var FDA_UPLOAD_TMP_DIR to set upload temporal directorio it MinIO (#57)
-- Fix: OOM Kill when no memory for duckdb by control memory and threads options added: memoryLimit, tempDir, maxTempSize, maxThreads, preserveInsertionOrder (#261)
+- Fix: OOM Kill when no memory for duckdb by control memory and threads options added: FDA_DUCKDB_DIR, FDA_DUCKDB_MEMORY_LIMIT, FDA_DUCKDB_TEMP_DIR, FDA_DUCKDB_MAX_TEMP_SIZE, FDA_DUCKDB_MAX_THREADS and FDA_DUCKDB_PRESERVE_INSERTION_ORDER (#261)
 - Update: make default outputType `ndjson` instead of `json` (#252)
 - Update: mongodb dependency version from 7.0.0 to 7.5.0
 - Update: @duckdb/node-api dependency version from 1.5.2-r.1 to 1.5.5-r.4
