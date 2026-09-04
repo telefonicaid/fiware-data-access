@@ -1814,8 +1814,6 @@ _**Response code**_
 -   Errors use a non-2xx and (optionally) an error payload. See subsection on [Error Responses](#error-responses) for
     more details.
 
-
-
 _**Content negotiation and serialization notes**_
 
 -   In header-style context, response format is negotiated through the `Accept` header (using the
