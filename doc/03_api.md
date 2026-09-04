@@ -1814,6 +1814,8 @@ _**Response code**_
 -   Errors use a non-2xx and (optionally) an error payload. See subsection on [Error Responses](#error-responses) for
     more details.
 
+
+
 _**Content negotiation and serialization notes**_
 
 -   In header-style context, response format is negotiated through the `Accept` header (using the
@@ -2051,7 +2053,7 @@ _**Request headers**_
 | ---------------- | -------- | ------------------------------------------------------------------------ | ------------------ |
 | `Content-Type`   | ✓        | For `POST`, should be `application/x-www-form-urlencoded`                | —                  |
 | `Fiware-Service` | ✓        | Tenant/service name. If not present, it is derived from the `path` field | `trantor`          |
-| `Accept`         | ✓        | Ignored when `outputType` is provided. If omitted, defaults to JSON      | `application/json` |
+| `Accept`         | ✓        | Ignored when `outputType` is provided.                                   | `application/json` |
 
 ---
 
@@ -2094,8 +2096,8 @@ _**Response headers**_
 
 | `outputType` value | `Content-Type`                                                      | `Content-Disposition`                 |
 | ------------------ | ------------------------------------------------------------------- | ------------------------------------- |
-| `ndjson` (default) | `application/x-ndjson`                                              | —                                     |
-| `json`             | `application/json`                                                  | —                                     |
+| `json` (default)   | `application/json`                                                  | —                                     |
+| `ndjson`           | `application/x-ndjson`                                              | —                                     |
 | `csv`              | `text/csv`                                                          | `attachment; filename="results.csv"`  |
 | `xls`              | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` | `attachment; filename="results.xlsx"` |
 
