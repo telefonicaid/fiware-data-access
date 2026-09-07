@@ -1800,19 +1800,61 @@ When using header-style context, any query string parameter is rejected with `40
 
 _**Request headers**_
 
-| Header               | Optional | Description                                              | Example        |
-| -------------------- | -------- | -------------------------------------------------------- | -------------- |
-| `Fiware-Service`     | ✓        | Tenant or service for header-style context.              | `trantor`      |
-| `Fiware-ServicePath` | ✓        | NGSI hierarchical service path for header-style context. | `/servicePath` |
+| Header               | Optional | Description                                                                                                                                                                                                                                                                                                 | Example            |
+| -------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| `Fiware-Service`     | ✓        | Tenant or service for header-style context.                                                                                                                                                                                                                                                                 | `trantor`          |
+| `Fiware-ServicePath` | ✓        | NGSI hierarchical service path for header-style context.                                                                                                                                                                                                                                                    | `/servicePath`     |
+| `Accept`             | ✓        | Response format for header-style context, negotiated via standard HTTP content negotiation. Allowed values: `application/json`, `application/x-ndjson`, `text/csv`, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` (or `application/vnd.ms-excel`), `application/vnd.fiware.cda+json`. | `application/json` |
 
 `Fiware-Service` and `Fiware-ServicePath` cannot be mixed with query-style context (`service`, `servicePath` query
 params). If both styles are present, API returns `409 RequestStyleConflict`.
+
+_**Request payload**_
+
+None.
 
 _**Response code**_
 
 -   Successful operation uses 200 OK
 -   Errors use a non-2xx and (optionally) an error payload. See subsection on [Error Responses](#error-responses) for
     more details.
+
+_**Response headers**_
+
+| `outputType` (query-style) | `Accept` (header-style)                                                                           | `Content-Type`                                                      | `Content-Disposition`                 |
+| -------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------- |
+| `json`                     | `application/json`, missing, or `*/*`                                                             | `application/json`                                                  | —                                     |
+| `ndjson` (default)         | `application/x-ndjson`                                                                            | `application/x-ndjson`                                              | —                                     |
+| `csv`                      | `text/csv`                                                                                        | `text/csv; charset=utf-8`                                           | `attachment; filename="results.csv"`  |
+| `xls`                      | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` or `application/vnd.ms-excel` | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` | `attachment; filename="results.xlsx"` |
+| `cda`                      | `application/vnd.fiware.cda+json`                                                                 | `application/json`                                                  | —                                     |
+
+> Note: for `cda`, the response body follows the CDA-compatible JSON structure shown below, but the actual
+> `Content-Type` response header is `application/json`, not `application/vnd.fiware.cda+json`.
+
+_**Response payload**_
+
+Depends on the resolved output format:
+
+-   `json` (or default in header-style context): array of JSON objects, each one being a record of the FDA base query
+    result.
+-   `application/x-ndjson`: one JSON object per line (streamed response).
+-   `text/csv`: comma-separated values file. The first row contains column names. Values containing commas,
+    double-quotes or newlines are quoted.
+-   spreadsheet MIME types: Excel workbook (`.xlsx` format, Office Open XML). The first row contains column names.
+-   `cda`: CDA-compatible JSON structure:
+
+```json
+{
+    "metadata": [{ "colIndex": 0, "colName": "column1" }, ...],
+    "resultset": [["value1", "value2", ...]],
+    "queryInfo": {
+        "pageStart": 0,
+        "pageSize": 10,
+        "totalRows": 120
+    }
+}
+```
 
 _**Content negotiation and serialization notes**_
 
