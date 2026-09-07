@@ -689,5 +689,124 @@ export function registerDaParamsIntegrationTests({
         { id: 3, name: 'carlos', age: 40 },
       ]);
     });
+
+    test('POST /fdas/:fdaId/das accepts default: null for every param type and applies it as an optional filter', async () => {
+      const baseUrl = getBaseUrl();
+      const daId3 = 'da_params_null_defaults';
+
+      const createDa = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}/das`,
+        headers: { 'Fiware-Service': service },
+        body: {
+          id: daId3,
+          description: 'optional filters using default: null',
+          query: `
+            SELECT id, name, age
+            WHERE ($minAge IS NULL OR age = $minAge)
+              AND ($uName IS NULL OR name = $uName)
+              AND ($authorized IS NULL OR authorized = $authorized)
+              AND ($timeinstant IS NULL OR timeinstant = $timeinstant)
+            ORDER BY id;
+          `,
+          params: [
+            { name: 'minAge', type: 'Number', default: null },
+            { name: 'uName', type: 'Text', default: null },
+            { name: 'authorized', type: 'Boolean', default: null },
+            { name: 'timeinstant', type: 'DateTime', default: null },
+          ],
+        },
+      });
+
+      if (createDa.status >= 400) {
+        console.error(
+          'POST /das failed:',
+          createDa.status,
+          createDa.json ?? createDa.text,
+        );
+      }
+      expect(createDa.status).toBe(204);
+
+      const getDa = await httpReq({
+        method: 'GET',
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}/das/${daId3}`,
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect(getDa.status).toBe(200);
+      expect(getDa.json.params).toEqual([
+        { name: 'minAge', type: 'Number', default: null },
+        { name: 'uName', type: 'Text', default: null },
+        { name: 'authorized', type: 'Boolean', default: null },
+        { name: 'timeinstant', type: 'DateTime', default: null },
+      ]);
+
+      const noParamsRes = await httpReq({
+        method: 'GET',
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId3, {}),
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect(noParamsRes.status).toBe(200);
+      expect(noParamsRes.json).toEqual([
+        { id: 1, name: 'ana', age: 30 },
+        { id: 2, name: 'bob', age: 20 },
+        { id: 3, name: 'carlos', age: 40 },
+      ]);
+
+      const filterByNumberRes = await httpReq({
+        method: 'GET',
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId3, {
+          minAge: 40,
+        }),
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect(filterByNumberRes.status).toBe(200);
+      expect(filterByNumberRes.json).toEqual([
+        { id: 3, name: 'carlos', age: 40 },
+      ]);
+
+      const filterByTextRes = await httpReq({
+        method: 'GET',
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId3, {
+          uName: 'bob',
+        }),
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect(filterByTextRes.status).toBe(200);
+      expect(filterByTextRes.json).toEqual([{ id: 2, name: 'bob', age: 20 }]);
+
+      const filterByBooleanRes = await httpReq({
+        method: 'GET',
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId3, {
+          authorized: true,
+        }),
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect(filterByBooleanRes.status).toBe(200);
+      expect(filterByBooleanRes.json).toEqual([
+        { id: 1, name: 'ana', age: 30 },
+        { id: 2, name: 'bob', age: 20 },
+        { id: 3, name: 'carlos', age: 40 },
+      ]);
+
+      const filterByDateTimeRes = await httpReq({
+        method: 'GET',
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId3, {
+          timeinstant: '2020-08-17T18:25:28.332Z',
+        }),
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect(filterByDateTimeRes.status).toBe(200);
+      expect(filterByDateTimeRes.json).toEqual([
+        { id: 1, name: 'ana', age: 30 },
+        { id: 2, name: 'bob', age: 20 },
+        { id: 3, name: 'carlos', age: 40 },
+      ]);
+    });
   });
 }

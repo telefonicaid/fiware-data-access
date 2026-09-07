@@ -1,2 +1,2 @@
-
+- Fix: allow "default": null for all param types (Number, Text, Boolean, DateTime) in DA params (#289)
 

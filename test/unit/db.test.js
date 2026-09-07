@@ -489,6 +489,39 @@ describe('db utils', () => {
     expect(resolved.timeinstant.toISOString()).toBe('2020-08-17T18:25:28.332Z');
   });
 
+  test.each(['Number', 'Text', 'Boolean', 'DateTime'])(
+    'resolveDAParams applies null default when param is missing for %s',
+    async (type) => {
+      const { resolveDAParams } = await loadDbModule();
+
+      const resolved = resolveDAParams({}, [
+        { name: 'param', type, default: null },
+      ]);
+
+      expect(resolved.param).toBeNull();
+    },
+  );
+
+  test('resolveDAParams uses provided value over a null default', async () => {
+    const { resolveDAParams } = await loadDbModule();
+
+    const resolved = resolveDAParams({ quantity: '25' }, [
+      { name: 'quantity', type: 'Number', default: null },
+    ]);
+
+    expect(resolved.quantity).toBe(25);
+  });
+
+  test('resolveDAParams still rejects a missing required param even with default: null', async () => {
+    const { resolveDAParams } = await loadDbModule();
+
+    expect(() =>
+      resolveDAParams({}, [
+        { name: 'quantity', type: 'Number', required: true, default: null },
+      ]),
+    ).toThrow('Missing required param "quantity".');
+  });
+
   test('runPreparedStatement normalizes DateTime and Boolean defaults for DuckDB binding', async () => {
     const { runPreparedStatement, runtimeConn } = await loadDbModule({
       retrieveDAResult: {
@@ -743,6 +776,52 @@ describe('db utils', () => {
         },
       ]),
     ).toThrow('Default value for param "name" not in param enum [ana,carlos].');
+  });
+
+  test('checkParams accepts default: null for Number without coercing it to 0', async () => {
+    const { checkParams } = await loadDbModule();
+
+    const result = checkParams([
+      { name: 'quantity', type: 'Number', default: null },
+    ]);
+
+    expect(result[0].default).toBeNull();
+  });
+
+  test.each(['Text', 'Boolean', 'DateTime'])(
+    'checkParams accepts default: null for %s',
+    async (type) => {
+      const { checkParams } = await loadDbModule();
+
+      const result = checkParams([{ name: 'param', type, default: null }]);
+
+      expect(result[0].default).toBeNull();
+    },
+  );
+
+  test('checkParams skips range validation of default when default is null', async () => {
+    const { checkParams } = await loadDbModule();
+
+    const result = checkParams([
+      { name: 'minAge', type: 'Number', default: null, range: [20, 50] },
+    ]);
+
+    expect(result[0].default).toBeNull();
+  });
+
+  test('checkParams skips enum validation of default when default is null', async () => {
+    const { checkParams } = await loadDbModule();
+
+    const result = checkParams([
+      {
+        name: 'name',
+        type: 'Text',
+        default: null,
+        enum: ['ana', 'carlos'],
+      },
+    ]);
+
+    expect(result[0].default).toBeNull();
   });
 
   test('resolveDAParams uses type coercion and throws on invalid value (isTypeOf path)', async () => {
