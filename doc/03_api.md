@@ -2175,15 +2175,17 @@ _**Response headers**_
 | `xls`              | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` | `attachment; filename="results.xlsx"` |
 
 > Note: unlike the `GET /{visibility}/fdas/{fdaId}/das/{daId}/data` endpoint, this legacy endpoint does not stream
-> NDJSON. `outputType=ndjson` is accepted for compatibility but returns the exact same response as `json` (a full JSON
-> array with `Content-Type: application/json`, not line-delimited). See
-> [Limitations](/doc/05_advanced_topics.md#limitations) in Advanced Topics.
+> NDJSON. `outputType=ndjson` is accepted for compatibility but returns the exact same response as `json` (the
+> CDA-compatible structure below, not line-delimited). See [Limitations](/doc/05_advanced_topics.md#limitations) in
+> Advanced Topics.
 
 _**Response payload**_
 
 Depends on `outputType`:
 
--   `json`: CDA-compatible structure:
+-   `json` and `ndjson` (identical on this endpoint): CDA-compatible structure. Note this is **not** a plain JSON array
+    like the `json` output of `GET /{visibility}/fdas/{fdaId}/das/{daId}/data` — this legacy endpoint always wraps
+    results in the `{ metadata, resultset, queryInfo }` shape, regardless of `outputType`:
 
 ```json
 {
