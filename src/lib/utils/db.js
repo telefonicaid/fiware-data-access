@@ -462,20 +462,22 @@ export function checkParams(params) {
         normalizedDefault = coercedDefault;
       }
 
-      if (param.range && !isInRange(normalizedDefault, param.range)) {
-        throw new FDAError(
-          400,
-          'InvalidParam',
-          `Default value for param "${param.name}" not in valid param range [${param.range}].`,
-        );
-      }
+      if (normalizedDefault !== null) {
+        if (param.range && !isInRange(normalizedDefault, param.range)) {
+          throw new FDAError(
+            400,
+            'InvalidParam',
+            `Default value for param "${param.name}" not in valid param range [${param.range}].`,
+          );
+        }
 
-      if (param.enum && !isInEnum(normalizedDefault, param.enum)) {
-        throw new FDAError(
-          400,
-          'InvalidParam',
-          `Default value for param "${param.name}" not in param enum [${param.enum}].`,
-        );
+        if (param.enum && !isInEnum(normalizedDefault, param.enum)) {
+          throw new FDAError(
+            400,
+            'InvalidParam',
+            `Default value for param "${param.name}" not in param enum [${param.enum}].`,
+          );
+        }
       }
 
       normalizedParam.default =
@@ -568,22 +570,24 @@ function applyParams(reqParams, params) {
         value = coerced;
       }
 
-      // Range
-      if (param.range && !isInRange(value, param.range)) {
-        throw new FDAError(
-          400,
-          'InvalidQueryParam',
-          `Param "${param.name}" not in valid param range [${param.range}].`,
-        );
-      }
+      if (value !== null) {
+        // Range
+        if (param.range && !isInRange(value, param.range)) {
+          throw new FDAError(
+            400,
+            'InvalidQueryParam',
+            `Param "${param.name}" not in valid param range [${param.range}].`,
+          );
+        }
 
-      // Enum
-      if (param.enum && !isInEnum(value, param.enum)) {
-        throw new FDAError(
-          400,
-          'InvalidQueryParam',
-          `Param "${param.name}" not in param enum [${param.enum}].`,
-        );
+        // Enum
+        if (param.enum && !isInEnum(value, param.enum)) {
+          throw new FDAError(
+            400,
+            'InvalidQueryParam',
+            `Param "${param.name}" not in param enum [${param.enum}].`,
+          );
+        }
       }
 
       validated[param.name] = value;
@@ -661,6 +665,10 @@ const TYPE_COERCERS = {
 };
 
 function isTypeOf(value, type) {
+  if (value === null) {
+    return null;
+  }
+
   const coercer = TYPE_COERCERS[type];
   if (!coercer) {
     throw new FDAError(
