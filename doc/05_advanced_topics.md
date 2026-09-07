@@ -177,6 +177,28 @@ DA provides basic querying capabilities (e.g., `SELECT * LIMIT 10`) and can be e
 
 ---
 
+## SQL Pattern Matching in DA Queries
+
+A DA `query` can use standard SQL clauses such as `LIKE` together with a parameter, for example:
+
+```sql
+SELECT * WHERE name LIKE $name_pattern
+```
+
+with a matching param definition:
+
+```json
+{ "name": "name_pattern", "type": "Text", "default": "%" }
+```
+
+This is **not** a built-in FDA feature. `LIKE`, wildcards (`%`, `_`), and any other pattern-matching syntax are plain
+SQL, evaluated by the underlying query engine exactly as written in the `query` field. FDA only substitutes the declared
+`params` into the query text; it does not interpret, validate, or add any special meaning to the pattern itself. Whether
+a value like `%value%` performs a "contains" match, a prefix match, or something else depends entirely on how the SQL
+clause is written and on the value supplied for the parameter, whether via its `default` or at query time.
+
+---
+
 ## Pentaho CDA Compatibility Layer
 
 FDA includes a compatibility layer to support legacy Pentaho CDA clients.

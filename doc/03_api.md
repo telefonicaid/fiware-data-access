@@ -1453,6 +1453,10 @@ A DA is represented by a JSON object with the following fields:
 
 (\*) The `id` field is mandatory when creating a DA (`POST`) and must not be included when updating a DA (`PUT`).
 
+> Note: `query` is plain SQL, so it can use any SQL clause supported by the underlying engine, including `LIKE` with
+> wildcards. This is standard SQL, not a built-in FDA capability — see
+> [SQL Pattern Matching in DA Queries](/doc/05_advanced_topics.md#sql-pattern-matching-in-da-queries) for details.
+
 #### Params
 
 Each object in the array `params` can have the following keys:
