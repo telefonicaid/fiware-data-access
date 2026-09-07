@@ -135,6 +135,15 @@ Provides detailed latency metrics for the concurrent FDA creation tests.
 | Total (ms)   | Total duration of the completion phase.                                 |
 | Ramp-up (ms) | Actual measured time between the first and last FDA submission request. |
 
+## Advanced Performance
+
+`FIWARE-data-access` offers some environment variables to configure the behaviour of `DuckDb`. Some of those
+(`FDA_DUCKDB_MEMORY_LIMIT`, `FDA_DUCKDB_MAX_THREADS`, `FDA_DUCKDB_PRESERVE_INSERTION_ORDER`) play an important role on
+performance as they can severely affect the memory consumption of the component. We consider the default values for this
+variables to be correct for a general use, but in intense performance scenarios we can see `DuckDb` errors related with
+memory consumption. You can read more about this special cases in the advanced topic about
+[`DuckDb` memory management](./AdvancedTopics/duckdb_memory_management.md).
+
 ---
 
 ## 🧭 Navigation
