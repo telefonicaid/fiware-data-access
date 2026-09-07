@@ -1,41 +1,74 @@
-# `DuckDb` memory management
+# `DuckDB` memory management
 
-With the change from having `DuckDb` instance run in memory to using a persistent database and the introduction of the
-[`DuckDb` environment variables](../04_config_operational_guide.md#duckdb) `FDA_DUCKDB_MEMORY_LIMIT`,
-`FDA_DUCKDB_MAX_THREADS` and `FDA_DUCKDB_PRESERVE_INSERTION_ORDER` we solved an error where `DuckDb` used memory freely
-and hijacked the containers total memory, slowing other process and, in some cases, even stopping the full component.
-Thanks to those variables we can control the maximum amount of memory we want `DuckDb` to use, and together with the
-containers maximum memory restriction we can have a strict control over the total memory of the component.
+## Background
 
-But this memory restriction brings a new problem: we started seeing a new `DuckDb` OOM (out of memory error) with some
-`FDA` creations because we were reaching the max amount of memory configured. To search best configuration for our
-`DuckDb` component we have made an analysis of the memory consumption of a memory intense operation that throws an OOM.
+Originally, `DuckDB` was configured to run entirely in memory. This allowed DuckDB to consume memory freely and, in some
+cases, use a significant portion of the FDA container's available memory. This could slow down other processes and, in
+extreme cases, prevent the component from completing its work.
 
-## `DuckDb` out-of-core Processing
+To prevent this, we changed the configuration to use a persistent DuckDB database and introduced the following
+environment variables:
 
-`DuckDb` supports larger-than-memory workloads mainly through the spilling to disk functionality. This consists of a
-temporary directory where `DuckDb` stores temporary data to free memory.
+-   `FDA_DUCKDB_MEMORY_LIMIT`
+-   `FDA_DUCKDB_MAX_THREADS`
+-   `FDA_DUCKDB_PRESERVE_INSERTION_ORDER`
 
-Even with this mechanisms we were seeing the OOM error so we decided to check everything was working as intented:
+These settings allow us to control the amount of memory DuckDB is allowed to use. Together with the container's memory
+limit, this gives us much tighter control over the total memory consumption of the FDA component.
 
-## Testing
+However, introducing a strict DuckDB memory limit exposed a new problem: some FDA creation and refresh operations
+started failing with a DuckDB **Out of Memory (OOM)** error when the configured limit was reached.
 
-### Environment info
+The following investigation was performed to understand where this memory was being used and determine the minimum
+memory configuration required for these workloads.
 
-`DuckDB`:
+---
 
--   FDA_DUCKDB_MEMORY_LIMIT = 0.5GB
--   FDA_DUCKDB_MAX_THREADS = 1
--   FDA_DUCKDB_PRESERVE_INSERTION_ORDER = false
+## DuckDB out-of-core processing
 
-`FDA` Container:
+DuckDB supports workloads larger than the available memory through **out-of-core processing**, primarily by spilling
+intermediate data to disk.
 
--   mem_limit: 2g
--   memswap_limit: 2g
+When DuckDB reaches its memory limit, certain types of intermediate data can be moved from memory to a temporary
+directory. This releases memory while allowing the operation to continue processing.
 
-### FDA
+Therefore, before investigating the OOM itself, we first verified that this mechanism was working correctly.
 
-for this test we are gonna use the following `FDA` htat was throwing the _OOM_ error in production:
+The important distinction for this investigation is that **not all DuckDB memory allocations are necessarily
+spillable**. Query intermediate data, such as `COLUMN_DATA`, can be moved to temporary storage, while memory used by
+extensions may not be handled in the same way.
+
+---
+
+# Investigation
+
+## Test environment
+
+The initial tests were performed with the following configuration.
+
+### DuckDB
+
+```text
+FDA_DUCKDB_MEMORY_LIMIT = 0.5GB
+FDA_DUCKDB_MAX_THREADS = 1
+FDA_DUCKDB_PRESERVE_INSERTION_ORDER = false
+```
+
+### FDA container
+
+```yaml
+mem_limit: 2g
+memswap_limit: 2g
+```
+
+The relatively low DuckDB memory limit was intentional: the objective was to reproduce the OOM and understand the memory
+requirements of the operation.
+
+---
+
+## Test FDA
+
+The investigation uses the following FDA, which reproduced the OOM observed in production:
 
 ```json
 {
@@ -57,521 +90,543 @@ for this test we are gonna use the following `FDA` htat was throwing the _OOM_ e
 }
 ```
 
-### Spilling to disk
+This FDA is relevant because it combines several potentially memory-intensive operations:
 
-The first thing is cheking the spilling to disk functionality is working as intended. For that we need to check the
-configured temporary directory. Inside the docker container we can use the following commands to check the existence of
-the file:
+-   Reading a large CSV dataset.
+-   Transforming the data with DuckDB.
+-   Writing Parquet.
+-   Writing the resulting files to S3-compatible object storage.
+-   Partitioning the output by month.
+-   Compressing the resulting Parquet files.
 
-_Disclaimer:_ the temp directory is defined by a environment variable so the path used in the commands might change.
+---
+
+# Verifying out-of-core processing
+
+The first step was to verify that DuckDB was actually using the configured temporary directory for spilling.
+
+The temporary directory is configured through an environment variable, so the exact path may differ between
+environments.
+
+Inside the FDA container, we can inspect it with:
 
 ```bash
 ls -lah /tmp/duckdb/temp
-
-while true; do echo "=== $(date) ==="; du -sh /tmp/duckdb/temp; find /tmp/duckdb/temp -maxdepth 2 -type f -exec du -h {} \;; sleep 0.5; done
 ```
 
-With the first command we can check the temp directory exists and has the appropriate permissions. We only find the
-directory after `DuckDb` initialitation (as expected). After that we can use the second command to see the size of the
-directory and a branched view of the files underneath:
+To monitor its usage during the operation:
 
+```bash
+while true; do
+  echo "=== $(date) ==="
+  du -sh /tmp/duckdb/temp
+  find /tmp/duckdb/temp -maxdepth 2 -type f -exec du -h {} \;
+  sleep 0.5
+done
 ```
-=== Thu Sep  3 08:09:18 UTC 2026 ===
-4.0K	/tmp/duckdb/temp
-=== Thu Sep  3 08:09:18 UTC 2026 ===
-4.0K	/tmp/duckdb/temp
-=== Thu Sep  3 08:09:19 UTC 2026 ===         <-- Start of the DuckDb operation (csv to parquet conversion)
-32M	/tmp/duckdb/temp
-1.8M	/tmp/duckdb/temp/duckdb_temp_storage_S160K-0.tmp
-768K	/tmp/duckdb/temp/duckdb_temp_storage_S128K-0.tmp
-480K	/tmp/duckdb/temp/duckdb_temp_storage_S96K-0.tmp
-5.2M	/tmp/duckdb/temp/duckdb_temp_storage_S32K-0.tmp
-1.1M	/tmp/duckdb/temp/duckdb_temp_storage_S64K-0.tmp
-23M	/tmp/duckdb/temp/duckdb_temp_storage_DEFAULT-0.tmp
+
+The first command confirms that the directory exists and has the appropriate permissions.
+
+The directory only appears after DuckDB is initialized, which is expected.
+
+The second command allows us to monitor the temporary files while the FDA transformation is running.
+
+### Example
+
+At the beginning of the transformation:
+
+```text
 === Thu Sep  3 08:09:19 UTC 2026 ===
-82M	/tmp/duckdb/temp
-3.5M	/tmp/duckdb/temp/duckdb_temp_storage_S160K-0.tmp
-1.2M	/tmp/duckdb/temp/duckdb_temp_storage_S128K-0.tmp
-1.4M	/tmp/duckdb/temp/duckdb_temp_storage_S96K-0.tmp
-2.1M	/tmp/duckdb/temp/duckdb_temp_storage_S192K-0.tmp
-11M	/tmp/duckdb/temp/duckdb_temp_storage_S32K-0.tmp
-224K	/tmp/duckdb/temp/duckdb_temp_storage_S224K-0.tmp
-4.7M	/tmp/duckdb/temp/duckdb_temp_storage_S64K-0.tmp
-58M	/tmp/duckdb/temp/duckdb_temp_storage_DEFAULT-0.tmp
-.
-.
-.
-=== Thu Sep  3 08:10:42 UTC 2026 ===
-539M	/tmp/duckdb/temp
-21M	/tmp/duckdb/temp/duckdb_temp_storage_S160K-0.tmp
-15M	/tmp/duckdb/temp/duckdb_temp_storage_S128K-0.tmp
-22M	/tmp/duckdb/temp/duckdb_temp_storage_S96K-0.tmp
-22M	/tmp/duckdb/temp/duckdb_temp_storage_S192K-0.tmp
-22M	/tmp/duckdb/temp/duckdb_temp_storage_S32K-0.tmp
-27M	/tmp/duckdb/temp/duckdb_temp_storage_S64K-0.tmp
-414M	/tmp/duckdb/temp/duckdb_temp_storage_DEFAULT-0.tmp
-=== Thu Sep  3 08:10:43 UTC 2026 ===
-539M	/tmp/duckdb/temp
-21M	/tmp/duckdb/temp/duckdb_temp_storage_S160K-0.tmp
-15M	/tmp/duckdb/temp/duckdb_temp_storage_S128K-0.tmp
-22M	/tmp/duckdb/temp/duckdb_temp_storage_S96K-0.tmp
-22M	/tmp/duckdb/temp/duckdb_temp_storage_S192K-0.tmp
-22M	/tmp/duckdb/temp/duckdb_temp_storage_S32K-0.tmp
-27M	/tmp/duckdb/temp/duckdb_temp_storage_S64K-0.tmp
-414M	/tmp/duckdb/temp/duckdb_temp_storage_DEFAULT-0.tmp
-=== Thu Sep  3 08:10:43 UTC 2026 ===            <--  OOM error
-4.0K	/tmp/duckdb/temp
-=== Thu Sep  3 08:10:44 UTC 2026 ===
-4.0K	/tmp/duckdb/temp
+32M /tmp/duckdb/temp
+
+1.8M  /tmp/duckdb/temp/duckdb_temp_storage_S160K-0.tmp
+768K  /tmp/duckdb/temp/duckdb_temp_storage_S128K-0.tmp
+480K  /tmp/duckdb/temp/duckdb_temp_storage_S96K-0.tmp
+5.2M  /tmp/duckdb/temp/duckdb_temp_storage_S32K-0.tmp
+1.1M  /tmp/duckdb/temp/duckdb_temp_storage_S64K-0.tmp
+23M   /tmp/duckdb/temp/duckdb_temp_storage_DEFAULT-0.tmp
 ```
 
-We can see how `DuckDb` starts using the temp directory configured in the env var to upload temporary and intermediate
-data. This usage starts when the `FDA` status changes from `fetching` to `transforming`, as expected because thats when
-we start using `DuckDb` to convert the uploaded _csv_ file to a _parquet_ file.
+The temporary storage continues to grow as the transformation progresses:
 
-### Memory consumption
+```text
+=== Thu Sep  3 08:10:42 UTC 2026 ===
+539M /tmp/duckdb/temp
 
-Now we know the spilling to disk mechanism is working as intended, but we are still getting the **OOM** error, so we are
-gonna check the memory usage of `DuckDb`. For that purpose we are gonna insert a method that logs `DuckDb` memory
-consumption broken down by operation, so we known what action is more memory intensive. For the shake of clarity in the
-analysis we are using `console.log()` method instead of the proper logger component:
+21M  /tmp/duckdb/temp/duckdb_temp_storage_S160K-0.tmp
+15M  /tmp/duckdb/temp/duckdb_temp_storage_S128K-0.tmp
+22M  /tmp/duckdb/temp/duckdb_temp_storage_S96K-0.tmp
+22M  /tmp/duckdb/temp/duckdb_temp_storage_S192K-0.tmp
+22M  /tmp/duckdb/temp/duckdb_temp_storage_S32K-0.tmp
+27M  /tmp/duckdb/temp/duckdb_temp_storage_S64K-0.tmp
+414M /tmp/duckdb/temp/duckdb_temp_storage_DEFAULT-0.tmp
+```
+
+Immediately after the OOM:
+
+```text
+=== Thu Sep  3 08:10:43 UTC 2026 ===
+4.0K /tmp/duckdb/temp
+```
+
+The temporary files disappear because the failed DuckDB operation cleans them up.
+
+### Result
+
+This confirms that **DuckDB's out-of-core processing is working correctly**.
+
+Temporary files are created when the transformation begins, their size increases as memory pressure increases, and they
+are removed when the operation finishes or fails.
+
+The spilling mechanism itself is therefore not the cause of the OOM.
+
+---
+
+# Investigating DuckDB memory consumption
+
+Since spilling was working correctly but the operation still failed, the next step was to identify which DuckDB
+components were consuming the memory.
+
+For this purpose, a temporary diagnostic method was added to periodically log DuckDB's memory usage. For clarity,
+`console.log()` was used instead of the normal FDA logger.
+
+A timer was added when initializing the DuckDB connection:
 
 ```javascript
-(...)
-    let loggingMemory = false;
+let loggingMemory = false;
 
-    const duckDbMemoryTimer = setInterval(async () => {
-      if (loggingMemory) {
+const duckDbMemoryTimer = setInterval(async () => {
+    if (loggingMemory) {
         return;
-      }
+    }
 
-      loggingMemory = true;
-      try {
+    loggingMemory = true;
+
+    try {
         await logDuckDBMemory(configConn);
-      } finally {
+    } finally {
         loggingMemory = false;
-      }
-    }, 5000);
+    }
+}, 5000);
 
-    duckDbMemoryTimer.unref();
-(...)
+duckDbMemoryTimer.unref();
 ```
+
+The diagnostic method shows the memory usage next to the temporary storage usage so we can see the use of the
+disk-spilling the operations that allow it.
 
 ```javascript
 async function logDuckDBMemory(conn) {
-    const reader = await conn.runAndReadAll(`
-    SELECT
-      tag,
-      memory_usage_bytes,
-      temporary_storage_bytes
-    FROM duckdb_memory()
-    ORDER BY memory_usage_bytes DESC
-  `);
-
-    const rows = reader.getRowObjects();
     console.log('===DuckDB memory===');
-    for (const row of rows) {
-        console.log({
-            tag: String(row.tag),
-            memory_mb: (Number(row.memory_usage_bytes) / 1024 / 1024).toFixed(2),
-            temp_mb: (Number(row.temporary_storage_bytes) / 1024 / 1024).toFixed(2),
-        });
-    }
-
-    const tempReader = await conn.runAndReadAll(`
-    SELECT
-      path,
-      size
-    FROM duckdb_temporary_files()
-    ORDER BY size DESC
-  `);
-
-    const tempRows = tempReader.getRowObjects();
-    console.log('===DuckDB temp file===');
-    for (const row of tempRows) {
-        console.log({
-            path: String(row.path),
-            size_mb: Number(row.size) / 1024 / 1024,
-        });
-    }
-    console.log('==========');
+    console.log(
+        (
+            await conn.runAndReadAll(`
+        SELECT
+            tag,
+            memory_usage_bytes / 1024 / 1024 AS memory_mb,
+            temporary_storage_bytes / 1024 / 1024 AS temp_mb
+        FROM duckdb_memory()
+        WHERE memory_usage_bytes > 0
+        ORDER BY memory_usage_bytes DESC;
+  `)
+        ).getRowObjects(),
+    );
+    console.log('======');
 }
 ```
 
-We introduce the method `logDuckDBMemory(conn)` when initialising the `DuckDb` connection to log in a interval, like we
-do with the _heartbeat_ functionality. In the method we query two `DuckDb` internal tables, `duckdb_memory()` and
-`duckdb_temporary_files()`. The first one stores memory usage and temporary storeage by operation ("tags"). The second
-one simply stores the path of each temporary file and it's size. We are gonna log both so we can see at the same time
-which operations are being executed and how they are using the spill to disk functionality.
+This allows us to correlate DuckDB's memory usage with its temporary storage usage and determine which operations are
+responsible for the memory consumption.
 
-We start seeing `DuckDb` memory and temp storage usage when starting the _copyQueryToParquet()_ method is called (again,
-as expected):
+---
 
-```
-.
-.
-.
-time=2026-09-01T12:55:36.576Z | lvl=DEBUG | corr=job-6a96cb2834dbdc56c9327101 | trans=d1e27a11-d684-4fe3-ba6d-a804a4b8fb93 | op=refresh-fda | ver=1.5.0-next | comp=FDA | srv=postgres | subsrv=/public | resultPath=postgres/tmp/public/fda1.parquet | msg=[DEBUG]: copyQueryToParquet
-===DuckDB memory===
-{ tag: 'COLUMN_DATA', memory_mb: '430.00', temp_mb: '19.41' }
-{ tag: 'CSV_READER', memory_mb: '30.52', temp_mb: '0.00' }
-{ tag: 'ALLOCATOR', memory_mb: '16.22', temp_mb: '0.00' }
-{ tag: 'BASE_TABLE', memory_mb: '0.00', temp_mb: '0.00' }
-{ tag: 'HASH_TABLE', memory_mb: '0.00', temp_mb: '0.00' }
-{ tag: 'PARQUET_READER', memory_mb: '0.00', temp_mb: '0.00' }
-{ tag: 'ORDER_BY', memory_mb: '0.00', temp_mb: '0.00' }
-{ tag: 'ART_INDEX', memory_mb: '0.00', temp_mb: '0.00' }
-{ tag: 'METADATA', memory_mb: '0.00', temp_mb: '0.00' }
-{ tag: 'OVERFLOW_STRINGS', memory_mb: '0.00', temp_mb: '0.00' }
-{ tag: 'IN_MEMORY_TABLE', memory_mb: '0.00', temp_mb: '0.00' }
-{ tag: 'EXTENSION', memory_mb: '0.00', temp_mb: '0.00' }
-{ tag: 'TRANSACTION', memory_mb: '0.00', temp_mb: '0.00' }
-{ tag: 'EXTERNAL_FILE_CACHE', memory_mb: '0.00', temp_mb: '0.00' }
-{ tag: 'WINDOW', memory_mb: '0.00', temp_mb: '0.00' }
-{ tag: 'OBJECT_CACHE', memory_mb: '0.00', temp_mb: '0.00' }
-===DuckDB temp file===
-{
-  path: '/tmp/duckdb/temp/duckdb_temp_storage_DEFAULT-0.tmp',
-  size_mb: 13.75
-}
-{
-  path: '/tmp/duckdb/temp/duckdb_temp_storage_S32K-0.tmp',
-  size_mb: 3.53125
-}
-{
-  path: '/tmp/duckdb/temp/duckdb_temp_storage_S160K-0.tmp',
-  size_mb: 0.78125
-}
-{
-  path: '/tmp/duckdb/temp/duckdb_temp_storage_S128K-0.tmp',
-  size_mb: 0.75
-}
-{
-  path: '/tmp/duckdb/temp/duckdb_temp_storage_S64K-0.tmp',
-  size_mb: 0.6875
-}
-{
-  path: '/tmp/duckdb/temp/duckdb_temp_storage_S192K-0.tmp',
-  size_mb: 0.5625
-}
-{
-  path: '/tmp/duckdb/temp/duckdb_temp_storage_S96K-0.tmp',
-  size_mb: 0.1875
-}
-.
-.
-.
-```
+## DuckDB memory tags
 
-The temporary file information is the same as we observed before so we are gonna ignore it now that we know its working
-as intended. In the memory usage table we can see all the operations/tags mentioned before. A brief explanation of each
-one:
+The `duckdb_memory()` table uses tags to identify the type of operations by memory consumption:
 
 | Tag                   | Meaning                                                                                                   |
 | --------------------- | --------------------------------------------------------------------------------------------------------- |
-| `EXTENSION`           | Memory used by loaded DuckDB extensions / extension-related allocations.                                  |
-| `ALLOCATOR`           | Memory attributed to DuckDB's general allocator (allocations not attributed to a more specific category). |
+| `EXTENSION`           | Memory used by loaded DuckDB extensions and extension-related allocations.                                |
+| `ALLOCATOR`           | Memory attributed to DuckDB's general allocator when it cannot be attributed to a more specific category. |
 | `COLUMN_DATA`         | Data held in DuckDB's columnar data structures.                                                           |
-| `CSV_READER`          | Memory used while reading/parsing CSV data.                                                               |
+| `CSV_READER`          | Memory used while reading and parsing CSV data.                                                           |
 | `BASE_TABLE`          | Memory associated with persistent/base table storage.                                                     |
-| `HASH_TABLE`          | Memory used by hash tables, typically joins or hash-based aggregations.                                   |
+| `HASH_TABLE`          | Memory used by hash tables, typically for joins or hash-based aggregations.                               |
 | `PARQUET_READER`      | Memory used by Parquet readers.                                                                           |
 | `ORDER_BY`            | Memory used by sorting operations.                                                                        |
 | `ART_INDEX`           | Memory used by ART indexes.                                                                               |
 | `METADATA`            | Memory used for metadata structures.                                                                      |
-| `OVERFLOW_STRINGS`    | Memory/storage for strings that don't fit normally in the relevant structures.                            |
+| `OVERFLOW_STRINGS`    | Memory/storage for strings that do not fit normally in the relevant structures.                           |
 | `IN_MEMORY_TABLE`     | Memory associated with temporary/in-memory tables.                                                        |
 | `TRANSACTION`         | Transaction-related memory.                                                                               |
-| `EXTERNAL_FILE_CACHE` | Cache for externally accessed files.                                                                      |
+| `EXTERNAL_FILE_CACHE` | Cache used for externally accessed files.                                                                 |
 | `WINDOW`              | Memory used by window functions.                                                                          |
 | `OBJECT_CACHE`        | Object/catalog-related cache.                                                                             |
 
-With this information in mind we are gonna see the moments of maximun memory usage and the moment before the _OOM_
-error:
+The important tags for this investigation are **`COLUMN_DATA`**, which represents the main query data and can spill to
+disk, and **`EXTENSION`**, which represents memory used by DuckDB extensions.
 
-```
-time=2026-09-03T17:20:37.886Z | lvl=INFO | corr=7bf17ce0-2a4d-4371-ae3f-79ea8f59d0a6 | trans=c7e94c76-213f-4712-b01f-9920d6f84a6e | op=n/a | ver=1.5.0-next | comp=FDA | srv=postgres | subsrv=/public | setting=max_temp_directory_size | value=9.3 GiB | msg=DuckDB setting
-time=2026-09-03T17:20:37.886Z | lvl=INFO | corr=7bf17ce0-2a4d-4371-ae3f-79ea8f59d0a6 | trans=c7e94c76-213f-4712-b01f-9920d6f84a6e | op=n/a | ver=1.5.0-next | comp=FDA | srv=postgres | subsrv=/public | setting=memory_limit | value=476.8 MiB | msg=DuckDB setting
-time=2026-09-03T17:20:37.886Z | lvl=INFO | corr=7bf17ce0-2a4d-4371-ae3f-79ea8f59d0a6 | trans=c7e94c76-213f-4712-b01f-9920d6f84a6e | op=n/a | ver=1.5.0-next | comp=FDA | srv=postgres | subsrv=/public | setting=preserve_insertion_order | value=false | msg=DuckDB setting
-time=2026-09-03T17:20:37.887Z | lvl=INFO | corr=7bf17ce0-2a4d-4371-ae3f-79ea8f59d0a6 | trans=c7e94c76-213f-4712-b01f-9920d6f84a6e | op=n/a | ver=1.5.0-next | comp=FDA | srv=postgres | subsrv=/public | setting=temp_directory | value=/tmp/duckdb/temp | msg=DuckDB setting
-time=2026-09-03T17:20:37.887Z | lvl=INFO | corr=7bf17ce0-2a4d-4371-ae3f-79ea8f59d0a6 | trans=c7e94c76-213f-4712-b01f-9920d6f84a6e | op=n/a | ver=1.5.0-next | comp=FDA | srv=postgres | subsrv=/public | setting=threads | value=1 | msg=DuckDB setting
+---
 
-.
-.
-.
+# Initial memory usage
 
-===DuckDB memory===    <-- Start memory log
-[
-  { tag: 'COLUMN_DATA', memory_mb: 113.25, temp_mb: 0 },
-  { tag: 'CSV_READER', memory_mb: 30.51953125, temp_mb: 0 },
-  { tag: 'ALLOCATOR', memory_mb: 16.22021484375, temp_mb: 0 }
-]
-======
-[
-  { tag: 'COLUMN_DATA', memory_mb: 348.25, temp_mb: 371.25 },
-  { tag: 'EXTENSION', memory_mb: 76.5, temp_mb: 0 },
-  { tag: 'CSV_READER', memory_mb: 30.51953125, temp_mb: 0 },
-  { tag: 'ALLOCATOR', memory_mb: 21.3623046875, temp_mb: 0 }
-]
-======
-[
-  { tag: 'COLUMN_DATA', memory_mb: 243.75, temp_mb: 290.78125 },
-  { tag: 'EXTENSION', memory_mb: 153, temp_mb: 0 },
-  { tag: 'CSV_READER', memory_mb: 61.0390625, temp_mb: 0 },
-  { tag: 'ALLOCATOR', memory_mb: 18.8388671875, temp_mb: 0 }
-]
-======
-[
-  { tag: 'COLUMN_DATA', memory_mb: 201.75, temp_mb: 585.28125 },
-  { tag: 'EXTENSION', memory_mb: 153, temp_mb: 0 },
-  { tag: 'ALLOCATOR', memory_mb: 91.69651794433594, temp_mb: 0 },
-  { tag: 'CSV_READER', memory_mb: 30.51953125, temp_mb: 0 }
-]
-======
+When `copyQueryToParquet()` starts, we initially see:
 
-.
-.
-.
-[
-  { tag: 'EXTENSION', memory_mb: 306, temp_mb: 0 },
-  { tag: 'ALLOCATOR', memory_mb: 91.86058902740479, temp_mb: 0 },
-  { tag: 'COLUMN_DATA', memory_mb: 48.25, temp_mb: 639.84375 },
-  { tag: 'CSV_READER', memory_mb: 30.51953125, temp_mb: 0 }
-]
-
-.
-.
-.
-
-[
-  { tag: 'EXTENSION', memory_mb: 306, temp_mb: 0 },
-  { tag: 'ALLOCATOR', memory_mb: 91.8586254119873, temp_mb: 0 },
-  { tag: 'COLUMN_DATA', memory_mb: 48.25, temp_mb: 656 },
-  { tag: 'CSV_READER', memory_mb: 30.51953125, temp_mb: 0 }
-]
-======
-time=2026-09-03T17:22:42.088Z | lvl=DEBUG | corr=job-6a99ac67745ba3604f987fe1 | trans=054a5d57-8e03-4a0f-aeec-20358910f5fa | op=refresh-fda | ver=1.5.0-next | comp=FDA | srv=postgres | subsrv=/public | msg=MongoDB connection to db fiware-data-access
-time=2026-09-03T17:22:42.094Z | lvl=DEBUG | corr=job-6a99ac67745ba3604f987fe1 | trans=054a5d57-8e03-4a0f-aeec-20358910f5fa | op=refresh-fda | ver=1.5.0-next | comp=FDA | srv=postgres | subsrv=/public | bucket=postgres | prefix=tmp/public/fda1.parquet/ | msg=[DEBUG]: listObjects
-time=2026-09-03T17:22:42.105Z | lvl=ERROR | corr=job-6a99ac67745ba3604f987fe1 | trans=054a5d57-8e03-4a0f-aeec-20358910f5fa | op=refresh-fda | ver=1.5.0-next | comp=FDA | srv=postgres | subsrv=/public | err=FDAError: Out of Memory Error: could not allocate block of size 76.5 MiB (441.3 MiB/476.8 MiB used)
-
-Possible solutions:
-* Reducing the number of threads (SET threads=X)
-* Disabling insertion-order preservation (SET preserve_insertion_order=false)
-* Increasing the memory limit (SET memory_limit='...GB')
-
-See also https://duckdb.org/docs/stable/guides/performance/how_to_tune_workloads | fdaId=fda1 | durationMs=118429 | msg=Job failed: refresh-fda
+```text
 ===DuckDB memory===
-[]
-======
+
+{ tag: 'COLUMN_DATA', memory_mb: '430.00', temp_mb: '19.41' }
+{ tag: 'CSV_READER', memory_mb: '30.52', temp_mb: '0.00' }
+{ tag: 'ALLOCATOR', memory_mb: '16.22', temp_mb: '0.00' }
 ```
 
-I included the `DuckDb` environment info before so we can see what we're working with. \
-When the transformation step starts we see the first logs. Initially we only see the tags _COLUMN_DATA_, _CSV_READER_ and
-_ALLOCATOR_, nothing strange. _COLUMN_DATA_ rises fastly and considerably, but it starts spilling to disk as expected, reducing
-memory usage and augmenting temporary storage (`memory_mb: 348.25, temp_mb: 371.25`). After that _CSV_READER_ and _ALLOCATOR_
-remain modest and stable and _COLUMN_DATA_ ends up with a low memory usage, consistently augmenting that temporary storage
-use. \
-Here we can observe the problem with our low memory environment. Our _out-of-core Processing_ is working as expected but
-we still get a constant high memory usage under the tag _EXTENSION_. The only extension we have loaded is
-[httpfs](https://duckdb.org/docs/current/core_extensions/httpfs/overview), an extension to read and writte remote files
-in object storage (`S3`). \
+At this point, the main memory consumer is `COLUMN_DATA`.
 
-Because we only have one extension the problem must be directly related to the functionality of that extension, writting
-files in `S3`. This would explain why we have a big memory consumption, we are uploading a partitioned parquet, so
-effectively we are creating and writting more files. To test this hypothesis I executed the same `FDA` query leaving out
-key steps of the full `FDA` creation process:
+As the operation progresses, `COLUMN_DATA` starts spilling to disk:
+
+```text
+{ tag: 'COLUMN_DATA', memory_mb: 348.25, temp_mb: 371.25 }
+```
+
+This is the expected out-of-core behaviour: part of the data remains in memory while another part is stored in temporary
+files.
+
+Later, the amount of `COLUMN_DATA` kept in memory decreases further while temporary storage continues to grow.
+
+This confirms that the main query data is successfully being managed through DuckDB's spilling mechanism.
+
+However, another memory consumer starts to become significant:
+
+```text
+{ tag: 'EXTENSION', memory_mb: 306, temp_mb: 0 }
+{ tag: 'ALLOCATOR', memory_mb: 91.86, temp_mb: 0 }
+{ tag: 'COLUMN_DATA', memory_mb: 48.25, temp_mb: 639.84 }
+{ tag: 'CSV_READER', memory_mb: 30.52, temp_mb: 0 }
+```
+
+At this point, `COLUMN_DATA` only requires around 48 MB of memory while almost 640 MB has already been spilled to disk.
+
+In contrast, `EXTENSION` is using 306 MB of memory and **0 MB of temporary storage**.
+
+This is the first indication that the OOM is not caused by DuckDB failing to spill query data.
+
+---
+
+# OOM condition
+
+The configured DuckDB settings for the failing operation were:
+
+```text
+memory_limit = 476.8 MiB
+max_temp_directory_size = 9.3 GiB
+preserve_insertion_order = false
+temp_directory = /tmp/duckdb/temp
+threads = 1
+```
+
+The operation eventually fails with:
+
+```text
+Out of Memory Error:
+could not allocate block of size 76.5 MiB
+(441.3 MiB/476.8 MiB used)
+```
+
+Immediately before the failure, the memory usage was approximately:
+
+```text
+EXTENSION     306 MB
+ALLOCATOR      92 MB
+COLUMN_DATA    48 MB
+CSV_READER     31 MB
+```
+
+The important observation is that **the majority of the memory is no longer being used by the query data itself**.
+
+The OOM occurs when DuckDB attempts to allocate another **76.5 MB** block while already using approximately **441 MB of
+its 476.8 MB memory limit**.
+
+The `COLUMN_DATA` allocation is being successfully spilled, but the `EXTENSION` allocation remains resident in memory.
+
+---
+
+# Isolating the source of the extension memory
+
+At this point, the investigation focused on identifying what operation causes the `EXTENSION` memory to appear.
+
+The FDA transformation was progressively simplified into four tests.
+
+## 1. Basic query — no output
+
+The first test only executes the query:
 
 ```javascript
-// 1. Basic query, only select
 return conn.run(`
-    SELECT COUNT(*)
-    FROM (${sourceQuery}) AS fda_source
-  `);
+  SELECT COUNT(*)
+  FROM (${sourceQuery}) AS fda_source
+`);
 ```
 
-First we execute the query but we dont process the result, we don't writte files and we don't connect with `S3`.
+This reads the data but does not write a result or interact with S3.
+
+The memory usage remains low:
+
+```text
+{ tag: 'CSV_READER', memory_mb: 30.52, temp_mb: 0 }
+{ tag: 'ALLOCATOR', memory_mb: 1.04, temp_mb: 0 }
+```
+
+No `EXTENSION` memory is present.
+
+---
+
+## 2. Local Parquet
+
+The second test introduces the Parquet-writing process, but writes the file to the local filesystem:
 
 ```javascript
-// 2. Local parquet
 return conn.run(
-    `COPY ( SELECT ${cols}
-                FROM (${sourceQuery}) AS fda_source)
-      TO '/tmp/test.parquet' (FORMAT PARQUET);`,
+    `COPY (
+      SELECT ${cols}
+      FROM (${sourceQuery}) AS fda_source
+    )
+    TO '/tmp/test.parquet'
+    (FORMAT PARQUET);`,
 );
 ```
 
-After that we add the writting proccess but we create the _parquet_ file locally. With this query we put to work
-`DuckDb` creation and transformation logic without involving our extension.
+This produces significantly higher `COLUMN_DATA` usage, but no `EXTENSION` memory:
+
+```text
+{ tag: 'COLUMN_DATA', memory_mb: 198.25, temp_mb: 0 }
+{ tag: 'ALLOCATOR', memory_mb: 43.83, temp_mb: 0 }
+{ tag: 'CSV_READER', memory_mb: 30.52, temp_mb: 0 }
+```
+
+The operation completes successfully.
+
+This shows that Parquet generation itself is not responsible for the `EXTENSION` memory growth.
+
+---
+
+## 3. Non-partitioned S3 Parquet
+
+The third test changes only the destination from the local filesystem to S3:
 
 ```javascript
-// 3. S3 parquet
 return conn.run(
-    `COPY ( SELECT ${cols}
-                FROM (${sourceQuery}) AS fda_source)
-      TO 's3://${resultPath}' (FORMAT PARQUET);`,
+    `COPY (
+      SELECT ${cols}
+      FROM (${sourceQuery}) AS fda_source
+    )
+    TO 's3://${resultPath}'
+    (FORMAT PARQUET);`,
 );
 ```
 
-After that we change the destionation of the output file. Now we don't writte it locally, we use `httpfs` extension to
-writte the parquet file in `S3`.
+Now `EXTENSION` memory appears:
+
+```text
+{ tag: 'EXTENSION', memory_mb: 76.5, temp_mb: 0 }
+```
+
+Later it increases:
+
+```text
+{ tag: 'EXTENSION', memory_mb: 153, temp_mb: 0 }
+```
+
+This establishes that the additional memory usage is associated with the S3-writing path, which is provided by the
+`httpfs` extension.
+
+However, this operation still completes successfully under the 0.5 GB memory limit.
+
+---
+
+## 4. Partitioned S3 Parquet
+
+Finally, the complete production query is executed:
 
 ```javascript
-// 4. complete query (parquet + partition)
 return conn.run(
-    `COPY ( SELECT ${cols}
-                FROM (${sourceQuery}) AS fda_source) 
-      TO 's3://${resultPath}' (FORMAT PARQUET ${partitionBy} ${compressionString});`,
+    `COPY (
+      SELECT ${cols}
+      FROM (${sourceQuery}) AS fda_source
+    )
+    TO 's3://${resultPath}'
+    (FORMAT PARQUET ${partitionBy} ${compressionString});`,
 );
 ```
 
-This is our normal final query present in the code. In this step we add the partitioning so the extension has the full,
-complex scenario present in production. The logs used through this document are from this query. \
+This adds the partitioning and compression configuration used by the FDA.
 
-After executing this queries we got the following logs:
+This is the operation that reproduces the production OOM.
 
-1. Basic query, only select
+The logs show that `EXTENSION` memory grows significantly:
 
-```
-===DuckDB memory===
-[
-  { tag: 'CSV_READER', memory_mb: 30.51953125, temp_mb: 0 },
-  { tag: 'ALLOCATOR', memory_mb: 1.041015625, temp_mb: 0 }
-]
-======
+```text
+{ tag: 'EXTENSION', memory_mb: 306, temp_mb: 0 }
 ```
 
-2. Local parquet
+while `COLUMN_DATA` is successfully being spilled:
 
-```
-===DuckDB memory===
-[
-  { tag: 'COLUMN_DATA', memory_mb: 74.5, temp_mb: 0 },
-  { tag: 'CSV_READER', memory_mb: 30.51953125, temp_mb: 0 },
-  { tag: 'ALLOCATOR', memory_mb: 13.5390625, temp_mb: 0 }
-]
-======
-[
-  { tag: 'COLUMN_DATA', memory_mb: 198.25, temp_mb: 0 },
-  { tag: 'ALLOCATOR', memory_mb: 43.82862949371338, temp_mb: 0 },
-  { tag: 'CSV_READER', memory_mb: 30.51953125, temp_mb: 0 }
-]
-======
-[
-  { tag: 'COLUMN_DATA', memory_mb: 129.5, temp_mb: 0 },
-  { tag: 'CSV_READER', memory_mb: 30.51953125, temp_mb: 0 },
-  { tag: 'ALLOCATOR', memory_mb: 13.5390625, temp_mb: 0 }
-]
-======
-[
-  { tag: 'CSV_READER', memory_mb: 30.51953125, temp_mb: 0 },
-  { tag: 'ALLOCATOR', memory_mb: 13.5390625, temp_mb: 0 },
-  { tag: 'COLUMN_DATA', memory_mb: 3.25, temp_mb: 0 }
-]
-======
+```text
+{ tag: 'COLUMN_DATA', memory_mb: 48.25, temp_mb: 639.84 }
 ```
 
-3. S3 parquet
+The simplified tests therefore allow us to isolate the behaviour:
 
-```
-===DuckDB memory===
-[
-  { tag: 'COLUMN_DATA', memory_mb: 188, temp_mb: 0 },
-  { tag: 'CSV_READER', memory_mb: 30.51953125, temp_mb: 0 },
-  { tag: 'ALLOCATOR', memory_mb: 13.5390625, temp_mb: 0 }
-]
-======
-[
-  { tag: 'EXTENSION', memory_mb: 76.5, temp_mb: 0 },
-  { tag: 'CSV_READER', memory_mb: 61.0390625, temp_mb: 0 },
-  { tag: 'COLUMN_DATA', memory_mb: 48.75, temp_mb: 0 },
-  { tag: 'ALLOCATOR', memory_mb: 13.5390625, temp_mb: 0 }
-]
-======
-[
-  { tag: 'COLUMN_DATA', memory_mb: 113.5, temp_mb: 0 },
-  { tag: 'EXTENSION', memory_mb: 76.5, temp_mb: 0 },
-  { tag: 'CSV_READER', memory_mb: 30.51953125, temp_mb: 0 },
-  { tag: 'ALLOCATOR', memory_mb: 13.5390625, temp_mb: 0 }
-]
-======
-[
-  { tag: 'EXTENSION', memory_mb: 153, temp_mb: 0 },
-  { tag: 'CSV_READER', memory_mb: 30.51953125, temp_mb: 0 },
-  { tag: 'ALLOCATOR', memory_mb: 13.5390625, temp_mb: 0 },
-  { tag: 'COLUMN_DATA', memory_mb: 9.75, temp_mb: 0 }
-]
-======
+| Test                   | S3  | Partitioning | `EXTENSION` memory | Result         |
+| ---------------------- | --- | ------------ | ------------------ | -------------- |
+| Basic query            | No  | No           | None               | Success        |
+| Local Parquet          | No  | No           | None               | Success        |
+| S3 Parquet             | Yes | No           | ~76–153 MB         | Success        |
+| Partitioned S3 Parquet | Yes | Yes          | ~306 MB            | OOM at ~500 MB |
+
+This strongly indicates that the memory pressure is specifically related to **partitioned S3 writes**.
+
+---
+
+# DuckDB `httpfs` memory investigation
+
+To understand the source of the `EXTENSION` memory, the DuckDB `httpfs` S3 upload implementation was investigated.
+
+The S3 upload implementation uses `S3UploadSession`, which manages multipart uploads and allocates upload buffers
+through DuckDB's buffer manager.
+
+These allocations are accounted for under the:
+
+```text
+EXTENSION
 ```
 
-As we see this queries takes far less resources and time than the complete query and don't throw the _OOM_ error. We
-only see the _EXTENSION_ tag in the third query, after we introduced connection to `S3` storage system and it uses far
-less memory than our full query.
+memory tag.
 
-### DuckDB httpfs memory investigation
+Unlike query data such as `COLUMN_DATA`, these buffers are not necessarily spillable to disk.
 
-To see if there's some configuration we can use to manage the `httpfs` memory consumption I investigated the
-[DuckDB `httpfs` S3 upload implementation](https://github.com/duckdb/duckdb-httpfs). The investigation showed that S3
-uploads use `S3UploadSession`, which allocates multipart-upload buffers through DuckDB's buffer manager using the
-`EXTENSION` memory tag.
+The uploader also uses an adaptive multipart upload strategy: as more upload parts are reserved, the target part size
+can increase.
 
-The uploader uses an adaptive multipart strategy: as more parts are reserved, the target part size can increase. These
-buffers are therefore accounted for as `EXTENSION` memory and are **not necessarily spillable to disk**, unlike query
-intermediate data such as `COLUMN_DATA`.
+This means that S3 upload buffers can represent a significant amount of resident memory during large or highly
+partitioned writes.
 
-Testing confirmed that the problem is specifically associated with **partitioned S3 writes**. Non-partitioned S3 →
-Parquet exports completed successfully, while partitioned exports reached approximately 306 MB of `EXTENSION` memory and
-failed when DuckDB was limited to ~500 MB, despite temporary storage being used for other query data.
+This explains the behaviour observed in the tests:
 
-I tried the same operation changing the following `S3` variables to try and reduce the extension memory usage, but
-without success: `partitioned_write_max_open_files=1`, `s3_uploader_thread_limit=1` and
-`s3_uploader_max_filesize='80GB`.
+-   Local Parquet writes do not require `httpfs` and do not show `EXTENSION` memory.
+-   S3 Parquet writes activate `httpfs` and introduce `EXTENSION` memory.
+-   Partitioned S3 writes require more upload activity and result in substantially higher `EXTENSION` memory usage.
+-   This memory is not compensated for by the normal spilling mechanism because it is not the same type of memory as
+    spillable query data.
 
-Finally, we cannot configure how much memory `httpfs` extension uses, so we are gonna increase the total memory limit to
-see the full memory usage and have a complete understanding of the needs of the extension:
+---
 
-```
-time=2026-09-07T16:36:51.868Z | lvl=INFO | corr=8d63e7ab-fa2b-43fa-bba6-db3903550008 | trans=40034e32-51c6-45eb-afc3-4b91e2dbce79 | op=n/a | ver=1.5.0-next | comp=FDA | srv=postgres | subsrv=/public | setting=memory_limit | value=953.6 MiB | msg=DuckDB setting   <-- increased FDA_DUCKDB_MEMORY_LIMIT=1GB
+# `httpfs` configuration tests
 
-.
-.
-.
+Several `httpfs`-related settings were tested to determine whether the extension's memory usage could be reduced:
 
-===DuckDB memory===
-[
-  { tag: 'COLUMN_DATA', memory_mb: 647, temp_mb: 16.15625 },
-  { tag: 'EXTENSION', memory_mb: 153, temp_mb: 0 },
-  { tag: 'CSV_READER', memory_mb: 30.51953125, temp_mb: 0 },
-  { tag: 'ALLOCATOR', memory_mb: 18.8388671875, temp_mb: 0 }
-]
-======
-[
-  { tag: 'EXTENSION', memory_mb: 229.5, temp_mb: 0 },
-  { tag: 'COLUMN_DATA', memory_mb: 223.5, temp_mb: 52.53125 },
-  { tag: 'CSV_READER', memory_mb: 30.51953125, temp_mb: 0 },
-  { tag: 'ALLOCATOR', memory_mb: 16.22021484375, temp_mb: 0 }
-]
-======
-[
-  { tag: 'COLUMN_DATA', memory_mb: 534.5, temp_mb: 349.3125 },
-  { tag: 'EXTENSION', memory_mb: 306, temp_mb: 0 },
-  { tag: 'ALLOCATOR', memory_mb: 42.527482986450195, temp_mb: 0 },
-  { tag: 'CSV_READER', memory_mb: 30.51953125, temp_mb: 0 }
-]
-======
-[
-  { tag: 'COLUMN_DATA', memory_mb: 519.5, temp_mb: 235 },
-  { tag: 'EXTENSION', memory_mb: 382.5, temp_mb: 0 },
-  { tag: 'CSV_READER', memory_mb: 30.51953125, temp_mb: 0 },
-  { tag: 'ALLOCATOR', memory_mb: 21.2998046875, temp_mb: 0 }
-]
-======
-[
-  { tag: 'EXTENSION', memory_mb: 76.5, temp_mb: 0 },
-  { tag: 'CSV_READER', memory_mb: 30.51953125, temp_mb: 0 },
-  { tag: 'ALLOCATOR', memory_mb: 1, temp_mb: 0 }
-]
-======
+```text
+partitioned_write_max_open_files=1
+s3_uploader_thread_limit=1
+s3_uploader_max_filesize='80GB'
 ```
 
-As we see the total memory usage of the _EXTENSION_ now rises a little bit more (_memory_mb: 382.5_) but after that the
-memory is freed and the `FDA` creation finnish succesfully.
+None of these changes prevented the `EXTENSION` memory from growing enough to reproduce the problem.
+
+At this point, there does not appear to be a configuration option that provides a direct memory limit for the `httpfs`
+S3 upload buffers.
+
+Therefore, reducing the DuckDB `memory_limit` alone cannot guarantee that this workload will succeed: the memory limit
+applies to DuckDB's overall managed memory, but some extension allocations still need to remain resident.
+
+---
+
+# Increasing the DuckDB memory limit
+
+The final test was performed by increasing:
+
+```text
+FDA_DUCKDB_MEMORY_LIMIT=1GB
+```
+
+The resulting DuckDB setting was:
+
+```text
+memory_limit = 953.6 MiB
+```
+
+The operation was then allowed to run without the artificially restrictive 0.5 GB limit.
+
+The memory usage reached significantly higher values:
+
+```text
+{ tag: 'COLUMN_DATA', memory_mb: 647, temp_mb: 16.16 }
+{ tag: 'EXTENSION', memory_mb: 153, temp_mb: 0 }
+{ tag: 'CSV_READER', memory_mb: 30.52, temp_mb: 0 }
+{ tag: 'ALLOCATOR', memory_mb: 18.84, temp_mb: 0 }
+```
+
+Later, the memory distribution changed:
+
+```text
+{ tag: 'EXTENSION', memory_mb: 229.5, temp_mb: 0 }
+{ tag: 'COLUMN_DATA', memory_mb: 223.5, temp_mb: 52.53 }
+{ tag: 'CSV_READER', memory_mb: 30.52, temp_mb: 0 }
+{ tag: 'ALLOCATOR', memory_mb: 16.22, temp_mb: 0 }
+```
+
+The maximum observed usage was approximately:
+
+```text
+{ tag: 'COLUMN_DATA', memory_mb: 519.5, temp_mb: 235 }
+{ tag: 'EXTENSION', memory_mb: 382.5, temp_mb: 0 }
+{ tag: 'CSV_READER', memory_mb: 30.52, temp_mb: 0 }
+{ tag: 'ALLOCATOR', memory_mb: 21.30, temp_mb: 0 }
+```
+
+After this peak, the `EXTENSION` memory was released:
+
+```text
+{ tag: 'EXTENSION', memory_mb: 76.5, temp_mb: 0 }
+{ tag: 'CSV_READER', memory_mb: 30.52, temp_mb: 0 }
+{ tag: 'ALLOCATOR', memory_mb: 1, temp_mb: 0 }
+```
+
+The FDA creation then completed successfully.
+
+---
+
+# Conclusions
+
+The investigation leads to the following conclusions:
+
+1. **DuckDB's out-of-core processing is working correctly.** `COLUMN_DATA` is successfully spilled to the configured
+   temporary directory when memory pressure increases.
+
+2. **The OOM is not caused by the temporary storage limit.** The temporary directory has enough capacity and reaches
+   hundreds of MB during the operation without causing an error.
+
+3. **The problematic memory is primarily associated with `EXTENSION` allocations.** These allocations remain in memory
+   while other query data is being spilled.
+
+4. **The `EXTENSION` memory is introduced by the S3-writing path.** Local Parquet generation does not produce this
+   memory category, while S3 writes do.
+
+5. **Partitioned S3 writes significantly increase the memory requirement.** Non-partitioned S3 writes completed
+   successfully with substantially lower `EXTENSION` memory usage, while partitioned writes reached approximately 306 MB
+   with a 0.5 GB DuckDB limit.
+
+6. **The `httpfs` S3 uploader uses resident multipart-upload buffers.** These buffers are accounted for under
+   `EXTENSION` and are not necessarily spillable in the same way as `COLUMN_DATA`.
+
+7. **The tested `httpfs` configuration options do not provide a sufficient solution.**
+   `partitioned_write_max_open_files`, `s3_uploader_thread_limit` and `s3_uploader_max_filesize` did not prevent the
+   high extension memory usage.
+
+8. **A higher DuckDB memory limit allows the operation to complete.** With a 1 GB limit, the workload reached
+   approximately **382.5 MB of `EXTENSION` memory** and completed successfully.
+
+Therefore, the current evidence indicates that the production OOM is caused by the memory requirements of the
+**partitioned S3 upload performed by `httpfs`**, rather than a failure of DuckDB's out-of-core processing.
+
+The important consequence for the FDA configuration is that the DuckDB memory limit must leave enough headroom for these
+non-spillable extension allocations in addition to the memory required by the query itself.
