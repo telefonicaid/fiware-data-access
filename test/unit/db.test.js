@@ -502,6 +502,45 @@ describe('db utils', () => {
     },
   );
 
+  test.each(['Number', 'Boolean', 'DateTime'])(
+    'resolveDAParams rejects an empty string value for %s',
+    async (type) => {
+      const { resolveDAParams } = await loadDbModule();
+
+      expect(() =>
+        resolveDAParams({ param: '' }, [{ name: 'param', type }]),
+      ).toThrow(`Param "param" not of valid type (${type}).`);
+    },
+  );
+
+  test('resolveDAParams rejects a whitespace-only string value for Number', async () => {
+    const { resolveDAParams } = await loadDbModule();
+
+    expect(() =>
+      resolveDAParams({ quantity: '   ' }, [
+        { name: 'quantity', type: 'Number' },
+      ]),
+    ).toThrow('Param "quantity" not of valid type (Number).');
+  });
+
+  test('resolveDAParams keeps an empty string value for Text', async () => {
+    const { resolveDAParams } = await loadDbModule();
+
+    const resolved = resolveDAParams({ label: '' }, [
+      { name: 'label', type: 'Text' },
+    ]);
+
+    expect(resolved).toEqual({ label: '' });
+  });
+
+  test('checkParams rejects an empty string default value for Number', async () => {
+    const { checkParams } = await loadDbModule();
+
+    expect(() =>
+      checkParams([{ name: 'quantity', type: 'Number', default: '' }]),
+    ).toThrow('Default value for param "quantity" not of valid type (Number).');
+  });
+
   test('resolveDAParams uses provided value over a null default', async () => {
     const { resolveDAParams } = await loadDbModule();
 

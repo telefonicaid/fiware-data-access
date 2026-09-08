@@ -131,6 +131,14 @@ describe('utils', () => {
         'Query param "fresh" must be a boolean.',
       );
     });
+
+    test('throws FDAError for an empty string value', async () => {
+      const { parseBooleanQueryParam } = await loadUtilsModule();
+
+      expect(() => parseBooleanQueryParam('', 'fresh')).toThrow(
+        'Query param "fresh" must be a boolean.',
+      );
+    });
   });
 
   describe('fresh query slot system', () => {
