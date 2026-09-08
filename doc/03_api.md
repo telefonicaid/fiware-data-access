@@ -1160,6 +1160,10 @@ _**Request path parameters**_
 | ------------ | -------- | ---------------------------------------------------------- | -------- |
 | `visibility` |          | FDA access visibility. Allowed values: `public`, `private` | `public` |
 
+_**Request query parameters**_
+
+None.
+
 _**Request headers**_
 
 | Header               | Optional | Description                                                          | Example            |
@@ -1173,7 +1177,7 @@ request contains separate form-data parts. The uploaded `file` part has its own 
 CSV files, `application/vnd.ms-excel` for XLS files, or
 `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` for XLSX files.
 
-_**Multipart form fields**_
+_**Request payload (multipart form fields)**_
 
 | Field               | Optional | Type           | Description                                                                                                                                                                                                           |
 | ------------------- | -------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1186,6 +1190,26 @@ _**Multipart form fields**_
 
 Upload-based FDAs do not use a datasource or query. Their `datasourceId` and `query` metadata fields are stored as
 `null`.
+
+_**Response code**_
+
+-   Successful operation uses 202 Accepted (asynchronous processing). See "Synchronous prevalidation" below for
+    immediate `400`/`413`/`415` responses.
+-   Errors use a non-2xx and (optionally) an error payload. See subsection on [Error Responses](#error-responses) for
+    more details.
+
+_**Response headers**_
+
+Successful operations return `Content-Type` header with `application/json` value.
+
+_**Response payload**_
+
+```json
+{
+    "id": "upload_weather",
+    "status": "pending"
+}
+```
 
 _**Synchronous prevalidation**_
 
@@ -1428,6 +1452,10 @@ A DA is represented by a JSON object with the following fields:
 | `params`      | ✓        | array  | Array of [param objects](#params) to control param values. If omitted, the DA has no query parameters. |
 
 (\*) The `id` field is mandatory when creating a DA (`POST`) and must not be included when updating a DA (`PUT`).
+
+> Note: `query` is plain SQL, so it can use any SQL clause supported by the underlying engine, including `LIKE` with
+> wildcards. This is standard SQL, not a built-in FDA capability — see
+> [SQL Pattern Matching in DA Queries](/doc/05_advanced_topics.md#sql-pattern-matching-in-da-queries) for details.
 
 #### Params
 
@@ -1790,23 +1818,27 @@ _**Request query parameters**_
 
 The endpoint supports two request styles:
 
-| Parameter     | Optional | Description                                                                                               | Example        |
-| ------------- | -------- | --------------------------------------------------------------------------------------------------------- | -------------- |
-| `service`     | ✓        | Tenant or service. Required when using query-style context (instead of FIWARE headers).                   | `trantor`      |
-| `servicePath` | ✓        | NGSI hierarchical service path. Required when using query-style context (instead of FIWARE headers).      | `/servicePath` |
-| `outputType`  | ✓        | Output format for query-style context. Allowed values: `json`, `ndjson`, `csv`, `xls`. Default: `ndjson`. | `csv`          |
+| Parameter     | Optional | Description                                                                                                      | Example        |
+| ------------- | -------- | ---------------------------------------------------------------------------------------------------------------- | -------------- |
+| `service`     | ✓        | Tenant or service. Required when using query-style context (instead of FIWARE headers).                          | `trantor`      |
+| `servicePath` | ✓        | NGSI hierarchical service path. Required when using query-style context (instead of FIWARE headers).             | `/servicePath` |
+| `outputType`  | ✓        | Output format for query-style context. Allowed values: `json`, `ndjson`, `csv`, `xls`, `cda`. Default: `ndjson`. | `csv`          |
 
 When using header-style context, any query string parameter is rejected with `400 BadRequest`.
 
 _**Request headers**_
 
-| Header               | Optional | Description                                              | Example        |
-| -------------------- | -------- | -------------------------------------------------------- | -------------- |
-| `Fiware-Service`     | ✓        | Tenant or service for header-style context.              | `trantor`      |
-| `Fiware-ServicePath` | ✓        | NGSI hierarchical service path for header-style context. | `/servicePath` |
+| Header               | Optional | Description                                                                                                                                                                                                                                                                                                 | Example            |
+| -------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| `Fiware-Service`     | ✓        | Tenant or service for header-style context.                                                                                                                                                                                                                                                                 | `trantor`          |
+| `Fiware-ServicePath` | ✓        | NGSI hierarchical service path for header-style context.                                                                                                                                                                                                                                                    | `/servicePath`     |
+| `Accept`             | ✓        | Response format for header-style context, negotiated via standard HTTP content negotiation. Allowed values: `application/json`, `application/x-ndjson`, `text/csv`, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` (or `application/vnd.ms-excel`), `application/vnd.fiware.cda+json`. | `application/json` |
 
-`Fiware-Service` and `Fiware-ServicePath` cannot be mixed with query-style context (`service`, `servicePath` query
-params). If both styles are present, API returns `409 RequestStyleConflict`.
+See "Content negotiation and serialization notes" below for the request-style mixing and precedence rules.
+
+_**Request payload**_
+
+None.
 
 _**Response code**_
 
@@ -1814,11 +1846,53 @@ _**Response code**_
 -   Errors use a non-2xx and (optionally) an error payload. See subsection on [Error Responses](#error-responses) for
     more details.
 
+_**Response headers**_
+
+| `outputType` (query-style) | `Accept` (header-style)                                                                           | `Content-Type`                                                      | `Content-Disposition`                 |
+| -------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------- |
+| `json`                     | `application/json`, missing, or `*/*`                                                             | `application/json`                                                  | —                                     |
+| `ndjson` (default)         | `application/x-ndjson`                                                                            | `application/x-ndjson`                                              | —                                     |
+| `csv`                      | `text/csv`                                                                                        | `text/csv; charset=utf-8`                                           | `attachment; filename="results.csv"`  |
+| `xls`                      | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` or `application/vnd.ms-excel` | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` | `attachment; filename="results.xlsx"` |
+| `cda`                      | `application/vnd.fiware.cda+json`                                                                 | `application/json`                                                  | —                                     |
+
+> Note: for `cda`, the response body follows the CDA-compatible JSON structure shown below, but the actual
+> `Content-Type` response header is `application/json`, not `application/vnd.fiware.cda+json`.
+
+_**Response payload**_
+
+Depends on the resolved output format:
+
+-   `json` (or default in header-style context): array of JSON objects, each one being a record of the FDA base query
+    result.
+-   `application/x-ndjson`: one JSON object per line (streamed response).
+-   `text/csv`: comma-separated values file. The first row contains column names. Values containing commas,
+    double-quotes or newlines are quoted.
+-   spreadsheet MIME types: Excel workbook (`.xlsx` format, Office Open XML). The first row contains column names.
+-   `cda`: CDA-compatible JSON structure:
+
+```json
+{
+    "metadata": [{ "colIndex": 0, "colName": "column1" }, ...],
+    "resultset": [["value1", "value2", ...]],
+    "queryInfo": {
+        "pageStart": 0,
+        "pageSize": 10,
+        "totalRows": 120
+    }
+}
+```
+
 _**Content negotiation and serialization notes**_
 
 -   In header-style context, response format is negotiated through the `Accept` header (using the
     [standard HTTP content negotiation mechanism](https://datatracker.ietf.org/doc/html/rfc2616#section-12)).
 -   In query-style context, response format is controlled by `outputType` query parameter.
+-   `Fiware-Service`/`Fiware-ServicePath` headers cannot be mixed with `service`/`servicePath` query parameters; if both
+    are present, the API returns `409 RequestStyleConflict`.
+-   Precedence: within query-style context, `outputType` always determines the response format, and an `Accept` header
+    sent alongside it is ignored. Header-style context does not accept `outputType` (nor any other query parameter, see
+    below) — it is rejected with `400 BadRequest` rather than being ignored in favor of `Accept`.
 -   This endpoint requires `FDA_ROLE_SYNCQUERIES=true` in the API instance.
 -   In query-style context, no additional query parameters are allowed besides `service`, `servicePath`, and
     `outputType`; if the client attempts to send any other query parameter, the API returns `400 BadRequest` with
@@ -1866,13 +1940,13 @@ The endpoint supports two request styles:
 
 _**Request headers**_
 
-| Header               | Optional | Description                                              | Example        |
-| -------------------- | -------- | -------------------------------------------------------- | -------------- |
-| `Fiware-Service`     | ✓        | Tenant or service for header-style context.              | `trantor`      |
-| `Fiware-ServicePath` | ✓        | NGSI hierarchical service path for header-style context. | `/servicePath` |
+| Header               | Optional | Description                                                                                                                                                                                                                                                                                                 | Example            |
+| -------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| `Fiware-Service`     | ✓        | Tenant or service for header-style context.                                                                                                                                                                                                                                                                 | `trantor`          |
+| `Fiware-ServicePath` | ✓        | NGSI hierarchical service path for header-style context.                                                                                                                                                                                                                                                    | `/servicePath`     |
+| `Accept`             | ✓        | Response format for header-style context, negotiated via standard HTTP content negotiation. Allowed values: `application/json`, `application/x-ndjson`, `text/csv`, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` (or `application/vnd.ms-excel`), `application/vnd.fiware.cda+json`. | `application/json` |
 
-`Fiware-Service` and `Fiware-ServicePath` cannot be mixed with query-style context (`service`, `servicePath` query
-params). If both styles are present, API returns `409 RequestStyleConflict`.
+See "Content negotiation and serialization notes" below for the request-style mixing and precedence rules.
 
 _**Request payload**_
 
@@ -1895,24 +1969,28 @@ _**Behavior note**_
 
 _**Response headers**_
 
-| `Accept` request header                                                                           | `Content-Type`                                                      | `Content-Disposition`                 |
-| ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------- |
-| `application/json`, missing, or `*/*`                                                             | `application/json`                                                  | —                                     |
-| `application/x-ndjson`                                                                            | `application/x-ndjson`                                              | —                                     |
-| `text/csv`                                                                                        | `text/csv; charset=utf-8`                                           | `attachment; filename="results.csv"`  |
-| `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` or `application/vnd.ms-excel` | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` | `attachment; filename="results.xlsx"` |
+| `outputType` (query-style) | `Accept` (header-style)                                                                           | `Content-Type`                                                      | `Content-Disposition`                 |
+| -------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------- |
+| `json`                     | `application/json`, missing, or `*/*`                                                             | `application/json`                                                  | —                                     |
+| `ndjson` (default)         | `application/x-ndjson`                                                                            | `application/x-ndjson`                                              | —                                     |
+| `csv`                      | `text/csv`                                                                                        | `text/csv; charset=utf-8`                                           | `attachment; filename="results.csv"`  |
+| `xls`                      | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` or `application/vnd.ms-excel` | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` | `attachment; filename="results.xlsx"` |
+| `cda`                      | `application/vnd.fiware.cda+json`                                                                 | `application/json`                                                  | —                                     |
+
+> Note: for `cda`, the response body follows the CDA-compatible JSON structure shown below, but the actual
+> `Content-Type` response header is `application/json`, not `application/vnd.fiware.cda+json`.
 
 _**Response payload**_
 
-Depends on `Accept`:
+Depends on the resolved output format:
 
--   `application/json` (or default): array of JSON objects, each one being a record result of the stored parameterized
-    query.
+-   `json` (or default in header-style context): array of JSON objects, each one being a record result of the stored
+    parameterized query.
 -   `application/x-ndjson`: one JSON object per line (streamed response).
 -   `text/csv`: comma-separated values file. The first row contains column names. Values containing commas,
     double-quotes or newlines are quoted.
 -   spreadsheet MIME types: Excel workbook (`.xlsx` format, Office Open XML). The first row contains column names.
--   `application/vnd.fiware.cda+json`: CDA-compatible JSON structure:
+-   `cda` (`application/vnd.fiware.cda+json`): CDA-compatible JSON structure:
 
 ```json
 {
@@ -1931,6 +2009,12 @@ _**Content negotiation and serialization notes**_
 -   In header-style context, response format is negotiated through the `Accept` header (using the
     [standard HTTP content negotiation mechanism](https://datatracker.ietf.org/doc/html/rfc2616#section-12)).
 -   In query-style context, response format is controlled by `outputType` query parameter.
+-   `Fiware-Service`/`Fiware-ServicePath` headers cannot be mixed with `service`/`servicePath` query parameters; if both
+    are present, the API returns `409 RequestStyleConflict`.
+-   Precedence: within query-style context, `outputType` always determines the response format, and an `Accept` header
+    sent alongside it is ignored. Header-style context does not accept `outputType` as a query parameter — it is
+    rejected with `400 BadRequest` rather than being ignored in favor of `Accept` (see "Unsupported query fields"
+    below).
 -   The CDA-compatible JSON representation can be requested using `outputType=cda` in query-style context or
     `Accept: application/vnd.fiware.cda+json` in header-style context. It returns a tabular JSON payload (`metadata`,
     `resultset`, `queryInfo`).
@@ -2047,11 +2131,14 @@ Supported methods:
 
 _**Request headers**_
 
-| Header           | Optional | Description                                                              | Example            |
-| ---------------- | -------- | ------------------------------------------------------------------------ | ------------------ |
-| `Content-Type`   | ✓        | For `POST`, should be `application/x-www-form-urlencoded`                | —                  |
-| `Fiware-Service` | ✓        | Tenant/service name. If not present, it is derived from the `path` field | `trantor`          |
-| `Accept`         | ✓        | Ignored when `outputType` is provided.                                   | `application/json` |
+| Header           | Optional | Description                                                              | Example   |
+| ---------------- | -------- | ------------------------------------------------------------------------ | --------- |
+| `Content-Type`   | ✓        | For `POST`, should be `application/x-www-form-urlencoded`                | —         |
+| `Fiware-Service` | ✓        | Tenant/service name. If not present, it is derived from the `path` field | `trantor` |
+
+> NOTE: different from other FDA endpoints used to get data, this legacy endpoint does not use the `Accept` header (it
+> is ignored if the client includes it in the request). The response format is always controlled by the `outputType`
+> query/body parameter (default: `json`).
 
 ---
 
@@ -2065,7 +2152,7 @@ For `GET`, send as query parameters.
 | -------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
 | `path`         |          | Path used to resolve context (`visibility`, `service`, and FDA id). Supported formats include `/public/<service>/...` and `home/<service>/verticals/public/<fda>.cda`. If no explicit FDA id is present, it defaults to `dataAccessId`. | `/public/service/verticals/sql/fda1` |
 | `dataAccessId` |          | Identifier of the Data Access (DA) inside the FDA                                                                                                                                                                                       | `da1`                                |
-| `outputType`   | ✓        | Format of the returned results. **Default:** `json`. Allowed values: `json`, `csv`, `xls`.                                                                                                                                              | `csv`                                |
+| `outputType`   | ✓        | Format of the returned results. **Default:** `json`. Allowed values: `json`, `ndjson`, `csv`, `xls`. `ndjson` is accepted but behaves the same as `json` on this endpoint (see Response headers below).                                 | `csv`                                |
 | `param*`       | ✓        | Query parameters prefixed with `param`. If omitted, no DA query parameters are passed.                                                                                                                                                  | `parammunicipality=NA`               |
 | `pageSize`     | ✓        | Pagination size (must be handled explicitly by the DA). If omitted, this field is not passed and DA defaults apply.                                                                                                                     | `10`                                 |
 | `pageStart`    | ✓        | Pagination offset (must be handled explicitly by the DA). If omitted, this field is not passed and DA defaults apply.                                                                                                                   | `0`                                  |
@@ -2095,15 +2182,22 @@ _**Response headers**_
 | `outputType` value | `Content-Type`                                                      | `Content-Disposition`                 |
 | ------------------ | ------------------------------------------------------------------- | ------------------------------------- |
 | `json` (default)   | `application/json`                                                  | —                                     |
-| `ndjson`           | `application/x-ndjson`                                              | —                                     |
+| `ndjson`           | `application/json`                                                  | —                                     |
 | `csv`              | `text/csv`                                                          | `attachment; filename="results.csv"`  |
 | `xls`              | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` | `attachment; filename="results.xlsx"` |
+
+> Note: unlike the `GET /{visibility}/fdas/{fdaId}/das/{daId}/data` endpoint, this legacy endpoint does not stream
+> NDJSON. `outputType=ndjson` is accepted for compatibility but returns the exact same response as `json` (the
+> CDA-compatible structure below, not line-delimited). See [Limitations](/doc/05_advanced_topics.md#limitations) in
+> Advanced Topics.
 
 _**Response payload**_
 
 Depends on `outputType`:
 
--   `json`: CDA-compatible structure:
+-   `json` and `ndjson` (identical on this endpoint): CDA-compatible structure. Note this is **not** a plain JSON array
+    like the `json` output of `GET /{visibility}/fdas/{fdaId}/das/{daId}/data` — this legacy endpoint always wraps
+    results in the `{ metadata, resultset, queryInfo }` shape, regardless of `outputType`:
 
 ```json
 {
