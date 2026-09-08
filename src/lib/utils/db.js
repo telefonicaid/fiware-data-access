@@ -622,7 +622,18 @@ export function resolveDAParams(reqParams, params) {
 }
 
 const TYPE_COERCERS = {
-  Number: (v) => (Number.isFinite(Number(v)) ? Number(v) : undefined),
+  Number: (v) => {
+    if (typeof v === 'string' && v.trim() === '') {
+      return undefined;
+    }
+
+    const num = Number(v);
+    if (Number.isFinite(num)) {
+      return num;
+    }
+
+    return undefined;
+  },
   Boolean: (v) => {
     if (v === true || v === false) {
       return v;

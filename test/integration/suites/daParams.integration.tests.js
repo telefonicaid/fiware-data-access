@@ -647,6 +647,60 @@ export function registerDaParamsIntegrationTests({
       }
       expect(boolQueryRes.status).toBe(400);
 
+      const emptyNumberQueryRes = await httpReq({
+        method: 'GET',
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId2, {
+          minAge: '',
+          name: 'carlos',
+        }),
+        headers: { 'Fiware-Service': service },
+      });
+
+      if (emptyNumberQueryRes.status >= 400) {
+        console.error(
+          'GET /{visibility}/fdas/{fdaId}/das/{daId}/data failed as expected:',
+          emptyNumberQueryRes.status,
+          emptyNumberQueryRes.json ?? emptyNumberQueryRes.text,
+        );
+      }
+      expect(emptyNumberQueryRes.status).toBe(400);
+
+      const emptyDateQueryRes = await httpReq({
+        method: 'GET',
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId2, {
+          name: 'carlos',
+          timeinstant: '',
+        }),
+        headers: { 'Fiware-Service': service },
+      });
+
+      if (emptyDateQueryRes.status >= 400) {
+        console.error(
+          'GET /{visibility}/fdas/{fdaId}/das/{daId}/data failed as expected:',
+          emptyDateQueryRes.status,
+          emptyDateQueryRes.json ?? emptyDateQueryRes.text,
+        );
+      }
+      expect(emptyDateQueryRes.status).toBe(400);
+
+      const emptyBoolQueryRes = await httpReq({
+        method: 'GET',
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId2, {
+          name: 'carlos',
+          authorized: '',
+        }),
+        headers: { 'Fiware-Service': service },
+      });
+
+      if (emptyBoolQueryRes.status >= 400) {
+        console.error(
+          'GET /{visibility}/fdas/{fdaId}/das/{daId}/data failed as expected:',
+          emptyBoolQueryRes.status,
+          emptyBoolQueryRes.json ?? emptyBoolQueryRes.text,
+        );
+      }
+      expect(emptyBoolQueryRes.status).toBe(400);
+
       const numberCoercionRes = await httpReq({
         method: 'GET',
         url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId2, {
@@ -777,6 +831,17 @@ export function registerDaParamsIntegrationTests({
 
       expect(filterByTextRes.status).toBe(200);
       expect(filterByTextRes.json).toEqual([{ id: 2, name: 'bob', age: 20 }]);
+
+      const filterByEmptyTextRes = await httpReq({
+        method: 'GET',
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId3, {
+          uName: '',
+        }),
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect(filterByEmptyTextRes.status).toBe(200);
+      expect(filterByEmptyTextRes.json).toEqual([]);
 
       const filterByBooleanRes = await httpReq({
         method: 'GET',
