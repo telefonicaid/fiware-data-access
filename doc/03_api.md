@@ -1834,8 +1834,7 @@ _**Request headers**_
 | `Fiware-ServicePath` | ✓        | NGSI hierarchical service path for header-style context.                                                                                                                                                                                                                                                    | `/servicePath`     |
 | `Accept`             | ✓        | Response format for header-style context, negotiated via standard HTTP content negotiation. Allowed values: `application/json`, `application/x-ndjson`, `text/csv`, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` (or `application/vnd.ms-excel`), `application/vnd.fiware.cda+json`. | `application/json` |
 
-`Fiware-Service` and `Fiware-ServicePath` cannot be mixed with query-style context (`service`, `servicePath` query
-params). If both styles are present, API returns `409 RequestStyleConflict`.
+See "Content negotiation and serialization notes" below for the request-style mixing and precedence rules.
 
 _**Request payload**_
 
@@ -1889,6 +1888,11 @@ _**Content negotiation and serialization notes**_
 -   In header-style context, response format is negotiated through the `Accept` header (using the
     [standard HTTP content negotiation mechanism](https://datatracker.ietf.org/doc/html/rfc2616#section-12)).
 -   In query-style context, response format is controlled by `outputType` query parameter.
+-   `Fiware-Service`/`Fiware-ServicePath` headers cannot be mixed with `service`/`servicePath` query parameters; if both
+    are present, the API returns `409 RequestStyleConflict`.
+-   Precedence: within query-style context, `outputType` always determines the response format, and an `Accept` header
+    sent alongside it is ignored. Header-style context does not accept `outputType` (nor any other query parameter, see
+    below) — it is rejected with `400 BadRequest` rather than being ignored in favor of `Accept`.
 -   This endpoint requires `FDA_ROLE_SYNCQUERIES=true` in the API instance.
 -   In query-style context, no additional query parameters are allowed besides `service`, `servicePath`, and
     `outputType`; if the client attempts to send any other query parameter, the API returns `400 BadRequest` with
@@ -1942,8 +1946,7 @@ _**Request headers**_
 | `Fiware-ServicePath` | ✓        | NGSI hierarchical service path for header-style context.                                                                                                                                                                                                                                                    | `/servicePath`     |
 | `Accept`             | ✓        | Response format for header-style context, negotiated via standard HTTP content negotiation. Allowed values: `application/json`, `application/x-ndjson`, `text/csv`, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` (or `application/vnd.ms-excel`), `application/vnd.fiware.cda+json`. | `application/json` |
 
-`Fiware-Service` and `Fiware-ServicePath` cannot be mixed with query-style context (`service`, `servicePath` query
-params). If both styles are present, API returns `409 RequestStyleConflict`.
+See "Content negotiation and serialization notes" below for the request-style mixing and precedence rules.
 
 _**Request payload**_
 
@@ -2006,6 +2009,12 @@ _**Content negotiation and serialization notes**_
 -   In header-style context, response format is negotiated through the `Accept` header (using the
     [standard HTTP content negotiation mechanism](https://datatracker.ietf.org/doc/html/rfc2616#section-12)).
 -   In query-style context, response format is controlled by `outputType` query parameter.
+-   `Fiware-Service`/`Fiware-ServicePath` headers cannot be mixed with `service`/`servicePath` query parameters; if both
+    are present, the API returns `409 RequestStyleConflict`.
+-   Precedence: within query-style context, `outputType` always determines the response format, and an `Accept` header
+    sent alongside it is ignored. Header-style context does not accept `outputType` as a query parameter — it is
+    rejected with `400 BadRequest` rather than being ignored in favor of `Accept` (see "Unsupported query fields"
+    below).
 -   The CDA-compatible JSON representation can be requested using `outputType=cda` in query-style context or
     `Accept: application/vnd.fiware.cda+json` in header-style context. It returns a tabular JSON payload (`metadata`,
     `resultset`, `queryInfo`).
@@ -2122,11 +2131,14 @@ Supported methods:
 
 _**Request headers**_
 
-| Header           | Optional | Description                                                                                                                                                             | Example            |
-| ---------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
-| `Content-Type`   | ✓        | For `POST`, should be `application/x-www-form-urlencoded`                                                                                                               | —                  |
-| `Fiware-Service` | ✓        | Tenant/service name. If not present, it is derived from the `path` field                                                                                                | `trantor`          |
-| `Accept`         | ✓        | Not used for content negotiation on this endpoint. The response format is always controlled by `outputType` (default: `json`), regardless of the `Accept` header value. | `application/json` |
+| Header           | Optional | Description                                                              | Example   |
+| ---------------- | -------- | ------------------------------------------------------------------------ | --------- |
+| `Content-Type`   | ✓        | For `POST`, should be `application/x-www-form-urlencoded`                | —         |
+| `Fiware-Service` | ✓        | Tenant/service name. If not present, it is derived from the `path` field | `trantor` |
+
+> NOTE: different from other FDA endpoints used to get data, this legacy endpoint does not use the `Accept` header (it
+> is ignored if the client includes it in the request). The response format is always controlled by the `outputType`
+> query/body parameter (default: `json`).
 
 ---
 
