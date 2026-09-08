@@ -1442,6 +1442,14 @@ Each object in the array `params` can have the following keys:
 | `range`    | ✓        | array   | Array with the minimun and maximun value (`Number`) a param can take. The array should be consistent (only two elements and the first one lesser than the second), otherwise an error will be responsed. If omitted, no range validation is applied.                                                                                                                                 |
 | `enum`     | ✓        | array   | Array with all the possible values (`Number` or `Text`) a param can take. If omitted, no enum validation is applied.                                                                                                                                                                                                                                                                 |
 
+**Empty string values (`?param=`):** when a query parameter is present but empty, its handling depends on `type`:
+
+-   `Text`: the empty string `""` is a valid value and is used as-is.
+-   `Number`, `Boolean`, `DateTime`: the empty string is **not** a valid value for these types and the request fails
+    with `400 InvalidQueryParam`, the same as sending any other unparsable value (e.g. `?activity=notanumber`).
+
+This is distinct from omitting the parameter entirely, which is governed by the `required` and `default` keys above.
+
 Example array:
 
 ```
