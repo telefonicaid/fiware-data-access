@@ -76,6 +76,8 @@ import {
   countFDAsUsingDatasource,
   validateMongoDatasourceConnection,
   createMongoCursorReader,
+  runMongoQuery,
+  validateMongoQuery,
 } from './utils/mongo.js';
 import {
   normalizeForSerialization,
@@ -125,7 +127,7 @@ function assertSupportedDatasourceType(type) {
   }
 }
 
-export function validateMongoFDAContract(query, timeColumn, cached) {
+export function validateMongoFDAContract(query, timeColumn) {
   validateBasicQueryStructure(query);
 
   const { collection, filter, projection, aggregation } = query;
@@ -460,13 +462,20 @@ export async function executeFDAQuery({
     config.freshQueries.maxConcurrent,
   );
   try {
-    const fda = await getAccessibleFDA(service, fdaId, visibility, servicePath);
-    const query = buildFreshQueryFromFDA(fda, fdaId);
-    const pgCredentials = await resolveDatasourceCredentials(
+    const { fda, datasource } = await resolveFreshFDAAndDatasource(
       service,
-      fda.datasourceId ?? DEFAULT_DATASOURCE_ID,
+      visibility,
+      servicePath,
+      fdaId,
     );
-    const rows = await runPgQuery(pgCredentials, query, []);
+
+    if (datasource.type === 'mongodb') {
+      const rows = await runMongoQuery(datasource.config, fda.query);
+      return normalizeForSerialization(rows);
+    }
+
+    const query = buildFreshQueryFromFDA(fda);
+    const rows = await runPgQuery(datasource.config, query, []);
     return normalizeForSerialization(rows);
   } finally {
     releaseFreshSlot();
@@ -729,23 +738,22 @@ async function createFreshFDARowSource({
   let cursorReader;
 
   try {
-    const { query, fda } = await buildFreshFDAQuery(
+    const { fda, datasource } = await resolveFreshFDAAndDatasource(
       service,
       visibility,
       servicePath,
       fdaId,
     );
-    const pgCredentials = await resolveDatasourceCredentials(
-      service,
-      fda.datasourceId ?? DEFAULT_DATASOURCE_ID,
-    );
 
-    cursorReader = await createPgCursorReader(
-      pgCredentials,
-      query,
-      [],
-      FRESH_CURSOR_BATCH_SIZE,
-    );
+    cursorReader =
+      datasource.type === 'mongodb'
+        ? await createMongoCursorReader(datasource.config, fda.query)
+        : await createPgCursorReader(
+            datasource.config,
+            buildFreshQueryFromFDA(fda),
+            [],
+            FRESH_CURSOR_BATCH_SIZE,
+          );
 
     req.on('close', () => {
       cursorReader?.close().catch(() => {});
@@ -823,12 +831,7 @@ async function buildFreshQueryStatement(
   };
 }
 
-async function buildFreshFDAQuery(service, visibility, servicePath, fdaId) {
-  const fda = await getAccessibleFDA(service, fdaId, visibility, servicePath);
-  return { query: buildFreshQueryFromFDA(fda, fdaId), fda };
-}
-
-function buildFreshQueryFromFDA(fda, fdaId) {
+function assertFDAIsOnlyFresh(fda, fdaId) {
   if (fda.cached !== false) {
     throw new FDAError(
       409,
@@ -836,6 +839,26 @@ function buildFreshQueryFromFDA(fda, fdaId) {
       `FDA ${fdaId} is a cached FDA and cannot be queried directly. Use a Data Access instead.`,
     );
   }
+}
+
+async function resolveFreshFDAAndDatasource(
+  service,
+  visibility,
+  servicePath,
+  fdaId,
+) {
+  const fda = await getAccessibleFDA(service, fdaId, visibility, servicePath);
+  assertFDAIsOnlyFresh(fda, fdaId);
+
+  const datasource = await resolveDatasource(
+    service,
+    fda.datasourceId ?? DEFAULT_DATASOURCE_ID,
+  );
+
+  return { fda, datasource };
+}
+
+function buildFreshQueryFromFDA(fda) {
   return removeTrailingSemicolon(fda.query?.trim() || '');
 }
 
@@ -991,7 +1014,7 @@ export async function fetchFDA(
   validateScheduledOptions(refreshPolicy, objStgConf, timeColumn);
 
   if (datasource.type === 'mongodb') {
-    validateMongoFDAContract(query, timeColumn, cached);
+    validateMongoFDAContract(query, timeColumn);
 
     if (refreshPolicy?.type === 'window') {
       throw new FDAError(
@@ -1007,6 +1030,7 @@ export async function fetchFDA(
     validationMode,
     query,
     timeColumn,
+    cached,
   );
 
   const persistedSchema = buildPersistedSchema(sourceSchema);
@@ -1059,23 +1083,32 @@ export async function fetchFDA(
   });
 }
 
-function validateAndGetSourceSchema(
+async function validateAndGetSourceSchema(
   datasource,
   validationMode,
   query,
   timeColumn,
+  cached,
 ) {
-  if (
-    datasource.type !== 'postgres' ||
-    validationMode !== FDA_VALIDATION_MODE_STRICT
-  ) {
+  if (validationMode !== FDA_VALIDATION_MODE_STRICT) {
     return null;
   }
 
-  return validatePostgresQuery(datasource.config, query, {
-    timeColumn,
-    returnColumns: true,
-  });
+  if (datasource.type === 'postgres') {
+    return validatePostgresQuery(datasource.config, query, {
+      timeColumn,
+      returnColumns: true,
+    });
+  }
+
+  // Cached Mongo FDAs are already validated synchronously against the live
+  // collection when the one-row parquet snapshot is created; only-fresh
+  // Mongo FDAs skip that step, so validate the query here instead.
+  if (datasource.type === 'mongodb' && cached === false) {
+    await validateMongoQuery(datasource.config, query);
+  }
+
+  return null;
 }
 
 async function prepareCachedFDA({
@@ -1664,7 +1697,7 @@ async function createMongoFDAReader(
     );
   }
 
-  validateMongoFDAContract(fda.query, fda.timeColumn, fda.cached);
+  validateMongoFDAContract(fda.query, fda.timeColumn);
 
   return await createMongoCursorReader(datasource.config, fda.query, {
     limit,
