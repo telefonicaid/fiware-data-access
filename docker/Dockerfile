@@ -27,6 +27,7 @@ FROM node:${NODE_VERSION}
 
 COPY --chown=node:node package*.json /opt/fda/fda/
 COPY --chown=node:node src/ /opt/fda/fda/src
+COPY --chown=node:node scripts/ /opt/fda/fda/scripts
 
 WORKDIR /opt/fda/fda
 # hadolint ignore=DL3008,DL3009,DL3015
@@ -39,6 +40,11 @@ RUN \
         apt-get install -y git curl && \
         echo "INFO: npm install --production..." && \
         npm install --production && \
+        # Pre-install DuckDB extensions (httpfs) at build time so the
+        # running container never needs outbound internet access.
+        echo "INFO: installing DuckDB extensions..." && \
+        node scripts/install-duckdb-extensions.js && \
+        chown -R node:node duckdb_extensions && \
         # Remove Git and clean apt cache
         apt-get clean && \
         apt-get remove -y git && \
@@ -47,7 +53,6 @@ RUN \
 USER node
 ENV NODE_ENV=production
 ENV FDA_LOG_LEVEL=INFO
-
 
 CMD [ "npm", "start" ]
 
