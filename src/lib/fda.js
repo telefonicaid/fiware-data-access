@@ -138,8 +138,6 @@ export function validateMongoFDAContract(query, timeColumn, cached) {
   } else if (queryType === 'aggregation') {
     validateAggregationQuery(aggregation, timeColumn);
   }
-
-  validateCacheSupport(cached);
 }
 
 // Helper functions to reduce complexity
@@ -288,16 +286,6 @@ function validateTimeColumnInAggregationProjection(timeColumn, aggregation) {
       400,
       'InvalidMongoFDAContract',
       'Mongo FDA timeColumn must be included in final aggregation $project stage',
-    );
-  }
-}
-
-function validateCacheSupport(cached) {
-  if (cached === false) {
-    throw new FDAError(
-      400,
-      'InvalidMongoFDAContract',
-      'Mongo datasource only supports cached FDAs',
     );
   }
 }
