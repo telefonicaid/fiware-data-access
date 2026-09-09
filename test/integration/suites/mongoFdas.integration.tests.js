@@ -22,7 +22,7 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
-import { beforeAll, describe, expect, test } from '@jest/globals';
+import { afterAll, beforeAll, describe, expect, test } from '@jest/globals';
 import { MongoClient } from 'mongodb';
 
 export function registerMongoFdasIntegrationTests({
@@ -35,6 +35,7 @@ export function registerMongoFdasIntegrationTests({
   httpReqRaw,
   waitUntilFDACompleted,
   buildDaDataUrl,
+  buildFdaDataUrl,
 }) {
   describe('Mongo cached FDAs', () => {
     const datasourceId = 'mongo-cache-ds';
@@ -175,37 +176,17 @@ export function registerMongoFdasIntegrationTests({
       }
     });
 
-    test('POST /fdas rejects cached=false for Mongo datasource', async () => {
+    test('GET /{fdaId}/data rejects direct queries against a cached Mongo FDA', async () => {
       const baseUrl = getBaseUrl();
 
       const res = await httpReq({
-        method: 'POST',
-        url: `${baseUrl}/${visibility}/fdas`,
-        headers: {
-          'Content-Type': 'application/json',
-          'Fiware-Service': service,
-          'Fiware-ServicePath': servicePath,
-        },
-        body: {
-          id: 'mongo_fresh_not_allowed',
-          query: {
-            collection: collectionName,
-            filter: { site: 'lab' },
-            projection: {
-              device: 1,
-              status: 1,
-              reading: 1,
-            },
-          },
-          description: 'mongo fresh not allowed',
-          cached: false,
-          datasourceId,
-        },
+        method: 'GET',
+        url: buildFdaDataUrl(baseUrl, servicePath, fdaId),
+        headers: { 'Fiware-Service': service },
       });
 
-      expect(res.status).toBe(400);
-      expect(res.json.error).toBe('InvalidMongoFDAContract');
-      expect(res.json.description).toContain('only supports cached FDAs');
+      expect(res.status).toBe(409);
+      expect(res.json.error).toBe('FDANotOnlyFresh');
     });
 
     test('GET /fdas/{fdaId} exposes Mongo-specific metadata', async () => {
@@ -549,6 +530,222 @@ export function registerMongoFdasIntegrationTests({
       expect(res.json.description).toContain(
         'timeColumn must be included in final aggregation $project stage',
       );
+    });
+  });
+
+  describe('Mongo only-fresh FDAs', () => {
+    const freshDatasourceId = 'mongo-fresh-ds';
+    const freshFdaId = 'mongo_fresh_fda';
+    const freshCollectionName = 'mongo_fresh_fda_events';
+
+    beforeAll(async () => {
+      const baseUrl = getBaseUrl();
+      const mongoClient = new MongoClient(getMongoUri(), {
+        serverSelectionTimeoutMS: 10_000,
+      });
+
+      await mongoClient.connect();
+      try {
+        const collection = mongoClient
+          .db('test-db')
+          .collection(freshCollectionName);
+        await collection.deleteMany({});
+        await collection.insertMany([
+          { device: 'sensor-a', status: 'ok', reading: '21.5', site: 'lab' },
+          { device: 'sensor-b', status: 'warn', reading: '19.2', site: 'lab' },
+          {
+            device: 'sensor-c',
+            status: 'ok',
+            reading: '30.1',
+            site: 'remote',
+          },
+        ]);
+      } finally {
+        await mongoClient.close();
+      }
+
+      await httpReq({
+        method: 'DELETE',
+        url: `${baseUrl}/${visibility}/fdas/${freshFdaId}`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+      });
+
+      await httpReq({
+        method: 'DELETE',
+        url: `${baseUrl}/datasources/${freshDatasourceId}`,
+        headers: { 'Fiware-Service': service },
+      });
+
+      const createDatasourceRes = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/datasources`,
+        headers: {
+          'Content-Type': 'application/json',
+          'Fiware-Service': service,
+        },
+        body: {
+          datasourceId: freshDatasourceId,
+          type: 'mongodb',
+          config: {
+            uri: getMongoUri(),
+            database: 'test-db',
+          },
+        },
+      });
+
+      if (createDatasourceRes.status >= 400) {
+        throw new Error(
+          `Failed to create Mongo datasource: ${createDatasourceRes.status} ${JSON.stringify(createDatasourceRes.json)}`,
+        );
+      }
+    });
+
+    afterAll(async () => {
+      const baseUrl = getBaseUrl();
+      await httpReq({
+        method: 'DELETE',
+        url: `${baseUrl}/${visibility}/fdas/${freshFdaId}`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+      });
+    });
+
+    test('POST /fdas supports cached=false for Mongo datasource', async () => {
+      const baseUrl = getBaseUrl();
+
+      const createFdaRes = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Content-Type': 'application/json',
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: freshFdaId,
+          query: {
+            collection: freshCollectionName,
+            filter: { site: 'lab' },
+            projection: {
+              device: 1,
+              status: 1,
+              reading: 1,
+            },
+          },
+          description: 'mongo only-fresh fda integration fixture',
+          cached: false,
+          datasourceId: freshDatasourceId,
+        },
+      });
+
+      if (createFdaRes.status >= 400) {
+        console.error(
+          'Failed creating only-fresh Mongo FDA:',
+          createFdaRes.status,
+          createFdaRes.json,
+        );
+      }
+      expect(createFdaRes.status).toBe(202);
+
+      const getFdaRes = await httpReq({
+        method: 'GET',
+        url: `${baseUrl}/${visibility}/fdas/${freshFdaId}`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+      });
+
+      expect(getFdaRes.status).toBe(200);
+      expect(getFdaRes.json.cached).toBe(false);
+    });
+
+    test('GET /{fdaId}/data runs the only-fresh Mongo FDA directly against MongoDB', async () => {
+      const baseUrl = getBaseUrl();
+
+      const res = await httpReq({
+        method: 'GET',
+        url: buildFdaDataUrl(baseUrl, servicePath, freshFdaId),
+        headers: { 'Fiware-Service': service },
+      });
+
+      if (res.status >= 400) {
+        console.error(
+          'Mongo only-fresh FDA JSON query failed:',
+          res.status,
+          res.json,
+        );
+      }
+
+      expect(res.status).toBe(200);
+      const sortedRows = [...res.json].sort((a, b) =>
+        a.device.localeCompare(b.device),
+      );
+      expect(sortedRows).toEqual([
+        { device: 'sensor-a', status: 'ok', reading: '21.5' },
+        { device: 'sensor-b', status: 'warn', reading: '19.2' },
+      ]);
+    });
+
+    test('GET /{fdaId}/data streams NDJSON for the only-fresh Mongo FDA', async () => {
+      const baseUrl = getBaseUrl();
+
+      const res = await httpReqRaw({
+        method: 'GET',
+        url: buildFdaDataUrl(baseUrl, servicePath, freshFdaId),
+        headers: {
+          'Fiware-Service': service,
+          Accept: 'application/x-ndjson',
+        },
+      });
+
+      if (res.status >= 400) {
+        console.error(
+          'Mongo only-fresh FDA NDJSON query failed:',
+          res.status,
+          res.text,
+        );
+      }
+
+      expect(res.status).toBe(200);
+      expect(String(res.headers['content-type'])).toContain(
+        'application/x-ndjson',
+      );
+
+      const rows = res.text
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line));
+
+      expect(rows.map((row) => row.device).sort()).toEqual([
+        'sensor-a',
+        'sensor-b',
+      ]);
+    });
+
+    test('POST /{fdaId}/das rejects DA creation for the only-fresh Mongo FDA', async () => {
+      const baseUrl = getBaseUrl();
+
+      const res = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas/${freshFdaId}/das`,
+        headers: { 'Fiware-Service': service },
+        body: {
+          id: 'mongo_fresh_da_not_allowed',
+          description: 'should be rejected',
+          query: 'SELECT device WHERE status = $status',
+          params: [{ name: 'status', type: 'Text', required: true }],
+        },
+      });
+
+      expect(res.status).toBe(409);
+      expect(res.json.error).toBe('FDAOnlyFresh');
     });
   });
 }
