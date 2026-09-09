@@ -1,3 +1,4 @@
 - Fix: reject empty string ("") query param values for Number, Boolean and DateTime DA params (#290)
 - Fix: allow "default": null for all param types (Number, Text, Boolean, DateTime) in DA params (#289)
+- Fix: DuckDB httpfs extension not found, including a startup race condition in DuckDB initialization (#298)
 

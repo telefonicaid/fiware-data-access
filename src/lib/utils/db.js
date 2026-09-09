@@ -31,7 +31,7 @@ import { convertRefreshIntervalToMs } from './utils.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
-let instance = null;
+let instancePromise = null;
 
 const logger = getBasicLogger();
 const NO_PARQUET_FILES_MATCH_ERROR = 'No files found that match the pattern';
@@ -56,7 +56,7 @@ export async function releaseDBConnection(conn) {
 }
 
 export async function getDBConnection() {
-  await initDuckDB();
+  const instance = await initDuckDB();
 
   // Reuse connection from pool if exists
   if (connectionPool.length > 0) {
@@ -96,65 +96,64 @@ async function logDuckDBConfig(conn) {
   }
 }
 
-async function initDuckDB() {
-  if (!instance) {
-    logger.debug('Initializing DuckDB global instance...');
-    // Lazy import: avoid  "module is already linked" in Jest ESM/VM
-    const { DuckDBInstance } = await import('@duckdb/node-api');
-    const duckdbDir = String(config.duckdb?.dir || '/tmp/duckdb');
-    const dbPath = path.join(duckdbDir, 'database.db');
+async function createDuckDBInstance() {
+  logger.debug('Initializing DuckDB global instance...');
+  // Lazy import: avoid  "module is already linked" in Jest ESM/VM
+  const { DuckDBInstance } = await import('@duckdb/node-api');
+  const duckdbDir = String(config.duckdb?.dir || '/tmp/duckdb');
+  const dbPath = path.join(duckdbDir, 'database.db');
 
-    if (!fs.existsSync(duckdbDir)) {
-      fs.mkdirSync(duckdbDir, { recursive: true });
-    }
+  if (!fs.existsSync(duckdbDir)) {
+    fs.mkdirSync(duckdbDir, { recursive: true });
+  }
 
-    instance = await DuckDBInstance.create(dbPath);
+  const dbInstance = await DuckDBInstance.create(dbPath);
 
-    // Init connection for config
-    const configConn = await instance.connect();
+  // Init connection for config
+  const configConn = await dbInstance.connect();
 
-    // Apply configurable DuckDB settings
-    const memoryLimit = String(config.duckdb?.memoryLimit || '1.0GB');
-    const tempDir = String(config.duckdb?.tempDir || '/tmp/duckdb/temp');
-    const maxTemp = String(config.duckdb?.maxTempSize || '10GB');
-    const maxThreads = String(config.duckdb?.maxThreads ?? '2');
-    const preserveInsertionOrder = String(
-      config.duckdb?.preserveInsertionOrder ?? 'true',
-    );
+  // Apply configurable DuckDB settings
+  const memoryLimit = String(config.duckdb?.memoryLimit || '1.0GB');
+  const tempDir = String(config.duckdb?.tempDir || '/tmp/duckdb/temp');
+  const maxTemp = String(config.duckdb?.maxTempSize || '10GB');
+  const maxThreads = String(config.duckdb?.maxThreads ?? '2');
+  const preserveInsertionOrder = String(
+    config.duckdb?.preserveInsertionOrder ?? 'true',
+  );
 
-    if (!fs.existsSync(tempDir)) {
-      fs.mkdirSync(tempDir, { recursive: true });
-    }
+  if (!fs.existsSync(tempDir)) {
+    fs.mkdirSync(tempDir, { recursive: true });
+  }
 
-    await configConn.run(`
+  await configConn.run(`
       SET memory_limit='${memoryLimit}';
     `);
 
-    await configConn.run(`
+  await configConn.run(`
       SET temp_directory='${tempDir}';
     `);
 
-    await configConn.run(`
+  await configConn.run(`
       SET max_temp_directory_size='${maxTemp}';
     `);
 
-    await configConn.run(`
+  await configConn.run(`
       SET extension_directory = '${config.objstg.extensionsDir}';
     `);
 
-    await configConn.run(`SET threads='${maxThreads}';`);
-    await configConn.run(
-      `SET preserve_insertion_order='${preserveInsertionOrder}';`,
-    );
+  await configConn.run(`SET threads='${maxThreads}';`);
+  await configConn.run(
+    `SET preserve_insertion_order='${preserveInsertionOrder}';`,
+  );
 
-    // Log efective config for duckdb
-    await logDuckDBConfig(configConn);
+  // Log efective config for duckdb
+  await logDuckDBConfig(configConn);
 
-    await configConn.run('INSTALL httpfs;');
-    await configConn.run('LOAD httpfs;');
+  await configConn.run('INSTALL httpfs;');
+  await configConn.run('LOAD httpfs;');
 
-    // Common config
-    await configConn.run(`
+  // Common config
+  await configConn.run(`
       SET s3_endpoint='${config.objstg.endpoint}';
       SET s3_url_style='path';
       SET s3_use_ssl=false;
@@ -162,12 +161,27 @@ async function initDuckDB() {
       SET s3_secret_access_key='${config.objstg.pass}';
     `);
 
-    if (typeof configConn.disconnect === 'function') {
-      await configConn.disconnect();
-    }
-    logger.debug('DuckDB initialized with HTTPFS');
+  if (typeof configConn.disconnect === 'function') {
+    await configConn.disconnect();
   }
-  return instance;
+  logger.debug('DuckDB initialized with HTTPFS');
+  return dbInstance;
+}
+
+function initDuckDB() {
+  // Memoize the in-flight PROMISE (not just the eventual instance), so that
+  // concurrent callers all await the same one-time setup instead of racing
+  // each other and using the instance before extension_directory/INSTALL/
+  // LOAD have finished.
+  if (!instancePromise) {
+    instancePromise = createDuckDBInstance().catch((error) => {
+      // Allow a later call to retry instead of being stuck forever on a
+      // transient failure (e.g. a network blip while installing httpfs).
+      instancePromise = null;
+      throw error;
+    });
+  }
+  return instancePromise;
 }
 
 async function closePreparedStatement(stmt) {
