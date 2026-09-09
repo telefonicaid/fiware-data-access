@@ -27,6 +27,7 @@ FROM node:${NODE_VERSION}
 
 COPY --chown=node:node package*.json /opt/fda/fda/
 COPY --chown=node:node src/ /opt/fda/fda/src
+ARG NODE_OPTIONS="--max-old-space-size=2048"
 
 WORKDIR /opt/fda/fda
 # hadolint ignore=DL3008,DL3009,DL3015
@@ -47,7 +48,7 @@ RUN \
 USER node
 ENV NODE_ENV=production
 ENV FDA_LOG_LEVEL=INFO
-
+ENV NODE_OPTIONS=${NODE_OPTIONS}
 
 CMD [ "npm", "start" ]
 
