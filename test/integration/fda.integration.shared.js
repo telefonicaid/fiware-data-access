@@ -579,6 +579,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       httpReqRaw,
       waitUntilFDACompleted,
       buildDaDataUrl,
+      buildFdaDataUrl,
     });
 
     registerComplexCasesIntegrationTests({

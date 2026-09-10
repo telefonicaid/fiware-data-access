@@ -82,6 +82,8 @@ const mongoMocks = {
   removeDatasource: jest.fn(),
   validateMongoDatasourceConnection: jest.fn(),
   createMongoCursorReader: jest.fn(),
+  runMongoQuery: jest.fn(),
+  validateMongoQuery: jest.fn(),
 };
 
 const jobsMocks = {
@@ -148,6 +150,8 @@ await jest.unstable_mockModule('../../src/lib/utils/mongo.js', () => ({
   validateMongoDatasourceConnection:
     mongoMocks.validateMongoDatasourceConnection,
   createMongoCursorReader: mongoMocks.createMongoCursorReader,
+  runMongoQuery: mongoMocks.runMongoQuery,
+  validateMongoQuery: mongoMocks.validateMongoQuery,
 }));
 
 await jest.unstable_mockModule('../../src/lib/fdaConfig.js', () => ({
@@ -340,6 +344,38 @@ describe('fda fresh query execution', () => {
     expect(rows).toEqual([{ id: 7 }]);
   });
 
+  test('executes FDA direct fresh query against MongoDB source', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      query: { collection: 'events', filter: { site: 'lab' } },
+      visibility: 'private',
+      servicePath: '/servicepath',
+      cached: false,
+      datasourceId: 'mongo-ds',
+    });
+    mongoMocks.retrieveDatasource.mockResolvedValue({
+      datasourceId: 'mongo-ds',
+      type: 'mongodb',
+      config: { uri: 'mongodb://mongo:27017', database: 'svc' },
+    });
+    mongoMocks.runMongoQuery.mockResolvedValue([
+      { device: 'sensor-a', reading: 21.5 },
+    ]);
+
+    const rows = await executeFDAQuery({
+      service: 'svc',
+      visibility: 'private',
+      servicePath: '/servicepath',
+      fdaId: 'fdaMongo',
+    });
+
+    expect(mongoMocks.runMongoQuery).toHaveBeenCalledWith(
+      { uri: 'mongodb://mongo:27017', database: 'svc' },
+      { collection: 'events', filter: { site: 'lab' } },
+    );
+    expect(pgMocks.runPgQuery).not.toHaveBeenCalled();
+    expect(rows).toEqual([{ device: 'sensor-a', reading: 21.5 }]);
+  });
+
   test('rejects direct FDA query when FDA is cached (not only-fresh)', async () => {
     mongoMocks.retrieveFDA.mockResolvedValue({
       query: 'SELECT 1',
@@ -401,6 +437,50 @@ describe('fda fresh query execution', () => {
       [],
       250,
     );
+    expect(res.setHeader).toHaveBeenCalledWith(
+      'Content-Type',
+      'application/x-ndjson',
+    );
+  });
+
+  test('streams FDA direct fresh query rows from MongoDB', async () => {
+    const { req, res } = createReqRes();
+    const cursorReader = {
+      readNextChunk: jest
+        .fn()
+        .mockResolvedValueOnce([{ device: 'sensor-a', status: 'ok' }])
+        .mockResolvedValueOnce([]),
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      query: { collection: 'events', filter: { site: 'lab' } },
+      visibility: 'private',
+      servicePath: '/servicepath',
+      cached: false,
+      datasourceId: 'mongo-ds',
+    });
+    mongoMocks.retrieveDatasource.mockResolvedValue({
+      datasourceId: 'mongo-ds',
+      type: 'mongodb',
+      config: { uri: 'mongodb://mongo:27017', database: 'svc' },
+    });
+    mongoMocks.createMongoCursorReader.mockResolvedValue(cursorReader);
+
+    await executeFDAQueryStream({
+      service: 'svc',
+      visibility: 'private',
+      servicePath: '/servicepath',
+      fdaId: 'fdaMongo',
+      req,
+      res,
+      format: 'ndjson',
+    });
+
+    expect(mongoMocks.createMongoCursorReader).toHaveBeenCalledWith(
+      { uri: 'mongodb://mongo:27017', database: 'svc' },
+      { collection: 'events', filter: { site: 'lab' } },
+    );
+    expect(pgMocks.createPgCursorReader).not.toHaveBeenCalled();
     expect(res.setHeader).toHaveBeenCalledWith(
       'Content-Type',
       'application/x-ndjson',
@@ -1389,7 +1469,7 @@ describe('fetchFDA', () => {
     });
   });
 
-  test('rejects mongodb FDA creation when cached is false', async () => {
+  test('creates mongodb FDA as only-fresh when cached is false', async () => {
     mongoMocks.retrieveDatasource.mockResolvedValueOnce({
       datasourceId: 'mongo-ds',
       type: 'mongodb',
@@ -1399,27 +1479,107 @@ describe('fetchFDA', () => {
       },
     });
 
+    await fetchFDA(
+      'fda_mongo_4',
+      { collection: 'events', filter: { status: 'ok' } },
+      'svc',
+      'public',
+      '/servicepath',
+      'mongo fda',
+      { type: 'none' },
+      undefined,
+      undefined,
+      true,
+      false,
+      'mongo-ds',
+      'unchecked',
+    );
+
+    expect(mongoMocks.createFDAMongo).toHaveBeenCalledWith(
+      'fda_mongo_4',
+      { collection: 'events', filter: { status: 'ok' } },
+      'svc',
+      'public',
+      '/servicepath',
+      'mongo fda',
+      { type: 'none' },
+      undefined,
+      undefined,
+      false,
+      'mongo-ds',
+      'unchecked',
+      null,
+    );
+    expect(mongoMocks.validateMongoQuery).not.toHaveBeenCalled();
+  });
+
+  test('validates only-fresh mongodb FDA against the live collection in strict mode', async () => {
+    mongoMocks.retrieveDatasource.mockResolvedValueOnce({
+      datasourceId: 'mongo-ds',
+      type: 'mongodb',
+      config: {
+        uri: 'mongodb://mongo:27017',
+        database: 'svc',
+      },
+    });
+    mongoMocks.validateMongoQuery.mockResolvedValueOnce(undefined);
+
+    await fetchFDA(
+      'fda_mongo_fresh_strict',
+      { collection: 'events', filter: { status: 'ok' } },
+      'svc',
+      'public',
+      '/servicepath',
+      'mongo fresh fda',
+      { type: 'none' },
+      undefined,
+      undefined,
+      true,
+      false,
+      'mongo-ds',
+    );
+
+    expect(mongoMocks.validateMongoQuery).toHaveBeenCalledWith(
+      {
+        uri: 'mongodb://mongo:27017',
+        database: 'svc',
+      },
+      { collection: 'events', filter: { status: 'ok' } },
+    );
+    expect(mongoMocks.createFDAMongo).toHaveBeenCalled();
+  });
+
+  test('rejects only-fresh mongodb FDA creation when live query validation fails', async () => {
+    mongoMocks.retrieveDatasource.mockResolvedValueOnce({
+      datasourceId: 'mongo-ds',
+      type: 'mongodb',
+      config: {
+        uri: 'mongodb://mongo:27017',
+        database: 'svc',
+      },
+    });
+    mongoMocks.validateMongoQuery.mockRejectedValueOnce(
+      new FDAError(500, 'MongoDBServerError', 'collection not found'),
+    );
+
     await expect(
       fetchFDA(
-        'fda_mongo_4',
-        { status: 'ok' },
+        'fda_mongo_fresh_invalid',
+        { collection: 'missing', filter: {} },
         'svc',
         'public',
         '/servicepath',
-        'mongo fda',
+        'mongo fresh fda',
         { type: 'none' },
         undefined,
         undefined,
         true,
         false,
         'mongo-ds',
-        'events',
-        ['name'],
       ),
-    ).rejects.toMatchObject({
-      status: 400,
-      type: 'InvalidMongoFDAContract',
-    });
+    ).rejects.toMatchObject({ status: 500, type: 'MongoDBServerError' });
+
+    expect(mongoMocks.createFDAMongo).not.toHaveBeenCalled();
   });
 
   test('creates default DA without time filters when FDA has no timeColumn', async () => {
@@ -4387,12 +4547,12 @@ describe('mongo utils extra coverage', () => {
     ).toThrow();
   });
 
-  test('validateMongoFDAContract throws when cached is false', async () => {
+  test('validateMongoFDAContract accepts a valid query regardless of cached mode', async () => {
     const { validateMongoFDAContract } = await loadFdaModule();
 
     expect(() =>
-      validateMongoFDAContract({ a: 1 }, 'col', ['a'], 'a', false),
-    ).toThrow();
+      validateMongoFDAContract({ collection: 'col', filter: {} }),
+    ).not.toThrow();
   });
 });
 

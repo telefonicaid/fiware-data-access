@@ -382,6 +382,35 @@ export async function createMongoCursorReader(
   }
 }
 
+export async function runMongoQuery(dsConfig, query) {
+  const reader = await createMongoCursorReader(dsConfig, query);
+  const rows = [];
+
+  try {
+    for (
+      let chunk = await reader.readNextChunk();
+      chunk.length > 0;
+      chunk = await reader.readNextChunk()
+    ) {
+      rows.push(...chunk);
+    }
+
+    return rows;
+  } finally {
+    await reader.close();
+  }
+}
+
+export async function validateMongoQuery(dsConfig, query) {
+  const reader = await createMongoCursorReader(dsConfig, query, { limit: 1 });
+
+  try {
+    await reader.readNextChunk();
+  } finally {
+    await reader.close();
+  }
+}
+
 export async function retrieveDatasources(service) {
   logger.debug('[DEBUG]: retrieveDatasources');
   const collection = await getDatasourcesCollection();

@@ -798,4 +798,91 @@ describe('mongo utils', () => {
     expect(cursorMock.close).toHaveBeenCalled();
     expect(clientMock.close).toHaveBeenCalled();
   });
+
+  test('runMongoQuery drains the cursor into a single array and closes it', async () => {
+    const { runMongoQuery, collectionMock, clientMock } =
+      await loadMongoModule();
+
+    const cursorMock = {
+      next: jest
+        .fn()
+        .mockResolvedValueOnce({ device: 'dev-1', status: 'ok' })
+        .mockResolvedValueOnce({ device: 'dev-2', status: 'warn' })
+        .mockResolvedValueOnce(null),
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+    collectionMock.find.mockReturnValueOnce(cursorMock);
+
+    const rows = await runMongoQuery(
+      { uri: 'mongodb://mongo:27017', database: 'test-db' },
+      {
+        collection: 'events',
+        filter: { status: 'active' },
+        projection: { device: 1, status: 1 },
+      },
+    );
+
+    expect(rows).toEqual([
+      { device: 'dev-1', status: 'ok' },
+      { device: 'dev-2', status: 'warn' },
+    ]);
+    expect(cursorMock.close).toHaveBeenCalled();
+    expect(clientMock.close).toHaveBeenCalled();
+  });
+
+  test('runMongoQuery returns an empty array and still closes the client when there are no matches', async () => {
+    const { runMongoQuery, collectionMock, clientMock } =
+      await loadMongoModule();
+
+    const cursorMock = {
+      next: jest.fn().mockResolvedValueOnce(null),
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+    collectionMock.find.mockReturnValueOnce(cursorMock);
+
+    const rows = await runMongoQuery(
+      { uri: 'mongodb://mongo:27017', database: 'test-db' },
+      { collection: 'events', filter: { status: 'missing' } },
+    );
+
+    expect(rows).toEqual([]);
+    expect(clientMock.close).toHaveBeenCalled();
+  });
+
+  test('validateMongoQuery fetches at most one row and closes the client', async () => {
+    const { validateMongoQuery, collectionMock, clientMock } =
+      await loadMongoModule();
+
+    const cursorMock = {
+      next: jest.fn().mockResolvedValueOnce({ device: 'dev-1' }),
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+    collectionMock.find.mockReturnValueOnce(cursorMock);
+
+    await validateMongoQuery(
+      { uri: 'mongodb://mongo:27017', database: 'test-db' },
+      { collection: 'events', filter: { status: 'active' } },
+    );
+
+    expect(collectionMock.find).toHaveBeenCalledWith(
+      { status: 'active' },
+      { limit: 1 },
+    );
+    expect(cursorMock.close).toHaveBeenCalled();
+    expect(clientMock.close).toHaveBeenCalled();
+  });
+
+  test('validateMongoQuery propagates errors for an invalid contract', async () => {
+    const { validateMongoQuery } = await loadMongoModule();
+
+    await expect(
+      validateMongoQuery(
+        { uri: 'mongodb://mongo:27017', database: 'test-db' },
+        { collection: 'events' },
+      ),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidMongoFDAContract',
+    });
+  });
 });

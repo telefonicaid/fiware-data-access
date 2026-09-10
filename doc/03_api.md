@@ -105,7 +105,7 @@ All error responses follow this structure:
 | 500  | Internal Server Error  | `DuckDBServerError`         | An error occurred in the DuckDB component.                                                                                                                                                                                                                                                                         |
 | 500  | Internal Server Error  | `MongoDBServerError`        | An error occurred in the MongoDB component.                                                                                                                                                                                                                                                                        |
 | 400  | Bad Request            | `UnsupportedDatasourceType` | The referenced datasource type is not supported by the operation (supported types are `postgres` and `mongodb`).                                                                                                                                                                                                   |
-| 400  | Bad Request            | `InvalidMongoFDAContract`   | Invalid Mongo-specific FDA payload. Mongo FDAs require a Mongo query definition inside `query`, support only cached mode (`cached=true`), and do not support `refreshPolicy.type=window`.                                                                                                                          |
+| 400  | Bad Request            | `InvalidMongoFDAContract`   | Invalid Mongo-specific FDA payload. Mongo FDAs require a Mongo query definition inside `query` and do not support `refreshPolicy.type=window`.                                                                                                                                                                     |
 | 413  | Payload Too Large      | `PayloadTooLarge`           | Uploaded file exceeds configured `FDA_MAX_UPLOAD_SIZE` limit (50 MB by default).                                                                                                                                                                                                                                   |
 | 415  | Unsupported Media Type | `UnsupportedMediaType`      | Upload file is not CSV/XLS/XLSX, or does not pass extension/MIME validation in upload endpoint.                                                                                                                                                                                                                    |
 | 503  | Service Unavailable    | `UploadError`               | Connection error with the PostgreSQL database component.                                                                                                                                                                                                                                                           |
@@ -850,7 +850,8 @@ Example Mongo aggregation query:
 
 Datasource-specific constraints:
 
--   Mongo datasource FDAs are currently cached-only (`cached=true`).
+-   Mongo datasource FDAs support both cached (`cached=true`, the default) and only-fresh (`cached=false`) mode. See
+    [`cached`](#fda-payload-datamodel) and [FDA data query](#fda-data-query-get-visibilityfdasfdaiddata).
 -   Mongo datasource FDAs do not support `refreshPolicy.type=window`.
 -   `filter` and `aggregation` are mutually exclusive. Exactly one of them must be provided.
 -   Aggregation pipelines are read-only. Stages `$out` and `$merge` are not allowed.
@@ -1115,6 +1116,35 @@ curl -i -X POST http://localhost:8080/public/fdas \
         "cached": true
     }'
 ```
+
+_**Example Request for an only-fresh Mongo FDA:**_
+
+```bash
+curl -i -X POST http://localhost:8080/public/fdas \
+    -H "Content-Type: application/json" \
+    -H "Fiware-Service: trantor" \
+    -H "Fiware-ServicePath: /servicePath" \
+    -d '{
+        "id": "fda_mongo_live_events",
+        "datasourceId": "mongo-default",
+        "query": {
+            "collection": "events",
+            "filter": {
+            "site": "lab"
+            },
+            "projection": {
+            "device": 1,
+            "status": 1,
+            "reading": 1
+            }
+        },
+        "description": "Only-fresh Mongo FDA",
+        "cached": false
+    }'
+```
+
+The FDA created above is queried directly against MongoDB through `GET /{visibility}/fdas/fda_mongo_live_events/data`
+(see [FDA data query](#fda-data-query-get-visibilityfdasfdaiddata)), the same way an only-fresh PostgreSQL FDA is.
 
 _**Response code**_
 
@@ -1813,7 +1843,9 @@ None
 
 #### FDA data query `GET /{visibility}/fdas/{fdaId}/data`
 
-Runs the FDA base query directly against PostgreSQL. This endpoint is always fresh and does not use the parquet cache.
+Runs the FDA base query directly against its configured datasource (PostgreSQL or MongoDB). This endpoint is always
+fresh and does not use the parquet cache. It is only available for only-fresh FDAs (`cached=false`); calling it on a
+cached FDA returns `409 FDANotOnlyFresh`.
 
 _**Request path parameters**_
 
@@ -1905,8 +1937,8 @@ _**Content negotiation and serialization notes**_
 -   In query-style context, no additional query parameters are allowed besides `service`, `servicePath`, and
     `outputType`; if the client attempts to send any other query parameter, the API returns `400 BadRequest` with
     `FDA fresh query does not accept query parameters`.
--   With `Accept: application/x-ndjson` and `Accept: text/csv`, results are streamed incrementally from PostgreSQL using
-    a cursor.
+-   With `Accept: application/x-ndjson` and `Accept: text/csv`, results are streamed incrementally from the datasource
+    using a cursor (PostgreSQL) or a chunked collection cursor (MongoDB).
 
 _**Example Request:**_
 
