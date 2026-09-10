@@ -12,6 +12,8 @@
     "lint:api": "eslint src/lib/ src/routes/ --cache",
     "lint:test": "eslint test/integration/ --cache",
     "lint:fix": "eslint src/lib/ src/routes/ --cache --fix",
+    "openapi:generate": "node scripts/generate-openapi-spec.js",
+    "openapi:validate": "npm run openapi:generate && npx --yes @redocly/cli lint openapi.generated.json",
     "prettier": "prettier --config .prettierrc.json --write '**/**/**/**/*.js' '**/**/**/*.js' '**/**/*.js' '**/*.js' '*.js'",
     "start": "node src/index.js",
     "test": "NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
