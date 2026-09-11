@@ -1,3 +1,4 @@
+- Add: integrate Swagger/OpenAPI documentation for the API, served as interactive Swagger UI at `GET /api-docs` and as raw OpenAPI 3.0 JSON at `GET /api-docs.json` (#294)
 - Add: fresh (cached=false) MongoDB FDAs with direct MongoDB queries and NDJSON/CSV streaming support (#193)
 - Fix: reject empty string ("") query param values for Number, Boolean and DateTime DA params (#290)
 - Fix: allow "default": null for all param types (Number, Text, Boolean, DateTime) in DA params (#289)
