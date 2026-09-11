@@ -154,6 +154,21 @@ router.get('/:visibility/fdas', async (req, res) => {
  *                     reading: 1
  *                 description: Mongo cached FDA
  *                 cached: true
+ *             onlyFreshMongo:
+ *               summary: Only-fresh FDA over a MongoDB datasource
+ *               value:
+ *                 id: fda_mongo_live_events
+ *                 datasourceId: mongo-default
+ *                 query:
+ *                   collection: events
+ *                   filter:
+ *                     site: lab
+ *                   projection:
+ *                     device: 1
+ *                     status: 1
+ *                     reading: 1
+ *                 description: Only-fresh Mongo FDA
+ *                 cached: false
  *     responses:
  *       '202':
  *         description: FDA creation accepted; processing continues asynchronously.
