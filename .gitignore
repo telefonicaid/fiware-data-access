@@ -44,3 +44,6 @@ build/
 
 # DuckDb extensions custom path
 duckdb_extensions/
+
+# Generated OpenAPI spec (dumped from src/lib/openapi.js for external validation)
+openapi.generated.json
