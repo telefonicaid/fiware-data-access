@@ -40,7 +40,8 @@ Complete documentation is available in the [`doc/`](./doc/) directory:
 -   [`00_overview.md`](./doc/00_overview.md) – Project overview
 -   [`01_installation.md`](./doc/01_installation.md) – How to install & run (includes Docker section)
 -   [`02_architecture.md`](./doc/02_architecture.md) – System architecture, main concepts and database model
--   [`03_api.md`](./doc/03_api.md) – API reference
+-   [`03_api.md`](./doc/03_api.md) – API reference (also available as interactive
+    [Swagger UI](https://swagger.io/tools/swagger-ui/) at `GET /api-docs` on a running instance)
 -   [`04_config_operational_guide.md`](./doc/04_config_operational_guide.md) – Configuration and operational guide
 -   [`05_advanced_topics.md`](./doc/05_advanced_topics.md) – Advanced topics
 -   [`06_testing.md`](./doc/06_testing.md) – Test strategy and execution

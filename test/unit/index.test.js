@@ -876,6 +876,20 @@ describe('index routes - validation and middleware branches', () => {
     expect(res.text).toContain('# EOF');
   });
 
+  test('serves OpenAPI/Swagger documentation at /api-docs and /api-docs.json', async () => {
+    const specRes = await request(app).get('/api-docs.json').expect(200);
+    expect(specRes.headers['content-type']).toContain('application/json');
+    expect(specRes.body.openapi).toBe('3.0.3');
+    expect(specRes.body.paths['/health']).toBeDefined();
+    expect(specRes.body.paths['/{visibility}/fdas']).toBeDefined();
+
+    await request(app).get('/api-docs').expect(301);
+
+    const uiRes = await request(app).get('/api-docs/').expect(200);
+    expect(uiRes.headers['content-type']).toContain('text/html');
+    expect(uiRes.text).toContain('swagger-ui');
+  });
+
   test('health payload includes mongo operational snapshot fields', async () => {
     const res = await request(app).get('/health').expect(200);
 

@@ -32,6 +32,20 @@ jobs:
         run: npm install
       - name: Run EsLint Node.js Linter
         run: npm run lint
+  validate-openapi:
+    name: Validate OpenAPI spec
+    runs-on: ubuntu-latest
+    steps:
+      - name: Git checkout
+        uses: actions/checkout@v4
+      - name: Use Node.js 24.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+      - name: Install dependencies
+        run: npm install
+      - name: Generate and lint OpenAPI spec
+        run: npm run openapi:validate
   unit-tests:
     name: Unit tests
     runs-on: ubuntu-latest

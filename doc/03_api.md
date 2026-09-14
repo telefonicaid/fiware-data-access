@@ -3,6 +3,7 @@
 ## Table of Contents
 
 -   [Introduction](#introduction)
+    -   [Interactive API documentation (Swagger UI)](#interactive-api-documentation-swagger-ui)
 -   [Error Responses](#error-responses)
 -   [API Routes](#api-routes)
     -   [Health Endpoint](#health-endpoint)
@@ -54,6 +55,26 @@ document.
 
 Aditionally all the API routes described in this document are included in a [Postman collection](./postman/README.md) to
 ease the use of the app.
+
+### Interactive API documentation (Swagger UI)
+
+Besides this Markdown reference, the API is described by an [OpenAPI 3.0](https://swagger.io/specification/) document
+generated at startup by [`swagger-jsdoc`](https://github.com/Surnet/swagger-jsdoc) from `@swagger` JSDoc annotations
+placed directly above each route handler in `src/routes/*.js`, plus shared schemas/parameters/responses declared in
+`src/lib/openapiComponents.js`. This is a **code-first** setup: the OpenAPI contract lives next to the route it
+documents and is rebuilt from that source on every server start, so it cannot drift into a separately-maintained file.
+The generated document is served by the running FDA instance itself:
+
+-   `GET /api-docs` — interactive [Swagger UI](https://swagger.io/tools/swagger-ui/), which lets you browse every route,
+    inspect request/response schemas and try out requests directly against the running instance.
+-   `GET /api-docs.json` — the raw OpenAPI document in JSON, useful to import the API into tools such as Postman or
+    Insomnia, or to feed API client/server code generators.
+
+Both routes do not require the `Fiware-Service` header and are served whenever the API server role is enabled.
+
+When adding or changing a route, update the `@swagger` block above its handler (and, for new shared shapes, add a
+schema/parameter/response to `src/lib/openapiComponents.js`) in the same change — that block is the single source of
+truth for both the interactive docs and the raw spec.
 
 ## Error responses
 
