@@ -1015,14 +1015,6 @@ export async function fetchFDA(
 
   if (datasource.type === 'mongodb') {
     validateMongoFDAContract(query, timeColumn);
-
-    if (refreshPolicy?.type === 'window') {
-      throw new FDAError(
-        400,
-        'InvalidMongoFDAContract',
-        'Mongo datasource does not support window refresh policy',
-      );
-    }
   }
 
   const sourceSchema = await validateAndGetSourceSchema(
@@ -1101,14 +1093,28 @@ async function validateAndGetSourceSchema(
     });
   }
 
-  // Cached Mongo FDAs are already validated synchronously against the live
-  // collection when the one-row parquet snapshot is created; only-fresh
-  // Mongo FDAs skip that step, so validate the query here instead.
-  if (datasource.type === 'mongodb' && cached === false) {
+  if (cached === false) {
     await validateMongoQuery(datasource.config, query);
+    return null;
   }
 
-  return null;
+  return resolveMongoSourceSchema(datasource.config, query);
+}
+
+async function resolveMongoSourceSchema(dsConfig, query) {
+  const reader = await createMongoCursorReader(dsConfig, query, { limit: 1 });
+  const columns = reader.columns;
+  await reader.close();
+
+  if (!Array.isArray(columns) || columns.length === 0) {
+    return null;
+  }
+
+  return {
+    columns,
+    fields: columns.map((name) => ({ name, duckdbType: 'VARCHAR' })),
+    columnTypesKnown: false,
+  };
 }
 
 async function prepareCachedFDA({
@@ -1160,21 +1166,16 @@ function resolveRefreshQueries(datasource, refreshPolicy, query, timeColumn) {
     };
   }
 
-  if (datasource.type === 'mongodb') {
-    throw new FDAError(
-      400,
-      'InvalidMongoFDAContract',
-      'Mongo datasource does not support window refresh policy',
-    );
-  }
+  const windowQueryFn =
+    datasource.type === 'mongodb' ? getMongoWindowQuery : getWindowQuery;
 
   return {
-    firstQuery: getWindowQuery(
+    firstQuery: windowQueryFn(
       query,
       timeColumn,
       refreshPolicy.params.windowSize,
     ),
-    recurringQuery: getWindowQuery(
+    recurringQuery: windowQueryFn(
       query,
       timeColumn,
       refreshPolicy.params.fetchSize,
@@ -1188,6 +1189,14 @@ function getWindowQuery(query, timeColumn, startDate) {
   }
   const prevWindowStartDate = getPreviousWindowStartDate(startDate);
   return getUpdateWindowQuery(query, timeColumn, prevWindowStartDate);
+}
+
+function getMongoWindowQuery(query, timeColumn, startDate) {
+  if (!startDate) {
+    return query;
+  }
+  const prevWindowStartDate = getPreviousWindowStartDate(startDate);
+  return getUpdateMongoWindowQuery(query, timeColumn, prevWindowStartDate);
 }
 
 function validateScheduledOptions(refreshPolicy, objStgConf, timeColumn) {
@@ -1422,7 +1431,13 @@ export async function updateFDA(service, fdaId, visibility, servicePath) {
 
   let firstQuery = previous.query;
   if (previous.refreshPolicy?.type === 'window') {
-    firstQuery = getWindowQuery(
+    const datasource = await resolveDatasource(
+      service,
+      previous.datasourceId ?? DEFAULT_DATASOURCE_ID,
+    );
+    const windowQueryFn =
+      datasource.type === 'mongodb' ? getMongoWindowQuery : getWindowQuery;
+    firstQuery = windowQueryFn(
       previous.query,
       previous.timeColumn,
       previous.refreshPolicy?.params?.windowSize,
@@ -1460,16 +1475,6 @@ export async function processFDAAsync(
   objStgConf,
   datasourceId = DEFAULT_DATASOURCE_ID,
 ) {
-  const datasource = await resolveDatasource(service, datasourceId);
-
-  if (datasource.type === 'mongodb' && refreshPolicy?.type === 'window') {
-    throw new FDAError(
-      400,
-      'InvalidMongoFDAContract',
-      'Mongo datasource does not support window refresh',
-    );
-  }
-
   const storagePath = getFDAStoragePath(fdaId, servicePath);
   const bucketName = getBucketNameFromService(service);
 
@@ -1580,6 +1585,38 @@ function getUpdateWindowQuery(query, timeColumn, latestFetchStartDate) {
   return `SELECT * FROM (${query}) q WHERE ${timeColumn} >= TIMESTAMP '${latestFetchStartDate}' AND ${timeColumn} < NOW()`;
 }
 
+function getMongoWindowCondition(timeColumn, latestFetchStartDate) {
+  return {
+    $expr: {
+      $and: [
+        { $gte: [`$${timeColumn}`, new Date(latestFetchStartDate)] },
+        { $lt: [`$${timeColumn}`, '$$NOW'] },
+      ],
+    },
+  };
+}
+
+function getUpdateMongoWindowQuery(query, timeColumn, latestFetchStartDate) {
+  const { collection, filter, projection, aggregation } = query;
+  const windowCondition = getMongoWindowCondition(
+    timeColumn,
+    latestFetchStartDate,
+  );
+
+  if (aggregation) {
+    return {
+      collection,
+      aggregation: [{ $match: windowCondition }, ...aggregation],
+    };
+  }
+
+  return {
+    collection,
+    filter: { $and: [filter, windowCondition] },
+    ...(projection !== undefined ? { projection } : {}),
+  };
+}
+
 function buildPersistedSchema(sourceSchema) {
   const schemaFields = Array.isArray(sourceSchema?.fields)
     ? sourceSchema.fields.filter(
@@ -1682,24 +1719,15 @@ async function uploadCsvContentToObjectStorage(s3Client, bucket, path, body) {
 async function createMongoFDAReader(
   service,
   datasourceId,
-  fdaId,
-  servicePath,
+  query,
+  timeColumn,
   { limit } = {},
 ) {
   const datasource = await resolveDatasource(service, datasourceId);
-  const fda = await retrieveFDA(service, fdaId, servicePath);
 
-  if (!fda) {
-    throw new FDAError(
-      404,
-      'FDANotFound',
-      `FDA ${fdaId} not found in service ${service}`,
-    );
-  }
+  validateMongoFDAContract(query, timeColumn);
 
-  validateMongoFDAContract(fda.query, fda.timeColumn);
-
-  return await createMongoCursorReader(datasource.config, fda.query, {
+  return await createMongoCursorReader(datasource.config, query, {
     limit,
   });
 }
@@ -1929,8 +1957,8 @@ async function uploadTableToObjStg(
     const reader = await createMongoFDAReader(
       service,
       datasourceId,
-      fdaId,
-      servicePath,
+      query,
+      timeColumn,
     );
     await uploadMongoCursorContentToObjectStorage(
       s3Client,
@@ -2131,27 +2159,26 @@ async function createParquet(
   const datasource = await resolveDatasource(service, datasourceId);
   const parquetPath = getPath(bucketName, storagePath, '.parquet');
 
-  if (datasource.type === 'postgres') {
-    const typedEmptyQuery = buildTypedEmptyQueryFromSchema(sourceSchema);
-
-    if (typedEmptyQuery) {
-      const conn = await getDBConnection();
-      try {
-        await copyQueryToParquet(
-          conn,
-          typedEmptyQuery,
-          parquetPath,
-          timeColumn,
-          objStgConf?.partition,
-          objStgConf?.compression,
-        );
-      } finally {
-        await releaseDBConnection(conn);
-      }
-
-      return;
+  const typedEmptyQuery = buildTypedEmptyQueryFromSchema(sourceSchema);
+  if (typedEmptyQuery) {
+    const conn = await getDBConnection();
+    try {
+      await copyQueryToParquet(
+        conn,
+        typedEmptyQuery,
+        parquetPath,
+        timeColumn,
+        objStgConf?.partition,
+        objStgConf?.compression,
+      );
+    } finally {
+      await releaseDBConnection(conn);
     }
 
+    return;
+  }
+
+  if (datasource.type === 'postgres') {
     const oneRowQuery = buildZeroRowQuery(query);
     await uploadTable(
       s3Client,
@@ -2164,8 +2191,8 @@ async function createParquet(
     const reader = await createMongoFDAReader(
       service,
       datasourceId,
-      fdaId,
-      servicePath,
+      query,
+      timeColumn,
       { limit: 1 },
     );
     await uploadMongoCursorContentToObjectStorage(
@@ -2289,11 +2316,14 @@ async function buildDefaultDataAccessDefinition(
           servicePath,
           objStgConf,
         );
-  const columnTypes = new Map(
-    schemaFields
-      .filter(({ type }) => typeof type === 'string' && type.length > 0)
-      .map(({ name, type }) => [name, type]),
-  );
+  const columnTypes =
+    schemaOverride?.columnTypesKnown === false
+      ? new Map()
+      : new Map(
+          schemaFields
+            .filter(({ type }) => typeof type === 'string' && type.length > 0)
+            .map(({ name, type }) => [name, type]),
+        );
 
   const resolvedTimeColumn = resolveDefaultDATimeColumnName(
     timeColumn,
