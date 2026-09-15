@@ -126,7 +126,7 @@ All error responses follow this structure:
 | 500  | Internal Server Error  | `DuckDBServerError`         | An error occurred in the DuckDB component.                                                                                                                                                                                                                                                                         |
 | 500  | Internal Server Error  | `MongoDBServerError`        | An error occurred in the MongoDB component.                                                                                                                                                                                                                                                                        |
 | 400  | Bad Request            | `UnsupportedDatasourceType` | The referenced datasource type is not supported by the operation (supported types are `postgres` and `mongodb`).                                                                                                                                                                                                   |
-| 400  | Bad Request            | `InvalidMongoFDAContract`   | Invalid Mongo-specific FDA payload. Mongo FDAs require a Mongo query definition inside `query` and do not support `refreshPolicy.type=window`.                                                                                                                                                                     |
+| 400  | Bad Request            | `InvalidMongoFDAContract`   | Invalid Mongo-specific FDA payload. Mongo FDAs require a Mongo query definition inside `query`.                                                                                                                                                                                                                    |
 | 413  | Payload Too Large      | `PayloadTooLarge`           | Uploaded file exceeds configured `FDA_MAX_UPLOAD_SIZE` limit (50 MB by default).                                                                                                                                                                                                                                   |
 | 415  | Unsupported Media Type | `UnsupportedMediaType`      | Upload file is not CSV/XLS/XLSX, or does not pass extension/MIME validation in upload endpoint.                                                                                                                                                                                                                    |
 | 503  | Service Unavailable    | `UploadError`               | Connection error with the PostgreSQL database component.                                                                                                                                                                                                                                                           |
@@ -873,7 +873,9 @@ Datasource-specific constraints:
 
 -   Mongo datasource FDAs support both cached (`cached=true`, the default) and only-fresh (`cached=false`) mode. See
     [`cached`](#fda-payload-datamodel) and [FDA data query](#fda-data-query-get-visibilityfdasfdaiddata).
--   Mongo datasource FDAs do not support `refreshPolicy.type=window`.
+-   MongoDB FDAs datasources support `refreshPolicy.type=window`, enabling sliding-window refresh and partitioning. See
+    [Sliding windows and partitioning](AdvancedTopics/sliding_windows_and_partitioning.md) for more details.
+
 -   `filter` and `aggregation` are mutually exclusive. Exactly one of them must be provided.
 -   Aggregation pipelines are read-only. Stages `$out` and `$merge` are not allowed.
 -   For `filter` queries, if `timeColumn` is provided and `query.projection` is present, the projection must include
