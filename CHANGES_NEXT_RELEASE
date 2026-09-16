@@ -1,1 +1,1 @@
-
+- Add: sliding-window (partitioned) refresh support for MongoDB FDAs, for both `filter` and `aggregation` queries, mirroring the existing PostgreSQL window refresh policy (#194)
