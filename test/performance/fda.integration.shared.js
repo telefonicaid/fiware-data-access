@@ -130,7 +130,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
     beforeAll(async () => {
       // Containers
-      minio = await new GenericContainer('minio/minio:latest')
+      minio = await new GenericContainer('pgsty/minio:latest')
         .withEnvironment({
           MINIO_ROOT_USER: 'admin',
           MINIO_ROOT_PASSWORD: 'admin123',
