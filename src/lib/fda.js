@@ -1613,7 +1613,7 @@ function getUpdateMongoWindowQuery(query, timeColumn, latestFetchStartDate) {
   return {
     collection,
     filter: { $and: [filter, windowCondition] },
-    ...(projection !== undefined ? { projection } : {}),
+    ...(projection === undefined ? {} : { projection }),
   };
 }
 
