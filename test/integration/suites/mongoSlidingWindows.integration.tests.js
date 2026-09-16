@@ -73,6 +73,27 @@ export function registerMongoSlidingWindowsIntegrationTests({
     });
   }
 
+  function readDaData(baseUrl, fdaId, daId, params = {}) {
+    return httpReq({
+      method: 'GET',
+      url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId, params),
+      headers: { 'Fiware-Service': service },
+    });
+  }
+
+  function createDA(baseUrl, fdaId, daId, query, params) {
+    return httpReq({
+      method: 'POST',
+      url: `${baseUrl}/${visibility}/fdas/${fdaId}/das`,
+      headers: {
+        'Content-Type': 'application/json',
+        'Fiware-Service': service,
+        'Fiware-ServicePath': servicePath,
+      },
+      body: { id: daId, description: daId, query, params },
+    });
+  }
+
   describe('Mongo sliding window FDAs', () => {
     beforeAll(async () => {
       const baseUrl = getBaseUrl();
@@ -444,6 +465,246 @@ export function registerMongoSlidingWindowsIntegrationTests({
       expect(new Set(secondRead.json.map((row) => row.label))).toEqual(
         new Set(['recent_before_create', 'recent_before_update']),
       );
+    });
+
+    describe('DA filters on non-string Mongo field types', () => {
+      let fdaId;
+      let collectionName;
+
+      beforeAll(async () => {
+        const baseUrl = getBaseUrl();
+        const suffix = `${Date.now()}`;
+        collectionName = `mongo_sw_types_${suffix}`;
+        fdaId = `fda_mongo_sw_types_${suffix}`;
+        const now = Date.now();
+
+        await seedCollection(collectionName, [
+          {
+            label: 'a',
+            temperature: 21.5,
+            active: true,
+            observedAt: new Date(now - 60 * 60 * 1000),
+          },
+          {
+            label: 'b',
+            temperature: 19.2,
+            active: false,
+            observedAt: new Date(now - 60 * 60 * 1000),
+          },
+          {
+            label: 'c',
+            temperature: 21.5,
+            active: true,
+            observedAt: new Date(now - 60 * 60 * 1000),
+          },
+        ]);
+
+        const createFda = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: fdaId,
+            datasourceId,
+            query: {
+              collection: collectionName,
+              filter: {},
+              projection: {
+                label: 1,
+                temperature: 1,
+                active: 1,
+                observedAt: 1,
+              },
+            },
+            description: 'Mongo non-string field types test',
+            refreshPolicy: {
+              type: 'window',
+              params: {
+                refreshInterval: '1 hour',
+                fetchSize: 'day',
+                windowSize: 'week',
+              },
+            },
+            objStgConf: { partition: 'day' },
+            timeColumn: 'observedAt',
+          },
+        });
+
+        if (createFda.status >= 400) {
+          throw new Error(
+            `Failed to create Mongo FDA: ${createFda.status} ${JSON.stringify(createFda.json)}`,
+          );
+        }
+        await waitUntilFDACompleted({ baseUrl, service, fdaId });
+      });
+
+      test('the persisted schema types every Mongo column as VARCHAR, regardless of real content', async () => {
+        const baseUrl = getBaseUrl();
+        const getFda = await httpReq({
+          method: 'GET',
+          url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+
+        expect(getFda.status).toBe(200);
+        expect(new Set(getFda.json.schema)).toEqual(
+          new Set([
+            { name: 'label', type: 'VARCHAR' },
+            { name: 'temperature', type: 'VARCHAR' },
+            { name: 'active', type: 'VARCHAR' },
+            { name: 'observedAt', type: 'VARCHAR' },
+          ]),
+        );
+      });
+
+      test('defaultDataAccess equality filter works on a genuinely numeric Mongo field', async () => {
+        const baseUrl = getBaseUrl();
+        const readRes = await readDaData(baseUrl, fdaId, 'defaultDataAccess', {
+          pageSize: 100,
+          pageStart: 0,
+          temperature: '21.5',
+        });
+
+        expect(readRes.status).toBe(200);
+        expect(new Set(readRes.json.map((r) => r.label))).toEqual(
+          new Set(['a', 'c']),
+        );
+      });
+
+      test('defaultDataAccess equality filter works on a genuinely boolean Mongo field', async () => {
+        const baseUrl = getBaseUrl();
+        const readRes = await readDaData(baseUrl, fdaId, 'defaultDataAccess', {
+          pageSize: 100,
+          pageStart: 0,
+          active: 'true',
+        });
+
+        expect(readRes.status).toBe(200);
+        expect(new Set(readRes.json.map((r) => r.label))).toEqual(
+          new Set(['a', 'c']),
+        );
+      });
+
+      test('custom DA: an uncast numeric comparison against a Mongo-sourced field works end to end', async () => {
+        const baseUrl = getBaseUrl();
+        const daId = 'numericNoCast';
+
+        const createRes = await createDA(
+          baseUrl,
+          fdaId,
+          daId,
+          'SELECT * WHERE "temperature" > $minTemp',
+          [{ name: 'minTemp', type: 'Number', required: true }],
+        );
+        expect(createRes.status).toBe(204);
+
+        const readRes = await readDaData(baseUrl, fdaId, daId, {
+          pageSize: 100,
+          pageStart: 0,
+          minTemp: 20,
+        });
+
+        expect(readRes.status).toBe(200);
+        expect(new Set(readRes.json.map((r) => r.label))).toEqual(
+          new Set(['a', 'c']),
+        );
+      });
+
+      test('custom DA: an explicit CAST makes numeric comparisons reliable on a Mongo-sourced field', async () => {
+        const baseUrl = getBaseUrl();
+        const daId = 'numericWithCast';
+
+        const createRes = await createDA(
+          baseUrl,
+          fdaId,
+          daId,
+          'SELECT * WHERE CAST("temperature" AS DOUBLE) > $minTemp',
+          [{ name: 'minTemp', type: 'Number', required: true }],
+        );
+
+        expect(createRes.status).toBe(204);
+
+        const readRes = await readDaData(baseUrl, fdaId, daId, {
+          pageSize: 100,
+          pageStart: 0,
+          minTemp: 20,
+        });
+
+        expect(readRes.status).toBe(200);
+        expect(new Set(readRes.json.map((r) => r.label))).toEqual(
+          new Set(['a', 'c']),
+        );
+      });
+
+      test('a field with heterogeneous types across documents still materializes, widened to text (see issue #235)', async () => {
+        const baseUrl = getBaseUrl();
+        const suffix = `${Date.now()}`;
+        const heteroCollectionName = `mongo_sw_hetero_${suffix}`;
+        const heteroFdaId = `fda_mongo_sw_hetero_${suffix}`;
+        const now = Date.now();
+
+        await seedCollection(heteroCollectionName, [
+          {
+            label: 'numeric_doc',
+            temperature: 25,
+            observedAt: new Date(now - 60 * 60 * 1000),
+          },
+          {
+            label: 'string_doc',
+            temperature: 'high',
+            observedAt: new Date(now - 60 * 60 * 1000),
+          },
+        ]);
+
+        const createFda = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: heteroFdaId,
+            datasourceId,
+            query: {
+              collection: heteroCollectionName,
+              filter: {},
+              projection: { label: 1, temperature: 1, observedAt: 1 },
+            },
+            description: 'Mongo heterogeneous field type test',
+            refreshPolicy: {
+              type: 'window',
+              params: {
+                refreshInterval: '1 hour',
+                fetchSize: 'day',
+                windowSize: 'week',
+              },
+            },
+            objStgConf: { partition: 'day' },
+            timeColumn: 'observedAt',
+          },
+        });
+
+        // Ingestion must not crash just because the same field has mixed types across documents
+        expect(createFda.status).toBe(202);
+        await waitUntilFDACompleted({ baseUrl, service, fdaId: heteroFdaId });
+
+        const readRes = await readDefaultDA(baseUrl, heteroFdaId);
+        expect(readRes.status).toBe(200);
+        expect(new Set(readRes.json.map((r) => r.label))).toEqual(
+          new Set(['numeric_doc', 'string_doc']),
+        );
+
+        // The actual Parquet column is typed as text, so both numeric and string values are preserved
+        const temperatures = readRes.json.map((r) => r.temperature);
+        expect(temperatures.sort()).toEqual(['25', 'high']);
+      });
     });
   });
 }
