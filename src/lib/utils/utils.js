@@ -75,6 +75,14 @@ export function normalizeForSerialization(obj) {
   if (obj instanceof Date) {
     return obj.toISOString();
   }
+  if (
+    obj !== null &&
+    typeof obj === 'object' &&
+    obj._bsontype === 'ObjectId' &&
+    typeof obj.toHexString === 'function'
+  ) {
+    return obj.toHexString();
+  }
   if (Array.isArray(obj)) {
     return obj.map(normalizeForSerialization);
   }
@@ -88,7 +96,7 @@ export function normalizeForSerialization(obj) {
     }
 
     const converted = {};
-    for (const key in obj) {
+    for (const key of keys) {
       converted[key] = normalizeForSerialization(obj[key]);
     }
     return converted;
