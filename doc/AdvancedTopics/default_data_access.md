@@ -59,23 +59,35 @@ Each FDA column gets one optional filter parameter with:
 -   `default: null`
 -   no explicit `type`
 
-When schema information is available (e.g. PostgreSQL-backed FDAs), the generated filter accepts either a single value
-or a comma-separated list of values. Values are cast to the corresponding column type before applying `IN`.
+When **real** column types are known (PostgreSQL-backed FDAs, introspected live from the database at creation time), the
+generated filter accepts either a single value or a comma-separated list of values. Values are cast to the corresponding
+column type before applying `IN`.
 
-When schema information is not available (for example MongoDB-backed or uploaded CSV/XLS FDAs), the generated filter
-uses a simple equality comparison (`column = $param`). This avoids binder errors, since the generator cannot determine
-the target column types required to cast values produced by `string_split()`.
+When real column types are not known, the generated filter uses a simple equality comparison (`column = $param`)
+instead. This avoids binder errors, since the generator cannot determine the target column types required to cast values
+produced by `string_split()`. This is the case for uploaded CSV/XLS FDAs (no schema is persisted for them at all) and
+also for **every** MongoDB-backed FDA — see the note below.
 
-```sql
-SELECT *, COUNT(*) OVER() as __total
-WHERE ($col1 IS NULL OR col1 = $col1)
-    AND ($col2 IS NULL OR col2 = $col2)
-LIMIT CAST($pageSize AS BIGINT)
-OFFSET CAST($pageStart AS BIGINT)
+### MongoDB-backed FDAs
+
+MongoDB FDAs created in `strict` mode have a persisted `schema`, but MongoDB does not provide a fixed schema that can be
+introspected like PostgreSQL. Therefore, the stored schema uses `VARCHAR` as a placeholder type for all columns.
+
+```json
+[
+    { "name": "device", "type": "VARCHAR" },
+    { "name": "reading", "type": "VARCHAR" }
+]
 ```
 
-Parameter names are sanitized to alphanumeric and underscore format. If a generated name collides with reserved
-parameters, a numeric suffix is added.
+These placeholder types are not used to determine the actual types of the data stored in Parquet. They only provide the
+information needed to validate and generate the Default DA.
+
+Because MongoDB column types are not known at FDA creation time, the Default DA uses simple equality filters
+(`column = $param`) instead of the typed `IN (...)` filters used for datasources with real schema information.
+
+For custom DAs, parameters can still be used according to the actual data type stored in Parquet. If a MongoDB field can
+contain different types across documents, an explicit `CAST` may be required for comparisons involving that field.
 
 ## Time range support
 

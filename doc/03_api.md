@@ -875,6 +875,8 @@ Datasource-specific constraints:
     [`cached`](#fda-payload-datamodel) and [FDA data query](#fda-data-query-get-visibilityfdasfdaiddata).
 -   MongoDB FDAs datasources support `refreshPolicy.type=window`, enabling sliding-window refresh and partitioning. See
     [Sliding windows and partitioning](AdvancedTopics/sliding_windows_and_partitioning.md) for more details.
+-   -   MongoDB FDAs datasources support `refreshPolicy.type=window`, enabling sliding-window refresh and partitioning.
+        See [Sliding windows and partitioning](AdvancedTopics/sliding_windows_and_partitioning.md) for more details.
 
 -   `filter` and `aggregation` are mutually exclusive. Exactly one of them must be provided.
 -   Aggregation pipelines are read-only. Stages `$out` and `$merge` are not allowed.
@@ -922,12 +924,13 @@ This object configures certain aspects of the object storage app when uploading 
 
 These fields are **provided in responses** but **cannot be included or modified** in POST or PUT requests:
 
-| Parameter   | Optional | Type   | Description                                                                                   |
-| ----------- | -------- | ------ | --------------------------------------------------------------------------------------------- |
-| `status`    |          | string | Current FDA execution status (`fetching`, `transforming`, `uploading`, `completed`, `failed`) |
-| `progress`  |          | number | Execution progress percentage (0–100)                                                         |
-| `initFetch` |          | string | Timestamp of the current/last fetch start (ISO date format)                                   |
-| `lastFetch` |          | string | Timestamp of the last completed fetch (ISO date format)                                       |
+| Parameter   | Optional | Type   | Description                                                                                                                                                                             |
+| ----------- | -------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `status`    |          | string | Current FDA execution status (`fetching`, `transforming`, `uploading`, `completed`, `failed`)                                                                                           |
+| `progress`  |          | number | Execution progress percentage (0–100)                                                                                                                                                   |
+| `initFetch` |          | string | Timestamp of the current/last fetch start (ISO date format)                                                                                                                             |
+| `lastFetch` |          | string | Timestamp of the last completed fetch (ISO date format)                                                                                                                                 |
+| `schema`    | ✓        | array  | `[{name, type}]` describing the FDA columns. For cached FDAs created in `strict` mode. PostgreSQL FDAs use the actual database types; MongoDB FDAs use `VARCHAR` as a placeholder type. |
 
 > Note: Including operational fields like `progress` or `status` in POST/PUT requests is ignored by the server. Requests
 > including these fields are rejected with `400 BadRequest`.

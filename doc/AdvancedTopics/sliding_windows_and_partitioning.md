@@ -37,6 +37,18 @@ In both datasources, the upper bound is evaluated at query execution time: Postg
 `$expr` with `$$NOW`. This ensures that the current time is determined by the database server when each scheduled
 refresh job runs.
 
+### Bootstrap snapshot and object storage
+
+A cached MongoDB FDA created in `strict` mode needs a schema before its first refresh. A zero-row Parquet snapshot is
+therefore created synchronously when the FDA is created.
+
+For MongoDB, the schema is obtained from a sample document and all fields are stored with the `VARCHAR` placeholder type
+described in [Default Data Access](default_data_access.md#mongodb-backed-fdas).
+
+The zero-row snapshot is especially important for partitioned FDAs. Without it, the initial unfiltered snapshot could
+create a partition based on the first document returned by MongoDB, even though that document may fall outside the
+configured sliding window. The regular windowed refresh would then not revisit that partition.
+
 ---
 
 ## Partitioned Files
