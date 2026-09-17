@@ -2880,15 +2880,6 @@ export async function processUploadFDAJob({
 
     await dropFile(s3Client, bucketName, `${tempKey}.csv`);
 
-    await updateFDAStatus({
-      service,
-      fdaId,
-      servicePath,
-      status: 'completed',
-      progress: 100,
-    });
-    await updateFDALastFetch(service, fdaId, servicePath);
-
     logger.debug({ fdaId }, 'Creating default DataAccess');
     if (defaultDataAccessEnabled && cached) {
       const daDefinition = await buildDefaultDataAccessDefinition(
@@ -2909,6 +2900,15 @@ export async function processUploadFDAJob({
         servicePath,
       );
     }
+
+    await updateFDAStatus({
+      service,
+      fdaId,
+      servicePath,
+      status: 'completed',
+      progress: 100,
+    });
+    await updateFDALastFetch(service, fdaId, servicePath);
 
     logger.info({ fdaId }, 'Upload FDA completed successfully');
   } catch (err) {
