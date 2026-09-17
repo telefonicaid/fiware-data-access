@@ -1,1 +1,2 @@
+- Fix: FDA upload flow now marks status as `completed` only after `defaultDataAccess` is created (308)
 - Replace MinIO docker image by PGsty image (#302)
