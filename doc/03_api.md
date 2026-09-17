@@ -876,9 +876,6 @@ Datasource-specific constraints:
     [`cached`](#fda-payload-datamodel) and [FDA data query](#fda-data-query-get-visibilityfdasfdaiddata).
 -   MongoDB FDAs datasources support `refreshPolicy.type=window`, enabling sliding-window refresh and partitioning. See
     [Sliding windows and partitioning](AdvancedTopics/sliding_windows_and_partitioning.md) for more details.
--   -   MongoDB FDAs datasources support `refreshPolicy.type=window`, enabling sliding-window refresh and partitioning.
-        See [Sliding windows and partitioning](AdvancedTopics/sliding_windows_and_partitioning.md) for more details.
-
 -   `filter` and `aggregation` are mutually exclusive. Exactly one of them must be provided.
 -   Aggregation pipelines are read-only. Stages `$out` and `$merge` are not allowed.
 -   For `filter` queries, if `timeColumn` is provided and `query.projection` is present, the projection must include
