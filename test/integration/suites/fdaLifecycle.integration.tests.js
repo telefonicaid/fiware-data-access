@@ -144,20 +144,25 @@ export function registerFdaLifecycleIntegrationTests({
 
   test('PUT /fdas/:fdaId triggers AlreadyFetching if concurrent after refresh', async () => {
     const baseUrl = getBaseUrl();
-    httpReq({
-      method: 'PUT',
-      url: `${baseUrl}/${visibility}/fdas/${fdaIdSleep}`,
-      headers: { 'Fiware-Service': service },
-    });
+    const putReq = () =>
+      httpReq({
+        method: 'PUT',
+        url: `${baseUrl}/${visibility}/fdas/${fdaIdSleep}`,
+        headers: { 'Fiware-Service': service },
+      });
 
-    const put2 = await httpReq({
-      method: 'PUT',
-      url: `${baseUrl}/${visibility}/fdas/${fdaIdSleep}`,
-      headers: { 'Fiware-Service': service },
-    });
+    // Both requests are fired truly concurrently; which one the server
+    // processes first is not deterministic, so we can't assume which
+    // response is the accepted one and which is the conflict.
+    const [res1, res2] = await Promise.all([putReq(), putReq()]);
+    const responses = [res1, res2];
 
-    expect(put2.status).toBe(409);
-    expect(put2.json.error).toBe('AlreadyFetching');
+    const conflict = responses.find((r) => r.status === 409);
+    const accepted = responses.find((r) => r.status === 202);
+
+    expect(conflict).toBeDefined();
+    expect(conflict.json.error).toBe('AlreadyFetching');
+    expect(accepted).toBeDefined();
 
     await waitUntilFDACompleted({ baseUrl, service, fdaId: fdaIdSleep });
   });
