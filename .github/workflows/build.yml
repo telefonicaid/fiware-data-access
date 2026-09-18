@@ -11,38 +11,44 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    name: Build and analyze
+  lint-dockerfile:
+    name: Lint Dockerfile
     runs-on: ubuntu-latest
-    
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+      - name: Git checkout
+        uses: actions/checkout@v4
+      - name: Run Hadolint Dockerfile Linter
+        uses: burdzwastaken/hadolint-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HADOLINT_ACTION_DOCKERFILE_FOLDER: docker
 
+  lint-code:
+    name: Lint JavaScript
+    runs-on: ubuntu-latest
+    steps:
+      - name: Git checkout
+        uses: actions/checkout@v4
       - name: Use Node.js 24.x
         uses: actions/setup-node@v4
         with:
           node-version: 24.x
-
       - name: Install dependencies
         run: npm install
+      - name: Run EsLint Node.js Linter
+        run: npm run lint
 
-      - name: Run tests with coverage
-        env:
-          TESTCONTAINERS_RYUK_DISABLED: 'true'
-          DOCKER_HOST: 'unix:///var/run/docker.sock'
-        run: npm run test:coverage:ci
-
-      - uses: SonarSource/sonarqube-scan-action@v6
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-      # If you wish to fail your job when the Quality Gate is red, uncomment the
-      # following lines. This would typically be used to fail a deployment.
-      # We do not recommend to use this in a pull request. Prefer using pull request
-      # decoration instead.
-      # - uses: SonarSource/sonarqube-quality-gate-action@v1
-      #   timeout-minutes: 5
-      #   env:
-      #     SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+  validate-openapi:
+    name: Validate OpenAPI spec
+    runs-on: ubuntu-latest
+    steps:
+      - name: Git checkout
+        uses: actions/checkout@v4
+      - name: Use Node.js 24.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+      - name: Install dependencies
+        run: npm install
+      - name: Generate and lint OpenAPI spec
+        run: npm run openapi:validate

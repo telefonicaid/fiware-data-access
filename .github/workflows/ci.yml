@@ -6,46 +6,11 @@ name: CI
   pull_request:
     branches:
       - main
+
+permissions:
+  contents: read
+
 jobs:
-  lint-dockerfile:
-    name: Lint Dockerfile
-    runs-on: ubuntu-latest
-    steps:
-      - name: Git checkout
-        uses: actions/checkout@v4
-      - name: Run Hadolint Dockerfile Linter
-        uses: burdzwastaken/hadolint-action@master
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HADOLINT_ACTION_DOCKERFILE_FOLDER: docker
-  lint-code:
-    name: Lint JavaScript
-    runs-on: ubuntu-latest
-    steps:
-      - name: Git checkout
-        uses: actions/checkout@v4
-      - name: Use Node.js 24.x
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24.x
-      - name: Install dependencies
-        run: npm install
-      - name: Run EsLint Node.js Linter
-        run: npm run lint
-  validate-openapi:
-    name: Validate OpenAPI spec
-    runs-on: ubuntu-latest
-    steps:
-      - name: Git checkout
-        uses: actions/checkout@v4
-      - name: Use Node.js 24.x
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24.x
-      - name: Install dependencies
-        run: npm install
-      - name: Generate and lint OpenAPI spec
-        run: npm run openapi:validate
   unit-tests:
     name: Unit tests
     runs-on: ubuntu-latest
@@ -59,12 +24,19 @@ jobs:
           node-version: 24.x
 
       - name: Install dependencies
-        run: |
-          npm install
+        run: npm install
 
-      - name: Run unit tests
-        run: |
-          npm test -- test/unit
+      - name: Run unit tests with coverage
+        run: npm run test:coverage:unit
+
+      - name: Upload unit coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-unit
+          path: coverage/unit
+          if-no-files-found: error
+          retention-days: 1
+
   integration-tests:
     name: Integration tests
     runs-on: ubuntu-latest
@@ -83,43 +55,41 @@ jobs:
           docker info
 
       - name: Install dependencies
-        run: |
-          npm install
+        run: npm install
 
-      - name: Run integration tests
+      - name: Run integration tests with coverage
         env:
           TESTCONTAINERS_RYUK_DISABLED: 'true'
           DOCKER_HOST: 'unix:///var/run/docker.sock'
-        run: |
-          npm test -- test/integration
+        run: npm run test:coverage:integration
+
+      - name: Upload integration coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-integration
+          path: coverage/integration
+          if-no-files-found: error
+          retention-days: 1
+
   coverage:
     name: Test coverage
+    needs: [unit-tests, integration-tests]
     runs-on: ubuntu-latest
     steps:
       - name: Git checkout
         uses: actions/checkout@v4
 
-      - name: Use Node.js 24.x
-        uses: actions/setup-node@v4
+      - name: Download unit coverage artifact
+        uses: actions/download-artifact@v4
         with:
-          node-version: 24.x
+          name: coverage-unit
+          path: coverage/unit
 
-      - name: Install dependencies
-        run: npm install
-
-      - name: Run unit tests with coverage
-        run: npm run test:coverage:unit
-
-      - name: Docker info
-        run: |
-          docker version
-          docker info
-
-      - name: Run integration tests with coverage
-        env:
-          TESTCONTAINERS_RYUK_DISABLED: "true"
-          DOCKER_HOST: "unix:///var/run/docker.sock"
-        run: npm run test:coverage:integration
+      - name: Download integration coverage artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-integration
+          path: coverage/integration
 
       - name: Validate coverage inputs
         run: |
@@ -129,15 +99,47 @@ jobs:
       - name: Merge coverage reports
         run: npx --yes lcov-result-merger 'coverage/*/lcov.info' coverage/lcov.info
 
-      - name: Upload coverage artifact
+      - name: Upload merged coverage artifact
         uses: actions/upload-artifact@v4
         with:
           name: coverage
-          path: coverage
+          path: coverage/lcov.info
           if-no-files-found: error
+          retention-days: 1
+
       - name: Push coverage to Coveralls
         uses: coverallsapp/github-action@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           file: coverage/lcov.info
           format: lcov
+
+  sonar:
+    name: Build and analyze
+    needs: coverage
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+
+      - name: Download coverage artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage
+          path: coverage
+
+      - uses: SonarSource/sonarqube-scan-action@v6
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+      # If you wish to fail your job when the Quality Gate is red, uncomment the
+      # following lines. This would typically be used to fail a deployment.
+      # We do not recommend to use this in a pull request. Prefer using pull request
+      # decoration instead.
+      # - uses: SonarSource/sonarqube-quality-gate-action@v1
+      #   timeout-minutes: 5
+      #   env:
+      #     SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

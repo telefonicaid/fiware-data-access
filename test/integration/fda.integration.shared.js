@@ -256,6 +256,15 @@ export function runFDAIntegrationSuite({ mode, label }) {
       return new Promise((resolve) => setTimeout(resolve, ms));
     }
 
+    // Solves "Jest did not exit" open-handle warnings).
+    function waitTimeout(ms, message) {
+      let timer;
+      const promise = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), ms);
+      });
+      return { promise, cancel: () => clearTimeout(timer) };
+    }
+
     function buildCommonEnv(overrides = {}) {
       // Avoid lock same db file by using different file each execution
       const duckdbDir = `/tmp/duckdb-${process.pid}-${Date.now()}`;
@@ -364,21 +373,22 @@ export function runFDAIntegrationSuite({ mode, label }) {
 
       proc.kill('SIGTERM');
 
+      const exitTimeout = waitTimeout(5000, 'timeout waiting process exit');
       try {
-        await Promise.race([
-          once(proc, 'exit'),
-          wait(5000).then(() => {
-            throw new Error('timeout waiting process exit');
-          }),
-        ]);
+        await Promise.race([once(proc, 'exit'), exitTimeout.promise]);
       } catch {
         proc.kill('SIGKILL');
-        await Promise.race([
-          once(proc, 'exit'),
-          wait(2000).then(() => {
-            throw new Error('timeout waiting forced process exit');
-          }),
-        ]);
+        const killTimeout = waitTimeout(
+          2000,
+          'timeout waiting forced process exit',
+        );
+        try {
+          await Promise.race([once(proc, 'exit'), killTimeout.promise]);
+        } finally {
+          killTimeout.cancel();
+        }
+      } finally {
+        exitTimeout.cancel();
       }
     }
 
