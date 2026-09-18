@@ -28,7 +28,7 @@ import { handleCdaQuery } from '../lib/compat/cdaAdapter.js';
 import {
   VALID_OUTPUT_TYPES,
   LEGACY_DEFAULT_OUTPUT_TYPE,
-} from '../lib/utils/outputFormat.js';
+} from '../lib/constants.js';
 import { sendRowsByOutputType } from '../lib/utils/routeHelpers.js';
 import { getBasicLogger } from '../lib/utils/logger.js';
 

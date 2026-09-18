@@ -24,8 +24,7 @@
 
 import { executeQuery } from '../fda.js';
 import { toCdaJson } from '../utils/outputFormat.js';
-
-const VALID_VISIBILITIES = new Set(['public', 'private']);
+import { VALID_VISIBILITIES_SET } from '../constants.js';
 
 export async function handleCdaQuery({ body, outputType = 'json' }) {
   const { service, visibility, fdaId, daId, queryParams, servicePath } =
@@ -101,7 +100,7 @@ function resolveServiceContext(pathParts) {
   // Supported styles:
   // - /public/<service>/...
   // - home/<service>/verticals/public/<file>.cda
-  if (VALID_VISIBILITIES.has(pathParts[0])) {
+  if (VALID_VISIBILITIES_SET.has(pathParts[0])) {
     return {
       visibility: pathParts[0],
       service: pathParts.length <= 1 ? pathParts[0] : pathParts[1],
@@ -110,7 +109,7 @@ function resolveServiceContext(pathParts) {
 
   if (pathParts[0] === 'home' && pathParts.length > 1) {
     const visibilityPart = pathParts.find((part, index) => {
-      return index > 1 && VALID_VISIBILITIES.has(part);
+      return index > 1 && VALID_VISIBILITIES_SET.has(part);
     });
 
     return {

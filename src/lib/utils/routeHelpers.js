@@ -23,17 +23,14 @@
 // criminal actions it may exercise to protect its rights.
 
 import { FDAError } from '../fdaError.js';
-import { DEFAULT_OUTPUT_TYPE, rowsToCsv, rowsToXlsx } from './outputFormat.js';
-
-// Supported MIME types for /data, listed in server-default preference order.
-export const DATA_CONTENT_TYPES = [
-  'application/json',
-  'application/x-ndjson',
-  'text/csv',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'application/vnd.ms-excel',
-  'application/vnd.fiware.cda+json',
-];
+import { rowsToCsv, rowsToXlsx } from './outputFormat.js';
+import {
+  DATA_CONTENT_TYPES,
+  DEFAULT_OUTPUT_TYPE,
+  FDA_VALIDATION_MODE_STRICT,
+  QUERY_STYLE_OUTPUT_TYPES,
+  VALIDATION_MODES,
+} from '../constants.js';
 
 const DATA_ACCEPT_CONTENT_TYPE_TO_OUTPUT = {
   'application/json': 'json',
@@ -44,13 +41,11 @@ const DATA_ACCEPT_CONTENT_TYPE_TO_OUTPUT = {
   'application/vnd.fiware.cda+json': 'cda',
 };
 
-export const QUERY_STYLE_OUTPUT_TYPES = ['json', 'ndjson', 'csv', 'xls', 'cda'];
-const VALIDATION_MODES = ['strict', 'unchecked'];
 const FDA_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
 
 export function parseValidationMode(value) {
   if (value === undefined) {
-    return 'strict';
+    return FDA_VALIDATION_MODE_STRICT;
   }
 
   if (typeof value !== 'string') {
