@@ -169,10 +169,12 @@ Each document corresponds to one FDA:
 -   **lastFetch**: timestamp of the last successful fetch completion (ISO date)
 -   **datasourceId**: datasource identifier used to resolve source credentials (default `default` when omitted)
 -   **validationMode**: validation mode (`strict` or `unchecked`, default `strict`)
--   **schema**: array of column definitions (`name` and `type`) persisted from the source schema (`strict` mode only).
-    It is an optional field, by the moment used only in FDAs based in PG datasources (for other datasources we have to
-    consider how to it applies, specially for schema-less ones, see issue
-    [#235](https://github.com/telefonicaid/fiware-data-access/issues/235))
+-   **schema**: array of column definitions (`name` and `type`) persisted from the source schema (`strict` mode, cached
+    FDAs only). For PostgreSQL FDAs, `type` is the real DuckDB type introspected live from the database. For MongoDB
+    FDAs (schemaless), `type` is always a `VARCHAR` placeholder derived only from a sample document's field names — it
+    does not reflect the value's actual type. How schema generation should work for schemaless datasources in general
+    (nested documents, arrays, types varying across documents or over time) is an open design question, see issue
+    [#235](https://github.com/telefonicaid/fiware-data-access/issues/235)
 
 Each DA contains:
 

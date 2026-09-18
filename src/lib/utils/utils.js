@@ -64,35 +64,57 @@ function toIsoFromTimestampString(value) {
   return parsed.toISOString();
 }
 
+function isObjectId(obj) {
+  return (
+    obj !== null &&
+    typeof obj === 'object' &&
+    obj._bsontype === 'ObjectId' &&
+    typeof obj.toHexString === 'function'
+  );
+}
+
 // Normalize runtime values so downstream serializers emit stable output.
 export function normalizeForSerialization(obj) {
   if (typeof obj === 'bigint') {
     return Number(obj);
   }
+
   if (typeof obj === 'string') {
     return toIsoFromTimestampString(obj) ?? obj;
   }
+
   if (obj instanceof Date) {
     return obj.toISOString();
   }
+
+  if (isObjectId(obj)) {
+    return obj.toHexString();
+  }
+
   if (Array.isArray(obj)) {
     return obj.map(normalizeForSerialization);
   }
+
   if (obj !== null && typeof obj === 'object') {
     const keys = Object.keys(obj);
+
     if (keys.length === 1 && keys[0] === 'micros') {
       const isoDate = toIsoFromMicros(obj.micros);
+
       if (isoDate) {
         return isoDate;
       }
     }
 
     const converted = {};
-    for (const key in obj) {
+
+    for (const key of keys) {
       converted[key] = normalizeForSerialization(obj[key]);
     }
+
     return converted;
   }
+
   return obj;
 }
 

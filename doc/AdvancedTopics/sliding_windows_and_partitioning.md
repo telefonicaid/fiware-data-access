@@ -22,6 +22,33 @@ the key fields are summarized below:
 | `fetchSize`                  | Defines the **time range** of data to fetch on each refresh. For example, `week` fetches data from the last week.                                                                                   |
 | `windowSize`                 | Specifies the total retention window (e.g., data from last month), defining which data should be preserved and which should be discarded.                                                           |
 
+Both `postgres` and `mongodb` datasources support sliding-window refresh. In both cases, the configured time range is
+applied to the source query, with the exact implementation depending on the datasource.
+
+-   **Postgres**: the configured query is wrapped as a subquery and filtered by `timeColumn`:
+    `SELECT * FROM (<query>) q WHERE <timeColumn> >= TIMESTAMP '<start>' AND <timeColumn> < NOW()`.
+
+-   **MongoDB**: for `filter` queries, the time range is combined with the existing filter using `$and`. For
+    `aggregation` queries, it is added as a `$match` stage at the beginning of the pipeline. Therefore, `timeColumn`
+    must be a raw field of the source collection, available before any other pipeline stage, and contain BSON `Date`
+    values.
+
+In both datasources, the upper bound is evaluated at query execution time: Postgres uses `NOW()`, while MongoDB uses
+`$expr` with `$$NOW`. This ensures that the current time is determined by the database server when each scheduled
+refresh job runs.
+
+### Bootstrap snapshot and object storage
+
+A cached MongoDB FDA created in `strict` mode needs a schema before its first refresh. A zero-row Parquet snapshot is
+therefore created synchronously when the FDA is created.
+
+For MongoDB, the schema is obtained from a sample document and all fields are stored with the `VARCHAR` placeholder type
+described in [Default Data Access](default_data_access.md#mongodb-backed-fdas).
+
+The zero-row snapshot is especially important for partitioned FDAs. Without it, the initial unfiltered snapshot could
+create a partition based on the first document returned by MongoDB, even though that document may fall outside the
+configured sliding window. The regular windowed refresh would then not revisit that partition.
+
 ---
 
 ## Partitioned Files
@@ -117,3 +144,7 @@ The integration suite includes real PostgreSQL-based scenarios to validate slidi
 These checks are implemented in:
 
 -   `test/integration/suites/slidingWindows.integration.tests.js`
+
+Equivalent scenarios for MongoDB datasources (both `filter` and `aggregation` queries) are implemented in:
+
+-   `test/integration/suites/mongoSlidingWindows.integration.tests.js`

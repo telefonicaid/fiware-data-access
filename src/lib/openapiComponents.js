@@ -436,8 +436,12 @@
  *         timeColumn:
  *           type: string
  *           description: >
- *             Required with `refreshPolicy` of type `window` or `partition`. Column indicating when the data was
- *             received. In `strict` validation mode it must be explicitly projected in the query's SELECT clause.
+ *             Required when `refreshPolicy.type` is `window` or `objStgConf.partition` is set. Column indicating
+ *             when the data was received. In `strict` validation mode it must be explicitly projected in the
+ *             query's SELECT clause (`postgres`) or projection/final `$project` (`mongodb`). For `mongodb`
+ *             `aggregation` queries with a `window` refresh policy, it must additionally be a raw field of the
+ *             source collection, readable before any pipeline stage runs, and hold BSON `Date` values — the
+ *             window's time-range condition is injected as the first `$match` stage.
  *         objStgConf:
  *           $ref: '#/components/schemas/ObjStgConf'
  *         cached:
@@ -534,7 +538,11 @@
  *           $ref: '#/components/schemas/RefreshPolicy'
  *         schema:
  *           type: array
- *           description: Column schema inferred/validated for the FDA.
+ *           description: >
+ *             Column schema inferred/validated for the FDA. Present only for cached FDAs created in `strict`
+ *             validation mode. For `postgres`, `type` is the real DuckDB type introspected live from the database.
+ *             For `mongodb`, every `type` is a generic `VARCHAR` placeholder derived only from a sample document's
+ *             field names, since MongoDB is schemaless.
  *           items:
  *             type: object
  *             properties:

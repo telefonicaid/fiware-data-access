@@ -54,6 +54,7 @@ import { registerVisibilityConstraintsIntegrationTests } from './suites/visibili
 import { registerCdaCompatibilityIntegrationTests } from './suites/cdaCompatibility.integration.tests.js';
 import { registerFdaLifecycleIntegrationTests } from './suites/fdaLifecycle.integration.tests.js';
 import { registerMongoFdasIntegrationTests } from './suites/mongoFdas.integration.tests.js';
+import { registerMongoSlidingWindowsIntegrationTests } from './suites/mongoSlidingWindows.integration.tests.js';
 import { registerComplexCasesIntegrationTests } from './suites/complexCases.integration.tests.js';
 import { registerUploadFdasIntegrationTests } from './suites/uploadFdas.integration.tests.js';
 import {
@@ -590,6 +591,18 @@ export function runFDAIntegrationSuite({ mode, label }) {
       waitUntilFDACompleted,
       buildDaDataUrl,
       buildFdaDataUrl,
+    });
+
+    registerMongoSlidingWindowsIntegrationTests({
+      getBaseUrl: () => baseUrl,
+      getMongoUri: () => mongoUri,
+      service,
+      servicePath,
+      visibility,
+      httpReq,
+      waitUntilFDACompleted,
+      waitForJobToFinish,
+      buildDaDataUrl,
     });
 
     registerComplexCasesIntegrationTests({

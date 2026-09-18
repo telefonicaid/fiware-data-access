@@ -24,6 +24,7 @@
 
 import { beforeEach, describe, expect, jest, test } from '@jest/globals';
 import xlsx from 'xlsx';
+import { ObjectId } from 'mongodb';
 
 const loggerMock = {
   debug: jest.fn(),
@@ -90,6 +91,26 @@ describe('utils', () => {
         count: 1,
         nested: { values: [2] },
       });
+    });
+
+    test('converts a Mongo ObjectId to its hex string instead of walking into its buffer', async () => {
+      const { normalizeForSerialization } = await loadUtilsModule();
+      const id = new ObjectId('507f1f77bcf86cd799439011');
+
+      expect(normalizeForSerialization({ _id: id, label: 'x' })).toEqual({
+        _id: '507f1f77bcf86cd799439011',
+        label: 'x',
+      });
+    });
+
+    test('only copies own enumerable properties, not inherited prototype methods', async () => {
+      const { normalizeForSerialization } = await loadUtilsModule();
+      const buffer = Buffer.from([1, 2, 3]);
+
+      const normalized = normalizeForSerialization(buffer);
+
+      expect(normalized).toEqual({ 0: 1, 1: 2, 2: 3 });
+      expect(() => JSON.stringify(normalized)).not.toThrow();
     });
   });
 

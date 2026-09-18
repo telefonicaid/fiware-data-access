@@ -1582,6 +1582,139 @@ describe('fetchFDA', () => {
     expect(mongoMocks.createFDAMongo).not.toHaveBeenCalled();
   });
 
+  test('creates a cached Mongo FDA in strict mode by deriving a minimal schema from a live sample row', async () => {
+    const mongoDatasource = {
+      datasourceId: 'mongo-ds',
+      type: 'mongodb',
+      config: {
+        uri: 'mongodb://mongo:27017',
+        database: 'svc',
+      },
+    };
+    mongoMocks.retrieveDatasource
+      .mockResolvedValueOnce(mongoDatasource)
+      .mockResolvedValueOnce(mongoDatasource);
+    const reader = {
+      columns: ['label', 'observedAt'],
+      readNextChunk: jest.fn().mockResolvedValue([]),
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+    mongoMocks.createMongoCursorReader.mockResolvedValueOnce(reader);
+
+    await fetchFDA(
+      'fda_mongo_strict',
+      { collection: 'events', filter: {} },
+      'svc',
+      'public',
+      '/servicepath',
+      'mongo strict fda',
+      { type: 'none' },
+      'observedAt',
+      undefined,
+      true,
+      true,
+      'mongo-ds',
+    );
+
+    expect(mongoMocks.createMongoCursorReader).toHaveBeenCalledWith(
+      { uri: 'mongodb://mongo:27017', database: 'svc' },
+      { collection: 'events', filter: {} },
+      { limit: 1 },
+    );
+    expect(reader.close).toHaveBeenCalled();
+
+    // A minimal (name-only, VARCHAR-typed) schema is persisted
+    expect(mongoMocks.createFDAMongo).toHaveBeenCalledWith(
+      'fda_mongo_strict',
+      { collection: 'events', filter: {} },
+      'svc',
+      'public',
+      '/servicepath',
+      'mongo strict fda',
+      { type: 'none' },
+      'observedAt',
+      undefined,
+      true,
+      'mongo-ds',
+      'strict',
+      [
+        { name: 'label', type: 'VARCHAR' },
+        { name: 'observedAt', type: 'VARCHAR' },
+      ],
+    );
+
+    // The bootstrap snapshot is written as a pure, zero-row DuckDB query
+    expect(dbMocks.copyQueryToParquet).toHaveBeenCalledWith(
+      {},
+      'SELECT CAST(NULL AS VARCHAR) AS "label", CAST(NULL AS VARCHAR) AS "observedAt" WHERE FALSE',
+      'svc/servicepath/fda_mongo_strict.parquet',
+      'observedAt',
+      undefined,
+      undefined,
+    );
+    expect(awsMocks.newUpload).not.toHaveBeenCalled();
+    expect(dbMocks.toParquet).not.toHaveBeenCalled();
+  });
+
+  test('falls back to materializing the sample row when no Mongo columns can be inferred', async () => {
+    const mongoDatasource = {
+      datasourceId: 'mongo-ds',
+      type: 'mongodb',
+      config: {
+        uri: 'mongodb://mongo:27017',
+        database: 'svc',
+      },
+    };
+    mongoMocks.retrieveDatasource
+      .mockResolvedValueOnce(mongoDatasource)
+      .mockResolvedValueOnce(mongoDatasource);
+    // An empty collection queried without a projection hint: no sample row, no known columns.
+    mongoMocks.createMongoCursorReader
+      .mockResolvedValueOnce({
+        columns: [],
+        readNextChunk: jest.fn().mockResolvedValue([]),
+        close: jest.fn().mockResolvedValue(undefined),
+      })
+      .mockResolvedValueOnce({
+        columns: [],
+        readNextChunk: jest.fn().mockResolvedValue([]),
+        close: jest.fn().mockResolvedValue(undefined),
+      });
+
+    await fetchFDA(
+      'fda_mongo_empty',
+      { collection: 'events', filter: {} },
+      'svc',
+      'public',
+      '/servicepath',
+      'mongo empty collection fda',
+      { type: 'none' },
+      undefined,
+      undefined,
+      false, // defaultDataAccessEnabled: this test targets createParquet's fallback only
+      true,
+      'mongo-ds',
+    );
+
+    expect(mongoMocks.createFDAMongo).toHaveBeenCalledWith(
+      'fda_mongo_empty',
+      { collection: 'events', filter: {} },
+      'svc',
+      'public',
+      '/servicepath',
+      'mongo empty collection fda',
+      { type: 'none' },
+      undefined,
+      undefined,
+      true,
+      'mongo-ds',
+      'strict',
+      null,
+    );
+    expect(dbMocks.copyQueryToParquet).not.toHaveBeenCalled();
+    expect(dbMocks.toParquet).toHaveBeenCalled();
+  });
+
   test('creates default DA without time filters when FDA has no timeColumn', async () => {
     const describeRun = jest.fn().mockResolvedValue({
       getRowObjectsJson: () => [{ column_name: 'name' }],
@@ -2744,6 +2877,11 @@ describe('updateFDA', () => {
     mongoMocks.regenerateFDA.mockResolvedValue({
       query: 'SELECT id FROM users',
     });
+    mongoMocks.retrieveDatasource.mockResolvedValue({
+      datasourceId: 'default',
+      type: 'postgres',
+      config: {},
+    });
   });
 
   test('regenerates FDA and schedules refresh job immediately', async () => {
@@ -2819,6 +2957,80 @@ describe('updateFDA', () => {
       windowSize: 'day',
       objStgConf: undefined,
     });
+  });
+
+  test('regenerates a Mongo sliding-window FDA using the Mongo window query builder', async () => {
+    const fixedDate = new Date('2026-07-21T00:00:00.000Z');
+    jest.useFakeTimers({ now: fixedDate });
+
+    mongoMocks.retrieveDatasource.mockResolvedValueOnce({
+      datasourceId: 'mongo-ds',
+      type: 'mongodb',
+      config: { uri: 'mongodb://mongo:27017', database: 'svc' },
+    });
+    mongoMocks.regenerateFDA.mockResolvedValue({
+      query: { collection: 'events', filter: { status: 'ok' } },
+      timeColumn: 'observedAt',
+      datasourceId: 'mongo-ds',
+      refreshPolicy: {
+        type: 'window',
+        params: {
+          refreshInterval: '0 0 * * *',
+          fetchSize: 'day',
+          windowSize: 'day',
+        },
+      },
+    });
+
+    await updateFDA('svc', 'fda42', undefined, '/servicepath');
+
+    expect(mongoMocks.retrieveDatasource).toHaveBeenCalledWith(
+      'svc',
+      'mongo-ds',
+    );
+    expect(agenda.now).toHaveBeenCalledWith('refresh-fda', {
+      datasourceId: 'mongo-ds',
+      fdaId: 'fda42',
+      query: {
+        collection: 'events',
+        filter: {
+          $and: [
+            { status: 'ok' },
+            {
+              $expr: {
+                $and: [
+                  {
+                    $gte: ['$observedAt', new Date('2026-07-20T00:00:00.000Z')],
+                  },
+                  { $lt: ['$observedAt', '$$NOW'] },
+                ],
+              },
+            },
+          ],
+        },
+      },
+      service: 'svc',
+      servicePath: '/servicepath',
+      timeColumn: 'observedAt',
+      refreshPolicy: {
+        type: 'window',
+        params: {
+          refreshInterval: '0 0 * * *',
+          fetchSize: 'day',
+          windowSize: 'day',
+        },
+      },
+      objStgConf: undefined,
+    });
+    expect(agenda.now).toHaveBeenCalledWith('clean-partition', {
+      fdaId: 'fda42',
+      service: 'svc',
+      servicePath: '/servicepath',
+      windowSize: 'day',
+      objStgConf: undefined,
+    });
+
+    jest.useRealTimers();
   });
 
   test('checks accessibility with visibility before scheduling update', async () => {
@@ -3197,10 +3409,11 @@ describe('processFDAAsync', () => {
       undefined,
       { type: 'none' },
       undefined,
-      false,
       'mongo-ds',
     );
 
+    // The query passed to processFDAAsync (the job payload) is what gets read from Mongo,
+    // not whatever is currently persisted as fda.query (mocked above with a different filter).
     expect(mongoMocks.createMongoCursorReader).toHaveBeenCalledWith(
       {
         uri: 'mongodb://mongo:27017',
@@ -3208,7 +3421,7 @@ describe('processFDAAsync', () => {
       },
       {
         collection: 'events',
-        filter: {},
+        filter: { status: 'ok' },
         projection: {
           device: 1,
           status: 1,
@@ -3240,8 +3453,10 @@ describe('processFDAAsync', () => {
     );
   });
 
-  test('rejects Mongo window refresh during async processing', async () => {
-    mongoMocks.retrieveDatasource.mockResolvedValueOnce({
+  test('processes a Mongo window refresh job by forwarding the already-windowed query unchanged', async () => {
+    // Windowing happens once, when the job is scheduled (resolveRefreshQueries); processFDAAsync
+    // just executes whatever query the job payload carries, windowed or not.
+    mongoMocks.retrieveDatasource.mockResolvedValue({
       datasourceId: 'mongo-ds',
       type: 'mongodb',
       config: {
@@ -3249,29 +3464,57 @@ describe('processFDAAsync', () => {
         database: 'svc',
       },
     });
-
-    await expect(
-      processFDAAsync(
-        'fda_mongo_cached',
-        { status: 'ok' },
-        'svc',
-        '/servicepath',
-        'timeinstant',
-        {
-          type: 'window',
-          params: {
-            refreshInterval: '1 hour',
-            fetchSize: 'hour',
-          },
-        },
-        undefined,
-        false,
-        'mongo-ds',
-      ),
-    ).rejects.toMatchObject({
-      status: 400,
-      type: 'InvalidMongoFDAContract',
+    const reader = {
+      columns: ['status'],
+      readNextChunk: jest.fn().mockResolvedValueOnce([]),
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+    mongoMocks.createMongoCursorReader.mockResolvedValueOnce(reader);
+    awsMocks.newUpload.mockReturnValueOnce({
+      done: jest.fn().mockResolvedValue(undefined),
     });
+
+    const windowedQuery = {
+      collection: 'events',
+      filter: {
+        $and: [
+          { status: 'ok' },
+          {
+            $expr: {
+              $and: [
+                {
+                  $gte: ['$timeinstant', new Date('2026-07-20T23:00:00.000Z')],
+                },
+                { $lt: ['$timeinstant', '$$NOW'] },
+              ],
+            },
+          },
+        ],
+      },
+    };
+
+    await processFDAAsync(
+      'fda_mongo_cached',
+      windowedQuery,
+      'svc',
+      '/servicepath',
+      'timeinstant',
+      {
+        type: 'window',
+        params: {
+          refreshInterval: '1 hour',
+          fetchSize: 'hour',
+        },
+      },
+      undefined,
+      'mongo-ds',
+    );
+
+    expect(mongoMocks.createMongoCursorReader).toHaveBeenCalledWith(
+      { uri: 'mongodb://mongo:27017', database: 'svc' },
+      windowedQuery,
+      { limit: undefined },
+    );
   });
 });
 
@@ -4093,6 +4336,261 @@ describe('fetchFDA with refresh policies', () => {
     });
 
     expect(agenda.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('fetchFDA with Mongo window refresh policies', () => {
+  const agenda = {
+    now: jest.fn(),
+    create: jest.fn(),
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mongoMocks.createFDAMongo.mockResolvedValue(undefined);
+    mongoMocks.retrieveDatasource.mockResolvedValue({
+      datasourceId: 'mongo-ds',
+      type: 'mongodb',
+      config: {
+        uri: 'mongodb://mongo:27017',
+        database: 'svc',
+      },
+    });
+    jobsMocks.getAgenda.mockReturnValue(agenda);
+    agenda.now.mockResolvedValue(undefined);
+    agenda.create.mockImplementation((name, data) => {
+      const job = {
+        name,
+        data,
+        unique: jest.fn().mockReturnThis(),
+        repeatEvery: jest.fn().mockReturnThis(),
+        save: jest.fn().mockResolvedValue(undefined),
+      };
+
+      return job;
+    });
+    dbMocks.refreshIntervalPartitionCheck.mockReturnValue(true);
+  });
+
+  test('windows a Mongo filter query: first fetch uses windowSize, recurring fetch uses fetchSize', async () => {
+    const fixedDate = new Date('2026-07-21T00:00:00.000Z');
+    jest.useFakeTimers({ now: fixedDate });
+
+    await fetchFDA(
+      'fda_mongo_window',
+      { collection: 'events', filter: { status: 'ok' } },
+      'svc',
+      'public',
+      '/servicepath',
+      'desc',
+      {
+        type: 'window',
+        params: {
+          refreshInterval: '1 day',
+          fetchSize: 'day',
+          windowSize: 'week',
+        },
+      },
+      'observedAt',
+      { partition: 'day' },
+      true,
+      true,
+      'mongo-ds',
+      'unchecked',
+    );
+
+    // First fetch (agenda.now) is bounded by windowSize (1 week back).
+    expect(agenda.now).toHaveBeenCalledWith(
+      'refresh-fda',
+      expect.objectContaining({
+        fdaId: 'fda_mongo_window',
+        datasourceId: 'mongo-ds',
+        query: {
+          collection: 'events',
+          filter: {
+            $and: [
+              { status: 'ok' },
+              {
+                $expr: {
+                  $and: [
+                    {
+                      $gte: [
+                        '$observedAt',
+                        new Date('2026-07-14T00:00:00.000Z'),
+                      ],
+                    },
+                    { $lt: ['$observedAt', '$$NOW'] },
+                  ],
+                },
+              },
+            ],
+          },
+        },
+      }),
+    );
+
+    // Recurring fetch is bounded by fetchSize (1 day back) instead.
+    const refreshJob = agenda.create.mock.results.find(
+      ({ value }) => value.name === 'refresh-fda-recurring',
+    ).value;
+    expect(refreshJob.data.query).toEqual({
+      collection: 'events',
+      filter: {
+        $and: [
+          { status: 'ok' },
+          {
+            $expr: {
+              $and: [
+                {
+                  $gte: ['$observedAt', new Date('2026-07-20T00:00:00.000Z')],
+                },
+                { $lt: ['$observedAt', '$$NOW'] },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    expect(refreshJob.repeatEvery).toHaveBeenCalledWith('1 day', {
+      skipImmediate: true,
+    });
+
+    jest.useRealTimers();
+  });
+
+  test('windows a Mongo aggregation query by prepending a $match stage', async () => {
+    const fixedDate = new Date('2026-07-21T00:00:00.000Z');
+    jest.useFakeTimers({ now: fixedDate });
+
+    await fetchFDA(
+      'fda_mongo_window_agg',
+      {
+        collection: 'events',
+        aggregation: [
+          { $match: { site: 'lab' } },
+          { $project: { observedAt: 1, site: 1 } },
+        ],
+      },
+      'svc',
+      'public',
+      '/servicepath',
+      'desc',
+      {
+        type: 'window',
+        params: { refreshInterval: '1 hour', fetchSize: 'hour' },
+      },
+      'observedAt',
+      undefined,
+      true,
+      true,
+      'mongo-ds',
+      'unchecked',
+    );
+
+    // No windowSize is configured, so the immediate first fetch (agenda.now) stays
+    // unrestricted ("infinite window"); only the recurring fetch is bounded, by fetchSize.
+    expect(agenda.now).toHaveBeenCalledWith(
+      'refresh-fda',
+      expect.objectContaining({
+        query: {
+          collection: 'events',
+          aggregation: [
+            { $match: { site: 'lab' } },
+            { $project: { observedAt: 1, site: 1 } },
+          ],
+        },
+      }),
+    );
+
+    const refreshJob = agenda.create.mock.results.find(
+      ({ value }) => value.name === 'refresh-fda-recurring',
+    ).value;
+    expect(refreshJob.data.query).toEqual({
+      collection: 'events',
+      aggregation: [
+        {
+          $match: {
+            $expr: {
+              $and: [
+                {
+                  $gte: ['$observedAt', new Date('2026-07-20T23:00:00.000Z')],
+                },
+                { $lt: ['$observedAt', '$$NOW'] },
+              ],
+            },
+          },
+        },
+        { $match: { site: 'lab' } },
+        { $project: { observedAt: 1, site: 1 } },
+      ],
+    });
+
+    jest.useRealTimers();
+  });
+
+  test('schedules clean-partition-recurring for a windowed Mongo FDA', async () => {
+    await fetchFDA(
+      'fda_mongo_window_clean',
+      { collection: 'events', filter: {} },
+      'svc',
+      'public',
+      '/servicepath',
+      'desc',
+      {
+        type: 'window',
+        params: {
+          refreshInterval: '1 day',
+          fetchSize: 'day',
+          windowSize: 'week',
+        },
+      },
+      'observedAt',
+      { partition: 'day' },
+      true,
+      true,
+      'mongo-ds',
+      'unchecked',
+    );
+
+    expect(agenda.create).toHaveBeenCalledWith('clean-partition-recurring', {
+      fdaId: 'fda_mongo_window_clean',
+      service: 'svc',
+      servicePath: '/servicepath',
+      windowSize: 'week',
+      objStgConf: { partition: 'day' },
+    });
+  });
+
+  test('rejects Mongo window FDA when timeColumn is missing from projection', async () => {
+    await expect(
+      fetchFDA(
+        'fda_mongo_window_invalid',
+        {
+          collection: 'events',
+          filter: { status: 'ok' },
+          projection: { status: 1 },
+        },
+        'svc',
+        'public',
+        '/servicepath',
+        'desc',
+        {
+          type: 'window',
+          params: { refreshInterval: '1 hour', fetchSize: 'hour' },
+        },
+        'observedAt',
+        undefined,
+        true,
+        true,
+        'mongo-ds',
+        'unchecked',
+      ),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidMongoFDAContract',
+    });
+
+    expect(agenda.now).not.toHaveBeenCalled();
   });
 });
 
