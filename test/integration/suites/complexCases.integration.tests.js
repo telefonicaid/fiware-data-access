@@ -24,7 +24,10 @@
 
 import { describe, test, expect } from '@jest/globals';
 import pg from 'pg';
-import { connectWithRetry } from '../utils/integrationTestUtils.js';
+import {
+  connectWithRetry,
+  ensureDefaultDatasource,
+} from '../utils/integrationTestUtils.js';
 
 const { Client } = pg;
 
@@ -39,38 +42,16 @@ export function registerComplexCasesIntegrationTests({
   getPgPort,
 }) {
   describe('Complex FDA queries', () => {
-    async function ensureDefaultDatasource(baseUrl) {
-      const createRes = await httpReq({
-        method: 'POST',
-        url: `${baseUrl}/datasources`,
-        headers: {
-          'Content-Type': 'application/json',
-          'Fiware-Service': service,
-        },
-        body: {
-          datasourceId: 'default',
-          type: 'postgres',
-          config: {
-            username: 'postgres',
-            password: 'postgres',
-            host: getPgHost(),
-            port: getPgPort(),
-            database: service,
-          },
-        },
-      });
-
-      if (createRes.status !== 204 && createRes.status !== 409) {
-        throw new Error(
-          `Failed to ensure default datasource: ${createRes.status} ${JSON.stringify(createRes.json)}`,
-        );
-      }
-    }
-
     beforeAll(async () => {
       const baseUrl = getBaseUrl();
 
-      await ensureDefaultDatasource(baseUrl);
+      await ensureDefaultDatasource({
+        httpReq,
+        baseUrl,
+        service,
+        getPgHost,
+        getPgPort,
+      });
 
       // Health Postgres + seed
       {

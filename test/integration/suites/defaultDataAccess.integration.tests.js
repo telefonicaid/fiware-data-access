@@ -22,8 +22,9 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
-import { test, expect } from '@jest/globals';
+import { describe, beforeAll, test, expect } from '@jest/globals';
 import { MongoClient } from 'mongodb';
+import { ensureDefaultDatasource } from '../utils/integrationTestUtils.js';
 
 export function registerDefaultDataAccessIntegrationTests({
   getBaseUrl,
@@ -39,34 +40,6 @@ export function registerDefaultDataAccessIntegrationTests({
   buildDaDataUrl,
 }) {
   describe('Default Data Access', () => {
-    async function ensureDefaultDatasource(baseUrl) {
-      const createRes = await httpReq({
-        method: 'POST',
-        url: `${baseUrl}/datasources`,
-        headers: {
-          'Content-Type': 'application/json',
-          'Fiware-Service': service,
-        },
-        body: {
-          datasourceId: 'default',
-          type: 'postgres',
-          config: {
-            username: 'postgres',
-            password: 'postgres',
-            host: getPgHost(),
-            port: getPgPort(),
-            database: service,
-          },
-        },
-      });
-
-      if (createRes.status !== 204 && createRes.status !== 409) {
-        throw new Error(
-          `Failed to ensure default datasource: ${createRes.status} ${JSON.stringify(createRes.json)}`,
-        );
-      }
-    }
-
     const datasourceId = 'mongo-cache-ds';
     const fdaId = 'mongo_cached_fda';
     const collectionName = 'mongo_cached_fda_events';
@@ -74,7 +47,13 @@ export function registerDefaultDataAccessIntegrationTests({
     beforeAll(async () => {
       const baseUrl = getBaseUrl();
 
-      await ensureDefaultDatasource(baseUrl);
+      await ensureDefaultDatasource({
+        httpReq,
+        baseUrl,
+        service,
+        getPgHost,
+        getPgPort,
+      });
 
       const mongoClient = new MongoClient(getMongoUri(), {
         serverSelectionTimeoutMS: 10_000,
