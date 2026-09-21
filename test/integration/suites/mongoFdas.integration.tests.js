@@ -498,6 +498,44 @@ export function registerMongoFdasIntegrationTests({
       expect(res.json.description).toContain('stage $out is not allowed');
     });
 
+    test('POST /fdas rejects cross-collection aggregation stages', async () => {
+      const baseUrl = getBaseUrl();
+
+      const res = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Content-Type': 'application/json',
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: 'mongo_agg_lookup_not_allowed',
+          query: {
+            collection: collectionName,
+            aggregation: [
+              { $match: { site: 'lab' } },
+              {
+                $lookup: {
+                  from: 'otherCollection',
+                  localField: 'site',
+                  foreignField: 'site',
+                  as: 'joined',
+                },
+              },
+            ],
+          },
+          description: 'mongo aggregation lookup not allowed',
+          cached: true,
+          datasourceId,
+        },
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.json.error).toBe('InvalidMongoFDAContract');
+      expect(res.json.description).toContain('stage $lookup is not allowed');
+    });
+
     test('POST /fdas rejects aggregation final $project without timeColumn', async () => {
       const baseUrl = getBaseUrl();
 
