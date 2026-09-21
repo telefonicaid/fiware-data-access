@@ -27,6 +27,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { FDAError } from '../../src/lib/fdaError.js';
+import { assertAllowedMongoAggregationStage } from '../../src/lib/utils/mongo.js';
 
 const dbMocks = {
   runPreparedStatement: jest.fn(),
@@ -152,6 +153,7 @@ await jest.unstable_mockModule('../../src/lib/utils/mongo.js', () => ({
   createMongoCursorReader: mongoMocks.createMongoCursorReader,
   runMongoQuery: mongoMocks.runMongoQuery,
   validateMongoQuery: mongoMocks.validateMongoQuery,
+  assertAllowedMongoAggregationStage,
 }));
 
 await jest.unstable_mockModule('../../src/lib/fdaConfig.js', () => ({
@@ -5269,6 +5271,130 @@ describe('validateMongoFDAContract functions', () => {
         status: 400,
         type: 'InvalidMongoFDAContract',
         message: 'Mongo FDA aggregation stage $out is not allowed',
+      }),
+    );
+  });
+
+  test('validateAggregationQuery accepts stages not previously in the blacklist', () => {
+    expect(() =>
+      validateMongoFDAContract(
+        {
+          collection: 'col',
+          aggregation: [
+            {
+              $facet: {
+                grouped: [{ $group: { _id: '$status', n: { $sum: 1 } } }],
+              },
+            },
+          ],
+        },
+        undefined,
+        true,
+      ),
+    ).not.toThrow();
+
+    expect(() =>
+      validateMongoFDAContract(
+        {
+          collection: 'col',
+          aggregation: [
+            { $bucket: { groupBy: '$score', boundaries: [0, 50, 100] } },
+          ],
+        },
+        undefined,
+        true,
+      ),
+    ).not.toThrow();
+
+    expect(() =>
+      validateMongoFDAContract(
+        {
+          collection: 'col',
+          aggregation: [{ $sample: { size: 10 } }],
+        },
+        undefined,
+        true,
+      ),
+    ).not.toThrow();
+  });
+
+  test('validateAggregationQuery rejects cross-collection stages', () => {
+    expect(() =>
+      validateMongoFDAContract(
+        {
+          collection: 'col',
+          aggregation: [
+            {
+              $lookup: {
+                from: 'otherCollection',
+                localField: 'id',
+                foreignField: 'id',
+                as: 'joined',
+              },
+            },
+          ],
+        },
+        undefined,
+        true,
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        status: 400,
+        type: 'InvalidMongoFDAContract',
+        message: 'Mongo FDA aggregation stage $lookup is not allowed',
+      }),
+    );
+  });
+
+  test('validateAggregationQuery rejects administrative/introspection stages', () => {
+    expect(() =>
+      validateMongoFDAContract(
+        {
+          collection: 'col',
+          aggregation: [{ $indexStats: {} }],
+        },
+        undefined,
+        true,
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        status: 400,
+        type: 'InvalidMongoFDAContract',
+        message: 'Mongo FDA aggregation stage $indexStats is not allowed',
+      }),
+    );
+  });
+
+  test('validateAggregationQuery rejects a $lookup nested inside a $facet sub-pipeline', () => {
+    expect(() =>
+      validateMongoFDAContract(
+        {
+          collection: 'col',
+          aggregation: [
+            {
+              $facet: {
+                joined: [
+                  {
+                    $lookup: {
+                      from: 'otherCollection',
+                      localField: 'id',
+                      foreignField: 'id',
+                      as: 'joined',
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+        undefined,
+        true,
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        status: 400,
+        type: 'InvalidMongoFDAContract',
+        message: 'Mongo FDA aggregation stage $lookup is not allowed',
       }),
     );
   });
