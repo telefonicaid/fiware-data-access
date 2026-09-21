@@ -653,6 +653,43 @@ describe('mongo utils', () => {
     expect(fakeClient.close).toHaveBeenCalled();
   });
 
+  test('assertAllowedMongoAggregationStage rejects non-object stages', async () => {
+    const { assertAllowedMongoAggregationStage } = await loadMongoModule();
+
+    expect(() => assertAllowedMongoAggregationStage(null)).toThrow(
+      expect.objectContaining({
+        status: 400,
+        type: 'InvalidMongoFDAContract',
+        message: 'Mongo FDA aggregation stages must be JSON objects',
+      }),
+    );
+  });
+
+  test('assertAllowedMongoAggregationStage rejects stages with multiple operators', async () => {
+    const { assertAllowedMongoAggregationStage } = await loadMongoModule();
+
+    expect(() =>
+      assertAllowedMongoAggregationStage({
+        $match: { status: 'ok' },
+        $sort: { ts: -1 },
+      }),
+    ).toThrow(
+      expect.objectContaining({
+        status: 400,
+        type: 'InvalidMongoFDAContract',
+        message: 'Mongo FDA aggregation stages must define a single operator',
+      }),
+    );
+  });
+
+  test('assertAllowedMongoAggregationStage accepts an allowed stage', async () => {
+    const { assertAllowedMongoAggregationStage } = await loadMongoModule();
+
+    expect(() =>
+      assertAllowedMongoAggregationStage({ $match: { status: 'ok' } }),
+    ).not.toThrow();
+  });
+
   test('createMongoCursorReader executes aggregation queries and appends internal limit', async () => {
     const { createMongoCursorReader, collectionMock } = await loadMongoModule();
 

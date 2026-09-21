@@ -27,7 +27,6 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { FDAError } from '../../src/lib/fdaError.js';
-import { assertAllowedMongoAggregationStage } from '../../src/lib/utils/mongo.js';
 
 const dbMocks = {
   runPreparedStatement: jest.fn(),
@@ -85,6 +84,7 @@ const mongoMocks = {
   createMongoCursorReader: jest.fn(),
   runMongoQuery: jest.fn(),
   validateMongoQuery: jest.fn(),
+  assertAllowedMongoAggregationStage: jest.fn(),
 };
 
 const jobsMocks = {
@@ -153,7 +153,8 @@ await jest.unstable_mockModule('../../src/lib/utils/mongo.js', () => ({
   createMongoCursorReader: mongoMocks.createMongoCursorReader,
   runMongoQuery: mongoMocks.runMongoQuery,
   validateMongoQuery: mongoMocks.validateMongoQuery,
-  assertAllowedMongoAggregationStage,
+  assertAllowedMongoAggregationStage:
+    mongoMocks.assertAllowedMongoAggregationStage,
 }));
 
 await jest.unstable_mockModule('../../src/lib/fdaConfig.js', () => ({
@@ -5221,48 +5222,43 @@ describe('validateMongoFDAContract functions', () => {
     ).not.toThrow();
   });
 
-  test('validateAggregationQuery rejects non-object stages', () => {
-    expect(() =>
-      validateMongoFDAContract(
-        { collection: 'col', aggregation: [null] },
-        'time',
-        true,
-      ),
-    ).toThrow(
-      expect.objectContaining({
-        status: 400,
-        type: 'InvalidMongoFDAContract',
-        message: 'Mongo FDA aggregation stages must be JSON objects',
-      }),
+  test('validateAggregationQuery delegates per-stage validation to assertAllowedMongoAggregationStage', () => {
+    mongoMocks.assertAllowedMongoAggregationStage.mockClear();
+
+    validateMongoFDAContract(
+      {
+        collection: 'col',
+        aggregation: [
+          { $match: { status: 'ok' } },
+          { $group: { _id: '$status', n: { $sum: 1 } } },
+        ],
+      },
+      'time',
+      true,
     );
+
+    expect(
+      mongoMocks.assertAllowedMongoAggregationStage,
+    ).toHaveBeenNthCalledWith(1, { $match: { status: 'ok' } });
+    expect(
+      mongoMocks.assertAllowedMongoAggregationStage,
+    ).toHaveBeenNthCalledWith(2, {
+      $group: { _id: '$status', n: { $sum: 1 } },
+    });
   });
 
-  test('validateAggregationQuery rejects stages with multiple operators', () => {
-    expect(() =>
-      validateMongoFDAContract(
-        {
-          collection: 'col',
-          aggregation: [{ $match: { status: 'ok' }, $sort: { ts: -1 } }],
-        },
-        'time',
-        true,
-      ),
-    ).toThrow(
-      expect.objectContaining({
-        status: 400,
-        type: 'InvalidMongoFDAContract',
-        message: 'Mongo FDA aggregation stages must define a single operator',
-      }),
-    );
-  });
+  test('validateAggregationQuery propagates errors thrown by assertAllowedMongoAggregationStage', () => {
+    mongoMocks.assertAllowedMongoAggregationStage.mockImplementationOnce(() => {
+      throw new FDAError(
+        400,
+        'InvalidMongoFDAContract',
+        'Mongo FDA aggregation stage $out is not allowed',
+      );
+    });
 
-  test('validateAggregationQuery rejects disallowed write stages', () => {
     expect(() =>
       validateMongoFDAContract(
-        {
-          collection: 'col',
-          aggregation: [{ $match: { status: 'ok' } }, { $out: 'target' }],
-        },
+        { collection: 'col', aggregation: [{ $out: 'target' }] },
         'time',
         true,
       ),
@@ -5271,130 +5267,6 @@ describe('validateMongoFDAContract functions', () => {
         status: 400,
         type: 'InvalidMongoFDAContract',
         message: 'Mongo FDA aggregation stage $out is not allowed',
-      }),
-    );
-  });
-
-  test('validateAggregationQuery accepts stages not previously in the blacklist', () => {
-    expect(() =>
-      validateMongoFDAContract(
-        {
-          collection: 'col',
-          aggregation: [
-            {
-              $facet: {
-                grouped: [{ $group: { _id: '$status', n: { $sum: 1 } } }],
-              },
-            },
-          ],
-        },
-        undefined,
-        true,
-      ),
-    ).not.toThrow();
-
-    expect(() =>
-      validateMongoFDAContract(
-        {
-          collection: 'col',
-          aggregation: [
-            { $bucket: { groupBy: '$score', boundaries: [0, 50, 100] } },
-          ],
-        },
-        undefined,
-        true,
-      ),
-    ).not.toThrow();
-
-    expect(() =>
-      validateMongoFDAContract(
-        {
-          collection: 'col',
-          aggregation: [{ $sample: { size: 10 } }],
-        },
-        undefined,
-        true,
-      ),
-    ).not.toThrow();
-  });
-
-  test('validateAggregationQuery rejects cross-collection stages', () => {
-    expect(() =>
-      validateMongoFDAContract(
-        {
-          collection: 'col',
-          aggregation: [
-            {
-              $lookup: {
-                from: 'otherCollection',
-                localField: 'id',
-                foreignField: 'id',
-                as: 'joined',
-              },
-            },
-          ],
-        },
-        undefined,
-        true,
-      ),
-    ).toThrow(
-      expect.objectContaining({
-        status: 400,
-        type: 'InvalidMongoFDAContract',
-        message: 'Mongo FDA aggregation stage $lookup is not allowed',
-      }),
-    );
-  });
-
-  test('validateAggregationQuery rejects administrative/introspection stages', () => {
-    expect(() =>
-      validateMongoFDAContract(
-        {
-          collection: 'col',
-          aggregation: [{ $indexStats: {} }],
-        },
-        undefined,
-        true,
-      ),
-    ).toThrow(
-      expect.objectContaining({
-        status: 400,
-        type: 'InvalidMongoFDAContract',
-        message: 'Mongo FDA aggregation stage $indexStats is not allowed',
-      }),
-    );
-  });
-
-  test('validateAggregationQuery rejects a $lookup nested inside a $facet sub-pipeline', () => {
-    expect(() =>
-      validateMongoFDAContract(
-        {
-          collection: 'col',
-          aggregation: [
-            {
-              $facet: {
-                joined: [
-                  {
-                    $lookup: {
-                      from: 'otherCollection',
-                      localField: 'id',
-                      foreignField: 'id',
-                      as: 'joined',
-                    },
-                  },
-                ],
-              },
-            },
-          ],
-        },
-        undefined,
-        true,
-      ),
-    ).toThrow(
-      expect.objectContaining({
-        status: 400,
-        type: 'InvalidMongoFDAContract',
-        message: 'Mongo FDA aggregation stage $lookup is not allowed',
       }),
     );
   });
