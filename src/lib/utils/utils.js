@@ -29,10 +29,8 @@ import { CronExpressionParser } from 'cron-parser';
 
 import { FDAError } from '../fdaError.js';
 import { getBasicLogger } from './logger.js';
+import { VALID_VISIBILITIES_SET } from '../constants.js';
 const logger = getBasicLogger();
-
-export const VALID_VISIBILITIES = ['public', 'private'];
-export const VALID_VISIBILITIES_SET = new Set(VALID_VISIBILITIES);
 
 let activeFreshQueries = 0;
 

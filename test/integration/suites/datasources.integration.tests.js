@@ -22,7 +22,7 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
-import { test, expect } from '@jest/globals';
+import { describe, test, expect } from '@jest/globals';
 
 export function registerDatasourcesIntegrationTests({
   getBaseUrl,
@@ -34,77 +34,55 @@ export function registerDatasourcesIntegrationTests({
   httpReq,
   waitUntilFDACompleted,
 }) {
-  test('POST /datasources provisions default datasource required by FDA tests', async () => {
-    const baseUrl = getBaseUrl();
+  describe('Datasources', () => {
+    test('POST /datasources provisions default datasource required by FDA tests', async () => {
+      const baseUrl = getBaseUrl();
 
-    const deleteExisting = await httpReq({
-      method: 'DELETE',
-      url: `${baseUrl}/datasources/default`,
-      headers: { 'Fiware-Service': service },
-    });
+      const deleteExisting = await httpReq({
+        method: 'DELETE',
+        url: `${baseUrl}/datasources/default`,
+        headers: { 'Fiware-Service': service },
+      });
 
-    expect([204, 404]).toContain(deleteExisting.status);
+      expect([204, 404]).toContain(deleteExisting.status);
 
-    const createRes = await httpReq({
-      method: 'POST',
-      url: `${baseUrl}/datasources`,
-      headers: {
-        'Content-Type': 'application/json',
-        'Fiware-Service': service,
-      },
-      body: {
-        type: 'postgres',
-        config: {
-          username: 'postgres',
-          password: 'postgres',
-          host: getPgHost(),
-          port: getPgPort(),
-          database: service,
+      const createRes = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/datasources`,
+        headers: {
+          'Content-Type': 'application/json',
+          'Fiware-Service': service,
         },
-      },
-    });
+        body: {
+          type: 'postgres',
+          config: {
+            username: 'postgres',
+            password: 'postgres',
+            host: getPgHost(),
+            port: getPgPort(),
+            database: service,
+          },
+        },
+      });
 
-    if (createRes.status >= 400) {
-      console.error(
-        'POST /datasources default failed:',
-        createRes.status,
-        createRes.json ?? createRes.text,
-      );
-    }
+      if (createRes.status >= 400) {
+        console.error(
+          'POST /datasources default failed:',
+          createRes.status,
+          createRes.json ?? createRes.text,
+        );
+      }
 
-    expect(createRes.status).toBe(204);
+      expect(createRes.status).toBe(204);
 
-    const getRes = await httpReq({
-      method: 'GET',
-      url: `${baseUrl}/datasources/default`,
-      headers: { 'Fiware-Service': service },
-    });
+      const getRes = await httpReq({
+        method: 'GET',
+        url: `${baseUrl}/datasources/default`,
+        headers: { 'Fiware-Service': service },
+      });
 
-    expect(getRes.status).toBe(200);
-    expect(getRes.json).toMatchObject({
-      datasourceId: 'default',
-      type: 'postgres',
-      config: {
-        username: 'postgres',
-        password: 'postgres',
-        host: getPgHost(),
-        port: getPgPort(),
-        database: service,
-      },
-    });
-  });
-
-  test('POST /datasources rejects duplicate datasourceId in same service', async () => {
-    const baseUrl = getBaseUrl();
-
-    const duplicateRes = await httpReq({
-      method: 'POST',
-      url: `${baseUrl}/datasources`,
-      headers: {
-        'Content-Type': 'application/json',
-        'Fiware-Service': service,
-      },
-      body: {
+      expect(getRes.status).toBe(200);
+      expect(getRes.json).toMatchObject({
         datasourceId: 'default',
         type: 'postgres',
         config: {
@@ -114,255 +92,279 @@ export function registerDatasourcesIntegrationTests({
           port: getPgPort(),
           database: service,
         },
-      },
+      });
     });
 
-    expect(duplicateRes.status).toBe(409);
-    expect(duplicateRes.json.error).toBe('DuplicatedKey');
-  });
+    test('POST /datasources rejects duplicate datasourceId in same service', async () => {
+      const baseUrl = getBaseUrl();
 
-  test('GET/PUT/DELETE /datasources/{datasourceId} manages a secondary datasource', async () => {
-    const baseUrl = getBaseUrl();
-    const datasourceId = 'analytics';
-
-    const createRes = await httpReq({
-      method: 'POST',
-      url: `${baseUrl}/datasources`,
-      headers: {
-        'Content-Type': 'application/json',
-        'Fiware-Service': service,
-      },
-      body: {
-        datasourceId,
-        type: 'postgres',
-        config: {
-          username: 'postgres',
-          password: 'postgres',
-          host: getPgHost(),
-          port: getPgPort(),
-          database: service,
+      const duplicateRes = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/datasources`,
+        headers: {
+          'Content-Type': 'application/json',
+          'Fiware-Service': service,
         },
-      },
-    });
-
-    expect(createRes.status).toBe(204);
-
-    const listRes = await httpReq({
-      method: 'GET',
-      url: `${baseUrl}/datasources`,
-      headers: { 'Fiware-Service': service },
-    });
-
-    expect(listRes.status).toBe(200);
-    expect(listRes.json.some((x) => x.datasourceId === datasourceId)).toBe(
-      true,
-    );
-
-    const updateRes = await httpReq({
-      method: 'PUT',
-      url: `${baseUrl}/datasources/${datasourceId}`,
-      headers: {
-        'Content-Type': 'application/json',
-        'Fiware-Service': service,
-      },
-      body: {
-        type: 'postgres',
-        config: {
-          username: 'postgres',
-          password: 'postgres',
-          host: getPgHost(),
-          port: getPgPort(),
-          database: service,
+        body: {
+          datasourceId: 'default',
+          type: 'postgres',
+          config: {
+            username: 'postgres',
+            password: 'postgres',
+            host: getPgHost(),
+            port: getPgPort(),
+            database: service,
+          },
         },
-      },
+      });
+
+      expect(duplicateRes.status).toBe(409);
+      expect(duplicateRes.json.error).toBe('DuplicatedKey');
     });
 
-    expect(updateRes.status).toBe(204);
+    test('GET/PUT/DELETE /datasources/{datasourceId} manages a secondary datasource', async () => {
+      const baseUrl = getBaseUrl();
+      const datasourceId = 'analytics';
 
-    const deleteRes = await httpReq({
-      method: 'DELETE',
-      url: `${baseUrl}/datasources/${datasourceId}`,
-      headers: { 'Fiware-Service': service },
-    });
+      const createRes = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/datasources`,
+        headers: {
+          'Content-Type': 'application/json',
+          'Fiware-Service': service,
+        },
+        body: {
+          datasourceId,
+          type: 'postgres',
+          config: {
+            username: 'postgres',
+            password: 'postgres',
+            host: getPgHost(),
+            port: getPgPort(),
+            database: service,
+          },
+        },
+      });
 
-    expect(deleteRes.status).toBe(204);
+      expect(createRes.status).toBe(204);
 
-    const missingRes = await httpReq({
-      method: 'GET',
-      url: `${baseUrl}/datasources/${datasourceId}`,
-      headers: { 'Fiware-Service': service },
-    });
+      const listRes = await httpReq({
+        method: 'GET',
+        url: `${baseUrl}/datasources`,
+        headers: { 'Fiware-Service': service },
+      });
 
-    expect(missingRes.status).toBe(404);
-    expect(missingRes.json.error).toBe('DatasourceNotFound');
-  });
+      expect(listRes.status).toBe(200);
+      expect(listRes.json.some((x) => x.datasourceId === datasourceId)).toBe(
+        true,
+      );
 
-  test('cached and fresh FDAs fail without default datasource, and both flows work after creating default', async () => {
-    const baseUrl = getBaseUrl();
-    const cachedFdaId = 'fda_ds_requires_default_cached';
-    const freshFdaId = 'fda_ds_requires_default_fresh';
-    const cachedDaId = 'da_ds_requires_default_cached';
+      const updateRes = await httpReq({
+        method: 'PUT',
+        url: `${baseUrl}/datasources/${datasourceId}`,
+        headers: {
+          'Content-Type': 'application/json',
+          'Fiware-Service': service,
+        },
+        body: {
+          type: 'postgres',
+          config: {
+            username: 'postgres',
+            password: 'postgres',
+            host: getPgHost(),
+            port: getPgPort(),
+            database: service,
+          },
+        },
+      });
 
-    const cleanIds = [cachedFdaId, freshFdaId];
-    for (const fdaId of cleanIds) {
-      await httpReq({
+      expect(updateRes.status).toBe(204);
+
+      const deleteRes = await httpReq({
         method: 'DELETE',
-        url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
+        url: `${baseUrl}/datasources/${datasourceId}`,
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect(deleteRes.status).toBe(204);
+
+      const missingRes = await httpReq({
+        method: 'GET',
+        url: `${baseUrl}/datasources/${datasourceId}`,
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect(missingRes.status).toBe(404);
+      expect(missingRes.json.error).toBe('DatasourceNotFound');
+    });
+
+    test('cached and fresh FDAs fail without default datasource, and both flows work after creating default', async () => {
+      const baseUrl = getBaseUrl();
+      const cachedFdaId = 'fda_ds_requires_default_cached';
+      const freshFdaId = 'fda_ds_requires_default_fresh';
+      const cachedDaId = 'da_ds_requires_default_cached';
+
+      const cleanIds = [cachedFdaId, freshFdaId];
+      for (const fdaId of cleanIds) {
+        await httpReq({
+          method: 'DELETE',
+          url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+      }
+
+      const deleteDefault = await httpReq({
+        method: 'DELETE',
+        url: `${baseUrl}/datasources/default`,
+        headers: { 'Fiware-Service': service },
+      });
+      expect([204, 404]).toContain(deleteDefault.status);
+
+      const createCachedWithoutDefault = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Content-Type': 'application/json',
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: cachedFdaId,
+          query: 'SELECT id, name, age FROM public.users ORDER BY id',
+          description: 'cached without default datasource',
+          cached: true,
+        },
+      });
+
+      expect(createCachedWithoutDefault.status).toBe(404);
+      expect(createCachedWithoutDefault.json.error).toBe('DatasourceNotFound');
+
+      const createFreshWithoutDefault = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Content-Type': 'application/json',
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: freshFdaId,
+          query: 'SELECT id, name, age FROM public.users ORDER BY id',
+          description: 'fresh without default datasource',
+          cached: false,
+        },
+      });
+
+      expect(createFreshWithoutDefault.status).toBe(404);
+      expect(createFreshWithoutDefault.json.error).toBe('DatasourceNotFound');
+
+      const createDefault = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/datasources`,
+        headers: {
+          'Content-Type': 'application/json',
+          'Fiware-Service': service,
+        },
+        body: {
+          datasourceId: 'default',
+          type: 'postgres',
+          config: {
+            username: 'postgres',
+            password: 'postgres',
+            host: getPgHost(),
+            port: getPgPort(),
+            database: service,
+          },
+        },
+      });
+
+      expect(createDefault.status).toBe(204);
+
+      const createCachedWithDefault = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Content-Type': 'application/json',
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: cachedFdaId,
+          query: 'SELECT id, name, age FROM public.users ORDER BY id',
+          description: 'cached with default datasource',
+          cached: true,
+        },
+      });
+
+      expect(createCachedWithDefault.status).toBe(202);
+
+      const createFreshWithDefault = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Content-Type': 'application/json',
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: freshFdaId,
+          query: 'SELECT id, name, age FROM public.users ORDER BY id',
+          description: 'fresh with default datasource',
+          cached: false,
+        },
+      });
+
+      expect(createFreshWithDefault.status).toBe(202);
+
+      await waitUntilFDACompleted({
+        baseUrl,
+        service,
+        fdaId: cachedFdaId,
+        servicePath,
+        visibility,
+      });
+
+      const createDa = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas/${cachedFdaId}/das`,
+        headers: { 'Fiware-Service': service },
+        body: {
+          id: cachedDaId,
+          description: 'cached validation DA',
+          query: 'SELECT id, name, age ORDER BY id',
+        },
+      });
+
+      expect(createDa.status).toBe(204);
+
+      const cachedRead = await httpReq({
+        method: 'GET',
+        url: `${baseUrl}/${visibility}/fdas/${cachedFdaId}/das/${cachedDaId}/data`,
         headers: {
           'Fiware-Service': service,
           'Fiware-ServicePath': servicePath,
         },
       });
-    }
 
-    const deleteDefault = await httpReq({
-      method: 'DELETE',
-      url: `${baseUrl}/datasources/default`,
-      headers: { 'Fiware-Service': service },
-    });
-    expect([204, 404]).toContain(deleteDefault.status);
+      expect(cachedRead.status).toBe(200);
+      expect(Array.isArray(cachedRead.json)).toBe(true);
+      expect(cachedRead.json.length).toBeGreaterThan(0);
 
-    const createCachedWithoutDefault = await httpReq({
-      method: 'POST',
-      url: `${baseUrl}/${visibility}/fdas`,
-      headers: {
-        'Content-Type': 'application/json',
-        'Fiware-Service': service,
-        'Fiware-ServicePath': servicePath,
-      },
-      body: {
-        id: cachedFdaId,
-        query: 'SELECT id, name, age FROM public.users ORDER BY id',
-        description: 'cached without default datasource',
-        cached: true,
-      },
-    });
-
-    expect(createCachedWithoutDefault.status).toBe(404);
-    expect(createCachedWithoutDefault.json.error).toBe('DatasourceNotFound');
-
-    const createFreshWithoutDefault = await httpReq({
-      method: 'POST',
-      url: `${baseUrl}/${visibility}/fdas`,
-      headers: {
-        'Content-Type': 'application/json',
-        'Fiware-Service': service,
-        'Fiware-ServicePath': servicePath,
-      },
-      body: {
-        id: freshFdaId,
-        query: 'SELECT id, name, age FROM public.users ORDER BY id',
-        description: 'fresh without default datasource',
-        cached: false,
-      },
-    });
-
-    expect(createFreshWithoutDefault.status).toBe(404);
-    expect(createFreshWithoutDefault.json.error).toBe('DatasourceNotFound');
-
-    const createDefault = await httpReq({
-      method: 'POST',
-      url: `${baseUrl}/datasources`,
-      headers: {
-        'Content-Type': 'application/json',
-        'Fiware-Service': service,
-      },
-      body: {
-        datasourceId: 'default',
-        type: 'postgres',
-        config: {
-          username: 'postgres',
-          password: 'postgres',
-          host: getPgHost(),
-          port: getPgPort(),
-          database: service,
+      const freshReadWithDefault = await httpReq({
+        method: 'GET',
+        url: `${baseUrl}/${visibility}/fdas/${freshFdaId}/data`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
         },
-      },
+      });
+
+      expect(freshReadWithDefault.status).toBe(200);
+      expect(Array.isArray(freshReadWithDefault.json)).toBe(true);
+      expect(freshReadWithDefault.json.length).toBeGreaterThan(0);
     });
-
-    expect(createDefault.status).toBe(204);
-
-    const createCachedWithDefault = await httpReq({
-      method: 'POST',
-      url: `${baseUrl}/${visibility}/fdas`,
-      headers: {
-        'Content-Type': 'application/json',
-        'Fiware-Service': service,
-        'Fiware-ServicePath': servicePath,
-      },
-      body: {
-        id: cachedFdaId,
-        query: 'SELECT id, name, age FROM public.users ORDER BY id',
-        description: 'cached with default datasource',
-        cached: true,
-      },
-    });
-
-    expect(createCachedWithDefault.status).toBe(202);
-
-    const createFreshWithDefault = await httpReq({
-      method: 'POST',
-      url: `${baseUrl}/${visibility}/fdas`,
-      headers: {
-        'Content-Type': 'application/json',
-        'Fiware-Service': service,
-        'Fiware-ServicePath': servicePath,
-      },
-      body: {
-        id: freshFdaId,
-        query: 'SELECT id, name, age FROM public.users ORDER BY id',
-        description: 'fresh with default datasource',
-        cached: false,
-      },
-    });
-
-    expect(createFreshWithDefault.status).toBe(202);
-
-    await waitUntilFDACompleted({
-      baseUrl,
-      service,
-      fdaId: cachedFdaId,
-      servicePath,
-      visibility,
-    });
-
-    const createDa = await httpReq({
-      method: 'POST',
-      url: `${baseUrl}/${visibility}/fdas/${cachedFdaId}/das`,
-      headers: { 'Fiware-Service': service },
-      body: {
-        id: cachedDaId,
-        description: 'cached validation DA',
-        query: 'SELECT id, name, age ORDER BY id',
-      },
-    });
-
-    expect(createDa.status).toBe(204);
-
-    const cachedRead = await httpReq({
-      method: 'GET',
-      url: `${baseUrl}/${visibility}/fdas/${cachedFdaId}/das/${cachedDaId}/data`,
-      headers: {
-        'Fiware-Service': service,
-        'Fiware-ServicePath': servicePath,
-      },
-    });
-
-    expect(cachedRead.status).toBe(200);
-    expect(Array.isArray(cachedRead.json)).toBe(true);
-    expect(cachedRead.json.length).toBeGreaterThan(0);
-
-    const freshReadWithDefault = await httpReq({
-      method: 'GET',
-      url: `${baseUrl}/${visibility}/fdas/${freshFdaId}/data`,
-      headers: {
-        'Fiware-Service': service,
-        'Fiware-ServicePath': servicePath,
-      },
-    });
-
-    expect(freshReadWithDefault.status).toBe(200);
-    expect(Array.isArray(freshReadWithDefault.json)).toBe(true);
-    expect(freshReadWithDefault.json.length).toBeGreaterThan(0);
   });
 }

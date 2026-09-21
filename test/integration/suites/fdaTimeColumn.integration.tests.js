@@ -22,7 +22,8 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
-import { describe, test, expect } from '@jest/globals';
+import { describe, beforeAll, test, expect } from '@jest/globals';
+import { ensureDefaultDatasource } from '../utils/integrationTestUtils.js';
 
 export function registerFdaTimeColumnIntegrationTests({
   getBaseUrl,
@@ -35,38 +36,16 @@ export function registerFdaTimeColumnIntegrationTests({
   getPgPort,
 }) {
   describe('Time column validation in strict mode', () => {
-    async function ensureDefaultDatasource(baseUrl) {
-      const createRes = await httpReq({
-        method: 'POST',
-        url: `${baseUrl}/datasources`,
-        headers: {
-          'Content-Type': 'application/json',
-          'Fiware-Service': service,
-        },
-        body: {
-          datasourceId: 'default',
-          type: 'postgres',
-          config: {
-            username: 'postgres',
-            password: 'postgres',
-            host: getPgHost(),
-            port: getPgPort(),
-            database: service,
-          },
-        },
-      });
-
-      if (createRes.status !== 204 && createRes.status !== 409) {
-        throw new Error(
-          `Failed to ensure default datasource: ${createRes.status} ${JSON.stringify(createRes.json)}`,
-        );
-      }
-    }
-
     beforeAll(async () => {
       const baseUrl = getBaseUrl();
 
-      await ensureDefaultDatasource(baseUrl);
+      await ensureDefaultDatasource({
+        httpReq,
+        baseUrl,
+        service,
+        getPgHost,
+        getPgPort,
+      });
     });
 
     test('POST /fdas with timeColumn in SELECT (unqualified) succeeds', async () => {

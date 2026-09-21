@@ -773,7 +773,6 @@ export function copyQueryToParquet(
   );
 }
 
-export const PARTITION_TYPES = ['day', 'week', 'month', 'year', 'none'];
 export function refreshIntervalPartitionCheck(refreshInterval, partition) {
   logger.debug({ partition }, '[DEBUG]: refreshIntervalPartitionCheck');
 

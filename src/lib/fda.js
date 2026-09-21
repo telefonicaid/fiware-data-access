@@ -37,7 +37,6 @@ import {
   resolveDAParams,
   validateDAQuery,
   extractDate,
-  PARTITION_TYPES,
   refreshIntervalPartitionCheck,
 } from './utils/db.js';
 import {
@@ -106,16 +105,20 @@ import { config } from './fdaConfig.js';
 import { FDAError } from './fdaError.js';
 
 import { getBasicLogger } from './utils/logger.js';
+import {
+  DEFAULT_DATASOURCE_ID,
+  SUPPORTED_DATASOURCE_TYPES,
+  DISALLOWED_MONGO_AGGREGATION_STAGES,
+  FDA_VALIDATION_MODE_STRICT,
+  FDA_VALIDATION_MODE_UNCHECKED,
+  VALID_REFRESH_POLICY_TYPES,
+  VALID_WINDOW_FETCH_SIZES,
+  PARTITION_TYPES,
+} from './constants.js';
 const logger = getBasicLogger();
-const FDA_VALIDATION_MODE_STRICT = 'strict';
-const FDA_VALIDATION_MODE_UNCHECKED = 'unchecked';
 const TIME_COLUMN_NAME_PATTERN = /^\w+$/;
 
 const FRESH_CURSOR_BATCH_SIZE = 250;
-
-const DEFAULT_DATASOURCE_ID = 'default';
-const SUPPORTED_DATASOURCE_TYPES = new Set(['postgres', 'mongodb']);
-const DISALLOWED_MONGO_AGGREGATION_STAGES = new Set(['$out', '$merge']);
 
 function assertSupportedDatasourceType(type) {
   if (!SUPPORTED_DATASOURCE_TYPES.has(type)) {
@@ -377,8 +380,6 @@ export async function deleteDatasourceForService(service, datasourceId) {
   await removeDatasource(service, datasourceId);
 }
 
-const VALID_REFRESH_POLICY_TYPES = ['none', 'interval', 'window'];
-const VALID_WINDOW_FETCH_SIZES = ['hour', 'day', 'week', 'month', 'year'];
 const CSV_CONTENT_TYPE = 'text/csv; charset=utf-8';
 
 export async function getFDAs(service, visibility, servicePath) {

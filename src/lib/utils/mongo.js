@@ -26,15 +26,17 @@ import { MongoClient } from 'mongodb';
 import { config } from '../fdaConfig.js';
 import { FDAError } from '../fdaError.js';
 import { getBasicLogger } from './logger.js';
+import {
+  DEFAULT_DATASOURCE_ID,
+  DISALLOWED_MONGO_AGGREGATION_STAGES,
+} from '../constants.js';
 
 const uri = config.mongo.uri;
 const client = new MongoClient(uri);
 const logger = getBasicLogger();
 let isConnected = false;
-const DEFAULT_DATASOURCE_ID = 'default';
 const MONGO_CONNECTION_TIMEOUT_MS = 5000;
 const DEFAULT_MONGO_CURSOR_CHUNK_SIZE = 1000;
-const DISALLOWED_MONGO_AGGREGATION_STAGES = new Set(['$out', '$merge']);
 
 async function getDb() {
   if (!isConnected) {

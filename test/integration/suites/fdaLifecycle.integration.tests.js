@@ -22,7 +22,7 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
-import { test, expect } from '@jest/globals';
+import { describe, test, expect } from '@jest/globals';
 import { MongoClient } from 'mongodb';
 
 export function registerFdaLifecycleIntegrationTests({
@@ -37,250 +37,252 @@ export function registerFdaLifecycleIntegrationTests({
   waitUntilFDACompleted,
   getMongoUri,
 }) {
-  test('GET /fdas/:fdaId returns expected FDA', async () => {
-    const baseUrl = getBaseUrl();
-    const res = await httpReq({
-      method: 'GET',
-      url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
-      headers: { 'Fiware-Service': service },
+  describe('FDA lifecycle', () => {
+    test('GET /fdas/:fdaId returns expected FDA', async () => {
+      const baseUrl = getBaseUrl();
+      const res = await httpReq({
+        method: 'GET',
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
+        headers: { 'Fiware-Service': service },
+      });
+
+      if (res.status >= 400) {
+        console.error(
+          'GET /fdas/:fdaId failed:',
+          res.status,
+          res.json ?? res.text,
+        );
+      }
+      expect(res.status).toBe(200);
+      expect(Object.keys(res.json).length).toBeGreaterThan(0);
+      expect(res.json.id).toBeUndefined();
+      expect(res.json.fdaId).toBeUndefined();
+      expect(res.json.service).toBeUndefined();
+      expect(res.json.visibility).toBeUndefined();
+      expect(res.json.servicePath).toBeUndefined();
     });
 
-    if (res.status >= 400) {
-      console.error(
-        'GET /fdas/:fdaId failed:',
-        res.status,
-        res.json ?? res.text,
-      );
-    }
-    expect(res.status).toBe(200);
-    expect(Object.keys(res.json).length).toBeGreaterThan(0);
-    expect(res.json.id).toBeUndefined();
-    expect(res.json.fdaId).toBeUndefined();
-    expect(res.json.service).toBeUndefined();
-    expect(res.json.visibility).toBeUndefined();
-    expect(res.json.servicePath).toBeUndefined();
-  });
+    test('PUT /fdas/:fdaID reuploads FDA', async () => {
+      const baseUrl = getBaseUrl();
 
-  test('PUT /fdas/:fdaID reuploads FDA', async () => {
-    const baseUrl = getBaseUrl();
+      const beforeRefresh = await httpReq({
+        method: 'GET',
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
+        headers: { 'Fiware-Service': service },
+      });
 
-    const beforeRefresh = await httpReq({
-      method: 'GET',
-      url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
-      headers: { 'Fiware-Service': service },
+      expect(beforeRefresh.status).toBe(200);
+      expect(typeof beforeRefresh.json.initFetch).toBe('string');
+      expect(typeof beforeRefresh.json.lastFetch).toBe('string');
+
+      const beforeInitFetchMs = Date.parse(beforeRefresh.json.initFetch);
+      const beforeLastFetchMs = Date.parse(beforeRefresh.json.lastFetch);
+
+      expect(Number.isNaN(beforeInitFetchMs)).toBe(false);
+      expect(Number.isNaN(beforeLastFetchMs)).toBe(false);
+      expect(beforeLastFetchMs).toBeGreaterThanOrEqual(beforeInitFetchMs);
+
+      const res = await httpReq({
+        method: 'PUT',
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
+        headers: { 'Fiware-Service': service },
+      });
+
+      if (res.status >= 400) {
+        console.error(
+          'PUT /fdas/:fdaId failed:',
+          res.status,
+          res.json ?? res.text,
+        );
+      }
+      expect(res.status).toBe(202);
+      await waitUntilFDACompleted({ baseUrl, service, fdaId });
+
+      const afterRefresh = await httpReq({
+        method: 'GET',
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect(afterRefresh.status).toBe(200);
+      expect(typeof afterRefresh.json.initFetch).toBe('string');
+      expect(typeof afterRefresh.json.lastFetch).toBe('string');
+
+      const afterInitFetchMs = Date.parse(afterRefresh.json.initFetch);
+      const afterLastFetchMs = Date.parse(afterRefresh.json.lastFetch);
+
+      expect(Number.isNaN(afterInitFetchMs)).toBe(false);
+      expect(Number.isNaN(afterLastFetchMs)).toBe(false);
+      expect(afterLastFetchMs).toBeGreaterThanOrEqual(afterInitFetchMs);
+      expect(afterInitFetchMs).toBeGreaterThanOrEqual(beforeLastFetchMs);
     });
 
-    expect(beforeRefresh.status).toBe(200);
-    expect(typeof beforeRefresh.json.initFetch).toBe('string');
-    expect(typeof beforeRefresh.json.lastFetch).toBe('string');
+    test('PUT /fdas/:fdaId triggers AlreadyFetching if concurrent after creation', async () => {
+      const baseUrl = getBaseUrl();
 
-    const beforeInitFetchMs = Date.parse(beforeRefresh.json.initFetch);
-    const beforeLastFetchMs = Date.parse(beforeRefresh.json.lastFetch);
+      await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: { 'Fiware-Service': service },
+        body: {
+          id: fdaIdSleep,
+          query: 'SELECT id, pg_sleep(1) FROM public.users',
+          description: 'Sleep FDA for testing concurrent fetches',
+        },
+      });
 
-    expect(Number.isNaN(beforeInitFetchMs)).toBe(false);
-    expect(Number.isNaN(beforeLastFetchMs)).toBe(false);
-    expect(beforeLastFetchMs).toBeGreaterThanOrEqual(beforeInitFetchMs);
-
-    const res = await httpReq({
-      method: 'PUT',
-      url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
-      headers: { 'Fiware-Service': service },
-    });
-
-    if (res.status >= 400) {
-      console.error(
-        'PUT /fdas/:fdaId failed:',
-        res.status,
-        res.json ?? res.text,
-      );
-    }
-    expect(res.status).toBe(202);
-    await waitUntilFDACompleted({ baseUrl, service, fdaId });
-
-    const afterRefresh = await httpReq({
-      method: 'GET',
-      url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
-      headers: { 'Fiware-Service': service },
-    });
-
-    expect(afterRefresh.status).toBe(200);
-    expect(typeof afterRefresh.json.initFetch).toBe('string');
-    expect(typeof afterRefresh.json.lastFetch).toBe('string');
-
-    const afterInitFetchMs = Date.parse(afterRefresh.json.initFetch);
-    const afterLastFetchMs = Date.parse(afterRefresh.json.lastFetch);
-
-    expect(Number.isNaN(afterInitFetchMs)).toBe(false);
-    expect(Number.isNaN(afterLastFetchMs)).toBe(false);
-    expect(afterLastFetchMs).toBeGreaterThanOrEqual(afterInitFetchMs);
-    expect(afterInitFetchMs).toBeGreaterThanOrEqual(beforeLastFetchMs);
-  });
-
-  test('PUT /fdas/:fdaId triggers AlreadyFetching if concurrent after creation', async () => {
-    const baseUrl = getBaseUrl();
-
-    await httpReq({
-      method: 'POST',
-      url: `${baseUrl}/${visibility}/fdas`,
-      headers: { 'Fiware-Service': service },
-      body: {
-        id: fdaIdSleep,
-        query: 'SELECT id, pg_sleep(1) FROM public.users',
-        description: 'Sleep FDA for testing concurrent fetches',
-      },
-    });
-
-    const put2 = await httpReq({
-      method: 'PUT',
-      url: `${baseUrl}/${visibility}/fdas/${fdaIdSleep}`,
-      headers: { 'Fiware-Service': service },
-    });
-
-    expect(put2.status).toBe(409);
-    expect(put2.json.error).toBe('AlreadyFetching');
-
-    await waitUntilFDACompleted({ baseUrl, service, fdaId: fdaIdSleep });
-  });
-
-  test('PUT /fdas/:fdaId triggers AlreadyFetching if concurrent after refresh', async () => {
-    const baseUrl = getBaseUrl();
-    const putReq = () =>
-      httpReq({
+      const put2 = await httpReq({
         method: 'PUT',
         url: `${baseUrl}/${visibility}/fdas/${fdaIdSleep}`,
         headers: { 'Fiware-Service': service },
       });
 
-    // Both requests are fired truly concurrently; which one the server
-    // processes first is not deterministic, so we can't assume which
-    // response is the accepted one and which is the conflict.
-    const [res1, res2] = await Promise.all([putReq(), putReq()]);
-    const responses = [res1, res2];
+      expect(put2.status).toBe(409);
+      expect(put2.json.error).toBe('AlreadyFetching');
 
-    const conflict = responses.find((r) => r.status === 409);
-    const accepted = responses.find((r) => r.status === 202);
-
-    expect(conflict).toBeDefined();
-    expect(conflict.json.error).toBe('AlreadyFetching');
-    expect(accepted).toBeDefined();
-
-    await waitUntilFDACompleted({ baseUrl, service, fdaId: fdaIdSleep });
-  });
-
-  test('PUT /fdas/:fdaId throws InvalidState if FDA in unexpected status', async () => {
-    const baseUrl = getBaseUrl();
-    const client = new MongoClient(getMongoUri());
-    await client.connect();
-    const collection = client.db().collection('fdas');
-
-    await collection.updateOne(
-      { fdaId: fdaIdSleep, service },
-      { $set: { status: 'transforming' } },
-    );
-
-    const res = await httpReq({
-      method: 'PUT',
-      url: `${baseUrl}/${visibility}/fdas/${fdaIdSleep}`,
-      headers: { 'Fiware-Service': service },
+      await waitUntilFDACompleted({ baseUrl, service, fdaId: fdaIdSleep });
     });
 
-    expect(res.status).toBe(409);
-    expect(res.json.error).toBe('InvalidState');
+    test('PUT /fdas/:fdaId triggers AlreadyFetching if concurrent after refresh', async () => {
+      const baseUrl = getBaseUrl();
+      const putReq = () =>
+        httpReq({
+          method: 'PUT',
+          url: `${baseUrl}/${visibility}/fdas/${fdaIdSleep}`,
+          headers: { 'Fiware-Service': service },
+        });
 
-    await collection.updateOne(
-      { fdaId: fdaIdSleep, service },
-      { $set: { status: 'completed' } },
-    );
-    await client.close();
-  });
+      // Both requests are fired truly concurrently; which one the server
+      // processes first is not deterministic, so we can't assume which
+      // response is the accepted one and which is the conflict.
+      const [res1, res2] = await Promise.all([putReq(), putReq()]);
+      const responses = [res1, res2];
 
-  test('DELETE /fdas/:fdaId removes given FDA', async () => {
-    const baseUrl = getBaseUrl();
-    const deleteFDA = await httpReq({
-      method: 'DELETE',
-      url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
-      headers: { 'Fiware-Service': service },
+      const conflict = responses.find((r) => r.status === 409);
+      const accepted = responses.find((r) => r.status === 202);
+
+      expect(conflict).toBeDefined();
+      expect(conflict.json.error).toBe('AlreadyFetching');
+      expect(accepted).toBeDefined();
+
+      await waitUntilFDACompleted({ baseUrl, service, fdaId: fdaIdSleep });
     });
 
-    if (deleteFDA.status >= 400) {
-      console.error(
-        'DELETE /fdas/:fdaId failed:',
-        deleteFDA.status,
-        deleteFDA.json ?? deleteFDA.text,
+    test('PUT /fdas/:fdaId throws InvalidState if FDA in unexpected status', async () => {
+      const baseUrl = getBaseUrl();
+      const client = new MongoClient(getMongoUri());
+      await client.connect();
+      const collection = client.db().collection('fdas');
+
+      await collection.updateOne(
+        { fdaId: fdaIdSleep, service },
+        { $set: { status: 'transforming' } },
       );
-    }
-    expect(deleteFDA.status).toBe(204);
 
-    const getFDA = await httpReq({
-      method: 'GET',
-      url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
-      headers: { 'Fiware-Service': service },
+      const res = await httpReq({
+        method: 'PUT',
+        url: `${baseUrl}/${visibility}/fdas/${fdaIdSleep}`,
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect(res.status).toBe(409);
+      expect(res.json.error).toBe('InvalidState');
+
+      await collection.updateOne(
+        { fdaId: fdaIdSleep, service },
+        { $set: { status: 'completed' } },
+      );
+      await client.close();
     });
 
-    expect(getFDA.status).toBe(404);
-  });
+    test('DELETE /fdas/:fdaId removes given FDA', async () => {
+      const baseUrl = getBaseUrl();
+      const deleteFDA = await httpReq({
+        method: 'DELETE',
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
+        headers: { 'Fiware-Service': service },
+      });
 
-  test('MongoDB integration: POST /fdas + get /fdas/:fdaId', async () => {
-    const baseUrl = getBaseUrl();
-    const postFDA = await httpReq({
-      method: 'POST',
-      url: `${baseUrl}/${visibility}/fdas`,
-      headers: {
-        'Fiware-Service': service,
-        'Fiware-ServicePath': servicePath,
-      },
-      body: {
-        id: fdaId2,
+      if (deleteFDA.status >= 400) {
+        console.error(
+          'DELETE /fdas/:fdaId failed:',
+          deleteFDA.status,
+          deleteFDA.json ?? deleteFDA.text,
+        );
+      }
+      expect(deleteFDA.status).toBe(204);
+
+      const getFDA = await httpReq({
+        method: 'GET',
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect(getFDA.status).toBe(404);
+    });
+
+    test('MongoDB integration: POST /fdas + get /fdas/:fdaId', async () => {
+      const baseUrl = getBaseUrl();
+      const postFDA = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: fdaId2,
+          query: 'SELECT id, name, age FROM public.users ORDER BY id',
+          description: 'users dataset',
+          refreshPolicy: {
+            type: 'interval',
+            params: {
+              refreshInterval: '1 hour',
+            },
+          },
+        },
+      });
+
+      if (postFDA.status >= 400) {
+        console.error(
+          'POST /fdas failed:',
+          postFDA.status,
+          postFDA.json ?? postFDA.text,
+        );
+      }
+      expect(postFDA.status).toBe(202);
+
+      const completedFDA = await waitUntilFDACompleted({
+        baseUrl,
+        service,
+        fdaId: fdaId2,
+      });
+
+      expect(completedFDA).toMatchObject({
         query: 'SELECT id, name, age FROM public.users ORDER BY id',
         description: 'users dataset',
+        status: 'completed',
+        progress: 100,
         refreshPolicy: {
           type: 'interval',
           params: {
             refreshInterval: '1 hour',
           },
         },
-      },
+      });
+      expect(completedFDA.fdaId).toBeUndefined();
+      expect(completedFDA.service).toBeUndefined();
+      expect(completedFDA.servicePath).toBeUndefined();
+      expect(completedFDA.initFetch).toBeDefined();
+      expect(typeof completedFDA.initFetch).toBe('string');
+      expect(completedFDA.lastFetch).toBeDefined();
+      expect(typeof completedFDA.lastFetch).toBe('string');
+
+      const initFetchMs = Date.parse(completedFDA.initFetch);
+      const lastFetchMs = Date.parse(completedFDA.lastFetch);
+      expect(Number.isNaN(initFetchMs)).toBe(false);
+      expect(Number.isNaN(lastFetchMs)).toBe(false);
+      expect(lastFetchMs).toBeGreaterThanOrEqual(initFetchMs);
     });
-
-    if (postFDA.status >= 400) {
-      console.error(
-        'POST /fdas failed:',
-        postFDA.status,
-        postFDA.json ?? postFDA.text,
-      );
-    }
-    expect(postFDA.status).toBe(202);
-
-    const completedFDA = await waitUntilFDACompleted({
-      baseUrl,
-      service,
-      fdaId: fdaId2,
-    });
-
-    expect(completedFDA).toMatchObject({
-      query: 'SELECT id, name, age FROM public.users ORDER BY id',
-      description: 'users dataset',
-      status: 'completed',
-      progress: 100,
-      refreshPolicy: {
-        type: 'interval',
-        params: {
-          refreshInterval: '1 hour',
-        },
-      },
-    });
-    expect(completedFDA.fdaId).toBeUndefined();
-    expect(completedFDA.service).toBeUndefined();
-    expect(completedFDA.servicePath).toBeUndefined();
-    expect(completedFDA.initFetch).toBeDefined();
-    expect(typeof completedFDA.initFetch).toBe('string');
-    expect(completedFDA.lastFetch).toBeDefined();
-    expect(typeof completedFDA.lastFetch).toBe('string');
-
-    const initFetchMs = Date.parse(completedFDA.initFetch);
-    const lastFetchMs = Date.parse(completedFDA.lastFetch);
-    expect(Number.isNaN(initFetchMs)).toBe(false);
-    expect(Number.isNaN(lastFetchMs)).toBe(false);
-    expect(lastFetchMs).toBeGreaterThanOrEqual(initFetchMs);
   });
 }
