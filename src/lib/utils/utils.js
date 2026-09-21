@@ -300,12 +300,7 @@ export function convertRefreshIntervalToMs(interval) {
   return null;
 }
 
-// A cron expression describes a calendar schedule, so the gap between two
-// consecutive runs is not constant: it depends on the length of the month and on
-// daylight saving changes, and therefore on the moment the expression happens to be
-// evaluated. A monthly cron measured from September, for instance, spans 31 days
-// plus the hour gained by the October DST change. We sample a full cycle in UTC and
-// keep the longest gap, so the same interval always yields the same value.
+// Use UTC and sample a full calendar cycle to get the maximum gap between runs.
 const CRON_SAMPLED_RUNS = 13;
 
 function cronToIntervalMs(cron) {
