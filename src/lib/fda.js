@@ -77,6 +77,7 @@ import {
   createMongoCursorReader,
   runMongoQuery,
   validateMongoQuery,
+  assertAllowedMongoAggregationStage,
 } from './utils/mongo.js';
 import {
   normalizeForSerialization,
@@ -108,7 +109,6 @@ import { getBasicLogger } from './utils/logger.js';
 import {
   DEFAULT_DATASOURCE_ID,
   SUPPORTED_DATASOURCE_TYPES,
-  DISALLOWED_MONGO_AGGREGATION_STAGES,
   FDA_VALIDATION_MODE_STRICT,
   FDA_VALIDATION_MODE_UNCHECKED,
   VALID_REFRESH_POLICY_TYPES,
@@ -232,31 +232,7 @@ function validateAggregationQuery(aggregation, timeColumn) {
   }
 
   for (const stage of aggregation) {
-    if (!stage || typeof stage !== 'object' || Array.isArray(stage)) {
-      throw new FDAError(
-        400,
-        'InvalidMongoFDAContract',
-        'Mongo FDA aggregation stages must be JSON objects',
-      );
-    }
-
-    const stageNames = Object.keys(stage);
-    if (stageNames.length !== 1) {
-      throw new FDAError(
-        400,
-        'InvalidMongoFDAContract',
-        'Mongo FDA aggregation stages must define a single operator',
-      );
-    }
-
-    const stageName = stageNames[0];
-    if (DISALLOWED_MONGO_AGGREGATION_STAGES.has(stageName)) {
-      throw new FDAError(
-        400,
-        'InvalidMongoFDAContract',
-        `Mongo FDA aggregation stage ${stageName} is not allowed`,
-      );
-    }
+    assertAllowedMongoAggregationStage(stage);
   }
 
   validateTimeColumnInAggregationProjection(timeColumn, aggregation);
