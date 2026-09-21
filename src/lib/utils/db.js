@@ -781,8 +781,10 @@ export function refreshIntervalPartitionCheck(refreshInterval, partition) {
   }
 
   const partitionSizes = {
-    year: 365 * 24 * 60 * 60 * 1000,
-    // 31 days (instead of 30) because it's better to overestimate partition size for comparison accuracy
+    // Longest possible length of each partition: a refresh interval is compared
+    // against its worst case, so a yearly refresh must still fit a leap year and a
+    // monthly one a 31-day month.
+    year: 366 * 24 * 60 * 60 * 1000,
     month: 31 * 24 * 60 * 60 * 1000,
     week: 7 * 24 * 60 * 60 * 1000,
     day: 24 * 60 * 60 * 1000,

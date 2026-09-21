@@ -300,11 +300,19 @@ export function convertRefreshIntervalToMs(interval) {
   return null;
 }
 
+// A cron expression describes a calendar schedule, so the gap between two
+// consecutive runs is not constant: it depends on the length of the month and on
+// daylight saving changes, and therefore on the moment the expression happens to be
+// evaluated. A monthly cron measured from September, for instance, spans 31 days
+// plus the hour gained by the October DST change. We sample a full cycle in UTC and
+// keep the longest gap, so the same interval always yields the same value.
+const CRON_SAMPLED_RUNS = 13;
+
 function cronToIntervalMs(cron) {
   let interval;
 
   try {
-    interval = CronExpressionParser.parse(cron);
+    interval = CronExpressionParser.parse(cron, { tz: 'UTC' });
   } catch {
     return null;
   }
@@ -313,11 +321,23 @@ function cronToIntervalMs(cron) {
     return null;
   }
 
-  // We need to get the difference between two consecutive runs to know the actual interval
-  const next = interval.next().getTime();
-  const next2 = interval.next().getTime();
+  let previousRun = interval.next()?.getTime();
+  if (!Number.isFinite(previousRun)) {
+    return null;
+  }
 
-  return next2 - next;
+  let longestGap = null;
+  for (let run = 1; run < CRON_SAMPLED_RUNS; run++) {
+    const currentRun = interval.next()?.getTime();
+    if (!Number.isFinite(currentRun)) {
+      break;
+    }
+
+    longestGap = Math.max(longestGap ?? 0, currentRun - previousRun);
+    previousRun = currentRun;
+  }
+
+  return longestGap;
 }
 
 export function stringifyCsvValue(value) {

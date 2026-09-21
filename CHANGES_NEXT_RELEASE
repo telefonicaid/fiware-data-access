@@ -1,3 +1,4 @@
+- Fix: cron refresh intervals are now measured deterministically in UTC over a full cycle, so a valid combination such as a monthly cron with a `month` partition is no longer rejected depending on the date the FDA is created or on daylight saving changes
 - Add: sliding-window (partitioned) refresh support for MongoDB FDAs, for both `filter` and `aggregation` queries, mirroring the existing PostgreSQL window refresh policy (#194)
 - Fix: FDA upload flow now marks status as `completed` only after `defaultDataAccess` is created (308)
 - Replace MinIO docker image by PGsty image (#302)
