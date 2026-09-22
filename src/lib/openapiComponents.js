@@ -395,6 +395,8 @@
  *           type: object
  *           description: >
  *             MongoDB projection document defining the fields materialized into the FDA (used with `filter`).
+ *             Required for cached FDAs in `strict` mode. Aggregation queries must declare their output columns
+ *             with a final `$project` or `$group` stage.
  *             Nested fields can be projected using dot notation (e.g. `device.name`) and are materialized
  *             preserving that dot notation; in generated `defaultDataAccess` parameters, dots are replaced by
  *             underscores (e.g. `device_name`).
@@ -539,10 +541,12 @@
  *         schema:
  *           type: array
  *           description: >
- *             Column schema inferred/validated for the FDA. Present only for cached FDAs created in `strict`
- *             validation mode. For `postgres`, `type` is the real DuckDB type introspected live from the database.
- *             For `mongodb`, every `type` is a generic `VARCHAR` placeholder derived only from a sample document's
- *             field names, since MongoDB is schemaless.
+ *             Columns of the Parquet that backs the FDA, with their DuckDB types. Present only for cached FDAs
+ *             created in `strict` validation mode. It is re-derived from the Parquet after every successful fetch,
+ *             so it keeps describing the data actually stored even when the shape of the source data changes over
+ *             time. Until the first fetch completes it holds what is known at creation time: real database types
+ *             introspected from the source for `postgres`, and a `null` type for `mongodb`, since a schemaless
+ *             datasource has no types to introspect.
  *           items:
  *             type: object
  *             properties:
@@ -550,6 +554,9 @@
  *                 type: string
  *               type:
  *                 type: string
+ *                 nullable: true
+ *                 description: >
+ *                   DuckDB type of the column, or `null` while it is not known yet.
  *
  *     FdaListItem:
  *       description: FDA representation returned by `GET /{visibility}/fdas` (includes `id`).
