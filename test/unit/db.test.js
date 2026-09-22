@@ -626,6 +626,30 @@ describe('db utils', () => {
     expect(stmt.close).toHaveBeenCalledTimes(1);
   });
 
+  test('validateDAQuery treats columns with an unknown type as text', async () => {
+    const { validateDAQuery, runtimeConn } = await loadDbModule();
+
+    // A schemaless FDA knows its columns but not their types until its first fetch
+    retrieveFDAMock.mockResolvedValue({
+      schema: [
+        { name: 'device', type: null },
+        { name: 'reading', type: null },
+      ],
+    });
+
+    const stmt = {
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+    runtimeConn.prepare.mockResolvedValueOnce(stmt);
+
+    await validateDAQuery(runtimeConn, 'svc', 'fdaA', 'SELECT device', '/sp');
+
+    expect(runtimeConn.prepare).toHaveBeenCalledWith(
+      'FROM (SELECT CAST(NULL AS VARCHAR) AS "device", CAST(NULL AS VARCHAR) AS "reading" LIMIT 0) AS fda_schema SELECT device',
+    );
+    expect(stmt.close).toHaveBeenCalledTimes(1);
+  });
+
   test('resolveDAParams throws for unknown parameter types', async () => {
     const { resolveDAParams } = await loadDbModule();
 

@@ -75,6 +75,7 @@ const mongoMocks = {
   removeDA: jest.fn(),
   updateFDAStatus: jest.fn(),
   updateFDALastFetch: jest.fn(),
+  updateFDASchema: jest.fn(),
   createDatasource: jest.fn(),
   retrieveDatasources: jest.fn(),
   retrieveDatasource: jest.fn(),
@@ -142,6 +143,7 @@ await jest.unstable_mockModule('../../src/lib/utils/mongo.js', () => ({
   removeDA: mongoMocks.removeDA,
   updateFDAStatus: mongoMocks.updateFDAStatus,
   updateFDALastFetch: mongoMocks.updateFDALastFetch,
+  updateFDASchema: mongoMocks.updateFDASchema,
   createDatasource: mongoMocks.createDatasource,
   retrieveDatasources: mongoMocks.retrieveDatasources,
   retrieveDatasource: mongoMocks.retrieveDatasource,
@@ -3262,6 +3264,74 @@ describe('processFDAAsync', () => {
     });
 
     expect(mongoMocks.updateFDAStatus).toHaveBeenNthCalledWith(5, {
+      service: 'svc',
+      fdaId: 'fda1',
+      servicePath: '/servicepath',
+      status: 'completed',
+      progress: 100,
+    });
+  });
+
+  test('derives the persisted schema from the materialized Parquet once ingestion succeeds', async () => {
+    const describeRun = jest.fn().mockResolvedValue({
+      getRowObjectsJson: () => [
+        { column_name: 'label', column_type: 'VARCHAR' },
+        { column_name: 'temperature', column_type: 'DOUBLE' },
+        { column_name: 'observedAt', column_type: 'TIMESTAMP' },
+      ],
+    });
+    dbMocks.getDBConnection
+      .mockReset()
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ run: describeRun });
+
+    await processFDAAsync('fda1', 'SELECT 1', 'svc', '/servicepath');
+
+    expect(describeRun).toHaveBeenCalledWith(
+      "DESCRIBE SELECT * FROM read_parquet('s3://svc/servicepath/fda1.parquet')",
+    );
+    expect(mongoMocks.updateFDASchema).toHaveBeenCalledWith(
+      'svc',
+      'fda1',
+      '/servicepath',
+      [
+        { name: 'label', type: 'VARCHAR' },
+        { name: 'temperature', type: 'DOUBLE' },
+        { name: 'observedAt', type: 'TIMESTAMP' },
+      ],
+    );
+  });
+
+  test('does not derive a schema for FDAs created in unchecked mode', async () => {
+    const describeRun = jest.fn();
+    dbMocks.getDBConnection
+      .mockReset()
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ run: describeRun });
+    mongoMocks.retrieveFDA.mockResolvedValue({ validationMode: 'unchecked' });
+
+    try {
+      await processFDAAsync('fda1', 'SELECT 1', 'svc', '/servicepath');
+
+      expect(describeRun).not.toHaveBeenCalled();
+      expect(mongoMocks.updateFDASchema).not.toHaveBeenCalled();
+    } finally {
+      mongoMocks.retrieveFDA.mockReset();
+    }
+  });
+
+  test('keeps the previous schema and completes when the Parquet cannot be described', async () => {
+    dbMocks.getDBConnection
+      .mockReset()
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({
+        run: jest.fn().mockRejectedValue(new Error('No files found')),
+      });
+
+    await processFDAAsync('fda1', 'SELECT 1', 'svc', '/servicepath');
+
+    expect(mongoMocks.updateFDASchema).not.toHaveBeenCalled();
+    expect(mongoMocks.updateFDAStatus).toHaveBeenLastCalledWith({
       service: 'svc',
       fdaId: 'fda1',
       servicePath: '/servicepath',
