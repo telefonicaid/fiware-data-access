@@ -1584,7 +1584,7 @@ describe('fetchFDA', () => {
     expect(mongoMocks.createFDAMongo).not.toHaveBeenCalled();
   });
 
-  test('creates a cached Mongo FDA in strict mode by deriving a minimal schema from a live sample row', async () => {
+  test('creates a cached Mongo FDA in strict mode from the columns declared by the query', async () => {
     const mongoDatasource = {
       datasourceId: 'mongo-ds',
       type: 'mongodb',
@@ -1593,19 +1593,19 @@ describe('fetchFDA', () => {
         database: 'svc',
       },
     };
+    const mongoQuery = {
+      collection: 'events',
+      filter: {},
+      projection: { label: 1, observedAt: 1 },
+    };
     mongoMocks.retrieveDatasource
       .mockResolvedValueOnce(mongoDatasource)
       .mockResolvedValueOnce(mongoDatasource);
-    const reader = {
-      columns: ['label', 'observedAt'],
-      readNextChunk: jest.fn().mockResolvedValue([]),
-      close: jest.fn().mockResolvedValue(undefined),
-    };
-    mongoMocks.createMongoCursorReader.mockResolvedValueOnce(reader);
+    mongoMocks.validateMongoQuery.mockResolvedValueOnce(undefined);
 
     await fetchFDA(
       'fda_mongo_strict',
-      { collection: 'events', filter: {} },
+      mongoQuery,
       'svc',
       'public',
       '/servicepath',
@@ -1618,17 +1618,15 @@ describe('fetchFDA', () => {
       'mongo-ds',
     );
 
-    expect(mongoMocks.createMongoCursorReader).toHaveBeenCalledWith(
+    expect(mongoMocks.validateMongoQuery).toHaveBeenCalledWith(
       { uri: 'mongodb://mongo:27017', database: 'svc' },
-      { collection: 'events', filter: {} },
-      { limit: 1 },
+      mongoQuery,
     );
-    expect(reader.close).toHaveBeenCalled();
+    expect(mongoMocks.createMongoCursorReader).not.toHaveBeenCalled();
 
-    // A minimal (name-only, VARCHAR-typed) schema is persisted
     expect(mongoMocks.createFDAMongo).toHaveBeenCalledWith(
       'fda_mongo_strict',
-      { collection: 'events', filter: {} },
+      mongoQuery,
       'svc',
       'public',
       '/servicepath',
@@ -1640,8 +1638,8 @@ describe('fetchFDA', () => {
       'mongo-ds',
       'strict',
       [
-        { name: 'label', type: 'VARCHAR' },
-        { name: 'observedAt', type: 'VARCHAR' },
+        { name: 'label', type: null },
+        { name: 'observedAt', type: null },
       ],
     );
 
@@ -1658,7 +1656,7 @@ describe('fetchFDA', () => {
     expect(dbMocks.toParquet).not.toHaveBeenCalled();
   });
 
-  test('falls back to materializing the sample row when no Mongo columns can be inferred', async () => {
+  test('creates a cached Mongo FDA in strict mode from the final aggregation stage columns', async () => {
     const mongoDatasource = {
       datasourceId: 'mongo-ds',
       type: 'mongodb',
@@ -1670,51 +1668,71 @@ describe('fetchFDA', () => {
     mongoMocks.retrieveDatasource
       .mockResolvedValueOnce(mongoDatasource)
       .mockResolvedValueOnce(mongoDatasource);
-    // An empty collection queried without a projection hint: no sample row, no known columns.
-    mongoMocks.createMongoCursorReader
-      .mockResolvedValueOnce({
-        columns: [],
-        readNextChunk: jest.fn().mockResolvedValue([]),
-        close: jest.fn().mockResolvedValue(undefined),
-      })
-      .mockResolvedValueOnce({
-        columns: [],
-        readNextChunk: jest.fn().mockResolvedValue([]),
-        close: jest.fn().mockResolvedValue(undefined),
-      });
+    mongoMocks.validateMongoQuery.mockResolvedValueOnce(undefined);
 
     await fetchFDA(
-      'fda_mongo_empty',
-      { collection: 'events', filter: {} },
+      'fda_mongo_agg',
+      {
+        collection: 'events',
+        aggregation: [
+          { $match: { site: 'lab' } },
+          { $group: { _id: '$status', total: { $sum: 1 } } },
+        ],
+      },
       'svc',
       'public',
       '/servicepath',
-      'mongo empty collection fda',
+      'mongo strict aggregation fda',
       { type: 'none' },
       undefined,
       undefined,
-      false, // defaultDataAccessEnabled: this test targets createParquet's fallback only
+      false,
       true,
       'mongo-ds',
     );
 
-    expect(mongoMocks.createFDAMongo).toHaveBeenCalledWith(
-      'fda_mongo_empty',
-      { collection: 'events', filter: {} },
-      'svc',
-      'public',
-      '/servicepath',
-      'mongo empty collection fda',
-      { type: 'none' },
+    expect(dbMocks.copyQueryToParquet).toHaveBeenCalledWith(
+      {},
+      'SELECT CAST(NULL AS VARCHAR) AS "_id", CAST(NULL AS VARCHAR) AS "total" WHERE FALSE',
+      'svc/servicepath/fda_mongo_agg.parquet',
       undefined,
       undefined,
-      true,
-      'mongo-ds',
-      'strict',
-      null,
+      undefined,
     );
-    expect(dbMocks.copyQueryToParquet).not.toHaveBeenCalled();
-    expect(dbMocks.toParquet).toHaveBeenCalled();
+  });
+
+  test('rejects a cached strict Mongo FDA whose query does not declare its output columns', async () => {
+    const mongoDatasource = {
+      datasourceId: 'mongo-ds',
+      type: 'mongodb',
+      config: {
+        uri: 'mongodb://mongo:27017',
+        database: 'svc',
+      },
+    };
+    mongoMocks.retrieveDatasource.mockResolvedValueOnce(mongoDatasource);
+
+    await expect(
+      fetchFDA(
+        'fda_mongo_undeclared',
+        { collection: 'events', filter: {} },
+        'svc',
+        'public',
+        '/servicepath',
+        'mongo undeclared columns fda',
+        { type: 'none' },
+        undefined,
+        undefined,
+        false,
+        true,
+        'mongo-ds',
+      ),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidMongoFDAContract',
+    });
+
+    expect(mongoMocks.createFDAMongo).not.toHaveBeenCalled();
   });
 
   test('creates default DA without time filters when FDA has no timeColumn', async () => {
