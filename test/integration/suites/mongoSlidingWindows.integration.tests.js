@@ -663,7 +663,7 @@ export function registerMongoSlidingWindowsIntegrationTests({
         );
       });
 
-      test('a field with heterogeneous types across documents still materializes, widened to text (see issue #235)', async () => {
+      test('a field with heterogeneous types across documents still materializes, widened to text', async () => {
         const baseUrl = getBaseUrl();
         const suffix = `${Date.now()}`;
         const heteroCollectionName = `mongo_sw_hetero_${suffix}`;
