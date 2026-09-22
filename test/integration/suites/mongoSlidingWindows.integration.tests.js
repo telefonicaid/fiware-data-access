@@ -278,7 +278,11 @@ export function registerMongoSlidingWindowsIntegrationTests({
         body: {
           id: fdaId,
           datasourceId,
-          query: { collection: collectionName, filter: {} },
+          query: {
+            collection: collectionName,
+            filter: {},
+            projection: { label: 1, observedAt: 1 },
+          },
           description: 'Mongo recurring refresh test',
           refreshPolicy: {
             type: 'window',
@@ -340,7 +344,11 @@ export function registerMongoSlidingWindowsIntegrationTests({
         body: {
           id: fdaId,
           datasourceId,
-          query: { collection: collectionName, filter: {} },
+          query: {
+            collection: collectionName,
+            filter: {},
+            projection: { label: 1, observedAt: 1 },
+          },
           description: 'Mongo clean-partition scheduling test',
           timeColumn: 'observedAt',
           refreshPolicy: {
@@ -418,7 +426,11 @@ export function registerMongoSlidingWindowsIntegrationTests({
         body: {
           id: fdaId,
           datasourceId,
-          query: { collection: collectionName, filter: {} },
+          query: {
+            collection: collectionName,
+            filter: {},
+            projection: { label: 1, observedAt: 1 },
+          },
           description: 'Mongo PUT regenerate sliding window test',
           refreshPolicy: {
             type: 'window',
@@ -541,7 +553,7 @@ export function registerMongoSlidingWindowsIntegrationTests({
         await waitUntilFDACompleted({ baseUrl, service, fdaId });
       });
 
-      test('the persisted schema types every Mongo column as VARCHAR, regardless of real content', async () => {
+      test('the persisted schema reports the real types of the materialized Parquet', async () => {
         const baseUrl = getBaseUrl();
         const getFda = await httpReq({
           method: 'GET',
@@ -553,14 +565,23 @@ export function registerMongoSlidingWindowsIntegrationTests({
         });
 
         expect(getFda.status).toBe(200);
-        expect(new Set(getFda.json.schema)).toEqual(
-          new Set([
-            { name: 'label', type: 'VARCHAR' },
-            { name: 'temperature', type: 'VARCHAR' },
-            { name: 'active', type: 'VARCHAR' },
-            { name: 'observedAt', type: 'VARCHAR' },
-          ]),
+
+        const schemaByName = Object.fromEntries(
+          getFda.json.schema.map(({ name, type }) => [name, type]),
         );
+
+        expect(Object.keys(schemaByName).sort()).toEqual([
+          'active',
+          'label',
+          'observedAt',
+          'temperature',
+        ]);
+        expect(schemaByName.label).toBe('VARCHAR');
+        expect(schemaByName.active).toBe('BOOLEAN');
+        expect(schemaByName.temperature).toMatch(
+          /^(DOUBLE|FLOAT|DECIMAL.*|BIGINT|INTEGER)$/,
+        );
+        expect(schemaByName.observedAt).toMatch(/^TIMESTAMP/);
       });
 
       test('defaultDataAccess equality filter works on a genuinely numeric Mongo field', async () => {
