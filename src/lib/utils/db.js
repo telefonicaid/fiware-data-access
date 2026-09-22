@@ -781,8 +781,8 @@ export function refreshIntervalPartitionCheck(refreshInterval, partition) {
   }
 
   const partitionSizes = {
-    year: 365 * 24 * 60 * 60 * 1000,
-    // 31 days (instead of 30) because it's better to overestimate partition size for comparison accuracy
+    // Use the longest possible duration for each calendar partition.
+    year: 366 * 24 * 60 * 60 * 1000,
     month: 31 * 24 * 60 * 60 * 1000,
     week: 7 * 24 * 60 * 60 * 1000,
     day: 24 * 60 * 60 * 1000,

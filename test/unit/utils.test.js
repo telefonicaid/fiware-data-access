@@ -651,6 +651,25 @@ describe('utils', () => {
         });
 
         expect(convertRefreshIntervalToMs('* * * * *')).toBe(3000);
+        // Sampling in UTC keeps the result free of daylight saving jumps
+        expect(cronParserMock.parse).toHaveBeenCalledWith('* * * * *', {
+          tz: 'UTC',
+        });
+      });
+
+      test('returns the longest gap when runs are not evenly spaced', () => {
+        const nextMock = jest
+          .fn()
+          .mockReturnValueOnce({ getTime: () => 1000 })
+          .mockReturnValueOnce({ getTime: () => 3000 })
+          .mockReturnValueOnce({ getTime: () => 8000 })
+          .mockReturnValueOnce({ getTime: () => 9000 });
+
+        cronParserMock.parse.mockReturnValue({
+          next: nextMock,
+        });
+
+        expect(convertRefreshIntervalToMs('0 0 1 * *')).toBe(5000);
       });
     });
   });
