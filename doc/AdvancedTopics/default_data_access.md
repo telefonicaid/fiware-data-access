@@ -65,26 +65,26 @@ column type before applying `IN`.
 
 When real column types are not known, the generated filter uses a simple equality comparison (`column = $param`)
 instead. This avoids binder errors, since the generator cannot determine the target column types required to cast values
-produced by `string_split()`. This is the case for uploaded CSV/XLS FDAs (no schema is persisted for them at all) and
-also for **every** MongoDB-backed FDA — see the note below.
+produced by `string_split()`. This is the case for uploaded CSV/XLS FDAs (whose schema is only known once the file has
+been materialized, after the Default DA has been generated) and also for **every** MongoDB-backed FDA — see the note
+below.
 
 ### MongoDB-backed FDAs
 
-MongoDB FDAs created in `strict` mode have a persisted `schema`, but MongoDB does not provide a fixed schema that can be
-introspected like PostgreSQL. Therefore, the stored schema uses `VARCHAR` as a placeholder type for all columns.
+MongoDB does not provide a fixed schema to introspect, so cached FDAs in `strict` mode take their columns from the
+query's declared output (`projection` or final `$project`/`$group` stage). Types remain unknown until the first fetch:
 
 ```json
 [
-    { "name": "device", "type": "VARCHAR" },
-    { "name": "reading", "type": "VARCHAR" }
+    { "name": "device", "type": null },
+    { "name": "reading", "type": null }
 ]
 ```
 
-These placeholder types are not used to determine the actual types of the data stored in Parquet. They only provide the
-information needed to validate and generate the Default DA.
+After the first fetch, the schema is re-derived from the materialized Parquet.
 
-Because MongoDB column types are not known at FDA creation time, the Default DA uses simple equality filters
-(`column = $param`) instead of the typed `IN (...)` filters used for datasources with real schema information.
+Because the Default DA is generated before the first fetch, MongoDB FDAs use simple equality filters (`column = $param`)
+instead of typed `IN (...)` filters.
 
 For custom DAs, parameters can still be used according to the actual data type stored in Parquet. If a MongoDB field can
 contain different types across documents, an explicit `CAST` may be required for comparisons involving that field.

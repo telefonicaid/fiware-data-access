@@ -310,6 +310,10 @@ The behavior of `timeColumn` validation depends on the `validationMode` setting:
 In `strict` mode, the system validates that the `timeColumn` exists in the query result schema **before** creating the
 FDA. If the column is not present, the creation fails with a clear error message.
 
+For cached MongoDB FDAs, `strict` mode also requires the query to declare its output columns using a `projection` or a
+final `$project`/`$group` stage. See
+[Schema generation for schemaless datasources](/doc/02_architecture.md#schema-generation-for-schemaless-datasources).
+
 #### Unchecked Mode
 
 In `unchecked` mode, the system **does not validate** the presence of `timeColumn` during creation. However, if the

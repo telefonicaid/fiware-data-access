@@ -169,12 +169,10 @@ Each document corresponds to one FDA:
 -   **lastFetch**: timestamp of the last successful fetch completion (ISO date)
 -   **datasourceId**: datasource identifier used to resolve source credentials (default `default` when omitted)
 -   **validationMode**: validation mode (`strict` or `unchecked`, default `strict`)
--   **schema**: array of column definitions (`name` and `type`) persisted from the source schema (`strict` mode, cached
-    FDAs only). For PostgreSQL FDAs, `type` is the real DuckDB type introspected live from the database. For MongoDB
-    FDAs (schemaless), `type` is always a `VARCHAR` placeholder derived only from a sample document's field names — it
-    does not reflect the value's actual type. How schema generation should work for schemaless datasources in general
-    (nested documents, arrays, types varying across documents or over time) is an open design question, see issue
-    [#235](https://github.com/telefonicaid/fiware-data-access/issues/235)
+-   **schema**: array of column definitions (`name` and `type`) for the materialized Parquet (`strict` mode, cached FDAs
+    only). `type` is a DuckDB type. For MongoDB FDAs, types are `null` until the first successful fetch, when the schema
+    is derived from the materialized Parquet. See
+    [Schema generation for schemaless datasources](#schema-generation-for-schemaless-datasources).
 
 Each DA contains:
 
@@ -226,6 +224,27 @@ Each DA contains:
     }
 }
 ```
+
+#### Schema generation for schemaless datasources
+
+Schemaless datasources such as MongoDB cannot provide a fixed schema at creation time. For cached FDAs in `strict` mode,
+the schema is therefore generated in two steps:
+
+1. **At creation time**, the column names come from the query: the `projection` for `filter` queries, or the final
+   `$project`/`$group` stage for `aggregation` queries. Their types are stored as `null` because they are not known yet.
+2. **After each successful fetch**, the schema is re-derived from the materialized Parquet using DuckDB. This updates
+   both the column types and the column set when the source data changes.
+
+For MongoDB:
+
+-   Fields with different types across documents are materialized using the common type selected by DuckDB, typically
+    `VARCHAR`.
+-   Nested documents and arrays are materialized as `VARCHAR` JSON values.
+-   Fields missing from some documents are materialized as `NULL`.
+-   Hive partition columns are not included in the FDA schema.
+
+In `unchecked` mode, columns are still inferred from the first document and the persisted schema is not created at FDA
+creation time.
 
 ### Datasources collection
 
