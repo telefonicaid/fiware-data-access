@@ -467,6 +467,94 @@ export function registerMongoFdasIntegrationTests({
       }
     });
 
+    test('POST /fdas rejects a cached strict FDA whose query does not declare its columns', async () => {
+      const baseUrl = getBaseUrl();
+
+      const res = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Content-Type': 'application/json',
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: 'mongo_undeclared_columns',
+          query: {
+            collection: collectionName,
+            filter: { site: 'lab' },
+          },
+          description: 'mongo cached fda without projection',
+          cached: true,
+          datasourceId,
+        },
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.json.error).toBe('InvalidMongoFDAContract');
+      expect(res.json.description).toContain(
+        'must declare their output columns',
+      );
+    });
+
+    test('POST /fdas accepts a cached FDA without projection in unchecked mode', async () => {
+      const baseUrl = getBaseUrl();
+      const uncheckedFdaId = 'mongo_unchecked_columns';
+
+      try {
+        const res = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Content-Type': 'application/json',
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: uncheckedFdaId,
+            query: {
+              collection: collectionName,
+              filter: { site: 'lab' },
+            },
+            description: 'mongo cached fda without projection, unchecked',
+            cached: true,
+            validationMode: 'unchecked',
+            datasourceId,
+          },
+        });
+
+        expect(res.status).toBe(202);
+        await waitUntilFDACompleted({
+          baseUrl,
+          service,
+          fdaId: uncheckedFdaId,
+        });
+
+        // The column set is sampled from the first document, and no schema is
+        // persisted: an unchecked FDA opts out of the schema contract entirely
+        const getFda = await httpReq({
+          method: 'GET',
+          url: `${baseUrl}/${visibility}/fdas/${uncheckedFdaId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+
+        expect(getFda.status).toBe(200);
+        expect(getFda.json.schema).toBeUndefined();
+      } finally {
+        await httpReq({
+          method: 'DELETE',
+          url: `${baseUrl}/${visibility}/fdas/${uncheckedFdaId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+      }
+    });
+
     test('POST /fdas rejects disallowed aggregation stages', async () => {
       const baseUrl = getBaseUrl();
 

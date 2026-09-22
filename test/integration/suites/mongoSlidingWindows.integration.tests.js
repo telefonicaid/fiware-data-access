@@ -705,6 +705,75 @@ export function registerMongoSlidingWindowsIntegrationTests({
         const temperatures = readRes.json.map((r) => r.temperature);
         expect(temperatures.sort()).toEqual(['25', 'high']);
       });
+
+      test('a field missing from some documents is still materialized for every document', async () => {
+        const baseUrl = getBaseUrl();
+        const suffix = `${Date.now()}`;
+        const sparseCollectionName = `mongo_sw_sparse_${suffix}`;
+        const sparseFdaId = `fda_mongo_sw_sparse_${suffix}`;
+        const now = Date.now();
+
+        // The first document lacks `extra`. The declared projection is the column contract instead
+        await seedCollection(sparseCollectionName, [
+          {
+            label: 'without_extra',
+            observedAt: new Date(now - 60 * 60 * 1000),
+          },
+          {
+            label: 'with_extra',
+            extra: 'present',
+            observedAt: new Date(now - 30 * 60 * 1000),
+          },
+        ]);
+
+        const createFda = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: sparseFdaId,
+            datasourceId,
+            query: {
+              collection: sparseCollectionName,
+              filter: {},
+              projection: { label: 1, extra: 1, observedAt: 1 },
+            },
+            description: 'Mongo heterogeneous field set test',
+            timeColumn: 'observedAt',
+          },
+        });
+
+        expect(createFda.status).toBe(202);
+        await waitUntilFDACompleted({ baseUrl, service, fdaId: sparseFdaId });
+
+        const getFda = await httpReq({
+          method: 'GET',
+          url: `${baseUrl}/${visibility}/fdas/${sparseFdaId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+
+        expect(getFda.status).toBe(200);
+        expect(getFda.json.schema.map(({ name }) => name).sort()).toEqual([
+          'extra',
+          'label',
+          'observedAt',
+        ]);
+
+        const readRes = await readDefaultDA(baseUrl, sparseFdaId);
+        expect(readRes.status).toBe(200);
+
+        const extraByLabel = Object.fromEntries(
+          readRes.json.map((row) => [row.label, row.extra]),
+        );
+        expect(extraByLabel.with_extra).toBe('present');
+        expect(extraByLabel.without_extra ?? null).toBeNull();
+      });
     });
   });
 }
