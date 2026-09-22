@@ -31,7 +31,7 @@ import { convertRefreshIntervalToMs } from './utils.js';
 import {
   NO_PARQUET_FILES_MATCH_ERROR,
   UNKNOWN_COLUMN_TYPE,
-} from './constants.js';
+} from '../constants.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
