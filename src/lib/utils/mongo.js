@@ -30,6 +30,7 @@ import {
   DEFAULT_DATASOURCE_ID,
   DISALLOWED_MONGO_AGGREGATION_STAGES,
 } from '../constants.js';
+import { getMongoDeclaredColumns } from './mongoQuery.js';
 
 const uri = config.mongo.uri;
 const client = new MongoClient(uri);
@@ -210,16 +211,6 @@ function validateMongoCursorQuery(filter, aggregation) {
   }
 }
 
-function isMongoProjection(projection) {
-  return (
-    projection && typeof projection === 'object' && !Array.isArray(projection)
-  );
-}
-
-function getMongoProjectionColumns(projection) {
-  return Object.keys(projection).filter((column) => projection[column]);
-}
-
 function getMongoColumnsFromDocument(doc, { includeId = false } = {}) {
   return Object.keys(doc).filter((column) => includeId || column !== '_id');
 }
@@ -236,12 +227,12 @@ function mapMongoRow(doc, columns) {
 
 async function initializeMongoCursorReader(
   cursor,
-  projection,
+  declaredColumns,
   { includeId = false } = {},
 ) {
-  if (isMongoProjection(projection)) {
+  if (Array.isArray(declaredColumns) && declaredColumns.length > 0) {
     return {
-      columns: getMongoProjectionColumns(projection),
+      columns: declaredColumns,
       bufferedRows: [],
     };
   }
@@ -357,7 +348,7 @@ export async function createMongoCursorReader(
 
     const { columns, bufferedRows } = await initializeMongoCursorReader(
       cursor,
-      isAggregationQuery ? undefined : projection,
+      getMongoDeclaredColumns(query),
       { includeId: isAggregationQuery },
     );
 
@@ -617,6 +608,16 @@ export async function updateFDAStatus({
         ...(error && { error }),
       },
     },
+  );
+}
+
+export async function updateFDASchema(service, fdaId, servicePath, schema) {
+  const collection = await getCollection();
+  const hasSchema = Array.isArray(schema) && schema.length > 0;
+
+  await collection.updateOne(
+    { service, fdaId, servicePath },
+    hasSchema ? { $set: { schema } } : { $unset: { schema: '' } },
   );
 }
 

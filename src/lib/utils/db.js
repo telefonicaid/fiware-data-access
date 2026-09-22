@@ -28,13 +28,16 @@ import { getBasicLogger } from './logger.js';
 import { config } from '../fdaConfig.js';
 import { getBucketNameFromService, getFDAStoragePath } from './fdaScope.js';
 import { convertRefreshIntervalToMs } from './utils.js';
+import {
+  NO_PARQUET_FILES_MATCH_ERROR,
+  UNKNOWN_COLUMN_TYPE,
+} from './constants.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
 let instancePromise = null;
 
 const logger = getBasicLogger();
-const NO_PARQUET_FILES_MATCH_ERROR = 'No files found that match the pattern';
 
 const connectionPool = [];
 
@@ -205,13 +208,15 @@ function normalizeStoredSchema(schema) {
     return [];
   }
 
-  return schema.filter(
-    (field) =>
-      typeof field?.name === 'string' &&
-      field.name.length > 0 &&
-      typeof field?.type === 'string' &&
-      field.type.length > 0,
-  );
+  return schema
+    .filter((field) => typeof field?.name === 'string' && field.name.length > 0)
+    .map(({ name, type }) => ({
+      name,
+      type:
+        typeof type === 'string' && type.length > 0
+          ? type
+          : UNKNOWN_COLUMN_TYPE,
+    }));
 }
 
 function buildStoredSchemaQuery(schema, userQuery) {
