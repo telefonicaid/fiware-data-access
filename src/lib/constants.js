@@ -27,7 +27,34 @@
 // Datasources
 export const DEFAULT_DATASOURCE_ID = 'default';
 export const SUPPORTED_DATASOURCE_TYPES = new Set(['postgres', 'mongodb']);
-export const DISALLOWED_MONGO_AGGREGATION_STAGES = new Set(['$out', '$merge']);
+
+// Allowlist of read-only MongoDB aggregation pipeline stages
+export const ALLOWED_MONGO_AGGREGATION_STAGES = new Set([
+  '$match',
+  '$project',
+  '$addFields',
+  '$set',
+  '$unset',
+  '$group',
+  '$sort',
+  '$limit',
+  '$skip',
+  '$unwind',
+  '$count',
+  '$facet',
+  '$bucket',
+  '$bucketAuto',
+  '$sample',
+  '$replaceRoot',
+  '$replaceWith',
+  '$sortByCount',
+  '$geoNear',
+  '$redact',
+]);
+
+// Stages whose value contains nested sub-pipelines that must themselves
+// be validated against ALLOWED_MONGO_AGGREGATION_STAGES
+export const NESTED_SUBPIPELINE_MONGO_STAGES = new Set(['$facet']);
 
 // FDA validation modes
 export const FDA_VALIDATION_MODE_STRICT = 'strict';

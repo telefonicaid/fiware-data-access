@@ -381,8 +381,13 @@
  *       type: object
  *       description: >
  *         Mongo query definition used when the FDA's datasource type is `mongodb`. `filter` and `aggregation` are
- *         mutually exclusive; exactly one must be provided. Aggregation pipelines are read-only (`$out`/`$merge`
- *         stages are not allowed).
+ *         mutually exclusive; exactly one must be provided. Aggregation pipelines may only use a fixed allowlist
+ *         of read-only stages: `$match`, `$project`, `$addFields`, `$set`, `$unset`, `$group`, `$sort`, `$limit`,
+ *         `$skip`, `$unwind`, `$count`, `$facet`, `$bucket`, `$bucketAuto`, `$sample`, `$replaceRoot`,
+ *         `$replaceWith`, `$sortByCount`, `$geoNear`, `$redact` (stages nested inside a `$facet` sub-pipeline are
+ *         validated against the same allowlist). Any other stage is rejected, including write stages (`$out`,
+ *         `$merge`), cross-collection stages (`$lookup`, `$graphLookup`, `$unionWith`, `$documents` - a Mongo FDA
+ *         is scoped to a single declared `collection`), and administrative/introspection stages.
  *       required: [collection]
  *       properties:
  *         collection:
@@ -400,7 +405,9 @@
  *             underscores (e.g. `device_name`).
  *         aggregation:
  *           type: array
- *           description: MongoDB aggregation pipeline. Mutually exclusive with `filter`. Each stage is a single-key object.
+ *           description: >
+ *             MongoDB aggregation pipeline. Mutually exclusive with `filter`. Each stage is a single-key object;
+ *             only stages in the read-only allowlist are permitted (see the `MongoQuery` description).
  *           items:
  *             type: object
  *       example:

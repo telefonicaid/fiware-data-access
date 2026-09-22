@@ -653,6 +653,43 @@ describe('mongo utils', () => {
     expect(fakeClient.close).toHaveBeenCalled();
   });
 
+  test('assertAllowedMongoAggregationStage rejects non-object stages', async () => {
+    const { assertAllowedMongoAggregationStage } = await loadMongoModule();
+
+    expect(() => assertAllowedMongoAggregationStage(null)).toThrow(
+      expect.objectContaining({
+        status: 400,
+        type: 'InvalidMongoFDAContract',
+        message: 'Mongo FDA aggregation stages must be JSON objects',
+      }),
+    );
+  });
+
+  test('assertAllowedMongoAggregationStage rejects stages with multiple operators', async () => {
+    const { assertAllowedMongoAggregationStage } = await loadMongoModule();
+
+    expect(() =>
+      assertAllowedMongoAggregationStage({
+        $match: { status: 'ok' },
+        $sort: { ts: -1 },
+      }),
+    ).toThrow(
+      expect.objectContaining({
+        status: 400,
+        type: 'InvalidMongoFDAContract',
+        message: 'Mongo FDA aggregation stages must define a single operator',
+      }),
+    );
+  });
+
+  test('assertAllowedMongoAggregationStage accepts an allowed stage', async () => {
+    const { assertAllowedMongoAggregationStage } = await loadMongoModule();
+
+    expect(() =>
+      assertAllowedMongoAggregationStage({ $match: { status: 'ok' } }),
+    ).not.toThrow();
+  });
+
   test('createMongoCursorReader executes aggregation queries and appends internal limit', async () => {
     const { createMongoCursorReader, collectionMock } = await loadMongoModule();
 
@@ -701,6 +738,149 @@ describe('mongo utils', () => {
       status: 400,
       type: 'InvalidMongoFDAContract',
       message: 'Mongo FDA aggregation stage $merge is not allowed',
+    });
+  });
+
+  test('createMongoCursorReader accepts stages not previously in the blacklist', async () => {
+    const { createMongoCursorReader, collectionMock } = await loadMongoModule();
+
+    const facetCursorMock = {
+      next: jest
+        .fn()
+        .mockResolvedValueOnce({ grouped: [] })
+        .mockResolvedValueOnce(null),
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+    collectionMock.aggregate.mockReturnValueOnce(facetCursorMock);
+
+    await expect(
+      createMongoCursorReader(
+        {},
+        {
+          collection: 'testCollection',
+          aggregation: [
+            { $facet: { grouped: [{ $group: { _id: '$status' } }] } },
+          ],
+        },
+      ),
+    ).resolves.toBeDefined();
+
+    const bucketCursorMock = {
+      next: jest
+        .fn()
+        .mockResolvedValueOnce({ _id: 0 })
+        .mockResolvedValueOnce(null),
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+    collectionMock.aggregate.mockReturnValueOnce(bucketCursorMock);
+
+    await expect(
+      createMongoCursorReader(
+        {},
+        {
+          collection: 'testCollection',
+          aggregation: [
+            { $bucket: { groupBy: '$score', boundaries: [0, 50, 100] } },
+          ],
+        },
+      ),
+    ).resolves.toBeDefined();
+
+    const sampleCursorMock = {
+      next: jest
+        .fn()
+        .mockResolvedValueOnce({ id: 1 })
+        .mockResolvedValueOnce(null),
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+    collectionMock.aggregate.mockReturnValueOnce(sampleCursorMock);
+
+    await expect(
+      createMongoCursorReader(
+        {},
+        {
+          collection: 'testCollection',
+          aggregation: [{ $sample: { size: 10 } }],
+        },
+      ),
+    ).resolves.toBeDefined();
+  });
+
+  test('createMongoCursorReader rejects cross-collection aggregation stages', async () => {
+    const { createMongoCursorReader } = await loadMongoModule();
+
+    await expect(
+      createMongoCursorReader(
+        {},
+        {
+          collection: 'testCollection',
+          aggregation: [
+            {
+              $lookup: {
+                from: 'otherCollection',
+                localField: 'id',
+                foreignField: 'id',
+                as: 'joined',
+              },
+            },
+          ],
+        },
+      ),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidMongoFDAContract',
+      message: 'Mongo FDA aggregation stage $lookup is not allowed',
+    });
+  });
+
+  test('createMongoCursorReader rejects administrative/introspection aggregation stages', async () => {
+    const { createMongoCursorReader } = await loadMongoModule();
+
+    await expect(
+      createMongoCursorReader(
+        {},
+        {
+          collection: 'testCollection',
+          aggregation: [{ $indexStats: {} }],
+        },
+      ),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidMongoFDAContract',
+      message: 'Mongo FDA aggregation stage $indexStats is not allowed',
+    });
+  });
+
+  test('createMongoCursorReader rejects a $lookup nested inside a $facet sub-pipeline', async () => {
+    const { createMongoCursorReader } = await loadMongoModule();
+
+    await expect(
+      createMongoCursorReader(
+        {},
+        {
+          collection: 'testCollection',
+          aggregation: [
+            {
+              $facet: {
+                joined: [
+                  {
+                    $lookup: {
+                      from: 'otherCollection',
+                      localField: 'id',
+                      foreignField: 'id',
+                      as: 'joined',
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidMongoFDAContract',
+      message: 'Mongo FDA aggregation stage $lookup is not allowed',
     });
   });
 
