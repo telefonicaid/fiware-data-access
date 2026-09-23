@@ -555,6 +555,327 @@ export function registerMongoFdasIntegrationTests({
       }
     });
 
+    test('POST /fdas rejects a cached strict FDA whose projection only excludes fields', async () => {
+      const baseUrl = getBaseUrl();
+
+      // An exclusion projection says what to remove, it does not enumerate the result
+      const res = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Content-Type': 'application/json',
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: 'mongo_exclusion_projection',
+          query: {
+            collection: collectionName,
+            filter: {},
+            projection: { device: 0 },
+          },
+          description: 'mongo cached fda with exclusion projection',
+          cached: true,
+          datasourceId,
+        },
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.json.error).toBe('InvalidMongoFDAContract');
+      expect(res.json.description).toContain(
+        'must declare their output columns',
+      );
+    });
+
+    test('POST /fdas rejects an aggregation whose final stage does not declare columns', async () => {
+      const baseUrl = getBaseUrl();
+
+      const res = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Content-Type': 'application/json',
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: 'mongo_agg_no_shaping_stage',
+          query: {
+            collection: collectionName,
+            aggregation: [{ $match: { site: 'lab' } }],
+          },
+          description: 'mongo cached aggregation without shaping stage',
+          cached: true,
+          datasourceId,
+        },
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.json.error).toBe('InvalidMongoFDAContract');
+      expect(res.json.description).toContain(
+        'must declare their output columns',
+      );
+    });
+
+    test('GET /fdas/{fdaId} reports null column types until the first fetch succeeds', async () => {
+      const baseUrl = getBaseUrl();
+      const failedFdaId = 'mongo_null_types_fda';
+
+      try {
+        // Partitioning by `device` (text) fails whilem aterializing
+        // the FDA keeps the schema it was created with.
+        const createRes = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Content-Type': 'application/json',
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: failedFdaId,
+            query: {
+              collection: collectionName,
+              filter: { site: 'lab' },
+              projection: { device: 1, status: 1, reading: 1 },
+            },
+            description: 'mongo fda whose first fetch fails',
+            cached: true,
+            datasourceId,
+            timeColumn: 'device',
+            objStgConf: { partition: 'day' },
+          },
+        });
+
+        expect(createRes.status).toBe(202);
+
+        const finished = await waitUntilFDACompleted({
+          baseUrl,
+          service,
+          fdaId: failedFdaId,
+          visibility,
+        });
+
+        expect(finished.status).toBe('failed');
+        expect(finished.schema).toEqual([
+          { name: 'device', type: null },
+          { name: 'status', type: null },
+          { name: 'reading', type: null },
+        ]);
+      } finally {
+        await httpReq({
+          method: 'DELETE',
+          url: `${baseUrl}/${visibility}/fdas/${failedFdaId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+      }
+    });
+
+    test('nested documents and arrays materialize as JSON text, dot notation flattens them', async () => {
+      const baseUrl = getBaseUrl();
+      const nestedCollectionName = 'mongo_nested_fda_events';
+      const nestedFdaId = 'mongo_nested_fda';
+      const dottedFdaId = 'mongo_nested_dotted_fda';
+
+      const mongoClient = new MongoClient(getMongoUri(), {
+        serverSelectionTimeoutMS: 10_000,
+      });
+      await mongoClient.connect();
+      try {
+        const collection = mongoClient
+          .db('test-db')
+          .collection(nestedCollectionName);
+        await collection.deleteMany({});
+        await collection.insertOne({
+          label: 'nested_doc',
+          device: { name: 'sensor-x', meta: { floor: 3 } },
+          readings: [1, 2, 3],
+        });
+      } finally {
+        await mongoClient.close();
+      }
+
+      try {
+        const createNested = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Content-Type': 'application/json',
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: nestedFdaId,
+            query: {
+              collection: nestedCollectionName,
+              filter: {},
+              projection: { label: 1, device: 1, readings: 1 },
+            },
+            description: 'mongo nested fields fda',
+            cached: true,
+            datasourceId,
+          },
+        });
+
+        expect(createNested.status).toBe(202);
+        await waitUntilFDACompleted({
+          baseUrl,
+          service,
+          fdaId: nestedFdaId,
+          visibility,
+        });
+
+        const nestedFda = await httpReq({
+          method: 'GET',
+          url: `${baseUrl}/${visibility}/fdas/${nestedFdaId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+
+        // A subdocument and an array each collapse into a single text column
+        expect(nestedFda.json.schema).toEqual([
+          { name: 'label', type: 'VARCHAR' },
+          { name: 'device', type: 'VARCHAR' },
+          { name: 'readings', type: 'VARCHAR' },
+        ]);
+
+        const nestedRows = await httpReq({
+          method: 'GET',
+          url: buildDaDataUrl(
+            baseUrl,
+            servicePath,
+            nestedFdaId,
+            'defaultDataAccess',
+            { pageSize: 10, pageStart: 0 },
+          ),
+          headers: { 'Fiware-Service': service },
+        });
+
+        expect(nestedRows.status).toBe(200);
+        expect(JSON.parse(nestedRows.json[0].device)).toEqual({
+          name: 'sensor-x',
+          meta: { floor: 3 },
+        });
+        expect(JSON.parse(nestedRows.json[0].readings)).toEqual([1, 2, 3]);
+
+        // The same data projected with dot notation gets real, individually typed columns
+        const createDotted = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Content-Type': 'application/json',
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: dottedFdaId,
+            query: {
+              collection: nestedCollectionName,
+              filter: {},
+              projection: {
+                label: 1,
+                'device.name': 1,
+                'device.meta.floor': 1,
+              },
+            },
+            description: 'mongo dotted projection fda',
+            cached: true,
+            datasourceId,
+          },
+        });
+
+        expect(createDotted.status).toBe(202);
+        await waitUntilFDACompleted({
+          baseUrl,
+          service,
+          fdaId: dottedFdaId,
+          visibility,
+        });
+
+        const dottedFda = await httpReq({
+          method: 'GET',
+          url: `${baseUrl}/${visibility}/fdas/${dottedFdaId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+
+        const dottedSchema = Object.fromEntries(
+          dottedFda.json.schema.map(({ name, type }) => [name, type]),
+        );
+        expect(dottedSchema['device.name']).toBe('VARCHAR');
+        expect(dottedSchema['device.meta.floor']).toMatch(
+          /^(BIGINT|INTEGER|DOUBLE)$/,
+        );
+
+        const dottedRows = await httpReq({
+          method: 'GET',
+          url: buildDaDataUrl(
+            baseUrl,
+            servicePath,
+            dottedFdaId,
+            'defaultDataAccess',
+            { pageSize: 10, pageStart: 0 },
+          ),
+          headers: { 'Fiware-Service': service },
+        });
+
+        expect(dottedRows.status).toBe(200);
+        expect(dottedRows.json).toHaveLength(1);
+        expect(dottedRows.json[0].label).toBe('nested_doc');
+        expect(dottedRows.json[0]['device.name']).toBe('sensor-x');
+        expect(Number(dottedRows.json[0]['device.meta.floor'])).toBe(3);
+
+        const dottedFiltered = await httpReq({
+          method: 'GET',
+          url: buildDaDataUrl(
+            baseUrl,
+            servicePath,
+            dottedFdaId,
+            'defaultDataAccess',
+            { pageSize: 10, pageStart: 0, device_name: 'sensor-x' },
+          ),
+          headers: { 'Fiware-Service': service },
+        });
+
+        expect(dottedFiltered.status).toBe(200);
+        expect(dottedFiltered.json).toHaveLength(1);
+        expect(dottedFiltered.json[0]['device.name']).toBe('sensor-x');
+
+        const dottedNoMatch = await httpReq({
+          method: 'GET',
+          url: buildDaDataUrl(
+            baseUrl,
+            servicePath,
+            dottedFdaId,
+            'defaultDataAccess',
+            { pageSize: 10, pageStart: 0, device_name: 'sensor-y' },
+          ),
+          headers: { 'Fiware-Service': service },
+        });
+
+        expect(dottedNoMatch.status).toBe(200);
+        expect(dottedNoMatch.json).toEqual([]);
+      } finally {
+        for (const id of [nestedFdaId, dottedFdaId]) {
+          await httpReq({
+            method: 'DELETE',
+            url: `${baseUrl}/${visibility}/fdas/${id}`,
+            headers: {
+              'Fiware-Service': service,
+              'Fiware-ServicePath': servicePath,
+            },
+          });
+        }
+      }
+    });
+
     test('POST /fdas rejects disallowed aggregation stages', async () => {
       const baseUrl = getBaseUrl();
 

@@ -727,6 +727,127 @@ export function registerMongoSlidingWindowsIntegrationTests({
         expect(temperatures.sort()).toEqual(['25', 'high']);
       });
 
+      test('the persisted schema follows the data when its shape changes over time', async () => {
+        const baseUrl = getBaseUrl();
+        const suffix = `${Date.now()}`;
+        const driftCollectionName = `mongo_sw_drift_${suffix}`;
+        const driftFdaId = `fda_mongo_sw_drift_${suffix}`;
+
+        // t_0: temperature is numeric in every document
+        await seedCollection(driftCollectionName, [
+          { label: 't0-1', temperature: 21.5, observedAt: new Date() },
+          { label: 't0-2', temperature: 19.2, observedAt: new Date() },
+        ]);
+
+        const createFda = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: driftFdaId,
+            datasourceId,
+            query: {
+              collection: driftCollectionName,
+              filter: {},
+              projection: { label: 1, temperature: 1, observedAt: 1 },
+            },
+            description: 'Mongo schema drift over time test',
+            timeColumn: 'observedAt',
+          },
+        });
+
+        expect(createFda.status).toBe(202);
+        await waitUntilFDACompleted({ baseUrl, service, fdaId: driftFdaId });
+
+        const readSchema = async () => {
+          const res = await httpReq({
+            method: 'GET',
+            url: `${baseUrl}/${visibility}/fdas/${driftFdaId}`,
+            headers: {
+              'Fiware-Service': service,
+              'Fiware-ServicePath': servicePath,
+            },
+          });
+
+          return Object.fromEntries(
+            res.json.schema.map(({ name, type }) => [name, type]),
+          );
+        };
+
+        expect((await readSchema()).temperature).toMatch(
+          /^(DOUBLE|FLOAT|DECIMAL.*)$/,
+        );
+
+        // t_1: the same field starts carrying text, without the FDA definition changing
+        await insertDoc(driftCollectionName, {
+          label: 't1-1',
+          temperature: 'very high',
+          observedAt: new Date(),
+        });
+
+        const regenerate = await httpReq({
+          method: 'PUT',
+          url: `${baseUrl}/${visibility}/fdas/${driftFdaId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+
+        expect(regenerate.status).toBe(202);
+        await waitUntilFDACompleted({ baseUrl, service, fdaId: driftFdaId });
+
+        // The schema was re-derived from the new Parquet instead of staying frozen
+        expect((await readSchema()).temperature).toBe('VARCHAR');
+      });
+
+      test('a partitioned FDA with no matching rows answers with an empty result instead of failing', async () => {
+        const baseUrl = getBaseUrl();
+        const suffix = `${Date.now()}`;
+        const emptyFdaId = `fda_mongo_sw_empty_${suffix}`;
+
+        // No document matches, so no partition file is ever written: queries fall back
+        // to a typed empty relation built from the persisted schema.
+        const createFda = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: emptyFdaId,
+            datasourceId,
+            query: {
+              collection: collectionName,
+              filter: { label: 'no-such-label' },
+              projection: { label: 1, observedAt: 1 },
+            },
+            description: 'Mongo partitioned FDA with no matching rows',
+            timeColumn: 'observedAt',
+            objStgConf: { partition: 'day' },
+            refreshPolicy: {
+              type: 'window',
+              params: {
+                refreshInterval: '1 hour',
+                fetchSize: 'day',
+                windowSize: 'week',
+              },
+            },
+          },
+        });
+
+        expect(createFda.status).toBe(202);
+        await waitUntilFDACompleted({ baseUrl, service, fdaId: emptyFdaId });
+
+        const readRes = await readDefaultDA(baseUrl, emptyFdaId);
+        expect(readRes.status).toBe(200);
+        expect(readRes.json).toEqual([]);
+      });
+
       test('a field missing from some documents is still materialized for every document', async () => {
         const baseUrl = getBaseUrl();
         const suffix = `${Date.now()}`;
