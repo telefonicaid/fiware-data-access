@@ -28,7 +28,8 @@ import { FDAError } from '../fdaError.js';
 import { getBasicLogger } from './logger.js';
 import {
   DEFAULT_DATASOURCE_ID,
-  DISALLOWED_MONGO_AGGREGATION_STAGES,
+  ALLOWED_MONGO_AGGREGATION_STAGES,
+  NESTED_SUBPIPELINE_MONGO_STAGES,
 } from '../constants.js';
 import { getMongoDeclaredColumns } from './mongoQuery.js';
 
@@ -147,6 +148,45 @@ export async function validateMongoDatasourceConnection(dsConfig) {
   }
 }
 
+export function assertAllowedMongoAggregationStage(stage) {
+  if (!stage || typeof stage !== 'object' || Array.isArray(stage)) {
+    throw new FDAError(
+      400,
+      'InvalidMongoFDAContract',
+      'Mongo FDA aggregation stages must be JSON objects',
+    );
+  }
+
+  const stageNames = Object.keys(stage);
+  if (stageNames.length !== 1) {
+    throw new FDAError(
+      400,
+      'InvalidMongoFDAContract',
+      'Mongo FDA aggregation stages must define a single operator',
+    );
+  }
+
+  const stageName = stageNames[0];
+  if (!ALLOWED_MONGO_AGGREGATION_STAGES.has(stageName)) {
+    throw new FDAError(
+      400,
+      'InvalidMongoFDAContract',
+      `Mongo FDA aggregation stage ${stageName} is not allowed`,
+    );
+  }
+
+  if (NESTED_SUBPIPELINE_MONGO_STAGES.has(stageName)) {
+    for (const subPipeline of Object.values(stage[stageName] ?? {})) {
+      if (!Array.isArray(subPipeline)) {
+        continue;
+      }
+      for (const nestedStage of subPipeline) {
+        assertAllowedMongoAggregationStage(nestedStage);
+      }
+    }
+  }
+}
+
 function validateMongoCursorQuery(filter, aggregation) {
   const hasFilter = filter !== undefined;
   const hasAggregation = aggregation !== undefined;
@@ -175,30 +215,7 @@ function validateMongoCursorQuery(filter, aggregation) {
 
   if (hasAggregation) {
     for (const stage of aggregation) {
-      if (!stage || typeof stage !== 'object' || Array.isArray(stage)) {
-        throw new FDAError(
-          400,
-          'InvalidMongoFDAContract',
-          'Mongo FDA aggregation stages must be JSON objects',
-        );
-      }
-
-      const stageNames = Object.keys(stage);
-      if (stageNames.length !== 1) {
-        throw new FDAError(
-          400,
-          'InvalidMongoFDAContract',
-          'Mongo FDA aggregation stages must define a single operator',
-        );
-      }
-
-      if (DISALLOWED_MONGO_AGGREGATION_STAGES.has(stageNames[0])) {
-        throw new FDAError(
-          400,
-          'InvalidMongoFDAContract',
-          `Mongo FDA aggregation stage ${stageNames[0]} is not allowed`,
-        );
-      }
+      assertAllowedMongoAggregationStage(stage);
     }
   }
 

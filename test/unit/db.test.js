@@ -1019,4 +1019,37 @@ describe('db utils', () => {
 
     expect(conn.run).toHaveBeenCalled();
   });
+
+  describe('refreshIntervalPartitionCheck', () => {
+    test('accepts calendar cron intervals matching their partition size', async () => {
+      const { refreshIntervalPartitionCheck } = await loadDbModule();
+
+      // These used to depend on the day the FDA was created: a monthly cron measured
+      // from September spans 31 days plus the hour gained by the October DST change,
+      // which exceeded the 31-day month partition and rejected a valid FDA.
+      expect(refreshIntervalPartitionCheck('0 0 1 * *', 'month')).toBe(true);
+      expect(refreshIntervalPartitionCheck('0 0 * * 0', 'week')).toBe(true);
+      expect(refreshIntervalPartitionCheck('0 0 * * *', 'day')).toBe(true);
+      expect(refreshIntervalPartitionCheck('0 0 1 1 *', 'year')).toBe(true);
+    });
+
+    test('rejects cron intervals longer than their partition size', async () => {
+      const { refreshIntervalPartitionCheck } = await loadDbModule();
+
+      expect(refreshIntervalPartitionCheck('0 0 1 * *', 'week')).toBe(false);
+      expect(refreshIntervalPartitionCheck('0 0 * * 0', 'day')).toBe(false);
+      expect(refreshIntervalPartitionCheck('0 0 1 1 *', 'month')).toBe(false);
+    });
+
+    test('keeps accepting human-readable intervals and skips unpartitioned FDAs', async () => {
+      const { refreshIntervalPartitionCheck } = await loadDbModule();
+
+      expect(refreshIntervalPartitionCheck('1 hour', 'day')).toBe(true);
+      expect(refreshIntervalPartitionCheck('2 days', 'day')).toBe(false);
+      expect(refreshIntervalPartitionCheck('1 year', 'none')).toBe(true);
+      expect(refreshIntervalPartitionCheck('not an interval', 'day')).toBe(
+        false,
+      );
+    });
+  });
 });

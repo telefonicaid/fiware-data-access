@@ -833,12 +833,12 @@ A FDA is represented by a JSON object with the following fields:
 
 For MongoDB datasources, `query` is an object with the following keys:
 
-| Field         | Type   | Description                                                                                             |
-| ------------- | ------ | ------------------------------------------------------------------------------------------------------- |
-| `collection`  | string | MongoDB collection name.                                                                                |
-| `filter`      | object | MongoDB filter document. Mutually exclusive with `aggregation`.                                         |
-| `projection`  | object | MongoDB projection document defining the fields materialized into the FDA (used with `filter`).         |
-| `aggregation` | array  | MongoDB aggregation pipeline. Mutually exclusive with `filter`. Each stage must be a single-key object. |
+| Field         | Type   | Description                                                                                                                                                             |
+| ------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `collection`  | string | MongoDB collection name.                                                                                                                                                |
+| `filter`      | object | MongoDB filter document. Mutually exclusive with `aggregation`.                                                                                                         |
+| `projection`  | object | MongoDB projection document defining the fields materialized into the FDA (used with `filter`).                                                                         |
+| `aggregation` | array  | MongoDB aggregation pipeline. Mutually exclusive with `filter`. Each stage must be a single-key object, and only stages in the read-only allowlist below are permitted. |
 
 In MongoDB, projection can include more complex operators like `$slice` or `$elemMatch`. See the
 [MongoDB projection documentation](https://www.mongodb.com/docs/manual/tutorial/project-fields-from-query-results/) for
@@ -877,12 +877,18 @@ Datasource-specific constraints:
 -   MongoDB FDAs datasources support `refreshPolicy.type=window`, enabling sliding-window refresh and partitioning. See
     [Sliding windows and partitioning](AdvancedTopics/sliding_windows_and_partitioning.md) for more details.
 -   `filter` and `aggregation` are mutually exclusive. Exactly one of them must be provided.
--   Aggregation pipelines are read-only. Stages `$out` and `$merge` are not allowed.
 -   Cached MongoDB FDAs created in `strict` mode must declare their output columns: a `projection` listing the fields to
     include (`filter` queries), or a final `$project`/`$group` stage (`aggregation` queries). MongoDB is schemaless, so
     without a declared column set the columns would have to be taken from a single sampled document, and any field
     missing from that document would be dropped from the materialized data for every document. Use
     `validationMode=unchecked` to fall back to that sampling behaviour.
+-   Aggregation pipelines may only use the following read-only stages: `$match`, `$project`, `$addFields`, `$set`,
+    `$unset`, `$group`, `$sort`, `$limit`, `$skip`, `$unwind`, `$count`, `$facet`, `$bucket`, `$bucketAuto`, `$sample`,
+    `$replaceRoot`, `$replaceWith`, `$sortByCount`, `$geoNear`, `$redact`. Stages nested inside a `$facet` sub-pipeline
+    are validated against this same allowlist. Any other stage is rejected — including write stages (`$out`, `$merge`)
+    and cross-collection stages (`$lookup`, `$graphLookup`, `$unionWith`, `$documents`). Cross-collection stages are
+    unsupported by design: a Mongo datasource/FDA is scoped to a single declared `collection`, and those stages could
+    let a pipeline read data outside that scope.
 -   For `filter` queries, if `timeColumn` is provided and `query.projection` is present, the projection must include
     `timeColumn`.
 -   For `aggregation` queries, if `timeColumn` is provided and the final stage is `$project`, that final projection must

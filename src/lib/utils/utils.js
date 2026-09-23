@@ -300,11 +300,14 @@ export function convertRefreshIntervalToMs(interval) {
   return null;
 }
 
+// Use UTC and sample a full calendar cycle to get the maximum gap between runs.
+const CRON_SAMPLED_RUNS = 13;
+
 function cronToIntervalMs(cron) {
   let interval;
 
   try {
-    interval = CronExpressionParser.parse(cron);
+    interval = CronExpressionParser.parse(cron, { tz: 'UTC' });
   } catch {
     return null;
   }
@@ -313,11 +316,23 @@ function cronToIntervalMs(cron) {
     return null;
   }
 
-  // We need to get the difference between two consecutive runs to know the actual interval
-  const next = interval.next().getTime();
-  const next2 = interval.next().getTime();
+  let previousRun = interval.next()?.getTime();
+  if (!Number.isFinite(previousRun)) {
+    return null;
+  }
 
-  return next2 - next;
+  let longestGap = null;
+  for (let run = 1; run < CRON_SAMPLED_RUNS; run++) {
+    const currentRun = interval.next()?.getTime();
+    if (!Number.isFinite(currentRun)) {
+      break;
+    }
+
+    longestGap = Math.max(longestGap ?? 0, currentRun - previousRun);
+    previousRun = currentRun;
+  }
+
+  return longestGap;
 }
 
 export function stringifyCsvValue(value) {
