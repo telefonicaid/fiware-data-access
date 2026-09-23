@@ -39,7 +39,7 @@ function getMongoAggregationDeclaredColumns(aggregation) {
     return [];
   }
 
-  const finalStage = aggregation[aggregation.length - 1];
+  const finalStage = aggregation.at(-1);
 
   if (isMongoProjection(finalStage?.$project)) {
     return getMongoProjectionColumns(finalStage.$project);
