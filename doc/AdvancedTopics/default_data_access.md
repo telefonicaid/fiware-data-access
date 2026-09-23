@@ -68,6 +68,24 @@ instead. This avoids binder errors, since the generator cannot determine the tar
 produced by `string_split()`. This is the case for uploaded CSV/XLS FDAs (no schema is persisted for them at all) and
 also for **every** MongoDB-backed FDA — see the note below.
 
+#### The comma is a reserved separator
+
+`string_split($param, ',')` splits on every comma, with no escaping or quoting mechanism, so a comma can never be part
+of a value in these generated filters. Two consequences worth knowing:
+
+-   **Decimal numbers must use a dot**, never a comma, whatever the locale: `?temperature=33.5`. Sending
+    `?temperature=33,5` is not an error — it is read as the two values `33` and `5`, and returns the rows matching
+    either of them. This fails **silently**, with a `200` and the wrong rows.
+-   **Text values containing a comma cannot be matched at all.** `?name=Doe,%20John` is split into `Doe` and ` John`, so
+    the query returns no rows. There is no way to escape it in the generated filter; query such a column through a
+    custom DA using plain equality (`WHERE "name" = $name`) instead.
+
+A value that cannot be cast to the column type (for example `?age=abc` on an `INTEGER` column) fails loudly instead,
+with a DuckDB conversion error.
+
+Filters generated **without** real column types (MongoDB-backed and uploaded FDAs, see below) use plain equality, so
+none of this applies to them: their values may contain commas, and they accept a single value only.
+
 ### MongoDB-backed FDAs
 
 MongoDB FDAs created in `strict` mode have a persisted `schema`, but MongoDB does not provide a fixed schema that can be
