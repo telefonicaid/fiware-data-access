@@ -98,7 +98,7 @@ export const DATA_CONTENT_TYPES = [
 ];
 
 // Supported MIME types for /data, listed in server-default preference order.
-const JSON_INTEGER_COLUMN_TYPES = new Set([
+export const JSON_INTEGER_COLUMN_TYPES = new Set([
   'BIGINT',
   'HUGEINT',
   'UBIGINT',
