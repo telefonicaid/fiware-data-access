@@ -271,9 +271,6 @@ async function executePreparedStatement(stmt, boundParams, streaming) {
 
 async function getRowObjectsWithJsonIntegers(result) {
   const rows = await result.getRowObjectsJson();
-  if (rows.length === 0) {
-    return rows;
-  }
 
   const columnTypes = result.columnTypes();
   const integerColumns = result
@@ -594,6 +591,8 @@ function applyParams(reqParams, params) {
     }
 
     if (value !== undefined) {
+      const rawValue = value;
+
       // Type coercion
       if (param.type) {
         const coerced = isTypeOf(value, param.type);
@@ -629,7 +628,10 @@ function applyParams(reqParams, params) {
         }
       }
 
-      validated[param.name] = value;
+      validated[param.name] =
+        param.type === 'Number' && isUnsafeIntegerString(rawValue)
+          ? BigInt(rawValue.trim())
+          : value;
     }
   }
 
@@ -667,19 +669,11 @@ const TYPE_COERCERS = {
     }
 
     const num = Number(v);
-    if (!Number.isFinite(num)) {
-      return undefined;
+    if (Number.isFinite(num)) {
+      return num;
     }
 
-    if (
-      typeof v === 'string' &&
-      !Number.isSafeInteger(num) &&
-      /^-?\d+$/.test(v.trim())
-    ) {
-      return BigInt(v.trim());
-    }
-
-    return num;
+    return undefined;
   },
   Boolean: (v) => {
     if (v === true || v === false) {
@@ -721,6 +715,14 @@ const TYPE_COERCERS = {
     return Number.isNaN(date.getTime()) ? undefined : date;
   },
 };
+
+function isUnsafeIntegerString(value) {
+  return (
+    typeof value === 'string' &&
+    /^-?\d+$/.test(value.trim()) &&
+    !Number.isSafeInteger(Number(value))
+  );
+}
 
 function isTypeOf(value, type) {
   if (value === null) {

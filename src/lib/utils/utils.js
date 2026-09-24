@@ -118,26 +118,27 @@ export function normalizeForSerialization(obj) {
   }
 
   if (obj !== null && typeof obj === 'object') {
-    const keys = Object.keys(obj);
-
-    if (keys.length === 1 && keys[0] === 'micros') {
-      const isoDate = toIsoFromMicros(obj.micros);
-
-      if (isoDate) {
-        return isoDate;
-      }
-    }
-
-    const converted = {};
-
-    for (const key of keys) {
-      converted[key] = normalizeForSerialization(obj[key]);
-    }
-
-    return converted;
+    return normalizeObject(obj);
   }
 
   return obj;
+}
+
+function normalizeObject(obj) {
+  const keys = Object.keys(obj);
+
+  if (keys.length === 1 && keys[0] === 'micros') {
+    const isoDate = toIsoFromMicros(obj.micros);
+    if (isoDate) {
+      return isoDate;
+    }
+  }
+
+  const converted = {};
+  for (const key of keys) {
+    converted[key] = normalizeForSerialization(obj[key]);
+  }
+  return converted;
 }
 
 // Validate that the request body only contains allowed fields

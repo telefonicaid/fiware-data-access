@@ -361,7 +361,11 @@ describe('db utils', () => {
 
     const stmt = {
       bind: jest.fn().mockResolvedValue(undefined),
-      run: jest.fn().mockResolvedValue({ getRowObjectsJson: () => [] }),
+      run: jest.fn().mockResolvedValue({
+        getRowObjectsJson: () => [],
+        columnNames: () => [],
+        columnTypes: () => [],
+      }),
       close: jest.fn().mockResolvedValue(undefined),
     };
     runtimeConn.prepare.mockResolvedValueOnce(stmt);
@@ -666,7 +670,11 @@ describe('db utils', () => {
 
     const stmt = {
       bind: jest.fn().mockResolvedValue(undefined),
-      run: jest.fn().mockResolvedValue({ getRowObjectsJson: () => [] }),
+      run: jest.fn().mockResolvedValue({
+        getRowObjectsJson: () => [],
+        columnNames: () => [],
+        columnTypes: () => [],
+      }),
       close: jest.fn().mockResolvedValue(undefined),
     };
     runtimeConn.prepare.mockResolvedValueOnce(stmt);
