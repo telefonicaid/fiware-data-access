@@ -93,22 +93,37 @@ describe('utils', () => {
       });
     });
 
-    test('converts bigint values outside the safe integer range to exact strings', async () => {
+    test('serializes bigint values outside the safe integer range as exact JSON numbers', async () => {
       const { normalizeForSerialization } = await loadUtilsModule();
 
-      expect(
-        normalizeForSerialization({
-          safe: 9007199254740991n,
-          big: 9007199254740993n,
-          negative: -9007199254740993n,
-          huge: 170141183460469231731687303715884105727n,
-        }),
-      ).toEqual({
-        safe: 9007199254740991,
-        big: '9007199254740993',
-        negative: '-9007199254740993',
-        huge: '170141183460469231731687303715884105727',
+      const normalized = normalizeForSerialization({
+        safe: 9007199254740991n,
+        big: 9007199254740993n,
+        negative: -9007199254740993n,
+        huge: 170141183460469231731687303715884105727n,
       });
+
+      expect(normalized.safe).toBe(9007199254740991);
+      expect(JSON.stringify(normalized)).toBe(
+        '{"safe":9007199254740991,"big":9007199254740993,"negative":-9007199254740993,"huge":170141183460469231731687303715884105727}',
+      );
+    });
+
+    test('keeps exact JSON numbers intact when normalized twice', async () => {
+      const { normalizeForSerialization } = await loadUtilsModule();
+
+      const once = normalizeForSerialization([{ big: 9007199254740993n }]);
+
+      expect(JSON.stringify(normalizeForSerialization(once))).toBe(
+        '[{"big":9007199254740993}]',
+      );
+    });
+
+    test('writes exact JSON numbers into CSV cells with all their digits', async () => {
+      const { stringifyCsvValue } = await loadUtilsModule();
+
+      expect(stringifyCsvValue(9007199254740993n)).toBe('9007199254740993');
+      expect(stringifyCsvValue(7n)).toBe('7');
     });
 
     test('converts DuckDB decimal values to their exact string representation', async () => {

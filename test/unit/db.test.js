@@ -196,6 +196,62 @@ describe('db utils', () => {
     expect(stmt.close).toHaveBeenCalledTimes(1);
   });
 
+  test('runPreparedStatement returns 64/128-bit integer columns as exact JSON numbers', async () => {
+    const { runPreparedStatement, runtimeConn } = await loadDbModule({
+      retrieveDAResult: {
+        query: 'SELECT id, big_value, total, amount, label',
+        params: [],
+      },
+    });
+    retrieveFDAMock.mockReset().mockResolvedValue({});
+    const stmt = {
+      bind: jest.fn().mockResolvedValue(undefined),
+      run: jest.fn().mockResolvedValue({
+        getRowObjectsJson: async () => [
+          {
+            id: 1,
+            big_value: '9007199254740993',
+            total: '3',
+            amount: '12.34',
+            label: '42',
+          },
+          {
+            id: 2,
+            big_value: null,
+            total: '3',
+            amount: null,
+            label: null,
+          },
+        ],
+        columnNames: () => ['id', 'big_value', 'total', 'amount', 'label'],
+        columnTypes: () => [
+          'INTEGER',
+          'BIGINT',
+          'HUGEINT',
+          'DECIMAL(10,2)',
+          'VARCHAR',
+        ],
+      }),
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+    runtimeConn.prepare.mockResolvedValueOnce(stmt);
+
+    const rows = await runPreparedStatement(
+      runtimeConn,
+      'svc',
+      'fdaA',
+      'daA',
+      {},
+      '/sp',
+    );
+
+    expect(rows[0].total).toBe(3);
+    expect(JSON.stringify(rows)).toBe(
+      '[{"id":1,"big_value":9007199254740993,"total":3,"amount":"12.34","label":"42"},' +
+        '{"id":2,"big_value":null,"total":3,"amount":null,"label":null}]',
+    );
+  });
+
   test('runPreparedStatementStream closes stmt when bind fails and wraps error', async () => {
     const { runPreparedStatementStream, runtimeConn } = await loadDbModule({
       retrieveDAResult: {
