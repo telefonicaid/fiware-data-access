@@ -1974,6 +1974,10 @@ _**Content negotiation and serialization notes**_
 -   In query-style context, no additional query parameters are allowed besides `service`, `servicePath`, and
     `outputType`; if the client attempts to send any other query parameter, the API returns `400 BadRequest` with
     `FDA fresh query does not accept query parameters`.
+-   Date values are normalized to strings (ISO 8601) before JSON/NDJSON/CSV serialization.
+-   Numeric database values are returned as JSON numbers, including 64-bit and 128-bit integers beyond
+    `Number.MAX_SAFE_INTEGER`, which keep all their digits. `DECIMAL` / `NUMERIC` values are returned as strings to
+    preserve their exact scale. See [Numeric Precision](/doc/05_advanced_topics.md#numeric-precision).
 -   With `Accept: application/x-ndjson` and `Accept: text/csv`, results are streamed incrementally from the datasource
     using a cursor (PostgreSQL) or a chunked collection cursor (MongoDB).
 
@@ -2099,7 +2103,9 @@ _**Content negotiation and serialization notes**_
 -   Unsupported query fields are rejected with `400 BadRequest`.
 -   `fresh` query field is rejected with `400 BadRequest`.
 -   Date values are normalized to strings (ISO 8601) before JSON/NDJSON/CSV serialization.
--   Integer database values are normalized to numeric JSON values.
+-   Numeric database values are returned as JSON numbers, including 64-bit and 128-bit integers beyond
+    `Number.MAX_SAFE_INTEGER`, which keep all their digits. `DECIMAL` / `NUMERIC` values are returned as strings to
+    preserve their exact scale. See [Numeric Precision](/doc/05_advanced_topics.md#numeric-precision).
 -   With `Accept: text/csv` and `Accept: application/x-ndjson`, responses are streamed.
 
 _**Example Request (without DA parameters):**_
