@@ -454,11 +454,7 @@ export function registerFreshQueriesIntegrationTests({
 
         expect(cachedJson.status).toBe(200);
         expect(cachedJson.json.map((row) => row.date)).toEqual(expectedDates);
-        expect(
-          cachedJson.json.every((row) =>
-            ['string', 'number'].includes(typeof row.total),
-          ),
-        ).toBe(true);
+        expect(cachedJson.json.map((row) => row.total)).toEqual([42, 84]);
 
         const cachedNdjson = await httpReqRaw({
           method: 'GET',
@@ -480,11 +476,7 @@ export function registerFreshQueriesIntegrationTests({
           .filter((line) => line.trim())
           .map((line) => JSON.parse(line));
         expect(cachedNdjsonRows.map((row) => row.date)).toEqual(expectedDates);
-        expect(
-          cachedNdjsonRows.every((row) =>
-            ['string', 'number'].includes(typeof row.total),
-          ),
-        ).toBe(true);
+        expect(cachedNdjsonRows.map((row) => row.total)).toEqual([42, 84]);
 
         const cachedCsv = await httpReqRaw({
           method: 'GET',
@@ -559,7 +551,7 @@ export function registerFreshQueriesIntegrationTests({
       }
     });
 
-    test('BIGINT beyond Number.MAX_SAFE_INTEGER and DECIMAL keep full precision in params and in cached and fresh JSON/NDJSON/CSV', async () => {
+    test('BIGINT beyond Number.MAX_SAFE_INTEGER and DECIMAL keep full precision in params and as exact JSON numbers in cached and fresh JSON/NDJSON/CSV', async () => {
       const baseUrl = getBaseUrl();
       const fixtureTable = 'bigint_precision_fixture';
       const fdaBigintId = 'fda_bigint_precision';
@@ -645,11 +637,8 @@ export function registerFreshQueriesIntegrationTests({
           daBigintId,
           { big_value: '9007199254740993' },
         );
-        const expectedCachedRow = {
-          id: 1,
-          big_value: '9007199254740993',
-          amount: '12.34',
-        };
+        const expectedCachedRow =
+          '{"id":1,"big_value":9007199254740993,"amount":"12.34"}';
 
         const cachedJson = await httpReq({
           method: 'GET',
@@ -661,7 +650,7 @@ export function registerFreshQueriesIntegrationTests({
         });
 
         expect(cachedJson.status).toBe(200);
-        expect(cachedJson.json).toEqual([expectedCachedRow]);
+        expect(cachedJson.text).toBe(`[${expectedCachedRow}]`);
 
         const cachedNdjson = await httpReqRaw({
           method: 'GET',
@@ -673,12 +662,7 @@ export function registerFreshQueriesIntegrationTests({
         });
 
         expect(cachedNdjson.status).toBe(200);
-        expect(
-          cachedNdjson.text
-            .split('\n')
-            .filter((line) => line.trim())
-            .map((line) => JSON.parse(line)),
-        ).toEqual([expectedCachedRow]);
+        expect(cachedNdjson.text.trim()).toBe(expectedCachedRow);
 
         const cachedCsv = await httpReqRaw({
           method: 'GET',
@@ -718,9 +702,9 @@ export function registerFreshQueriesIntegrationTests({
           fdaFreshBigintId,
         );
         const expectedFreshRows = [
-          { id: 1, big_value: '9007199254740993', amount: '12.34' },
-          { id: 2, big_value: '9007199254740992', amount: '1.50' },
-          { id: 3, big_value: 7, amount: '0.01' },
+          '{"id":1,"big_value":9007199254740993,"amount":"12.34"}',
+          '{"id":2,"big_value":9007199254740992,"amount":"1.50"}',
+          '{"id":3,"big_value":7,"amount":"0.01"}',
         ];
 
         const freshJson = await httpReq({
@@ -733,7 +717,7 @@ export function registerFreshQueriesIntegrationTests({
         });
 
         expect(freshJson.status).toBe(200);
-        expect(freshJson.json).toEqual(expectedFreshRows);
+        expect(freshJson.text).toBe(`[${expectedFreshRows.join(',')}]`);
 
         const freshNdjson = await httpReqRaw({
           method: 'GET',
@@ -745,12 +729,7 @@ export function registerFreshQueriesIntegrationTests({
         });
 
         expect(freshNdjson.status).toBe(200);
-        expect(
-          freshNdjson.text
-            .split('\n')
-            .filter((line) => line.trim())
-            .map((line) => JSON.parse(line)),
-        ).toEqual(expectedFreshRows);
+        expect(freshNdjson.text.trim().split('\n')).toEqual(expectedFreshRows);
 
         const freshCsv = await httpReqRaw({
           method: 'GET',
