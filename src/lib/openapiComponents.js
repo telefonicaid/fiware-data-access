@@ -207,7 +207,10 @@
  *       description: >
  *         Query results. In header-style context the format is chosen via content negotiation (`Accept`); in
  *         query-style context it is chosen via `outputType` (default `ndjson`). `ndjson` and `csv` responses are
- *         streamed incrementally.
+ *         streamed incrementally. Values are serialized the same way in every format and for both cached and fresh
+ *         queries: dates as ISO 8601 strings, numbers as JSON numbers (64/128-bit integers keep all their digits,
+ *         also beyond 2^53 − 1), and `DECIMAL`/`NUMERIC` values as strings to keep their exact scale. In `.xlsx`
+ *         output, integers beyond 2^53 − 1 are written as text.
  *       content:
  *         application/json:
  *           schema:
@@ -349,6 +352,9 @@
  *         type:
  *           type: string
  *           enum: [Number, Boolean, Text, DateTime]
+ *           description: >
+ *             Type the value is coerced to. For `Number`, an integer beyond 2^53 − 1 is bound to the query as an
+ *             exact integer, so it can be compared with `BIGINT` columns; any other value is bound as a double.
  *         required:
  *           type: boolean
  *           default: false
