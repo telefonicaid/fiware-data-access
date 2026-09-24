@@ -1538,6 +1538,13 @@ Each object in the array `params` can have the following keys:
 
 This is distinct from omitting the parameter entirely, which is governed by the `required` and `default` keys above.
 
+**Large integers and decimals with `Number`:** an integer value beyond ±9007199254740991 (`Number.MAX_SAFE_INTEGER`),
+such as `?big_value=9007199254740993`, is bound to the query as an exact integer, so it can be compared against a
+`BIGINT` column without losing precision. Any other value (`1.5`, `1e20`, ...) is bound as a double precision number. If
+you need exact decimal comparisons, declare the param as `Text` and cast it in the query, e.g.
+`WHERE ($amount IS NULL OR amount = CAST($amount AS DECIMAL(10, 2)))`. See
+[Numeric Precision](/doc/05_advanced_topics.md#numeric-precision) for how numeric values are returned in responses.
+
 Example array:
 
 ```

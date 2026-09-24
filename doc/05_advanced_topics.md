@@ -199,6 +199,41 @@ clause is written and on the value supplied for the parameter, whether via its `
 
 ---
 
+## Numeric Precision
+
+JSON numbers are handled in JavaScript as double precision floats, which only represent integers exactly up to
+±9007199254740991 (`Number.MAX_SAFE_INTEGER`, 2^53 − 1). Beyond that limit a value like `9007199254740993` silently
+becomes `9007199254740992`. FDA follows one rule to avoid that loss, both for DA params and for query results:
+
+> An integer that fits exactly in a JSON number is returned as a number. An integer that does not fit is returned as a
+> string with all its digits. Fixed-point decimals (`DECIMAL` / `NUMERIC`) are always returned as strings.
+
+### DA params
+
+A param declared as `Number` whose value is an integer beyond the safe range is bound to the query as an exact integer,
+so `WHERE big_value = $big_value` matches a `BIGINT` column. See [Params](/doc/03_api.md#params) for details and for the
+`Text` + `CAST` alternative when exact decimal comparisons are needed.
+
+### Response values
+
+| SQL type                                    | Cached DA, `application/json` | Cached DA, NDJSON / CSV and fresh FDA queries |
+| ------------------------------------------- | ----------------------------- | --------------------------------------------- |
+| `SMALLINT`, `INTEGER`, `REAL`, `DOUBLE`     | number                        | number                                        |
+| `BIGINT`, `HUGEINT` (within the safe range) | **string** (e.g. `"5"`)       | number (e.g. `5`)                             |
+| `BIGINT`, `HUGEINT` (beyond the safe range) | string (`"9007199254740993"`) | string (`"9007199254740993"`)                 |
+| `DECIMAL`, `NUMERIC`                        | string (`"12.34"`)            | string (`"12.34"`)                            |
+
+The only difference between formats is the one highlighted in the table: cached DA queries returned as
+`application/json` use the JSON conversion of the DuckDB engine, which returns every `BIGINT` as a string. This includes
+aggregates such as `COUNT(*)`. If a DA needs a JSON number there, cast the column in the DA query, for example
+`CAST(COUNT(*) AS INTEGER) AS total` or `CAST(big_value AS DOUBLE)` when losing precision is acceptable.
+
+Keep in mind that a cached FDA over PostgreSQL stores `NUMERIC` columns as `DOUBLE` in its snapshot, so they are
+returned as numbers. A `CAST(... AS DECIMAL(p, s))` in the DA query returns them as decimal strings with a fixed scale,
+but it cannot recover digits beyond double precision that were already lost when the snapshot was stored.
+
+---
+
 ## Pentaho CDA Compatibility Layer
 
 FDA includes a compatibility layer to support legacy Pentaho CDA clients.
