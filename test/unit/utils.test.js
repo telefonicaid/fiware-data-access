@@ -93,6 +93,41 @@ describe('utils', () => {
       });
     });
 
+    test('converts bigint values outside the safe integer range to exact strings', async () => {
+      const { normalizeForSerialization } = await loadUtilsModule();
+
+      expect(
+        normalizeForSerialization({
+          safe: 9007199254740991n,
+          big: 9007199254740993n,
+          negative: -9007199254740993n,
+          huge: 170141183460469231731687303715884105727n,
+        }),
+      ).toEqual({
+        safe: 9007199254740991,
+        big: '9007199254740993',
+        negative: '-9007199254740993',
+        huge: '170141183460469231731687303715884105727',
+      });
+    });
+
+    test('converts DuckDB decimal values to their exact string representation', async () => {
+      const { normalizeForSerialization } = await loadUtilsModule();
+      const { DuckDBDecimalValue } = await import('@duckdb/node-api');
+
+      expect(
+        normalizeForSerialization({
+          price: new DuckDBDecimalValue(1234n, 10, 2),
+          delta: new DuckDBDecimalValue(-5n, 18, 3),
+          nested: [new DuckDBDecimalValue(9007199254740993n, 38, 0)],
+        }),
+      ).toEqual({
+        price: '12.34',
+        delta: '-0.005',
+        nested: ['9007199254740993'],
+      });
+    });
+
     test('converts a Mongo ObjectId to its hex string instead of walking into its buffer', async () => {
       const { normalizeForSerialization } = await loadUtilsModule();
       const id = new ObjectId('507f1f77bcf86cd799439011');

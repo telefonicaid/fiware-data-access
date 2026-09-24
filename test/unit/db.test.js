@@ -523,6 +523,37 @@ describe('db utils', () => {
     ).toThrow('Param "quantity" not of valid type (Number).');
   });
 
+  test.each([
+    ['9007199254740993', 9007199254740993n],
+    ['-9007199254740993', -9007199254740993n],
+    [' 9007199254740993 ', 9007199254740993n],
+    ['9007199254740991', 9007199254740991],
+    ['42', 42],
+    ['1.5', 1.5],
+    ['1e20', 1e20],
+  ])(
+    'resolveDAParams coerces Number value %p to %p without losing integer precision',
+    async (input, expected) => {
+      const { resolveDAParams } = await loadDbModule();
+
+      const resolved = resolveDAParams({ big_value: input }, [
+        { name: 'big_value', type: 'Number' },
+      ]);
+
+      expect(resolved.big_value).toBe(expected);
+    },
+  );
+
+  test('resolveDAParams applies range validation to unsafe integer Number values', async () => {
+    const { resolveDAParams } = await loadDbModule();
+
+    expect(() =>
+      resolveDAParams({ big_value: '9007199254740993' }, [
+        { name: 'big_value', type: 'Number', range: [0, 100] },
+      ]),
+    ).toThrow('Param "big_value" not in valid param range [0,100].');
+  });
+
   test('resolveDAParams keeps an empty string value for Text', async () => {
     const { resolveDAParams } = await loadDbModule();
 
