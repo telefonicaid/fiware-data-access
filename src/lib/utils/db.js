@@ -642,11 +642,19 @@ const TYPE_COERCERS = {
     }
 
     const num = Number(v);
-    if (Number.isFinite(num)) {
-      return num;
+    if (!Number.isFinite(num)) {
+      return undefined;
     }
 
-    return undefined;
+    if (
+      typeof v === 'string' &&
+      !Number.isSafeInteger(num) &&
+      /^-?\d+$/.test(v.trim())
+    ) {
+      return BigInt(v.trim());
+    }
+
+    return num;
   },
   Boolean: (v) => {
     if (v === true || v === false) {

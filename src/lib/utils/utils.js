@@ -71,10 +71,26 @@ function isObjectId(obj) {
   );
 }
 
+function isDuckDBDecimal(obj) {
+  return (
+    obj !== null &&
+    typeof obj === 'object' &&
+    typeof obj.value === 'bigint' &&
+    Number.isInteger(obj.width) &&
+    Number.isInteger(obj.scale) &&
+    typeof obj.toDouble === 'function'
+  );
+}
+
 // Normalize runtime values so downstream serializers emit stable output.
 export function normalizeForSerialization(obj) {
   if (typeof obj === 'bigint') {
-    return Number(obj);
+    const num = Number(obj);
+    return Number.isSafeInteger(num) ? num : obj.toString();
+  }
+
+  if (isDuckDBDecimal(obj)) {
+    return obj.toString();
   }
 
   if (typeof obj === 'string') {
