@@ -96,3 +96,11 @@ export const DATA_CONTENT_TYPES = [
   'application/vnd.ms-excel',
   'application/vnd.fiware.cda+json',
 ];
+
+// Supported MIME types for /data, listed in server-default preference order.
+const JSON_INTEGER_COLUMN_TYPES = new Set([
+  'BIGINT',
+  'HUGEINT',
+  'UBIGINT',
+  'UHUGEINT',
+]);

@@ -27,7 +27,8 @@ import { FDAError } from '../fdaError.js';
 import { getBasicLogger } from './logger.js';
 import { config } from '../fdaConfig.js';
 import { getBucketNameFromService, getFDAStoragePath } from './fdaScope.js';
-import { convertRefreshIntervalToMs } from './utils.js';
+import { convertRefreshIntervalToMs, toJsonInteger } from './utils.js';
+import { JSON_INTEGER_COLUMN_TYPES } from '../constants.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -265,7 +266,31 @@ async function executePreparedStatement(stmt, boundParams, streaming) {
   }
 
   const result = await stmt.run();
-  return result.getRowObjectsJson();
+  return getRowObjectsWithJsonIntegers(result);
+}
+
+async function getRowObjectsWithJsonIntegers(result) {
+  const rows = await result.getRowObjectsJson();
+  if (rows.length === 0) {
+    return rows;
+  }
+
+  const columnTypes = result.columnTypes();
+  const integerColumns = result
+    .columnNames()
+    .filter((_name, i) =>
+      JSON_INTEGER_COLUMN_TYPES.has(String(columnTypes[i])),
+    );
+
+  for (const row of rows) {
+    for (const column of integerColumns) {
+      if (row[column] !== null) {
+        row[column] = toJsonInteger(row[column]);
+      }
+    }
+  }
+
+  return rows;
 }
 
 async function prepareAndRunStatementWithFallback(

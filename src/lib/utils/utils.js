@@ -82,11 +82,19 @@ function isDuckDBDecimal(obj) {
   );
 }
 
+export function toJsonInteger(value) {
+  const num = Number(value);
+  return Number.isSafeInteger(num) ? num : JSON.rawJSON(String(value));
+}
+
 // Normalize runtime values so downstream serializers emit stable output.
 export function normalizeForSerialization(obj) {
   if (typeof obj === 'bigint') {
-    const num = Number(obj);
-    return Number.isSafeInteger(num) ? num : obj.toString();
+    return toJsonInteger(obj);
+  }
+
+  if (JSON.isRawJSON(obj)) {
+    return obj;
   }
 
   if (isDuckDBDecimal(obj)) {
