@@ -53,6 +53,86 @@ export function registerSlidingWindowsIntegrationTests({
     });
   }
 
+  async function createDa(baseUrl, fdaId, daId, query) {
+    const res = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/${visibility}/fdas/${fdaId}/das`,
+      headers: {
+        'Fiware-Service': service,
+        'Fiware-ServicePath': servicePath,
+      },
+      body: { id: daId, description: daId, query },
+    });
+
+    if (res.status >= 400) {
+      console.error('POST /das failed:', res.status, res.json ?? res.text);
+    }
+    return res;
+  }
+
+  async function readDa(baseUrl, fdaId, daId) {
+    const res = await httpReq({
+      method: 'GET',
+      url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId, {
+        pageSize: 100,
+        pageStart: 0,
+      }),
+      headers: { 'Fiware-Service': service },
+    });
+
+    if (res.status >= 400) {
+      console.error('GET /das/data failed:', res.status, res.json ?? res.text);
+    }
+    return res;
+  }
+
+  function buildSchemaEvolutionFdaBody(fdaId, fixtureTable, extraBody = {}) {
+    return {
+      id: fdaId,
+      query: `SELECT * FROM public.${fixtureTable}`,
+      description: 'source schema change test',
+      refreshPolicy: {
+        type: 'window',
+        params: {
+          refreshInterval: '1 day',
+          fetchSize: 'day',
+          windowSize: 'week',
+        },
+      },
+      timeColumn: 'observed_at',
+      objStgConf: {
+        partition: 'day',
+      },
+      ...extraBody,
+    };
+  }
+
+  async function createSchemaEvolutionFixture(pgClient, fixtureTable) {
+    await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
+    await pgClient.query(`
+      CREATE TABLE public.${fixtureTable} (
+        id INT PRIMARY KEY,
+        label TEXT NOT NULL,
+        observed_at TIMESTAMPTZ NOT NULL
+      )
+    `);
+    await pgClient.query(`
+      INSERT INTO public.${fixtureTable} (id, label, observed_at)
+      VALUES
+        (1, 'older_partition', NOW() - INTERVAL '4 days'),
+        (2, 'recent_partition', NOW() - INTERVAL '1 hour')
+    `);
+  }
+
+  async function addExtraColumnToFixture(pgClient, fixtureTable) {
+    await pgClient.query(
+      `ALTER TABLE public.${fixtureTable} ADD COLUMN extra TEXT`,
+    );
+    await pgClient.query(
+      `UPDATE public.${fixtureTable} SET extra = 'added_value' WHERE id = 2`,
+    );
+  }
+
   describe('Sliding window FDAs', () => {
     beforeAll(async () => {
       const baseUrl = getBaseUrl();
@@ -1316,6 +1396,162 @@ export function registerSlidingWindowsIntegrationTests({
           ]),
         );
         expect(labels).not.toContain('outside_week');
+      } finally {
+        await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
+        await pgClient.end();
+        await mongoClient.close();
+      }
+    });
+
+    test('PUT /fdas/:fdaId adopts a column added to the source table of a strict partitioned FDA', async () => {
+      const baseUrl = getBaseUrl();
+      const suffix = `${Date.now()}`;
+      const fixtureTable = `sw_schema_put_${suffix}`;
+      const fdaId = `fda_sw_schema_put_${suffix}`;
+
+      const pgClient = createPgClient();
+      await pgClient.connect();
+
+      try {
+        await createSchemaEvolutionFixture(pgClient, fixtureTable);
+
+        const createFda = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: buildSchemaEvolutionFdaBody(fdaId, fixtureTable),
+        });
+
+        expect(createFda.status).toBe(202);
+        await waitUntilFDACompleted({ baseUrl, service, fdaId });
+
+        await addExtraColumnToFixture(pgClient, fixtureTable);
+        await pgClient.query(`
+          INSERT INTO public.${fixtureTable} (id, label, observed_at, extra)
+          VALUES (3, 'after_alter', NOW() - INTERVAL '30 minutes', 'inserted_value')
+        `);
+
+        const updateFda = await httpReq({
+          method: 'PUT',
+          url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
+          headers: { 'Fiware-Service': service },
+        });
+
+        expect(updateFda.status).toBe(202);
+        await waitUntilFDACompleted({ baseUrl, service, fdaId });
+
+        const getFda = await httpReq({
+          method: 'GET',
+          url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+
+        expect(getFda.status).toBe(200);
+        expect(getFda.json.schema.map(({ name }) => name)).toEqual([
+          'id',
+          'label',
+          'observed_at',
+          'extra',
+        ]);
+
+        const createExtraDa = await createDa(
+          baseUrl,
+          fdaId,
+          'extra_column_da',
+          'SELECT id, extra ORDER BY id',
+        );
+        expect(createExtraDa.status).toBe(204);
+
+        const readExtra = await readDa(baseUrl, fdaId, 'extra_column_da');
+        expect(readExtra.status).toBe(200);
+        expect(readExtra.json.map((row) => row.extra)).toEqual([
+          null,
+          'added_value',
+          'inserted_value',
+        ]);
+      } finally {
+        await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
+        await pgClient.end();
+      }
+    });
+
+    test('window refresh of an unchecked partitioned FDA unions partitions with different columns', async () => {
+      const baseUrl = getBaseUrl();
+      const suffix = `${Date.now()}`;
+      const fixtureTable = `sw_schema_union_${suffix}`;
+      const fdaId = `fda_sw_schema_union_${suffix}`;
+
+      const pgClient = createPgClient();
+      await pgClient.connect();
+
+      const mongoClient = new MongoClient(getMongoUri());
+      await mongoClient.connect();
+      const agendaJobs = mongoClient.db('test-db').collection('agendaJobs');
+
+      try {
+        await createSchemaEvolutionFixture(pgClient, fixtureTable);
+
+        const createFda = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: buildSchemaEvolutionFdaBody(fdaId, fixtureTable, {
+            validationMode: 'unchecked',
+          }),
+        });
+
+        expect(createFda.status).toBe(202);
+        await waitUntilFDACompleted({ baseUrl, service, fdaId });
+
+        await addExtraColumnToFixture(pgClient, fixtureTable);
+
+        const forceRecurring = await agendaJobs.updateOne(
+          { name: 'refresh-fda-recurring', 'data.fdaId': fdaId },
+          { $set: { nextRunAt: new Date() } },
+        );
+        expect(forceRecurring.modifiedCount).toBe(1);
+        await waitForJobToFinish(agendaJobs, fdaId, 'refresh-fda-recurring');
+
+        const createExtraDa = await createDa(
+          baseUrl,
+          fdaId,
+          'extra_column_da',
+          'SELECT id, extra ORDER BY id',
+        );
+        expect(createExtraDa.status).toBe(204);
+
+        const readExtra = await readDa(baseUrl, fdaId, 'extra_column_da');
+        expect(readExtra.status).toBe(200);
+        expect(readExtra.json.map((row) => row.extra)).toEqual([
+          null,
+          'added_value',
+        ]);
+
+        const createAllDa = await createDa(
+          baseUrl,
+          fdaId,
+          'all_columns_da',
+          'SELECT * ORDER BY id',
+        );
+        expect(createAllDa.status).toBe(204);
+
+        const readAll = await readDa(baseUrl, fdaId, 'all_columns_da');
+        expect(readAll.status).toBe(200);
+        expect(
+          readAll.json.map(({ label, extra }) => ({ label, extra })),
+        ).toEqual([
+          { label: 'older_partition', extra: null },
+          { label: 'recent_partition', extra: 'added_value' },
+        ]);
       } finally {
         await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
         await pgClient.end();
