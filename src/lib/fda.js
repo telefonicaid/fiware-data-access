@@ -67,6 +67,7 @@ import {
   removeDA,
   updateFDAStatus,
   updateFDALastFetch,
+  updateFDASchema,
   createDatasource,
   retrieveDatasources,
   retrieveDatasource,
@@ -79,6 +80,7 @@ import {
   validateMongoQuery,
   assertAllowedMongoAggregationStage,
 } from './utils/mongo.js';
+import { getMongoDeclaredColumns } from './utils/mongoQuery.js';
 import {
   normalizeForSerialization,
   getWindowDate,
@@ -114,6 +116,7 @@ import {
   VALID_REFRESH_POLICY_TYPES,
   VALID_WINDOW_FETCH_SIZES,
   PARTITION_TYPES,
+  UNKNOWN_COLUMN_TYPE,
 } from './constants.js';
 const logger = getBasicLogger();
 const TIME_COLUMN_NAME_PATTERN = /^\w+$/;
@@ -1079,17 +1082,24 @@ async function validateAndGetSourceSchema(
 }
 
 async function resolveMongoSourceSchema(dsConfig, query) {
-  const reader = await createMongoCursorReader(dsConfig, query, { limit: 1 });
-  const columns = reader.columns;
-  await reader.close();
+  const columns = getMongoDeclaredColumns(query);
 
-  if (!Array.isArray(columns) || columns.length === 0) {
-    return null;
+  if (columns.length === 0) {
+    throw new FDAError(
+      400,
+      'InvalidMongoFDAContract',
+      'Cached Mongo FDAs in strict mode must declare their output columns: use a ' +
+        'projection with the fields to include (find queries) or end the pipeline ' +
+        'with a $project/$group stage (aggregation queries). Use validationMode ' +
+        '"unchecked" to derive the columns from a sample document instead.',
+    );
   }
+
+  await validateMongoQuery(dsConfig, query);
 
   return {
     columns,
-    fields: columns.map((name) => ({ name, duckdbType: 'VARCHAR' })),
+    fields: columns.map((name) => ({ name, duckdbType: UNKNOWN_COLUMN_TYPE })),
     columnTypesKnown: false,
   };
 }
@@ -1476,6 +1486,8 @@ export async function processFDAAsync(
       objStgConf,
     );
 
+    await refreshFDASchemaFromStorage(service, fdaId, servicePath, objStgConf);
+
     await updateFDAStatus({
       service,
       fdaId,
@@ -1595,13 +1607,15 @@ function getUpdateMongoWindowQuery(query, timeColumn, latestFetchStartDate) {
 }
 
 function buildPersistedSchema(sourceSchema) {
+  const typesKnown = sourceSchema?.columnTypesKnown !== false;
   const schemaFields = Array.isArray(sourceSchema?.fields)
     ? sourceSchema.fields.filter(
         (field) =>
           typeof field?.name === 'string' &&
           field.name.length > 0 &&
-          typeof field?.duckdbType === 'string' &&
-          field.duckdbType.length > 0,
+          (!typesKnown ||
+            (typeof field?.duckdbType === 'string' &&
+              field.duckdbType.length > 0)),
       )
     : [];
 
@@ -1611,7 +1625,7 @@ function buildPersistedSchema(sourceSchema) {
 
   return schemaFields.map(({ name, duckdbType }) => ({
     name,
-    type: duckdbType,
+    type: typesKnown ? duckdbType : null,
   }));
 }
 
@@ -2444,11 +2458,12 @@ function resolveDefaultDATimeColumnName(timeColumn, columns) {
   );
 }
 
-async function getFDAColumnNamesFromStorage(
+async function getFDASchemaFromStorage(
   service,
   fdaId,
   servicePath,
   objStgConf,
+  { hivePartitioning = true } = {},
 ) {
   const conn = await getDBConnection();
   try {
@@ -2458,8 +2473,12 @@ async function getFDAColumnNamesFromStorage(
       ? `s3://${bucketName}/${storagePath}.parquet/**/*.parquet`
       : `s3://${bucketName}/${storagePath}.parquet`;
     const safeParquetPath = parquetPath.replaceAll("'", "''");
+    const readOptions =
+      objStgConf?.partition && !hivePartitioning
+        ? ', hive_partitioning = false'
+        : '';
     const describeResult = await conn.run(
-      `DESCRIBE SELECT * FROM read_parquet('${safeParquetPath}')`,
+      `DESCRIBE SELECT * FROM read_parquet('${safeParquetPath}'${readOptions})`,
     );
 
     const describeRows = await Promise.resolve(
@@ -2467,13 +2486,69 @@ async function getFDAColumnNamesFromStorage(
     );
 
     return describeRows
-      .map(
-        (row) =>
-          row?.column_name ?? row?.columnName ?? row?.name ?? row?.column,
-      )
-      .filter((name) => typeof name === 'string' && name.length > 0);
+      .map((row) => ({
+        name: row?.column_name ?? row?.columnName ?? row?.name ?? row?.column,
+        type: row?.column_type ?? row?.columnType ?? row?.type,
+      }))
+      .filter(({ name }) => typeof name === 'string' && name.length > 0);
   } finally {
     await releaseDBConnection(conn);
+  }
+}
+
+async function getFDAColumnNamesFromStorage(
+  service,
+  fdaId,
+  servicePath,
+  objStgConf,
+) {
+  const schema = await getFDASchemaFromStorage(
+    service,
+    fdaId,
+    servicePath,
+    objStgConf,
+  );
+
+  return schema.map(({ name }) => name);
+}
+
+// Refresh the persisted schema from the materialized Parquet
+async function refreshFDASchemaFromStorage(
+  service,
+  fdaId,
+  servicePath,
+  objStgConf,
+) {
+  try {
+    const fda = await retrieveFDA(service, fdaId, servicePath);
+    if (fda?.validationMode === FDA_VALIDATION_MODE_UNCHECKED) {
+      return;
+    }
+
+    // Exclude Hive partition columns.
+    const schema = await getFDASchemaFromStorage(
+      service,
+      fdaId,
+      servicePath,
+      objStgConf,
+      { hivePartitioning: false },
+    );
+
+    const isFullyTyped = schema.every(
+      ({ type }) =>
+        typeof type === 'string' && type.length > 0 && isValidDuckDBType(type),
+    );
+
+    if (schema.length === 0 || !isFullyTyped) {
+      return;
+    }
+
+    await updateFDASchema(service, fdaId, servicePath, schema);
+  } catch (error) {
+    logger.warn(
+      { err: error, fdaId },
+      'Could not derive FDA schema from storage, keeping the previous one',
+    );
   }
 }
 
@@ -2907,6 +2982,8 @@ export async function processUploadFDAJob({
         servicePath,
       );
     }
+
+    await refreshFDASchemaFromStorage(service, fdaId, servicePath, objStgConf);
 
     await updateFDAStatus({
       service,

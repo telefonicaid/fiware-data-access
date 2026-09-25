@@ -42,8 +42,10 @@ refresh job runs.
 A cached MongoDB FDA created in `strict` mode needs a schema before its first refresh. A zero-row Parquet snapshot is
 therefore created synchronously when the FDA is created.
 
-For MongoDB, the schema is obtained from a sample document and all fields are stored with the `VARCHAR` placeholder type
-described in [Default Data Access](default_data_access.md#mongodb-backed-fdas).
+For MongoDB, the snapshot columns come from the query's declared output (`projection` or final `$project`/`$group`
+stage). Their types are not known yet, so the persisted schema stores them as `null` (internally, the empty snapshot
+Parquet uses `VARCHAR` columns). After the first refresh, the persisted schema is replaced with the types of the
+materialized Parquet.
 
 The zero-row snapshot is especially important for partitioned FDAs. Without it, the initial unfiltered snapshot could
 create a partition based on the first document returned by MongoDB, even though that document may fall outside the

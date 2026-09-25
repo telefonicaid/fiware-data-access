@@ -97,6 +97,13 @@ export const DATA_CONTENT_TYPES = [
   'application/vnd.fiware.cda+json',
 ];
 
+// Error messages
+export const NO_PARQUET_FILES_MATCH_ERROR =
+  'No files found that match the pattern';
+
+// Default column type for schemaless datasources
+export const UNKNOWN_COLUMN_TYPE = 'VARCHAR';
+
 // Supported MIME types for /data, listed in server-default preference order.
 export const JSON_INTEGER_COLUMN_TYPES = new Set([
   'BIGINT',

@@ -979,6 +979,107 @@ describe('mongo utils', () => {
     expect(clientMock.close).toHaveBeenCalled();
   });
 
+  test('createMongoCursorReader takes the column set from the final aggregation stage', async () => {
+    const { createMongoCursorReader, collectionMock } = await loadMongoModule();
+
+    const cursorMock = {
+      next: jest
+        .fn()
+        .mockResolvedValueOnce({ status: 'ok', total: 2 })
+        .mockResolvedValueOnce(null),
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+
+    collectionMock.aggregate.mockReturnValueOnce(cursorMock);
+
+    const reader = await createMongoCursorReader(
+      { uri: 'mongodb://mongo:27017', database: 'test-db' },
+      {
+        collection: 'events',
+        aggregation: [
+          { $group: { _id: '$status', total: { $sum: 1 } } },
+          { $project: { _id: 0, status: '$_id', total: 1 } },
+        ],
+      },
+    );
+
+    // The declared output columns win over the keys of the first sampled document
+    expect(reader.columns).toEqual(['status', 'total']);
+    await expect(reader.readNextChunk()).resolves.toEqual([
+      { status: 'ok', total: 2 },
+    ]);
+
+    await reader.close();
+  });
+
+  test('createMongoCursorReader samples the first document when the query declares no columns', async () => {
+    const { createMongoCursorReader, collectionMock } = await loadMongoModule();
+
+    const cursorMock = {
+      next: jest
+        .fn()
+        .mockResolvedValueOnce({ _id: 'id-1', device: 'dev-1' })
+        .mockResolvedValueOnce(null),
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+
+    collectionMock.find.mockReturnValueOnce(cursorMock);
+
+    const reader = await createMongoCursorReader(
+      { uri: 'mongodb://mongo:27017', database: 'test-db' },
+      { collection: 'events', filter: {} },
+    );
+
+    expect(reader.columns).toEqual(['device']);
+
+    await reader.close();
+  });
+
+  test('createMongoCursorReader keeps a null $group key as a column', async () => {
+    const { createMongoCursorReader, collectionMock } = await loadMongoModule();
+
+    const cursorMock = {
+      next: jest
+        .fn()
+        .mockResolvedValueOnce({ _id: null, total: 7 })
+        .mockResolvedValueOnce(null),
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+
+    collectionMock.aggregate.mockReturnValueOnce(cursorMock);
+
+    const reader = await createMongoCursorReader(
+      { uri: 'mongodb://mongo:27017', database: 'test-db' },
+      {
+        collection: 'events',
+        aggregation: [{ $group: { _id: null, total: { $sum: 1 } } }],
+      },
+    );
+
+    expect(reader.columns).toEqual(['_id', 'total']);
+
+    await reader.close();
+  });
+
+  test('updateFDASchema stores the schema and removes it when empty', async () => {
+    const { updateFDASchema, collectionMock } = await loadMongoModule();
+
+    const schema = [{ name: 'device', type: 'VARCHAR' }];
+    await updateFDASchema('svc', 'fda1', '/servicepath', schema);
+
+    expect(collectionMock.updateOne).toHaveBeenCalledWith(
+      { service: 'svc', fdaId: 'fda1', servicePath: '/servicepath' },
+      { $set: { schema } },
+    );
+
+    await updateFDASchema('svc', 'fda1', '/servicepath', []);
+
+    expect(collectionMock.updateOne).toHaveBeenLastCalledWith(
+      { service: 'svc', fdaId: 'fda1', servicePath: '/servicepath' },
+      { $unset: { schema: '' } },
+    );
+  });
+
   test('runMongoQuery drains the cursor into a single array and closes it', async () => {
     const { runMongoQuery, collectionMock, clientMock } =
       await loadMongoModule();
