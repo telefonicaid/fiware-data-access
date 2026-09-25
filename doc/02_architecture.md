@@ -235,6 +235,9 @@ the schema is therefore generated in two steps:
 2. **After each successful fetch**, the schema is re-derived from the materialized Parquet using DuckDB. This updates
    both the column types and the column set when the source data changes.
 
+As a consequence, the schema of a MongoDB FDA is not a stable field: it may change between refreshes if the documents in
+the collection change their fields or value types.
+
 For MongoDB:
 
 -   Fields with different types across documents are materialized using the common type selected by DuckDB, typically
