@@ -1411,6 +1411,12 @@ export async function updateFDA(service, fdaId, visibility, servicePath) {
 
   assertFDAIsCached(fda, fdaId);
 
+  const datasource = await resolveDatasource(
+    service,
+    fda.datasourceId ?? DEFAULT_DATASOURCE_ID,
+  );
+  const regeneratedSchema = await resolveRegeneratedSchema(datasource, fda);
+
   const previous = await regenerateFDA(service, fdaId, normalizedServicePath);
 
   const agenda = getAgenda();
@@ -1418,12 +1424,17 @@ export async function updateFDA(service, fdaId, visibility, servicePath) {
   // Execute refresh immediately (when a fetcher is free)
   const effectiveServicePath = previous.servicePath ?? normalizedServicePath;
 
+  if (regeneratedSchema) {
+    await updateFDASchema(
+      service,
+      fdaId,
+      effectiveServicePath,
+      regeneratedSchema,
+    );
+  }
+
   let firstQuery = previous.query;
   if (previous.refreshPolicy?.type === 'window') {
-    const datasource = await resolveDatasource(
-      service,
-      previous.datasourceId ?? DEFAULT_DATASOURCE_ID,
-    );
     const windowQueryFn =
       datasource.type === 'mongodb' ? getMongoWindowQuery : getWindowQuery;
     firstQuery = windowQueryFn(
@@ -1452,6 +1463,22 @@ export async function updateFDA(service, fdaId, visibility, servicePath) {
       objStgConf: previous.objStgConf,
     });
   }
+}
+
+async function resolveRegeneratedSchema(datasource, fda) {
+  if (datasource.type !== 'postgres') {
+    return null;
+  }
+
+  const sourceSchema = await validateAndGetSourceSchema(
+    datasource,
+    fda.validationMode ?? FDA_VALIDATION_MODE_STRICT,
+    fda.query,
+    fda.timeColumn,
+    true,
+  );
+
+  return buildPersistedSchema(sourceSchema);
 }
 
 export async function processFDAAsync(
