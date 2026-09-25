@@ -108,6 +108,33 @@ This separation provides flexibility, but also introduces potential misconfigura
 
 ---
 
+## Source schema changes
+
+On each sliding-window refresh, only the partitions of the latest `fetchSize` are rewritten. Older partitions keep the
+columns and types they were written with. If the source changes its shape (a column is added, removed or renamed, or its
+type changes), partitions written before and after the change will differ.
+
+Partitioned FDAs are read with DuckDB's `union_by_name` option, so partitions are combined by column name:
+
+-   A column present only in some partitions is returned as `NULL` for the rows of the other partitions.
+-   A renamed column shows up under both names, each one `NULL` where it does not exist.
+-   A column stored with different types in different partitions is unified to a common type (for example, `BIGINT` and
+    `VARCHAR` become `VARCHAR`). The persisted `schema` reports that unified type.
+
+How a source change reaches the partitions depends on the datasource and the `validationMode`:
+
+| FDA                               | After a source schema change                                                                                                                                                                                                                                  | Recovery                                                                                                                                  |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| PostgreSQL, `strict`              | Fetched data is read with the persisted `schema`, matching columns by position. Adding or removing a column makes every refresh fail. A renamed column that keeps its position is stored under its old name.                                                  | `PUT /{visibility}/fdas/{fdaId}` re-resolves the `schema` from the source query and rewrites every partition inside `windowSize`.         |
+| PostgreSQL / MongoDB, `unchecked` | New partitions are written with the columns of the current data and older partitions keep the previous ones. Queries combine them by name.                                                                                                                    | Not required. A `PUT` or a consistency refresh rewrites every partition inside `windowSize` with the current columns.                     |
+| MongoDB, `strict`                 | Columns are fixed by the declared projection, so source changes do not add or remove columns. Types are inferred on every refresh: a window in which a field is always missing stores it as `VARCHAR`, which makes the unified type of that column `VARCHAR`. | Use an explicit `CAST` in DAs that compare such fields with non-text values. The type is restored once those partitions leave the window. |
+
+The `defaultDataAccess` is not regenerated when the `schema` changes: it keeps the columns and filters computed when the
+FDA was created. Custom DAs that reference a removed column keep working while some partition still contains it, and
+fail once none does.
+
+---
+
 ## Recommended Approach
 
 For optimal performance and predictability:
