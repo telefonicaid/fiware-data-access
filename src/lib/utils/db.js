@@ -571,71 +571,73 @@ function applyParams(reqParams, params) {
   const validated = {};
 
   for (const param of params) {
-    let value = reqParams[param.name];
-
-    // Required
-    if ((value === undefined || value === null) && param.required) {
-      throw new FDAError(
-        400,
-        'InvalidQueryParam',
-        `Missing required param "${param.name}".`,
-      );
+    const rawValue = resolveRequestedParamValue(reqParams, param);
+    if (rawValue === undefined) {
+      continue;
     }
 
-    // Default
-    if (
-      (value === undefined || value === null) &&
-      param.default !== undefined
-    ) {
-      value = param.default;
-    }
+    const value = coerceParamValue(rawValue, param);
+    assertParamConstraints(value, param);
 
-    if (value !== undefined) {
-      const rawValue = value;
-
-      // Type coercion
-      if (param.type) {
-        const coerced = isTypeOf(value, param.type);
-
-        if (coerced === undefined) {
-          throw new FDAError(
-            400,
-            'InvalidQueryParam',
-            `Param "${param.name}" not of valid type (${param.type}).`,
-          );
-        }
-
-        value = coerced;
-      }
-
-      if (value !== null) {
-        // Range
-        if (param.range && !isInRange(value, param.range)) {
-          throw new FDAError(
-            400,
-            'InvalidQueryParam',
-            `Param "${param.name}" not in valid param range [${param.range}].`,
-          );
-        }
-
-        // Enum
-        if (param.enum && !isInEnum(value, param.enum)) {
-          throw new FDAError(
-            400,
-            'InvalidQueryParam',
-            `Param "${param.name}" not in param enum [${param.enum}].`,
-          );
-        }
-      }
-
-      validated[param.name] =
-        param.type === 'Number' && isUnsafeIntegerString(rawValue)
-          ? BigInt(rawValue.trim())
-          : value;
-    }
+    validated[param.name] =
+      param.type === 'Number' && isUnsafeIntegerString(rawValue)
+        ? BigInt(rawValue.trim())
+        : value;
   }
 
   return validated;
+}
+
+function invalidQueryParamError(description) {
+  return new FDAError(400, 'InvalidQueryParam', description);
+}
+
+function resolveRequestedParamValue(reqParams, param) {
+  const value = reqParams[param.name];
+  const isMissing = value === undefined || value === null;
+
+  if (isMissing && param.required) {
+    throw invalidQueryParamError(`Missing required param "${param.name}".`);
+  }
+
+  if (isMissing && param.default !== undefined) {
+    return param.default;
+  }
+
+  return value;
+}
+
+function coerceParamValue(value, param) {
+  if (!param.type) {
+    return value;
+  }
+
+  const coerced = isTypeOf(value, param.type);
+  if (coerced === undefined) {
+    throw invalidQueryParamError(
+      `Param "${param.name}" not of valid type (${param.type}).`,
+    );
+  }
+
+  return coerced;
+}
+
+function assertParamConstraints(value, param) {
+  if (value === null) {
+    return;
+  }
+
+  if (param.range && !isInRange(value, param.range)) {
+    throw invalidQueryParamError(
+      `Param "${param.name}" not in valid param range [${param.range}].`,
+    );
+  }
+
+  if (param.enum && !isInEnum(value, param.enum)) {
+    throw invalidQueryParamError(
+      `Param "${param.name}" not in param enum [${param.enum}].`,
+    );
+  }
 }
 
 function normalizeParamsForDuckDB(params) {
