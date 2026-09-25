@@ -2990,6 +2990,13 @@ describe('updateFDA', () => {
     const fixedDate = new Date('2026-07-21T00:00:00.000Z');
     jest.useFakeTimers({ now: fixedDate });
 
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      fdaId: 'fda42',
+      cached: true,
+      servicePath: '/servicepath',
+      visibility: 'public',
+      datasourceId: 'mongo-ds',
+    });
     mongoMocks.retrieveDatasource.mockResolvedValueOnce({
       datasourceId: 'mongo-ds',
       type: 'mongodb',
@@ -3080,6 +3087,116 @@ describe('updateFDA', () => {
         service: 'svc',
       }),
     );
+  });
+
+  test('re-resolves the schema of a strict Postgres FDA from the source before refreshing', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      fdaId: 'fda42',
+      cached: true,
+      servicePath: '/servicepath',
+      visibility: 'public',
+      query: 'SELECT * FROM users',
+      timeColumn: 'observedAt',
+    });
+    pgMocks.validatePostgresQuery.mockResolvedValueOnce({
+      columns: ['id', 'observedAt', 'email'],
+      fields: [
+        { name: 'id', duckdbType: 'INTEGER' },
+        { name: 'observedAt', duckdbType: 'TIMESTAMP' },
+        { name: 'email', duckdbType: 'VARCHAR' },
+      ],
+    });
+
+    await updateFDA('svc', 'fda42', undefined, '/servicepath');
+
+    expect(pgMocks.validatePostgresQuery).toHaveBeenCalledWith(
+      {},
+      'SELECT * FROM users',
+      { timeColumn: 'observedAt', returnColumns: true },
+    );
+    expect(mongoMocks.updateFDASchema).toHaveBeenCalledWith(
+      'svc',
+      'fda42',
+      '/servicepath',
+      [
+        { name: 'id', type: 'INTEGER' },
+        { name: 'observedAt', type: 'TIMESTAMP' },
+        { name: 'email', type: 'VARCHAR' },
+      ],
+    );
+    expect(mongoMocks.updateFDASchema.mock.invocationCallOrder[0]).toBeLessThan(
+      agenda.now.mock.invocationCallOrder[0],
+    );
+  });
+
+  test('does not regenerate the FDA when the source query is no longer valid', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      fdaId: 'fda42',
+      cached: true,
+      servicePath: '/servicepath',
+      visibility: 'public',
+      query: 'SELECT * FROM users',
+      timeColumn: 'observedAt',
+    });
+    pgMocks.validatePostgresQuery.mockRejectedValueOnce(
+      new FDAError(
+        400,
+        'InvalidParam',
+        'Time column "observedAt" is not present in the SELECT clause of the FDA query. ',
+      ),
+    );
+
+    await expect(
+      updateFDA('svc', 'fda42', undefined, '/servicepath'),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidParam',
+    });
+
+    expect(mongoMocks.regenerateFDA).not.toHaveBeenCalled();
+    expect(mongoMocks.updateFDASchema).not.toHaveBeenCalled();
+    expect(agenda.now).not.toHaveBeenCalled();
+  });
+
+  test('keeps the stored schema of unchecked Postgres FDAs', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      fdaId: 'fda42',
+      cached: true,
+      servicePath: '/servicepath',
+      visibility: 'public',
+      query: 'SELECT * FROM users',
+      validationMode: 'unchecked',
+    });
+
+    await updateFDA('svc', 'fda42', undefined, '/servicepath');
+
+    expect(pgMocks.validatePostgresQuery).not.toHaveBeenCalled();
+    expect(mongoMocks.updateFDASchema).not.toHaveBeenCalled();
+    expect(agenda.now).toHaveBeenCalledWith(
+      'refresh-fda',
+      expect.objectContaining({ fdaId: 'fda42' }),
+    );
+  });
+
+  test('keeps the stored schema of Mongo FDAs', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      fdaId: 'fda42',
+      cached: true,
+      servicePath: '/servicepath',
+      visibility: 'public',
+      datasourceId: 'mongo-ds',
+      query: { collection: 'events', projection: { device: 1 } },
+    });
+    mongoMocks.retrieveDatasource.mockResolvedValueOnce({
+      datasourceId: 'mongo-ds',
+      type: 'mongodb',
+      config: { uri: 'mongodb://mongo:27017', database: 'svc' },
+    });
+
+    await updateFDA('svc', 'fda42', undefined, '/servicepath');
+
+    expect(mongoMocks.updateFDASchema).not.toHaveBeenCalled();
+    expect(mongoMocks.regenerateFDA).toHaveBeenCalled();
   });
 
   test('throws when trying to manually refresh a fresh-only FDA', async () => {
@@ -3323,6 +3440,35 @@ describe('processFDAAsync', () => {
         { name: 'temperature', type: 'DOUBLE' },
         { name: 'observedAt', type: 'TIMESTAMP' },
       ],
+    );
+  });
+
+  test('derives the schema of partitioned FDAs from the union of every partition', async () => {
+    const describeRun = jest.fn().mockResolvedValue({
+      getRowObjectsJson: () => [
+        { column_name: 'id', column_type: 'BIGINT' },
+        { column_name: 'observed_at', column_type: 'TIMESTAMP' },
+        { column_name: 'email', column_type: 'VARCHAR' },
+      ],
+    });
+    dbMocks.getDBConnection
+      .mockReset()
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ run: describeRun });
+    awsMocks.listObjects.mockResolvedValueOnce([]);
+
+    await processFDAAsync(
+      'fda1',
+      'SELECT 1',
+      'svc',
+      '/servicepath',
+      'observed_at',
+      { type: 'none' },
+      { partition: 'day' },
+    );
+
+    expect(describeRun).toHaveBeenCalledWith(
+      "DESCRIBE SELECT * FROM read_parquet('s3://svc/servicepath/fda1.parquet/**/*.parquet', hive_partitioning = false, union_by_name = true)",
     );
   });
 
