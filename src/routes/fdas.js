@@ -538,9 +538,11 @@ router.get('/:visibility/fdas/:fdaId', async (req, res) => {
  *     operationId: regenerateFda
  *     summary: Regenerate FDA
  *     description: >
- *       Regenerates the FDA, fetching the source data again. Does not accept a request body. Returns `409` if
- *       the FDA is currently being processed, or if it is configured as only-fresh (`cached: false`, which does
- *       not support manual regeneration).
+ *       Regenerates the FDA, fetching the source data again. Does not accept a request body. For PostgreSQL FDAs
+ *       in `strict` mode, the `schema` is first re-resolved from the source query, so columns added, removed or
+ *       renamed in the source are adopted by the regenerated FDA. Returns `409` if the FDA is currently being
+ *       processed, or if it is configured as only-fresh (`cached: false`, which does not support manual
+ *       regeneration).
  *     parameters:
  *       - $ref: '#/components/parameters/VisibilityPath'
  *       - $ref: '#/components/parameters/FdaIdPath'
@@ -554,7 +556,10 @@ router.get('/:visibility/fdas/:fdaId', async (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/PendingStatus'
  *       '400':
- *         description: '`BadRequest`, including sending a non-empty request body (not accepted by this operation).'
+ *         description: >
+ *           `BadRequest`, including sending a non-empty request body (not accepted by this operation).
+ *           `InvalidParam` when the source query of a `strict` PostgreSQL FDA is no longer valid (for example,
+ *           its `timeColumn` was removed from the source table).
  *         content:
  *           application/json:
  *             schema:
