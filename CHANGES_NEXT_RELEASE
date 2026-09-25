@@ -1,3 +1,4 @@
+- Fix: preserve numeric precision and consistent types across cached and fresh responses; large integers are returned as exact JSON numbers, cached DECIMAL values as strings, and large Number DA parameters are bound as exact integers (#291)
 - Fix: cron refresh intervals are now measured deterministically in UTC over a full cycle, so a valid combination such as a monthly cron with a `month` partition is no longer rejected depending on the date the FDA is created or on daylight saving changes (#316)
 - Add: sliding-window (partitioned) refresh support for MongoDB FDAs, for both `filter` and `aggregation` queries, mirroring the existing PostgreSQL window refresh policy (#194)
 - Fix: FDA upload flow now marks status as `completed` only after `defaultDataAccess` is created (308)

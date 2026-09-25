@@ -27,7 +27,8 @@ import { FDAError } from '../fdaError.js';
 import { getBasicLogger } from './logger.js';
 import { config } from '../fdaConfig.js';
 import { getBucketNameFromService, getFDAStoragePath } from './fdaScope.js';
-import { convertRefreshIntervalToMs } from './utils.js';
+import { convertRefreshIntervalToMs, toJsonInteger } from './utils.js';
+import { JSON_INTEGER_COLUMN_TYPES } from '../constants.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -265,7 +266,28 @@ async function executePreparedStatement(stmt, boundParams, streaming) {
   }
 
   const result = await stmt.run();
-  return result.getRowObjectsJson();
+  return getRowObjectsWithJsonIntegers(result);
+}
+
+async function getRowObjectsWithJsonIntegers(result) {
+  const rows = await result.getRowObjectsJson();
+
+  const columnTypes = result.columnTypes();
+  const integerColumns = result
+    .columnNames()
+    .filter((_name, i) =>
+      JSON_INTEGER_COLUMN_TYPES.has(String(columnTypes[i])),
+    );
+
+  for (const row of rows) {
+    for (const column of integerColumns) {
+      if (row[column] !== null) {
+        row[column] = toJsonInteger(row[column]);
+      }
+    }
+  }
+
+  return rows;
 }
 
 async function prepareAndRunStatementWithFallback(
@@ -549,66 +571,73 @@ function applyParams(reqParams, params) {
   const validated = {};
 
   for (const param of params) {
-    let value = reqParams[param.name];
-
-    // Required
-    if ((value === undefined || value === null) && param.required) {
-      throw new FDAError(
-        400,
-        'InvalidQueryParam',
-        `Missing required param "${param.name}".`,
-      );
+    const rawValue = resolveRequestedParamValue(reqParams, param);
+    if (rawValue === undefined) {
+      continue;
     }
 
-    // Default
-    if (
-      (value === undefined || value === null) &&
-      param.default !== undefined
-    ) {
-      value = param.default;
-    }
+    const value = coerceParamValue(rawValue, param);
+    assertParamConstraints(value, param);
 
-    if (value !== undefined) {
-      // Type coercion
-      if (param.type) {
-        const coerced = isTypeOf(value, param.type);
-
-        if (coerced === undefined) {
-          throw new FDAError(
-            400,
-            'InvalidQueryParam',
-            `Param "${param.name}" not of valid type (${param.type}).`,
-          );
-        }
-
-        value = coerced;
-      }
-
-      if (value !== null) {
-        // Range
-        if (param.range && !isInRange(value, param.range)) {
-          throw new FDAError(
-            400,
-            'InvalidQueryParam',
-            `Param "${param.name}" not in valid param range [${param.range}].`,
-          );
-        }
-
-        // Enum
-        if (param.enum && !isInEnum(value, param.enum)) {
-          throw new FDAError(
-            400,
-            'InvalidQueryParam',
-            `Param "${param.name}" not in param enum [${param.enum}].`,
-          );
-        }
-      }
-
-      validated[param.name] = value;
-    }
+    validated[param.name] =
+      param.type === 'Number' && isUnsafeIntegerString(rawValue)
+        ? BigInt(rawValue.trim())
+        : value;
   }
 
   return validated;
+}
+
+function invalidQueryParamError(description) {
+  return new FDAError(400, 'InvalidQueryParam', description);
+}
+
+function resolveRequestedParamValue(reqParams, param) {
+  const value = reqParams[param.name];
+  const isMissing = value === undefined || value === null;
+
+  if (isMissing && param.required) {
+    throw invalidQueryParamError(`Missing required param "${param.name}".`);
+  }
+
+  if (isMissing && param.default !== undefined) {
+    return param.default;
+  }
+
+  return value;
+}
+
+function coerceParamValue(value, param) {
+  if (!param.type) {
+    return value;
+  }
+
+  const coerced = isTypeOf(value, param.type);
+  if (coerced === undefined) {
+    throw invalidQueryParamError(
+      `Param "${param.name}" not of valid type (${param.type}).`,
+    );
+  }
+
+  return coerced;
+}
+
+function assertParamConstraints(value, param) {
+  if (value === null) {
+    return;
+  }
+
+  if (param.range && !isInRange(value, param.range)) {
+    throw invalidQueryParamError(
+      `Param "${param.name}" not in valid param range [${param.range}].`,
+    );
+  }
+
+  if (param.enum && !isInEnum(value, param.enum)) {
+    throw invalidQueryParamError(
+      `Param "${param.name}" not in param enum [${param.enum}].`,
+    );
+  }
 }
 
 function normalizeParamsForDuckDB(params) {
@@ -688,6 +717,14 @@ const TYPE_COERCERS = {
     return Number.isNaN(date.getTime()) ? undefined : date;
   },
 };
+
+function isUnsafeIntegerString(value) {
+  return (
+    typeof value === 'string' &&
+    /^-?\d+$/.test(value.trim()) &&
+    !Number.isSafeInteger(Number(value))
+  );
+}
 
 function isTypeOf(value, type) {
   if (value === null) {

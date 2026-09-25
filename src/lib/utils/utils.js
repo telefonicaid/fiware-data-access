@@ -71,10 +71,34 @@ function isObjectId(obj) {
   );
 }
 
+function isDuckDBDecimal(obj) {
+  return (
+    obj !== null &&
+    typeof obj === 'object' &&
+    typeof obj.value === 'bigint' &&
+    Number.isInteger(obj.width) &&
+    Number.isInteger(obj.scale) &&
+    typeof obj.toDouble === 'function'
+  );
+}
+
+export function toJsonInteger(value) {
+  const num = Number(value);
+  return Number.isSafeInteger(num) ? num : JSON.rawJSON(String(value));
+}
+
 // Normalize runtime values so downstream serializers emit stable output.
 export function normalizeForSerialization(obj) {
   if (typeof obj === 'bigint') {
-    return Number(obj);
+    return toJsonInteger(obj);
+  }
+
+  if (JSON.isRawJSON(obj)) {
+    return obj;
+  }
+
+  if (isDuckDBDecimal(obj)) {
+    return obj.toString();
   }
 
   if (typeof obj === 'string') {
@@ -94,26 +118,27 @@ export function normalizeForSerialization(obj) {
   }
 
   if (obj !== null && typeof obj === 'object') {
-    const keys = Object.keys(obj);
-
-    if (keys.length === 1 && keys[0] === 'micros') {
-      const isoDate = toIsoFromMicros(obj.micros);
-
-      if (isoDate) {
-        return isoDate;
-      }
-    }
-
-    const converted = {};
-
-    for (const key of keys) {
-      converted[key] = normalizeForSerialization(obj[key]);
-    }
-
-    return converted;
+    return normalizeObject(obj);
   }
 
   return obj;
+}
+
+function normalizeObject(obj) {
+  const keys = Object.keys(obj);
+
+  if (keys.length === 1 && keys[0] === 'micros') {
+    const isoDate = toIsoFromMicros(obj.micros);
+    if (isoDate) {
+      return isoDate;
+    }
+  }
+
+  const converted = {};
+  for (const key of keys) {
+    converted[key] = normalizeForSerialization(obj[key]);
+  }
+  return converted;
 }
 
 // Validate that the request body only contains allowed fields

@@ -435,11 +435,9 @@ export function registerCdaCompatibilityIntegrationTests({
         expect(jsonRes.json.resultset.map((row) => row[dateColIndex])).toEqual(
           expectedDates,
         );
-        expect(
-          jsonRes.json.resultset.every((row) =>
-            ['string', 'number'].includes(typeof row[totalColIndex]),
-          ),
-        ).toBe(true);
+        expect(jsonRes.json.resultset.map((row) => row[totalColIndex])).toEqual(
+          [42, 84],
+        );
 
         const csvRes = await httpReqRaw({
           method: 'POST',

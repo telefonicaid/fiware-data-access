@@ -454,11 +454,7 @@ export function registerFreshQueriesIntegrationTests({
 
         expect(cachedJson.status).toBe(200);
         expect(cachedJson.json.map((row) => row.date)).toEqual(expectedDates);
-        expect(
-          cachedJson.json.every((row) =>
-            ['string', 'number'].includes(typeof row.total),
-          ),
-        ).toBe(true);
+        expect(cachedJson.json.map((row) => row.total)).toEqual([42, 84]);
 
         const cachedNdjson = await httpReqRaw({
           method: 'GET',
@@ -480,11 +476,7 @@ export function registerFreshQueriesIntegrationTests({
           .filter((line) => line.trim())
           .map((line) => JSON.parse(line));
         expect(cachedNdjsonRows.map((row) => row.date)).toEqual(expectedDates);
-        expect(
-          cachedNdjsonRows.every((row) =>
-            ['string', 'number'].includes(typeof row.total),
-          ),
-        ).toBe(true);
+        expect(cachedNdjsonRows.map((row) => row.total)).toEqual([42, 84]);
 
         const cachedCsv = await httpReqRaw({
           method: 'GET',
@@ -553,6 +545,204 @@ export function registerFreshQueriesIntegrationTests({
         expect(freshCsv.text).toContain(expectedDates[0]);
         expect(freshCsv.text).toContain(expectedDates[1]);
         expect(freshCsv.text).not.toContain('[object Object]');
+      } finally {
+        await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
+        await pgClient.end();
+      }
+    });
+
+    test('BIGINT beyond Number.MAX_SAFE_INTEGER and DECIMAL keep full precision in params and as exact JSON numbers in cached and fresh JSON/NDJSON/CSV', async () => {
+      const baseUrl = getBaseUrl();
+      const fixtureTable = 'bigint_precision_fixture';
+      const fdaBigintId = 'fda_bigint_precision';
+      const fdaFreshBigintId = 'fda_bigint_precision_fresh';
+      const daBigintId = 'da_bigint_precision';
+      const fdaQuery = `
+        SELECT id, big_value, amount
+        FROM public.${fixtureTable}
+        ORDER BY id
+      `;
+
+      const pgClient = new Client({
+        host: getPgHost(),
+        port: getPgPort(),
+        user: 'postgres',
+        password: 'postgres',
+        database: service,
+      });
+
+      await connectWithRetry(pgClient);
+
+      try {
+        await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
+        await pgClient.query(`
+          CREATE TABLE public.${fixtureTable} (
+            id INT PRIMARY KEY,
+            big_value BIGINT NOT NULL,
+            amount NUMERIC(10, 2) NOT NULL
+          )
+        `);
+        await pgClient.query(`
+          INSERT INTO public.${fixtureTable} (id, big_value, amount)
+          VALUES
+            (1, 9007199254740993, 12.34),
+            (2, 9007199254740992, 1.50),
+            (3, 7, 0.01)
+        `);
+
+        const createFda = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: fdaBigintId,
+            description: 'issue 291 bigint precision fda',
+            query: fdaQuery,
+          },
+        });
+
+        expect(createFda.status).toBe(202);
+
+        await waitUntilFDACompleted({
+          baseUrl,
+          service,
+          fdaId: fdaBigintId,
+        });
+
+        const createDa = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas/${fdaBigintId}/das`,
+          headers: { 'Fiware-Service': service },
+          body: {
+            id: daBigintId,
+            description: 'issue 291 bigint precision da',
+            query: `
+              SELECT id, big_value, CAST(amount AS DECIMAL(10, 2)) AS amount
+              WHERE ($big_value IS NULL OR big_value = $big_value)
+              ORDER BY id
+            `,
+            params: [{ name: 'big_value', type: 'Number', default: null }],
+          },
+        });
+
+        expect(createDa.status).toBe(204);
+
+        const cachedUrl = buildDaDataUrl(
+          baseUrl,
+          servicePath,
+          fdaBigintId,
+          daBigintId,
+          { big_value: '9007199254740993' },
+        );
+        const expectedCachedRow =
+          '{"id":1,"big_value":9007199254740993,"amount":"12.34"}';
+
+        const cachedJson = await httpReq({
+          method: 'GET',
+          url: cachedUrl,
+          headers: {
+            'Fiware-Service': service,
+            Accept: 'application/json',
+          },
+        });
+
+        expect(cachedJson.status).toBe(200);
+        expect(cachedJson.text).toBe(`[${expectedCachedRow}]`);
+
+        const cachedNdjson = await httpReqRaw({
+          method: 'GET',
+          url: cachedUrl,
+          headers: {
+            'Fiware-Service': service,
+            Accept: 'application/x-ndjson',
+          },
+        });
+
+        expect(cachedNdjson.status).toBe(200);
+        expect(cachedNdjson.text.trim()).toBe(expectedCachedRow);
+
+        const cachedCsv = await httpReqRaw({
+          method: 'GET',
+          url: cachedUrl,
+          headers: {
+            'Fiware-Service': service,
+            Accept: 'text/csv',
+          },
+        });
+
+        expect(cachedCsv.status).toBe(200);
+        expect(cachedCsv.text.trim().split(/\r?\n/)).toEqual([
+          'id,big_value,amount',
+          '1,9007199254740993,12.34',
+        ]);
+
+        const createFreshFda = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: fdaFreshBigintId,
+            description: 'issue 291 bigint precision fresh fda',
+            query: fdaQuery,
+            cached: false,
+          },
+        });
+
+        expect(createFreshFda.status).toBe(202);
+
+        const freshUrl = buildFdaDataUrl(
+          baseUrl,
+          servicePath,
+          fdaFreshBigintId,
+        );
+        const expectedFreshRows = [
+          '{"id":1,"big_value":9007199254740993,"amount":"12.34"}',
+          '{"id":2,"big_value":9007199254740992,"amount":"1.50"}',
+          '{"id":3,"big_value":7,"amount":"0.01"}',
+        ];
+
+        const freshJson = await httpReq({
+          method: 'GET',
+          url: freshUrl,
+          headers: {
+            'Fiware-Service': service,
+            Accept: 'application/json',
+          },
+        });
+
+        expect(freshJson.status).toBe(200);
+        expect(freshJson.text).toBe(`[${expectedFreshRows.join(',')}]`);
+
+        const freshNdjson = await httpReqRaw({
+          method: 'GET',
+          url: freshUrl,
+          headers: {
+            'Fiware-Service': service,
+            Accept: 'application/x-ndjson',
+          },
+        });
+
+        expect(freshNdjson.status).toBe(200);
+        expect(freshNdjson.text.trim().split('\n')).toEqual(expectedFreshRows);
+
+        const freshCsv = await httpReqRaw({
+          method: 'GET',
+          url: freshUrl,
+          headers: {
+            'Fiware-Service': service,
+            Accept: 'text/csv',
+          },
+        });
+
+        expect(freshCsv.status).toBe(200);
+        expect(freshCsv.text).toContain('1,9007199254740993,12.34');
+        expect(freshCsv.text).toContain('2,9007199254740992,1.50');
       } finally {
         await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
         await pgClient.end();

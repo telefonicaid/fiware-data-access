@@ -452,8 +452,8 @@ export function registerMongoFdasIntegrationTests({
 
         expect(queryRes.status).toBe(200);
         expect(queryRes.json).toEqual([
-          { _id: 'ok', n: '1' },
-          { _id: 'warn', n: '1' },
+          { _id: 'ok', n: 1 },
+          { _id: 'warn', n: 1 },
         ]);
       } finally {
         await httpReq({
