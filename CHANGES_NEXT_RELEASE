@@ -2,6 +2,8 @@
 - Add: MongoDB FDAs no longer report a `VARCHAR` placeholder before their first fetch; their columns are persisted with `"type": null` until the actual types can be derived from the materialized Parquet (#235)
 - Add: cached MongoDB FDAs created in `strict` mode must now declare their output columns (`projection`, or a final `$project`/`$group` aggregation stage). The column set is no longer inferred from a single sampled document, which could silently omit fields missing from that sample (#235)
 - Add: sliding-window (partitioned) refresh support for MongoDB FDAs, for both `filter` and `aggregation` queries, mirroring the existing PostgreSQL window refresh policy (#194)
+- Fix: preserve numeric precision and consistent types across cached and fresh responses; large integers are returned as exact JSON numbers, cached DECIMAL values as strings, and large Number DA parameters are bound as exact integers (#291)
+- Fix: cron refresh intervals are now measured deterministically in UTC over a full cycle, so a valid combination such as a monthly cron with a `month` partition is no longer rejected depending on the date the FDA is created or on daylight saving changes (#316)
 - Fix: FDA upload flow now marks status as `completed` only after `defaultDataAccess` is created (308)
 - Replace MinIO docker image by PGsty image (#302)
 - Fix: cron refresh intervals are now measured deterministically in UTC over a full cycle, so a valid combination such as a monthly cron with a `month` partition is no longer rejected depending on the date the FDA is created or on daylight saving changes (#316)

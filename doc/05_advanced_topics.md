@@ -199,6 +199,44 @@ clause is written and on the value supplied for the parameter, whether via its `
 
 ---
 
+## Numeric Precision
+
+FDA returns numeric database values as JSON numbers, and date values as ISO 8601 strings, in every response format
+(JSON, NDJSON and CSV) and for both cached and fresh queries. Integers keep all their digits, including 64-bit and
+128-bit integers (`BIGINT`, `HUGEINT`, ...) beyond ±9007199254740991 (`Number.MAX_SAFE_INTEGER`, 2^53 − 1), which are
+written as exact JSON numbers such as `{"big_value": 9007199254740993}`.
+
+| SQL type                                   | JSON / NDJSON value                     | CSV value |
+| ------------------------------------------ | --------------------------------------- | --------- |
+| `SMALLINT`, `INTEGER`, `REAL`, `DOUBLE`    | number                                  | digits    |
+| `BIGINT`, `HUGEINT`, `UBIGINT`, `UHUGEINT` | number, with all its digits             | digits    |
+| `DECIMAL`, `NUMERIC`                       | string with its exact scale (`"12.34"`) | `12.34`   |
+
+`DECIMAL` / `NUMERIC` values are the one exception to the number rule: they are returned as strings so that their exact
+value and scale (`"1.50"`) are preserved.
+
+### Integers beyond 2^53 on the client side
+
+The JSON that FDA returns is exact, but some JSON parsers are not. JavaScript's `JSON.parse` reads every number as a
+double, so `9007199254740993` becomes `9007199254740992` **in the client**. Parsers in most other languages (Python,
+Java with `BigInteger`/`long`, `jq` 1.7+) keep the value. If a JavaScript client needs those values exactly, either
+parse the response with a big-number-aware parser or return the column as text from the DA query:
+`CAST(big_value AS VARCHAR) AS big_value`.
+
+### DA params
+
+A param declared as `Number` whose value is an integer beyond the safe range is bound to the query as an exact integer,
+so `WHERE big_value = $big_value` matches a `BIGINT` column. See [Params](/doc/03_api.md#params) for details and for the
+`Text` + `CAST` alternative when exact decimal comparisons are needed.
+
+### Cached FDAs over PostgreSQL and `NUMERIC`
+
+A cached FDA over PostgreSQL stores `NUMERIC` columns as `DOUBLE` in its snapshot, so they are returned as numbers. A
+`CAST(... AS DECIMAL(p, s))` in the DA query returns them as decimal strings with a fixed scale, but it cannot recover
+digits beyond double precision that were already lost when the snapshot was stored.
+
+---
+
 ## Pentaho CDA Compatibility Layer
 
 FDA includes a compatibility layer to support legacy Pentaho CDA clients.

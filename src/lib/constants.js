@@ -103,3 +103,11 @@ export const NO_PARQUET_FILES_MATCH_ERROR =
 
 // Default column type for schemaless datasources
 export const UNKNOWN_COLUMN_TYPE = 'VARCHAR';
+
+// Supported MIME types for /data, listed in server-default preference order.
+export const JSON_INTEGER_COLUMN_TYPES = new Set([
+  'BIGINT',
+  'HUGEINT',
+  'UBIGINT',
+  'UHUGEINT',
+]);

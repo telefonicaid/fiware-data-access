@@ -24,6 +24,10 @@
 
 import ExcelJS from 'exceljs';
 
+function toPlainCellValue(value) {
+  return JSON.isRawJSON(value) ? value.rawJSON : value;
+}
+
 /**
  * Converts an array of row objects to a CSV string.
  * Values containing commas, double-quotes, or newlines are wrapped in double-quotes.
@@ -37,7 +41,7 @@ export function rowsToCsv(rows) {
   const columns = Object.keys(rows[0]);
 
   const escape = (v) => {
-    const s = v === null || v === undefined ? '' : String(v);
+    const s = v === null || v === undefined ? '' : String(toPlainCellValue(v));
     if (
       s.includes(',') ||
       s.includes('"') ||
@@ -72,7 +76,11 @@ export function rowsToXlsx(rows) {
       width: 20,
     }));
     for (const row of rows) {
-      sheet.addRow(row);
+      sheet.addRow(
+        Object.fromEntries(
+          columns.map((col) => [col, toPlainCellValue(row[col])]),
+        ),
+      );
     }
   }
 
