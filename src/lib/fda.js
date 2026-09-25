@@ -2491,10 +2491,9 @@ async function getFDASchemaFromStorage(
       ? `s3://${bucketName}/${storagePath}.parquet/**/*.parquet`
       : `s3://${bucketName}/${storagePath}.parquet`;
     const safeParquetPath = parquetPath.replaceAll("'", "''");
-    const readOptions =
-      objStgConf?.partition && !hivePartitioning
-        ? ', hive_partitioning = false'
-        : '';
+    const readOptions = objStgConf?.partition
+      ? `${hivePartitioning ? '' : ', hive_partitioning = false'}, union_by_name = true`
+      : '';
     const describeResult = await conn.run(
       `DESCRIBE SELECT * FROM read_parquet('${safeParquetPath}'${readOptions})`,
     );
