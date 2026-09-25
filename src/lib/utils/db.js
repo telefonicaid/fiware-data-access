@@ -927,7 +927,7 @@ export function buildDAQuery(
   const parquetPath = `s3://${bucketName}/${objectKey}`;
 
   if (partition) {
-    return `FROM read_parquet('${parquetPath}.parquet/**/*.parquet') ${trimmed}`;
+    return `FROM read_parquet('${parquetPath}.parquet/**/*.parquet', union_by_name = true) ${trimmed}`;
   } else {
     return `FROM read_parquet('${parquetPath}.parquet') ${trimmed}`;
   }
