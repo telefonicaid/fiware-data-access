@@ -83,6 +83,7 @@ clients and reflect its asynchronous processing state.
 | `uploading`    | 60–80    | Data is being uploaded to object storage.        |
 | `completed`    | 100      | Processing finished successfully.                |
 | `failed`       | 0        | Processing failed at any step.                   |
+| `deleting`     | —        | The FDA is being deleted; refreshes are skipped. |
 
 ### Last Execution
 
@@ -96,6 +97,9 @@ completed. The execution time for each cycle can be estimated as `lastFetch - in
 -   `transforming` → `uploading` as processing steps complete.
 -   On success → `completed` (progress 100).
 -   On error → `failed` (progress 0).
+-   On `DELETE /{visibility}/fdas/:fdaId`, the FDA moves to `deleting` only if it is `completed` or `failed`; otherwise
+    the request is rejected with `409 FDAProcessing`. Refresh jobs that start while an FDA is `deleting` (or after it
+    has been removed) are skipped without touching object storage.
 
 ---
 

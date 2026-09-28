@@ -163,7 +163,7 @@ Each document corresponds to one FDA:
 -   **query**: SQL query used to generate the Parquet file
 -   **das**: keymap of DAs associated with the FDA
 -   **refreshPolicy**: object defining automatic refresh behaviour (`none`, `interval`, or `window`)
--   **status**: current execution status (`fetching`, `transforming`, `uploading`, `completed`, `failed`)
+-   **status**: current execution status (`fetching`, `transforming`, `uploading`, `completed`, `failed`, `deleting`)
 -   **progress**: execution progress percentage (0–100)
 -   **initFetch**: timestamp of the current/last fetch start (ISO date)
 -   **lastFetch**: timestamp of the last successful fetch completion (ISO date)
