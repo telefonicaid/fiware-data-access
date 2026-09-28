@@ -195,6 +195,42 @@ export function registerFdaLifecycleIntegrationTests({
       await client.close();
     });
 
+    test('DELETE /fdas/:fdaId returns FDAProcessing while initial fetch is running', async () => {
+      const baseUrl = getBaseUrl();
+      const fdaIdDeleteWhileFetching = `${fdaIdSleep}_delete`;
+      const deleteReq = () =>
+        httpReq({
+          method: 'DELETE',
+          url: `${baseUrl}/${visibility}/fdas/${fdaIdDeleteWhileFetching}`,
+          headers: { 'Fiware-Service': service },
+        });
+
+      const create = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: { 'Fiware-Service': service },
+        body: {
+          id: fdaIdDeleteWhileFetching,
+          query: 'SELECT id, pg_sleep(1) FROM public.users',
+          description: 'Sleep FDA for testing delete while fetching',
+        },
+      });
+      expect(create.status).toBe(202);
+
+      const conflict = await deleteReq();
+      expect(conflict.status).toBe(409);
+      expect(conflict.json.error).toBe('FDAProcessing');
+
+      await waitUntilFDACompleted({
+        baseUrl,
+        service,
+        fdaId: fdaIdDeleteWhileFetching,
+      });
+
+      const deleted = await deleteReq();
+      expect(deleted.status).toBe(204);
+    });
+
     test('DELETE /fdas/:fdaId removes given FDA', async () => {
       const baseUrl = getBaseUrl();
       const deleteFDA = await httpReq({
