@@ -67,6 +67,8 @@ import {
   removeDA,
   updateFDAStatus,
   updateFDALastFetch,
+  claimFDAForFetch,
+  claimFDAForDeletion,
   createDatasource,
   retrieveDatasources,
   retrieveDatasource,
@@ -1455,15 +1457,16 @@ export async function processFDAAsync(
   const storagePath = getFDAStoragePath(fdaId, servicePath);
   const bucketName = getBucketNameFromService(service);
 
-  try {
-    await updateFDAStatus({
-      service,
-      fdaId,
-      servicePath,
-      status: 'fetching',
-      progress: 10,
-    });
+  const claimed = await claimFDAForFetch({ service, fdaId, servicePath });
+  if (!claimed) {
+    logger.info(
+      { fdaId, service, servicePath },
+      'Skipping refresh: FDA no longer exists or is being deleted',
+    );
+    return;
+  }
 
+  try {
     await uploadTableToObjStg(
       service,
       datasourceId,
@@ -1727,7 +1730,19 @@ export async function deleteFDA(service, fdaId, visibility, servicePath) {
     );
   }
 
-  assertFDANotProcessing(storedFDA, fdaId);
+  const claimedFDA = await claimFDAForDeletion(
+    service,
+    fdaId,
+    targetServicePath,
+  );
+
+  if (!claimedFDA) {
+    throw new FDAError(
+      409,
+      'FDAProcessing',
+      `FDA ${fdaId} cannot be deleted while it is being processed (status ${storedFDA.status})`,
+    );
+  }
 
   const bucketName = getBucketNameFromService(service);
   const s3Client = await getS3Client(
@@ -2553,16 +2568,6 @@ function assertFDAIsCached(fda, fdaId) {
       409,
       'FDAOnlyFresh',
       `FDA ${fdaId} is configured as only-fresh and does not support this operation.`,
-    );
-  }
-}
-
-function assertFDANotProcessing(fda, fdaId) {
-  if (!['completed', 'failed'].includes(fda.status)) {
-    throw new FDAError(
-      409,
-      'FDAProcessing',
-      `FDA ${fdaId} cannot be deleted while it is being processed (status ${fda.status})`,
     );
   }
 }

@@ -637,6 +637,32 @@ export async function updateFDAStatus({
   );
 }
 
+export async function claimFDAForFetch({ service, fdaId, servicePath }) {
+  const collection = await getCollection();
+
+  const result = await collection.updateOne(
+    { service, fdaId, servicePath, status: { $ne: 'deleting' } },
+    { $set: { status: 'fetching', progress: 10, initFetch: new Date() } },
+  );
+
+  return result.matchedCount > 0;
+}
+
+export async function claimFDAForDeletion(service, fdaId, servicePath) {
+  const collection = await getCollection();
+
+  return collection.findOneAndUpdate(
+    {
+      service,
+      fdaId,
+      servicePath,
+      status: { $in: ['completed', 'failed', 'deleting'] },
+    },
+    { $set: { status: 'deleting' } },
+    { returnDocument: 'before' },
+  );
+}
+
 export async function updateFDALastFetch(service, fdaId, servicePath) {
   const collection = await getCollection();
   await collection.updateOne(
