@@ -3538,6 +3538,7 @@ describe('deleteFDA', () => {
   test('drops parquet, removes FDA and cancels agenda job', async () => {
     mongoMocks.retrieveFDA.mockResolvedValue({
       _id: 'mongo-id',
+      status: 'completed',
       visibility: 'private',
       servicePath: '/servicepath',
     });
@@ -3583,6 +3584,7 @@ describe('deleteFDA', () => {
   test('deleteFDA uses normalized bucket name for object storage deletion', async () => {
     mongoMocks.retrieveFDA.mockResolvedValue({
       _id: 'mongo-id',
+      status: 'completed',
       visibility: 'private',
       servicePath: '/servicepath',
     });
@@ -3603,6 +3605,7 @@ describe('deleteFDA', () => {
   test('deleteFDA only removes objects belonging to the target FDA, not sibling FDAs sharing a prefix', async () => {
     mongoMocks.retrieveFDA.mockResolvedValue({
       _id: 'mongo-id',
+      status: 'completed',
       visibility: 'private',
       servicePath: '/test',
     });
@@ -3627,6 +3630,7 @@ describe('deleteFDA', () => {
   test('deleteFDA removes FDA even when Minio has no matching objects', async () => {
     mongoMocks.retrieveFDA.mockResolvedValue({
       _id: 'mongo-id',
+      status: 'completed',
       visibility: 'private',
       servicePath: '/servicepath',
     });
@@ -3670,6 +3674,7 @@ describe('deleteFDA', () => {
   test('deleteFDA cancels both refresh and clean-partition scheduled jobs', async () => {
     mongoMocks.retrieveFDA.mockResolvedValue({
       _id: 'mongo-id',
+      status: 'completed',
       visibility: 'private',
       servicePath: '/servicepath',
     });
@@ -3721,6 +3726,7 @@ describe('deleteFDA', () => {
   test('throws FDANotFound when service is missing even if FDA exists', async () => {
     mongoMocks.retrieveFDA.mockResolvedValue({
       _id: 'mongo-id',
+      status: 'completed',
       visibility: 'private',
       servicePath: '/servicepath',
     });
@@ -3733,6 +3739,49 @@ describe('deleteFDA', () => {
     });
 
     expect(awsMocks.getS3Client).not.toHaveBeenCalled();
+  });
+
+  test.each(['fetching', 'transforming', 'uploading'])(
+    'throws FDAProcessing and leaves FDA untouched while status is %s',
+    async (status) => {
+      mongoMocks.retrieveFDA.mockResolvedValue({
+        _id: 'mongo-id',
+        status,
+        visibility: 'private',
+        servicePath: '/servicepath',
+      });
+
+      await expect(
+        deleteFDA('svc', 'fdaA', 'private', '/servicepath'),
+      ).rejects.toMatchObject({
+        status: 409,
+        type: 'FDAProcessing',
+      });
+
+      expect(awsMocks.getS3Client).not.toHaveBeenCalled();
+      expect(awsMocks.dropFiles).not.toHaveBeenCalled();
+      expect(mongoMocks.removeFDA).not.toHaveBeenCalled();
+      expect(agenda.cancel).not.toHaveBeenCalled();
+    },
+  );
+
+  test('deletes FDA whose last fetch failed', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      _id: 'mongo-id',
+      status: 'failed',
+      visibility: 'private',
+      servicePath: '/servicepath',
+    });
+    awsMocks.listObjects.mockResolvedValue([]);
+
+    await deleteFDA('svc', 'fdaA', 'private', '/servicepath');
+
+    expect(mongoMocks.removeFDA).toHaveBeenCalledWith(
+      'svc',
+      'fdaA',
+      '/servicepath',
+    );
+    expect(agenda.cancel).toHaveBeenCalledTimes(3);
   });
 
   test('deleteDA removes access without accessibility lookup when scope is omitted', async () => {
