@@ -117,6 +117,7 @@ All error responses follow this structure:
 | 406  | Not Acceptable         | `NotAcceptable`                  | `Accept` header does not allow any supported response format (`application/json`, `application/x-ndjson`, `text/csv`, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`).                                                                                                                        |
 | 409  | Conflict               | `DuplicatedKey`                  | The resource already exists in the database. Attempting to create a duplicate resource.                                                                                                                                                                                                                            |
 | 409  | Conflict               | `FDAUnavailable`                 | FDA `exampleId` is not queryable yet because the first fetch has not completed.                                                                                                                                                                                                                                    |
+| 409  | Conflict               | `FDAProcessing`                  | Attempted to delete an FDA while it is being processed (status other than `completed` or `failed`). Retry once the fetch finishes.                                                                                                                                                                                 |
 | 409  | Conflict               | `FDANotOnlyFresh`                | The FDA is cached (`cached=true`) and cannot be queried through `GET /{visibility}/fdas/{fdaId}/data`; use a DA instead.                                                                                                                                                                                           |
 | 409  | Conflict               | `FDAOnlyFresh`                   | The FDA was created with `cached=false`, so it does not allow DAs nor cached DA queries.                                                                                                                                                                                                                           |
 | 409  | Conflict               | `RequestStyleConflict`           | The request mixes query-style context (`service`, `servicePath` in query params) with legacy `Fiware-Service`/`Fiware-ServicePath` headers in the same data-query URL. Use only one style per request.                                                                                                             |
@@ -1463,6 +1464,9 @@ _**Response payload**_
 #### Delete FDA `DELETE /{visibility}/fdas/{fdaId}`
 
 Delete FDA. Note that deleting a FDA deletes in cascade all the DAs belonging to it.
+
+Deletion is rejected with `409 Conflict` (`FDAProcessing`) while the FDA is being fetched, i.e. while its status is not
+`completed` or `failed`. This includes the initial fetch right after creation. Retry once the fetch has finished.
 
 _**Request path parameters**_
 
