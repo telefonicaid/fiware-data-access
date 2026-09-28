@@ -75,6 +75,8 @@ const mongoMocks = {
   removeDA: jest.fn(),
   updateFDAStatus: jest.fn(),
   updateFDALastFetch: jest.fn(),
+  claimFDAForFetch: jest.fn(),
+  claimFDAForDeletion: jest.fn(),
   createDatasource: jest.fn(),
   retrieveDatasources: jest.fn(),
   retrieveDatasource: jest.fn(),
@@ -143,6 +145,8 @@ await jest.unstable_mockModule('../../src/lib/utils/mongo.js', () => ({
   removeDA: mongoMocks.removeDA,
   updateFDAStatus: mongoMocks.updateFDAStatus,
   updateFDALastFetch: mongoMocks.updateFDALastFetch,
+  claimFDAForFetch: mongoMocks.claimFDAForFetch,
+  claimFDAForDeletion: mongoMocks.claimFDAForDeletion,
   createDatasource: mongoMocks.createDatasource,
   retrieveDatasources: mongoMocks.retrieveDatasources,
   retrieveDatasource: mongoMocks.retrieveDatasource,
@@ -3217,6 +3221,7 @@ describe('processFDAAsync', () => {
     dbMocks.toParquet.mockResolvedValue(undefined);
     pgMocks.uploadTable.mockResolvedValue(undefined);
     mongoMocks.updateFDAStatus.mockResolvedValue(undefined);
+    mongoMocks.claimFDAForFetch.mockResolvedValue(true);
     mongoMocks.retrieveDatasource.mockResolvedValue({
       datasourceId: 'default',
       type: 'postgres',
@@ -3233,22 +3238,20 @@ describe('processFDAAsync', () => {
   test('updates status through successful async FDA processing lifecycle', async () => {
     await processFDAAsync('fda1', 'SELECT 1', 'svc', '/servicepath');
 
-    expect(mongoMocks.updateFDAStatus).toHaveBeenNthCalledWith(1, {
+    expect(mongoMocks.claimFDAForFetch).toHaveBeenCalledWith({
       service: 'svc',
       fdaId: 'fda1',
       servicePath: '/servicepath',
-      status: 'fetching',
-      progress: 10,
     });
 
-    expect(mongoMocks.updateFDAStatus).toHaveBeenNthCalledWith(2, {
+    expect(mongoMocks.updateFDAStatus).toHaveBeenNthCalledWith(1, {
       service: 'svc',
       fdaId: 'fda1',
       servicePath: '/servicepath',
       progress: 20,
     });
 
-    expect(mongoMocks.updateFDAStatus).toHaveBeenNthCalledWith(3, {
+    expect(mongoMocks.updateFDAStatus).toHaveBeenNthCalledWith(2, {
       service: 'svc',
       fdaId: 'fda1',
       servicePath: '/servicepath',
@@ -3256,7 +3259,7 @@ describe('processFDAAsync', () => {
       progress: 60,
     });
 
-    expect(mongoMocks.updateFDAStatus).toHaveBeenNthCalledWith(4, {
+    expect(mongoMocks.updateFDAStatus).toHaveBeenNthCalledWith(3, {
       service: 'svc',
       fdaId: 'fda1',
       servicePath: '/servicepath',
@@ -3264,13 +3267,23 @@ describe('processFDAAsync', () => {
       progress: 80,
     });
 
-    expect(mongoMocks.updateFDAStatus).toHaveBeenNthCalledWith(5, {
+    expect(mongoMocks.updateFDAStatus).toHaveBeenNthCalledWith(4, {
       service: 'svc',
       fdaId: 'fda1',
       servicePath: '/servicepath',
       status: 'completed',
       progress: 100,
     });
+  });
+
+  test('skips refresh without touching storage when FDA cannot be claimed for fetch', async () => {
+    mongoMocks.claimFDAForFetch.mockResolvedValue(false);
+
+    await processFDAAsync('fda1', 'SELECT 1', 'svc', '/servicepath');
+
+    expect(mongoMocks.updateFDAStatus).not.toHaveBeenCalled();
+    expect(pgMocks.uploadTable).not.toHaveBeenCalled();
+    expect(awsMocks.getS3Client).not.toHaveBeenCalled();
   });
 
   test('uses normalized bucket name while preserving original database name', async () => {
@@ -3533,6 +3546,7 @@ describe('deleteFDA', () => {
     awsMocks.getS3Client.mockReturnValue({});
     awsMocks.dropFile.mockResolvedValue(undefined);
     mongoMocks.removeFDA.mockResolvedValue(undefined);
+    mongoMocks.claimFDAForDeletion.mockResolvedValue({ status: 'completed' });
   });
 
   test('drops parquet, removes FDA and cancels agenda job', async () => {
@@ -3741,34 +3755,37 @@ describe('deleteFDA', () => {
     expect(awsMocks.getS3Client).not.toHaveBeenCalled();
   });
 
-  test.each(['fetching', 'transforming', 'uploading'])(
-    'throws FDAProcessing and leaves FDA untouched while status is %s',
-    async (status) => {
-      mongoMocks.retrieveFDA.mockResolvedValue({
-        _id: 'mongo-id',
-        status,
-        visibility: 'private',
-        servicePath: '/servicepath',
-      });
-
-      await expect(
-        deleteFDA('svc', 'fdaA', 'private', '/servicepath'),
-      ).rejects.toMatchObject({
-        status: 409,
-        type: 'FDAProcessing',
-      });
-
-      expect(awsMocks.getS3Client).not.toHaveBeenCalled();
-      expect(awsMocks.dropFiles).not.toHaveBeenCalled();
-      expect(mongoMocks.removeFDA).not.toHaveBeenCalled();
-      expect(agenda.cancel).not.toHaveBeenCalled();
-    },
-  );
-
-  test('deletes FDA whose last fetch failed', async () => {
+  test('throws FDAProcessing and leaves FDA untouched when it cannot be claimed for deletion', async () => {
     mongoMocks.retrieveFDA.mockResolvedValue({
       _id: 'mongo-id',
-      status: 'failed',
+      status: 'fetching',
+      visibility: 'private',
+      servicePath: '/servicepath',
+    });
+    mongoMocks.claimFDAForDeletion.mockResolvedValue(null);
+
+    await expect(
+      deleteFDA('svc', 'fdaA', 'private', '/servicepath'),
+    ).rejects.toMatchObject({
+      status: 409,
+      type: 'FDAProcessing',
+    });
+
+    expect(mongoMocks.claimFDAForDeletion).toHaveBeenCalledWith(
+      'svc',
+      'fdaA',
+      '/servicepath',
+    );
+    expect(awsMocks.getS3Client).not.toHaveBeenCalled();
+    expect(awsMocks.dropFiles).not.toHaveBeenCalled();
+    expect(mongoMocks.removeFDA).not.toHaveBeenCalled();
+    expect(agenda.cancel).not.toHaveBeenCalled();
+  });
+
+  test('claims FDA for deletion before touching object storage', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      _id: 'mongo-id',
+      status: 'completed',
       visibility: 'private',
       servicePath: '/servicepath',
     });
@@ -3776,12 +3793,9 @@ describe('deleteFDA', () => {
 
     await deleteFDA('svc', 'fdaA', 'private', '/servicepath');
 
-    expect(mongoMocks.removeFDA).toHaveBeenCalledWith(
-      'svc',
-      'fdaA',
-      '/servicepath',
-    );
-    expect(agenda.cancel).toHaveBeenCalledTimes(3);
+    expect(
+      mongoMocks.claimFDAForDeletion.mock.invocationCallOrder[0],
+    ).toBeLessThan(awsMocks.getS3Client.mock.invocationCallOrder[0]);
   });
 
   test('deleteDA removes access without accessibility lookup when scope is omitted', async () => {
