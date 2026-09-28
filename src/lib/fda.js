@@ -1717,15 +1717,18 @@ export async function deleteFDA(service, fdaId, visibility, servicePath) {
     targetServicePath = fda.servicePath;
   }
 
-  const { _id } = (await retrieveFDA(service, fdaId, targetServicePath)) ?? {};
+  const storedFDA = await retrieveFDA(service, fdaId, targetServicePath);
 
-  if (!service || !_id) {
+  if (!service || !storedFDA?._id) {
     throw new FDAError(
       404,
       'FDANotFound',
       `FDA ${fdaId} of the service ${service} not found.`,
     );
   }
+
+  assertFDANotProcessing(storedFDA, fdaId);
+
   const bucketName = getBucketNameFromService(service);
   const s3Client = await getS3Client(
     `${config.objstg.protocol}://${config.objstg.endpoint}`,
@@ -2550,6 +2553,16 @@ function assertFDAIsCached(fda, fdaId) {
       409,
       'FDAOnlyFresh',
       `FDA ${fdaId} is configured as only-fresh and does not support this operation.`,
+    );
+  }
+}
+
+function assertFDANotProcessing(fda, fdaId) {
+  if (!['completed', 'failed'].includes(fda.status)) {
+    throw new FDAError(
+      409,
+      'FDAProcessing',
+      `FDA ${fdaId} cannot be deleted while it is being processed (status ${fda.status})`,
     );
   }
 }
