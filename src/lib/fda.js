@@ -1415,7 +1415,7 @@ export async function updateFDA(service, fdaId, visibility, servicePath) {
     service,
     fda.datasourceId ?? DEFAULT_DATASOURCE_ID,
   );
-  const regeneratedSchema = await resolveRegeneratedSchema(datasource, fda);
+  await resolveSourceSchema(datasource, fda);
 
   const previous = await regenerateFDA(service, fdaId, normalizedServicePath);
 
@@ -1423,15 +1423,6 @@ export async function updateFDA(service, fdaId, visibility, servicePath) {
 
   // Execute refresh immediately (when a fetcher is free)
   const effectiveServicePath = previous.servicePath ?? normalizedServicePath;
-
-  if (regeneratedSchema) {
-    await updateFDASchema(
-      service,
-      fdaId,
-      effectiveServicePath,
-      regeneratedSchema,
-    );
-  }
 
   let firstQuery = previous.query;
   if (previous.refreshPolicy?.type === 'window') {
@@ -1465,7 +1456,7 @@ export async function updateFDA(service, fdaId, visibility, servicePath) {
   }
 }
 
-async function resolveRegeneratedSchema(datasource, fda) {
+async function resolveSourceSchema(datasource, fda) {
   if (datasource.type !== 'postgres') {
     return null;
   }
@@ -1479,6 +1470,92 @@ async function resolveRegeneratedSchema(datasource, fda) {
   );
 
   return buildPersistedSchema(sourceSchema);
+}
+
+async function canonicalizeSchemaTypes(schemaFields) {
+  const conn = await getDBConnection();
+  try {
+    const selectList = schemaFields
+      .map(({ type }, index) => `CAST(NULL AS ${type}) AS c${index}`)
+      .join(', ');
+    const describeResult = await conn.run(`DESCRIBE SELECT ${selectList}`);
+    const describeRows = await Promise.resolve(
+      describeResult.getRowObjectsJson(),
+    );
+
+    return schemaFields.map(({ name }, index) => ({
+      name,
+      type: describeRows[index].column_type,
+    }));
+  } finally {
+    await releaseDBConnection(conn);
+  }
+}
+
+function diffSchemas(previousSchema, currentSchema) {
+  const previousTypes = new Map(
+    previousSchema.map(({ name, type }) => [name, type]),
+  );
+  const currentNames = new Set(currentSchema.map(({ name }) => name));
+
+  return {
+    added: currentSchema
+      .filter(({ name }) => !previousTypes.has(name))
+      .map(({ name }) => name),
+    removed: previousSchema
+      .filter(({ name }) => !currentNames.has(name))
+      .map(({ name }) => name),
+    retyped: currentSchema
+      .filter(
+        ({ name, type }) =>
+          previousTypes.has(name) && previousTypes.get(name) !== type,
+      )
+      .map(({ name }) => name),
+  };
+}
+
+function isSameSchema(schemaA, schemaB) {
+  return (
+    schemaA.length === schemaB.length &&
+    schemaA.every(
+      ({ name, type }, index) =>
+        name === schemaB[index].name && type === schemaB[index].type,
+    )
+  );
+}
+
+async function detectSourceSchemaChange(
+  service,
+  fdaId,
+  servicePath,
+  datasourceId,
+) {
+  const fda = await retrieveFDA(service, fdaId, servicePath);
+  const storedSchemaFields = normalizePersistedSchemaFields(fda?.schema);
+  if (storedSchemaFields.length === 0) {
+    return null;
+  }
+
+  const datasource = await resolveDatasource(service, datasourceId);
+  const sourceSchemaFields = await resolveSourceSchema(datasource, fda);
+  if (!sourceSchemaFields) {
+    return null;
+  }
+
+  const [storedSchema, sourceSchema] = await Promise.all([
+    canonicalizeSchemaTypes(storedSchemaFields),
+    canonicalizeSchemaTypes(sourceSchemaFields),
+  ]);
+  if (isSameSchema(storedSchema, sourceSchema)) {
+    return null;
+  }
+
+  return {
+    fda,
+    datasource,
+    schema: sourceSchema,
+    diff: diffSchemas(storedSchema, sourceSchema),
+  };
 }
 
 export async function processFDAAsync(
@@ -1504,16 +1581,37 @@ export async function processFDAAsync(
   }
 
   try {
+    const schemaChange = await detectSourceSchemaChange(
+      service,
+      fdaId,
+      servicePath,
+      datasourceId,
+    );
+    let refreshQuery = query;
+    if (schemaChange) {
+      logger.warn(
+        { fdaId, ...schemaChange.diff },
+        'Source schema changed, rebuilding the whole FDA',
+      );
+      refreshQuery = resolveRefreshQueries(
+        schemaChange.datasource,
+        refreshPolicy,
+        schemaChange.fda.query,
+        timeColumn,
+      ).firstQuery;
+    }
+
     await uploadTableToObjStg(
       service,
       datasourceId,
-      query,
+      refreshQuery,
       bucketName,
       storagePath,
       fdaId,
       servicePath,
       timeColumn,
       objStgConf,
+      schemaChange?.schema,
     );
 
     await refreshFDASchemaFromStorage(service, fdaId, servicePath, objStgConf);
@@ -1976,6 +2074,7 @@ async function uploadTableToObjStg(
   servicePath,
   timeColumn,
   objStgConf,
+  rebuildSchema,
 ) {
   const s3Client = getS3Client(
     `${config.objstg.protocol}://${config.objstg.endpoint}`,
@@ -1984,7 +2083,8 @@ async function uploadTableToObjStg(
   );
   const datasource = await resolveDatasource(service, datasourceId);
   const fda = await retrieveFDA(service, fdaId, servicePath);
-  const schemaFields = normalizePersistedSchemaFields(fda?.schema);
+  const schemaFields =
+    rebuildSchema ?? normalizePersistedSchemaFields(fda?.schema);
   await updateFDAStatus({ service, fdaId, servicePath, progress: 20 });
 
   if (datasource.type === 'postgres') {
@@ -2049,6 +2149,9 @@ async function uploadTableToObjStg(
       const hasRealPartitionedParquet = objectsList.some((key) =>
         key.endsWith('.parquet'),
       );
+      const previousPartitions = rebuildSchema
+        ? await listObjects(s3Client, bucket, `${path}.parquet/`)
+        : [];
       for (const tempPartition of objectsList) {
         await moveObject(
           s3Client,
@@ -2058,6 +2161,15 @@ async function uploadTableToObjStg(
         );
         await dropFile(s3Client, bucket, tempPartition);
       }
+
+      const rewrittenPartitions = new Set(
+        objectsList.map((key) => key.replace('tmp/', '')),
+      );
+      await dropFiles(
+        s3Client,
+        bucket,
+        previousPartitions.filter((key) => !rewrittenPartitions.has(key)),
+      );
 
       if (hasRealPartitionedParquet) {
         await dropFile(
