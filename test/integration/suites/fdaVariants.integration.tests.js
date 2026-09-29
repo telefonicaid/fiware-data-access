@@ -221,6 +221,63 @@ export function registerFdaVariantsIntegrationTests({
       }
     });
 
+    test('POST /fdas in strict mode reports the real column types of a PostgreSQL FDA', async () => {
+      const baseUrl = getBaseUrl();
+      const strictSchemaFdaId = 'fda_strict_schema';
+
+      try {
+        const createFda = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: strictSchemaFdaId,
+            query:
+              'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+            description: 'strict mode schema integration test',
+            cached: true,
+          },
+        });
+
+        expect(createFda.status).toBe(202);
+
+        const completedFDA = await waitUntilFDACompleted({
+          baseUrl,
+          service,
+          fdaId: strictSchemaFdaId,
+        });
+
+        const schemaByName = Object.fromEntries(
+          completedFDA.schema.map(({ name, type }) => [name, type]),
+        );
+
+        expect(Object.keys(schemaByName).sort()).toEqual([
+          'age',
+          'authorized',
+          'id',
+          'name',
+          'timeinstant',
+        ]);
+        expect(schemaByName.id).toMatch(/^(BIGINT|INTEGER)$/);
+        expect(schemaByName.name).toBe('VARCHAR');
+        expect(schemaByName.age).toMatch(/^(BIGINT|INTEGER)$/);
+        expect(schemaByName.authorized).toBe('BOOLEAN');
+        expect(schemaByName.timeinstant).toMatch(/^TIMESTAMP/);
+      } finally {
+        await httpReq({
+          method: 'DELETE',
+          url: `${baseUrl}/${visibility}/fdas/${strictSchemaFdaId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+      }
+    });
+
     test('POST /fdas with validationMode set to unchecked does not create default DA even when defaultDataAccess=true', async () => {
       const baseUrl = getBaseUrl();
       const uncheckedModeFdaId = 'fda_unchecked_mode';

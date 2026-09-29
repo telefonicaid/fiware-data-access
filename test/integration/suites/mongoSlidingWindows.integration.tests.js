@@ -278,7 +278,11 @@ export function registerMongoSlidingWindowsIntegrationTests({
         body: {
           id: fdaId,
           datasourceId,
-          query: { collection: collectionName, filter: {} },
+          query: {
+            collection: collectionName,
+            filter: {},
+            projection: { label: 1, observedAt: 1 },
+          },
           description: 'Mongo recurring refresh test',
           refreshPolicy: {
             type: 'window',
@@ -340,7 +344,11 @@ export function registerMongoSlidingWindowsIntegrationTests({
         body: {
           id: fdaId,
           datasourceId,
-          query: { collection: collectionName, filter: {} },
+          query: {
+            collection: collectionName,
+            filter: {},
+            projection: { label: 1, observedAt: 1 },
+          },
           description: 'Mongo clean-partition scheduling test',
           timeColumn: 'observedAt',
           refreshPolicy: {
@@ -418,7 +426,11 @@ export function registerMongoSlidingWindowsIntegrationTests({
         body: {
           id: fdaId,
           datasourceId,
-          query: { collection: collectionName, filter: {} },
+          query: {
+            collection: collectionName,
+            filter: {},
+            projection: { label: 1, observedAt: 1 },
+          },
           description: 'Mongo PUT regenerate sliding window test',
           refreshPolicy: {
             type: 'window',
@@ -541,7 +553,7 @@ export function registerMongoSlidingWindowsIntegrationTests({
         await waitUntilFDACompleted({ baseUrl, service, fdaId });
       });
 
-      test('the persisted schema types every Mongo column as VARCHAR, regardless of real content', async () => {
+      test('the persisted schema reports the real types of the materialized Parquet', async () => {
         const baseUrl = getBaseUrl();
         const getFda = await httpReq({
           method: 'GET',
@@ -553,14 +565,23 @@ export function registerMongoSlidingWindowsIntegrationTests({
         });
 
         expect(getFda.status).toBe(200);
-        expect(new Set(getFda.json.schema)).toEqual(
-          new Set([
-            { name: 'label', type: 'VARCHAR' },
-            { name: 'temperature', type: 'VARCHAR' },
-            { name: 'active', type: 'VARCHAR' },
-            { name: 'observedAt', type: 'VARCHAR' },
-          ]),
+
+        const schemaByName = Object.fromEntries(
+          getFda.json.schema.map(({ name, type }) => [name, type]),
         );
+
+        expect(Object.keys(schemaByName).sort()).toEqual([
+          'active',
+          'label',
+          'observedAt',
+          'temperature',
+        ]);
+        expect(schemaByName.label).toBe('VARCHAR');
+        expect(schemaByName.active).toBe('BOOLEAN');
+        expect(schemaByName.temperature).toMatch(
+          /^(DOUBLE|FLOAT|DECIMAL.*|BIGINT|INTEGER)$/,
+        );
+        expect(schemaByName.observedAt).toMatch(/^TIMESTAMP/);
       });
 
       test('defaultDataAccess equality filter works on a genuinely numeric Mongo field', async () => {
@@ -642,7 +663,7 @@ export function registerMongoSlidingWindowsIntegrationTests({
         );
       });
 
-      test('a field with heterogeneous types across documents still materializes, widened to text (see issue #235)', async () => {
+      test('a field with heterogeneous types across documents still materializes, widened to text', async () => {
         const baseUrl = getBaseUrl();
         const suffix = `${Date.now()}`;
         const heteroCollectionName = `mongo_sw_hetero_${suffix}`;
@@ -704,6 +725,196 @@ export function registerMongoSlidingWindowsIntegrationTests({
         // The actual Parquet column is typed as text, so both numeric and string values are preserved
         const temperatures = readRes.json.map((r) => r.temperature);
         expect(temperatures.sort()).toEqual(['25', 'high']);
+      });
+
+      test('the persisted schema follows the data when its shape changes over time', async () => {
+        const baseUrl = getBaseUrl();
+        const suffix = `${Date.now()}`;
+        const driftCollectionName = `mongo_sw_drift_${suffix}`;
+        const driftFdaId = `fda_mongo_sw_drift_${suffix}`;
+
+        // t_0: temperature is numeric in every document
+        await seedCollection(driftCollectionName, [
+          { label: 't0-1', temperature: 21.5, observedAt: new Date() },
+          { label: 't0-2', temperature: 19.2, observedAt: new Date() },
+        ]);
+
+        const createFda = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: driftFdaId,
+            datasourceId,
+            query: {
+              collection: driftCollectionName,
+              filter: {},
+              projection: { label: 1, temperature: 1, observedAt: 1 },
+            },
+            description: 'Mongo schema drift over time test',
+            timeColumn: 'observedAt',
+          },
+        });
+
+        expect(createFda.status).toBe(202);
+        await waitUntilFDACompleted({ baseUrl, service, fdaId: driftFdaId });
+
+        const readSchema = async () => {
+          const res = await httpReq({
+            method: 'GET',
+            url: `${baseUrl}/${visibility}/fdas/${driftFdaId}`,
+            headers: {
+              'Fiware-Service': service,
+              'Fiware-ServicePath': servicePath,
+            },
+          });
+
+          return Object.fromEntries(
+            res.json.schema.map(({ name, type }) => [name, type]),
+          );
+        };
+
+        expect((await readSchema()).temperature).toMatch(
+          /^(DOUBLE|FLOAT|DECIMAL.*)$/,
+        );
+
+        // t_1: the same field starts carrying text, without the FDA definition changing
+        await insertDoc(driftCollectionName, {
+          label: 't1-1',
+          temperature: 'very high',
+          observedAt: new Date(),
+        });
+
+        const regenerate = await httpReq({
+          method: 'PUT',
+          url: `${baseUrl}/${visibility}/fdas/${driftFdaId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+
+        expect(regenerate.status).toBe(202);
+        await waitUntilFDACompleted({ baseUrl, service, fdaId: driftFdaId });
+
+        // The schema was re-derived from the new Parquet instead of staying frozen
+        expect((await readSchema()).temperature).toBe('VARCHAR');
+      });
+
+      test('a partitioned FDA with no matching rows answers with an empty result instead of failing', async () => {
+        const baseUrl = getBaseUrl();
+        const suffix = `${Date.now()}`;
+        const emptyFdaId = `fda_mongo_sw_empty_${suffix}`;
+
+        // No document matches, so no partition file is ever written: queries fall back
+        // to a typed empty relation built from the persisted schema.
+        const createFda = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: emptyFdaId,
+            datasourceId,
+            query: {
+              collection: collectionName,
+              filter: { label: 'no-such-label' },
+              projection: { label: 1, observedAt: 1 },
+            },
+            description: 'Mongo partitioned FDA with no matching rows',
+            timeColumn: 'observedAt',
+            objStgConf: { partition: 'day' },
+            refreshPolicy: {
+              type: 'window',
+              params: {
+                refreshInterval: '1 hour',
+                fetchSize: 'day',
+                windowSize: 'week',
+              },
+            },
+          },
+        });
+
+        expect(createFda.status).toBe(202);
+        await waitUntilFDACompleted({ baseUrl, service, fdaId: emptyFdaId });
+
+        const readRes = await readDefaultDA(baseUrl, emptyFdaId);
+        expect(readRes.status).toBe(200);
+        expect(readRes.json).toEqual([]);
+      });
+
+      test('a field missing from some documents is still materialized for every document', async () => {
+        const baseUrl = getBaseUrl();
+        const suffix = `${Date.now()}`;
+        const sparseCollectionName = `mongo_sw_sparse_${suffix}`;
+        const sparseFdaId = `fda_mongo_sw_sparse_${suffix}`;
+        const now = Date.now();
+
+        // The first document lacks `extra`. The declared projection is the column contract instead
+        await seedCollection(sparseCollectionName, [
+          {
+            label: 'without_extra',
+            observedAt: new Date(now - 60 * 60 * 1000),
+          },
+          {
+            label: 'with_extra',
+            extra: 'present',
+            observedAt: new Date(now - 30 * 60 * 1000),
+          },
+        ]);
+
+        const createFda = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: sparseFdaId,
+            datasourceId,
+            query: {
+              collection: sparseCollectionName,
+              filter: {},
+              projection: { label: 1, extra: 1, observedAt: 1 },
+            },
+            description: 'Mongo heterogeneous field set test',
+            timeColumn: 'observedAt',
+          },
+        });
+
+        expect(createFda.status).toBe(202);
+        await waitUntilFDACompleted({ baseUrl, service, fdaId: sparseFdaId });
+
+        const getFda = await httpReq({
+          method: 'GET',
+          url: `${baseUrl}/${visibility}/fdas/${sparseFdaId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+
+        expect(getFda.status).toBe(200);
+        expect(getFda.json.schema.map(({ name }) => name).sort()).toEqual([
+          'extra',
+          'label',
+          'observedAt',
+        ]);
+
+        const readRes = await readDefaultDA(baseUrl, sparseFdaId);
+        expect(readRes.status).toBe(200);
+
+        const extraByLabel = Object.fromEntries(
+          readRes.json.map((row) => [row.label, row.extra]),
+        );
+        expect(extraByLabel.with_extra).toBe('present');
+        expect(extraByLabel.without_extra ?? null).toBeNull();
       });
     });
   });

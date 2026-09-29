@@ -107,6 +107,73 @@ export function registerUploadFdasIntegrationTests({
       }
     });
 
+    test('POST /{visibility}/fdas/upload derives the schema from the materialized Parquet', async () => {
+      const baseUrl = getBaseUrl();
+      const fdaId = `upload_schema_${Date.now()}`;
+      const csvBuffer = Buffer.from(
+        'device,reading,active,observedAt\n' +
+          'sensor-a,21.5,true,2026-01-01T00:00:00Z\n' +
+          'sensor-b,19,false,2026-01-02T00:00:00Z\n',
+      );
+
+      try {
+        const uploadRes = await httpMultipartReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas/upload`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          fields: {
+            id: fdaId,
+            description: 'integration csv upload schema',
+          },
+          file: {
+            fieldName: 'file',
+            filename: 'upload.csv',
+            contentType: 'text/csv',
+            content: csvBuffer,
+          },
+        });
+
+        expect(uploadRes.status).toBe(202);
+
+        await waitUntilFDACompleted({ baseUrl, service, fdaId, visibility });
+
+        const getRes = await httpReq({
+          method: 'GET',
+          url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+
+        expect(getRes.status).toBe(200);
+
+        // An uploaded file has no source to introspect, so its schema comes
+        // from the Parquet, with the types DuckDB inferred from the file contents
+        const schemaByName = Object.fromEntries(
+          getRes.json.schema.map(({ name, type }) => [name, type]),
+        );
+
+        expect(Object.keys(schemaByName).sort()).toEqual([
+          'active',
+          'device',
+          'observedAt',
+          'reading',
+        ]);
+        expect(schemaByName.device).toBe('VARCHAR');
+        expect(schemaByName.active).toBe('BOOLEAN');
+        expect(schemaByName.reading).toMatch(
+          /^(DOUBLE|FLOAT|DECIMAL.*|BIGINT|INTEGER)$/,
+        );
+        expect(schemaByName.observedAt).toMatch(/^TIMESTAMP/);
+      } finally {
+        await deleteFdaIfPresent(baseUrl, fdaId);
+      }
+    });
+
     test('POST /{visibility}/fdas/upload supports XLSX multi-sheet uploads', async () => {
       const baseUrl = getBaseUrl();
       const fdaId = `upload_xlsx_${Date.now()}`;
