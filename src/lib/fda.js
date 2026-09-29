@@ -2073,6 +2073,52 @@ export async function cleanPartition(
   await dropFiles(s3Client, bucketName, partitionsToRemove);
 }
 
+async function publishTmpPartitions(
+  s3Client,
+  bucket,
+  path,
+  partition,
+  dropStalePartitions,
+) {
+  const objectsList = await listObjects(
+    s3Client,
+    bucket,
+    `tmp/${path}.parquet/`,
+  );
+  const hasRealPartitionedParquet = objectsList.some((key) =>
+    key.endsWith('.parquet'),
+  );
+  const previousPartitions = dropStalePartitions
+    ? await listObjects(s3Client, bucket, `${path}.parquet/`)
+    : [];
+  for (const tempPartition of objectsList) {
+    await moveObject(
+      s3Client,
+      bucket,
+      `${bucket}/${tempPartition}`,
+      tempPartition.replace('tmp/', ''),
+    );
+    await dropFile(s3Client, bucket, tempPartition);
+  }
+
+  const rewrittenPartitions = new Set(
+    objectsList.map((key) => key.replace('tmp/', '')),
+  );
+  await dropFiles(
+    s3Client,
+    bucket,
+    previousPartitions.filter((key) => !rewrittenPartitions.has(key)),
+  );
+
+  if (hasRealPartitionedParquet) {
+    await dropFile(
+      s3Client,
+      bucket,
+      `${path}/${getSchemaPartitionPath(partition)}/schema.parquet`,
+    );
+  }
+}
+
 async function uploadTableToObjStg(
   service,
   datasourceId,
@@ -2150,43 +2196,13 @@ async function uploadTableToObjStg(
     }
 
     if (objStgConf?.partition) {
-      const objectsList = await listObjects(
+      await publishTmpPartitions(
         s3Client,
         bucket,
-        `tmp/${path}.parquet/`,
+        path,
+        objStgConf.partition,
+        Boolean(rebuildSchema),
       );
-      const hasRealPartitionedParquet = objectsList.some((key) =>
-        key.endsWith('.parquet'),
-      );
-      const previousPartitions = rebuildSchema
-        ? await listObjects(s3Client, bucket, `${path}.parquet/`)
-        : [];
-      for (const tempPartition of objectsList) {
-        await moveObject(
-          s3Client,
-          bucket,
-          `${bucket}/${tempPartition}`,
-          tempPartition.replace('tmp/', ''),
-        );
-        await dropFile(s3Client, bucket, tempPartition);
-      }
-
-      const rewrittenPartitions = new Set(
-        objectsList.map((key) => key.replace('tmp/', '')),
-      );
-      await dropFiles(
-        s3Client,
-        bucket,
-        previousPartitions.filter((key) => !rewrittenPartitions.has(key)),
-      );
-
-      if (hasRealPartitionedParquet) {
-        await dropFile(
-          s3Client,
-          bucket,
-          `${path}/${getSchemaPartitionPath(objStgConf.partition)}/schema.parquet`,
-        );
-      }
     }
 
     await updateFDAStatus({
@@ -2639,8 +2655,9 @@ async function getFDASchemaFromStorage(
       ? `s3://${bucketName}/${storagePath}.parquet/**/*.parquet`
       : `s3://${bucketName}/${storagePath}.parquet`;
     const safeParquetPath = parquetPath.replaceAll("'", "''");
+    const hiveOption = hivePartitioning ? '' : ', hive_partitioning = false';
     const readOptions = objStgConf?.partition
-      ? `${hivePartitioning ? '' : ', hive_partitioning = false'}, union_by_name = true`
+      ? `${hiveOption}, union_by_name = true`
       : '';
     const describeResult = await conn.run(
       `DESCRIBE SELECT * FROM read_parquet('${safeParquetPath}'${readOptions})`,
