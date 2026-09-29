@@ -539,8 +539,7 @@ router.get('/:visibility/fdas/:fdaId', async (req, res) => {
  *     summary: Regenerate FDA
  *     description: >
  *       Regenerates the FDA, fetching the source data again. Does not accept a request body. For PostgreSQL FDAs
- *       in `strict` mode, the `schema` is first re-resolved from the source query, so columns added, removed or
- *       renamed in the source are adopted by the regenerated FDA. Returns `409` if the FDA is currently being
+ *       in `strict` mode, the source query is validated first. Returns `409` if the FDA is currently being
  *       processed, or if it is configured as only-fresh (`cached: false`, which does not support manual
  *       regeneration).
  *     parameters:
