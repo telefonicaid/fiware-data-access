@@ -3490,12 +3490,12 @@ describe('processFDAAsync', () => {
 
     function createDuckDBConnection() {
       return {
-        run: jest.fn(async (sql) => {
+        run: jest.fn((sql) => {
           const castTypes = [...sql.matchAll(/CAST\(NULL AS (.+?)\) AS c\d+/g)];
           const rows = castTypes.map(([, type]) => ({
             column_type: canonicalTypes[type] ?? type,
           }));
-          return { getRowObjectsJson: () => rows };
+          return Promise.resolve({ getRowObjectsJson: () => rows });
         }),
       };
     }
@@ -3510,7 +3510,7 @@ describe('processFDAAsync', () => {
     beforeEach(() => {
       dbMocks.getDBConnection
         .mockReset()
-        .mockImplementation(async () => createDuckDBConnection());
+        .mockImplementation(() => Promise.resolve(createDuckDBConnection()));
       dbMocks.copyQueryToParquet.mockResolvedValue(undefined);
       mongoMocks.retrieveFDA.mockResolvedValue(storedFDA);
       awsMocks.listObjects.mockReset().mockResolvedValue([]);
@@ -3606,15 +3606,17 @@ describe('processFDAAsync', () => {
         { name: 'observed_at', duckdbType: 'TIMESTAMPTZ' },
         { name: 'extra', duckdbType: 'VARCHAR' },
       ]);
-      awsMocks.listObjects.mockImplementation(async (client, bucket, prefix) =>
-        prefix.startsWith('tmp/')
-          ? [
-              'tmp/servicepath/fda1.parquet/year=2026/month=9/day=29/data_0.parquet',
-            ]
-          : [
-              'servicepath/fda1.parquet/year=2026/month=9/day=25/data_0.parquet',
-              'servicepath/fda1.parquet/year=2026/month=9/day=29/data_0.parquet',
-            ],
+      awsMocks.listObjects.mockImplementation((client, bucket, prefix) =>
+        Promise.resolve(
+          prefix.startsWith('tmp/')
+            ? [
+                'tmp/servicepath/fda1.parquet/year=2026/month=9/day=29/data_0.parquet',
+              ]
+            : [
+                'servicepath/fda1.parquet/year=2026/month=9/day=25/data_0.parquet',
+                'servicepath/fda1.parquet/year=2026/month=9/day=29/data_0.parquet',
+              ],
+        ),
       );
 
       await processFDAAsync(
