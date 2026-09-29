@@ -1411,11 +1411,10 @@ _**Example Response:**_
 
 Regenerate the FDA, fetching again the source table from DB.
 
-For PostgreSQL FDAs in `strict` mode, the `schema` is re-resolved from the source query before fetching. This is the way
-to make an FDA adopt columns that were added, removed or renamed in its source table (see
-[Source schema changes](AdvancedTopics/sliding_windows_and_partitioning.md#source-schema-changes)). If the source query
-is no longer valid (for example, its `timeColumn` has been removed), the operation returns `400 InvalidParam` and the
-FDA is left untouched.
+For PostgreSQL FDAs in `strict` mode, the source query is validated before regenerating. If it is no longer valid (for
+example, its `timeColumn` has been removed), the operation returns `400 InvalidParam` and the FDA is left untouched.
+Columns added, removed or renamed in the source table are adopted by the refresh itself, like in any other refresh (see
+[Source schema changes](AdvancedTopics/sliding_windows_and_partitioning.md#source-schema-changes)).
 
 The operation may return `409 Conflict` in the following cases:
 
