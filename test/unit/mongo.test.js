@@ -343,6 +343,71 @@ describe('mongo utils', () => {
     );
   });
 
+  test('claimFDAForFetch sets fetching status unless FDA is being deleted', async () => {
+    const { claimFDAForFetch, collectionMock } = await loadMongoModule();
+    collectionMock.updateOne.mockResolvedValueOnce({ matchedCount: 1 });
+
+    const claimed = await claimFDAForFetch({
+      service: 'svc',
+      fdaId: 'fdaA',
+      servicePath: '/sp',
+    });
+
+    expect(claimed).toBe(true);
+    expect(collectionMock.updateOne).toHaveBeenCalledWith(
+      {
+        service: 'svc',
+        fdaId: 'fdaA',
+        servicePath: '/sp',
+        status: { $ne: 'deleting' },
+      },
+      {
+        $set: {
+          status: 'fetching',
+          progress: 10,
+          initFetch: expect.any(Date),
+        },
+      },
+    );
+  });
+
+  test('claimFDAForFetch returns false when FDA is missing or being deleted', async () => {
+    const { claimFDAForFetch, collectionMock } = await loadMongoModule();
+    collectionMock.updateOne.mockResolvedValueOnce({ matchedCount: 0 });
+
+    await expect(
+      claimFDAForFetch({ service: 'svc', fdaId: 'fdaA', servicePath: '/sp' }),
+    ).resolves.toBe(false);
+  });
+
+  test('claimFDAForDeletion only claims FDAs that are not being fetched', async () => {
+    const { claimFDAForDeletion, collectionMock } = await loadMongoModule();
+    collectionMock.findOneAndUpdate.mockResolvedValueOnce({
+      status: 'completed',
+    });
+
+    const claimed = await claimFDAForDeletion('svc', 'fdaA', '/sp');
+
+    expect(claimed).toEqual({ status: 'completed' });
+    expect(collectionMock.findOneAndUpdate).toHaveBeenCalledWith(
+      {
+        service: 'svc',
+        fdaId: 'fdaA',
+        servicePath: '/sp',
+        status: { $in: ['completed', 'failed', 'deleting'] },
+      },
+      { $set: { status: 'deleting' } },
+      { returnDocument: 'before' },
+    );
+  });
+
+  test('claimFDAForDeletion returns null when FDA is being fetched', async () => {
+    const { claimFDAForDeletion, collectionMock } = await loadMongoModule();
+    collectionMock.findOneAndUpdate.mockResolvedValueOnce(null);
+
+    await expect(claimFDAForDeletion('svc', 'fdaA', '/sp')).resolves.toBeNull();
+  });
+
   test('regenerateFDA throws NotFound when FDA does not exist', async () => {
     const { regenerateFDA, collectionMock } = await loadMongoModule();
 

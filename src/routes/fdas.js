@@ -612,7 +612,9 @@ router.put('/:visibility/fdas/:fdaId', async (req, res) => {
  *     tags: [FDAs]
  *     operationId: deleteFda
  *     summary: Delete FDA
- *     description: Deletes the FDA. Deleting an FDA cascades to delete all DAs belonging to it.
+ *     description: >
+ *       Deletes the FDA. Deleting an FDA cascades to delete all DAs belonging to it. Returns `409` while the FDA
+ *       is being processed (status other than `completed` or `failed`).
  *     parameters:
  *       - $ref: '#/components/parameters/VisibilityPath'
  *       - $ref: '#/components/parameters/FdaIdPath'
@@ -631,6 +633,12 @@ router.put('/:visibility/fdas/:fdaId', async (req, res) => {
  *               $ref: '#/components/schemas/Error'
  *       '404':
  *         description: '`FDANotFound`'
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '409':
+ *         description: '`FDAProcessing`: the FDA is being fetched; retry once its status is `completed` or `failed`.'
  *         content:
  *           application/json:
  *             schema:

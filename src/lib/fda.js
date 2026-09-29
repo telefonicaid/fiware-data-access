@@ -68,6 +68,8 @@ import {
   updateFDAStatus,
   updateFDALastFetch,
   updateFDASchema,
+  claimFDAForFetch,
+  claimFDAForDeletion,
   createDatasource,
   retrieveDatasources,
   retrieveDatasource,
@@ -1465,15 +1467,16 @@ export async function processFDAAsync(
   const storagePath = getFDAStoragePath(fdaId, servicePath);
   const bucketName = getBucketNameFromService(service);
 
-  try {
-    await updateFDAStatus({
-      service,
-      fdaId,
-      servicePath,
-      status: 'fetching',
-      progress: 10,
-    });
+  const claimed = await claimFDAForFetch({ service, fdaId, servicePath });
+  if (!claimed) {
+    logger.info(
+      { fdaId, service, servicePath },
+      'Skipping refresh: FDA no longer exists or is being deleted',
+    );
+    return;
+  }
 
+  try {
     await uploadTableToObjStg(
       service,
       datasourceId,
@@ -1731,15 +1734,30 @@ export async function deleteFDA(service, fdaId, visibility, servicePath) {
     targetServicePath = fda.servicePath;
   }
 
-  const { _id } = (await retrieveFDA(service, fdaId, targetServicePath)) ?? {};
+  const storedFDA = await retrieveFDA(service, fdaId, targetServicePath);
 
-  if (!service || !_id) {
+  if (!service || !storedFDA?._id) {
     throw new FDAError(
       404,
       'FDANotFound',
       `FDA ${fdaId} of the service ${service} not found.`,
     );
   }
+
+  const claimedFDA = await claimFDAForDeletion(
+    service,
+    fdaId,
+    targetServicePath,
+  );
+
+  if (!claimedFDA) {
+    throw new FDAError(
+      409,
+      'FDAProcessing',
+      `FDA ${fdaId} cannot be deleted while it is being processed (status ${storedFDA.status})`,
+    );
+  }
+
   const bucketName = getBucketNameFromService(service);
   const s3Client = await getS3Client(
     `${config.objstg.protocol}://${config.objstg.endpoint}`,

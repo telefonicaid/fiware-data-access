@@ -537,7 +537,7 @@
  *           additionalProperties: true
  *         status:
  *           type: string
- *           enum: [fetching, transforming, uploading, completed, failed]
+ *           enum: [fetching, transforming, uploading, completed, failed, deleting]
  *         progress:
  *           type: number
  *           description: Execution progress percentage (0-100).
