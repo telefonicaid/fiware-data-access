@@ -34,6 +34,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { FDAError } from '../../src/lib/fdaError.js';
+import { runWithLogger } from '../../src/lib/utils/logger.js';
 
 const dbMocks = {
   runPreparedStatement: jest.fn(),
@@ -3597,6 +3598,44 @@ describe('processFDAAsync', () => {
       );
       expect(dbMocks.copyQueryToParquet.mock.calls[0][1]).toContain(
         "'identifier': 'INTEGER'",
+      );
+    });
+
+    test('logs a reordering as the reason of the rebuild when only the column order changes', async () => {
+      mockSourceFields([
+        { name: 'observed_at', duckdbType: 'TIMESTAMPTZ' },
+        { name: 'id', duckdbType: 'INTEGER' },
+      ]);
+      const requestLogger = {
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        debug: jest.fn(),
+      };
+
+      await runWithLogger(requestLogger, () =>
+        processFDAAsync(
+          'fda1',
+          'SELECT incremental',
+          'svc',
+          '/servicepath',
+          'observed_at',
+          windowPolicy,
+        ),
+      );
+
+      expect(pgMocks.uploadTable.mock.calls[0][3]).not.toBe(
+        'SELECT incremental',
+      );
+      expect(requestLogger.warn).toHaveBeenCalledWith(
+        {
+          fdaId: 'fda1',
+          added: [],
+          removed: [],
+          retyped: [],
+          reordered: true,
+        },
+        'Source schema changed, rebuilding the whole FDA',
       );
     });
 

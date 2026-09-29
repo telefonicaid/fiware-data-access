@@ -1497,6 +1497,12 @@ function diffSchemas(previousSchema, currentSchema) {
     previousSchema.map(({ name, type }) => [name, type]),
   );
   const currentNames = new Set(currentSchema.map(({ name }) => name));
+  const keptInPreviousOrder = previousSchema
+    .map(({ name }) => name)
+    .filter((name) => currentNames.has(name));
+  const keptInCurrentOrder = currentSchema
+    .map(({ name }) => name)
+    .filter((name) => previousTypes.has(name));
 
   return {
     added: currentSchema
@@ -1511,6 +1517,9 @@ function diffSchemas(previousSchema, currentSchema) {
           previousTypes.has(name) && previousTypes.get(name) !== type,
       )
       .map(({ name }) => name),
+    reordered: keptInPreviousOrder.some(
+      (name, index) => name !== keptInCurrentOrder[index],
+    ),
   };
 }
 
