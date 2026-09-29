@@ -1481,6 +1481,128 @@ export function registerSlidingWindowsIntegrationTests({
       }
     });
 
+    test('window refresh of a strict partitioned FDA rebuilds it when the source schema changes', async () => {
+      const baseUrl = getBaseUrl();
+      const suffix = `${Date.now()}`;
+      const fixtureTable = `sw_schema_rebuild_${suffix}`;
+      const fdaId = `fda_sw_schema_rebuild_${suffix}`;
+
+      const pgClient = createPgClient();
+      await pgClient.connect();
+
+      const mongoClient = new MongoClient(getMongoUri());
+      await mongoClient.connect();
+      const agendaJobs = mongoClient.db('test-db').collection('agendaJobs');
+
+      async function forceWindowRefresh() {
+        const forceRecurring = await agendaJobs.updateOne(
+          { name: 'refresh-fda-recurring', 'data.fdaId': fdaId },
+          { $set: { nextRunAt: new Date() } },
+        );
+        expect(forceRecurring.modifiedCount).toBe(1);
+        await waitForJobToFinish(agendaJobs, fdaId, 'refresh-fda-recurring');
+      }
+
+      async function getFdaState() {
+        const res = await httpReq({
+          method: 'GET',
+          url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+        expect(res.status).toBe(200);
+        return res.json;
+      }
+
+      try {
+        await createSchemaEvolutionFixture(pgClient, fixtureTable);
+
+        const createFda = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: buildSchemaEvolutionFdaBody(fdaId, fixtureTable),
+        });
+
+        expect(createFda.status).toBe(202);
+        await waitUntilFDACompleted({ baseUrl, service, fdaId });
+
+        await addExtraColumnToFixture(pgClient, fixtureTable);
+        await pgClient.query(
+          `UPDATE public.${fixtureTable} SET label = 'older_partition_rebuilt' WHERE id = 1`,
+        );
+
+        await forceWindowRefresh();
+
+        let fda = await getFdaState();
+        expect(fda.status).toBe('completed');
+        expect(fda.error ?? null).toBeNull();
+        expect(fda.schema.map(({ name }) => name)).toEqual([
+          'id',
+          'label',
+          'observed_at',
+          'extra',
+        ]);
+
+        const createAllDa = await createDa(
+          baseUrl,
+          fdaId,
+          'all_columns_da',
+          'SELECT id, label, extra ORDER BY id',
+        );
+        expect(createAllDa.status).toBe(204);
+
+        let readAll = await readDa(baseUrl, fdaId, 'all_columns_da');
+        expect(readAll.status).toBe(200);
+        expect(readAll.json).toEqual([
+          { id: 1, label: 'older_partition_rebuilt', extra: null },
+          { id: 2, label: 'recent_partition', extra: 'added_value' },
+        ]);
+
+        await pgClient.query(
+          `ALTER TABLE public.${fixtureTable} RENAME COLUMN label TO name`,
+        );
+
+        await forceWindowRefresh();
+
+        fda = await getFdaState();
+        expect(fda.status).toBe('completed');
+        expect(fda.schema.map(({ name }) => name)).toEqual([
+          'id',
+          'name',
+          'observed_at',
+          'extra',
+        ]);
+
+        readAll = await readDa(baseUrl, fdaId, 'all_columns_da');
+        expect(readAll.status).toBe(500);
+
+        const createRenamedDa = await createDa(
+          baseUrl,
+          fdaId,
+          'renamed_da',
+          'SELECT id, name ORDER BY id',
+        );
+        expect(createRenamedDa.status).toBe(204);
+
+        const readRenamed = await readDa(baseUrl, fdaId, 'renamed_da');
+        expect(readRenamed.status).toBe(200);
+        expect(readRenamed.json).toEqual([
+          { id: 1, name: 'older_partition_rebuilt' },
+          { id: 2, name: 'recent_partition' },
+        ]);
+      } finally {
+        await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
+        await pgClient.end();
+        await mongoClient.close();
+      }
+    });
+
     test('window refresh of an unchecked partitioned FDA unions partitions with different columns', async () => {
       const baseUrl = getBaseUrl();
       const suffix = `${Date.now()}`;
