@@ -133,6 +133,48 @@ export function registerSlidingWindowsIntegrationTests({
     );
   }
 
+  async function forceWindowRefresh(agendaJobs, fdaId) {
+    const forceRecurring = await agendaJobs.updateOne(
+      { name: 'refresh-fda-recurring', 'data.fdaId': fdaId },
+      { $set: { nextRunAt: new Date() } },
+    );
+    expect(forceRecurring.modifiedCount).toBe(1);
+    await waitForJobToFinish(agendaJobs, fdaId, 'refresh-fda-recurring');
+  }
+
+  async function getFdaState(baseUrl, fdaId) {
+    const res = await httpReq({
+      method: 'GET',
+      url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
+      headers: {
+        'Fiware-Service': service,
+        'Fiware-ServicePath': servicePath,
+      },
+    });
+    expect(res.status).toBe(200);
+    return res.json;
+  }
+
+  async function createSchemaEvolutionFda(
+    baseUrl,
+    fdaId,
+    fixtureTable,
+    extraBody = {},
+  ) {
+    const createFda = await httpReq({
+      method: 'POST',
+      url: `${baseUrl}/${visibility}/fdas`,
+      headers: {
+        'Fiware-Service': service,
+        'Fiware-ServicePath': servicePath,
+      },
+      body: buildSchemaEvolutionFdaBody(fdaId, fixtureTable, extraBody),
+    });
+
+    expect(createFda.status).toBe(202);
+    await waitUntilFDACompleted({ baseUrl, service, fdaId });
+  }
+
   describe('Sliding window FDAs', () => {
     beforeAll(async () => {
       const baseUrl = getBaseUrl();
@@ -1494,28 +1536,6 @@ export function registerSlidingWindowsIntegrationTests({
       await mongoClient.connect();
       const agendaJobs = mongoClient.db('test-db').collection('agendaJobs');
 
-      async function forceWindowRefresh() {
-        const forceRecurring = await agendaJobs.updateOne(
-          { name: 'refresh-fda-recurring', 'data.fdaId': fdaId },
-          { $set: { nextRunAt: new Date() } },
-        );
-        expect(forceRecurring.modifiedCount).toBe(1);
-        await waitForJobToFinish(agendaJobs, fdaId, 'refresh-fda-recurring');
-      }
-
-      async function getFdaState() {
-        const res = await httpReq({
-          method: 'GET',
-          url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
-          headers: {
-            'Fiware-Service': service,
-            'Fiware-ServicePath': servicePath,
-          },
-        });
-        expect(res.status).toBe(200);
-        return res.json;
-      }
-
       try {
         await createSchemaEvolutionFixture(pgClient, fixtureTable);
 
@@ -1537,9 +1557,9 @@ export function registerSlidingWindowsIntegrationTests({
           `UPDATE public.${fixtureTable} SET label = 'older_partition_rebuilt' WHERE id = 1`,
         );
 
-        await forceWindowRefresh();
+        await forceWindowRefresh(agendaJobs, fdaId);
 
-        let fda = await getFdaState();
+        let fda = await getFdaState(baseUrl, fdaId);
         expect(fda.status).toBe('completed');
         expect(fda.error ?? null).toBeNull();
         expect(fda.schema.map(({ name }) => name)).toEqual([
@@ -1568,9 +1588,9 @@ export function registerSlidingWindowsIntegrationTests({
           `ALTER TABLE public.${fixtureTable} RENAME COLUMN label TO name`,
         );
 
-        await forceWindowRefresh();
+        await forceWindowRefresh(agendaJobs, fdaId);
 
-        fda = await getFdaState();
+        fda = await getFdaState(baseUrl, fdaId);
         expect(fda.status).toBe('completed');
         expect(fda.schema.map(({ name }) => name)).toEqual([
           'id',
@@ -1636,12 +1656,7 @@ export function registerSlidingWindowsIntegrationTests({
 
         await addExtraColumnToFixture(pgClient, fixtureTable);
 
-        const forceRecurring = await agendaJobs.updateOne(
-          { name: 'refresh-fda-recurring', 'data.fdaId': fdaId },
-          { $set: { nextRunAt: new Date() } },
-        );
-        expect(forceRecurring.modifiedCount).toBe(1);
-        await waitForJobToFinish(agendaJobs, fdaId, 'refresh-fda-recurring');
+        await forceWindowRefresh(agendaJobs, fdaId);
 
         const createExtraDa = await createDa(
           baseUrl,
@@ -1673,6 +1688,247 @@ export function registerSlidingWindowsIntegrationTests({
         ).toEqual([
           { label: 'older_partition', extra: null },
           { label: 'recent_partition', extra: 'added_value' },
+        ]);
+      } finally {
+        await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
+        await pgClient.end();
+        await mongoClient.close();
+      }
+    });
+
+    test('window refresh of a strict partitioned FDA stays incremental when the source schema has not changed', async () => {
+      const baseUrl = getBaseUrl();
+      const suffix = `${Date.now()}`;
+      const fixtureTable = `sw_schema_stable_${suffix}`;
+      const fdaId = `fda_sw_schema_stable_${suffix}`;
+
+      const pgClient = createPgClient();
+      await pgClient.connect();
+
+      const mongoClient = new MongoClient(getMongoUri());
+      await mongoClient.connect();
+      const agendaJobs = mongoClient.db('test-db').collection('agendaJobs');
+
+      try {
+        await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
+        await pgClient.query(`
+          CREATE TABLE public.${fixtureTable} (
+            id INT PRIMARY KEY,
+            label TEXT NOT NULL,
+            amount NUMERIC(10, 2),
+            ratio REAL,
+            total BIGINT,
+            level SMALLINT,
+            active BOOLEAN,
+            payload JSONB,
+            uid UUID,
+            raw BYTEA,
+            opened_at TIME,
+            opened_on DATE,
+            local_ts TIMESTAMP,
+            observed_at TIMESTAMPTZ NOT NULL
+          )
+        `);
+        await pgClient.query(`
+          INSERT INTO public.${fixtureTable} VALUES
+            (1, 'older_partition', 12.34, 0.5, 9007199254740993, 1, true,
+             '{"a": 1}', 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', '\\xdeadbeef',
+             '08:30:00', CURRENT_DATE - 4, NOW()::timestamp - INTERVAL '4 days',
+             NOW() - INTERVAL '4 days'),
+            (2, 'recent_partition', 56.78, 1.5, 42, 2, false,
+             '{"b": [1, 2]}', 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12', '\\xcafebabe',
+             '17:45:00', CURRENT_DATE, NOW()::timestamp - INTERVAL '1 hour',
+             NOW() - INTERVAL '1 hour')
+        `);
+
+        await createSchemaEvolutionFda(baseUrl, fdaId, fixtureTable);
+        const initialSchema = (await getFdaState(baseUrl, fdaId)).schema;
+
+        await pgClient.query(
+          `UPDATE public.${fixtureTable} SET label = label || '_updated'`,
+        );
+
+        await forceWindowRefresh(agendaJobs, fdaId);
+
+        const fda = await getFdaState(baseUrl, fdaId);
+        expect(fda.status).toBe('completed');
+        expect(fda.schema).toEqual(initialSchema);
+
+        const createLabelsDa = await createDa(
+          baseUrl,
+          fdaId,
+          'labels_da',
+          'SELECT id, label ORDER BY id',
+        );
+        expect(createLabelsDa.status).toBe(204);
+
+        const readLabels = await readDa(baseUrl, fdaId, 'labels_da');
+        expect(readLabels.status).toBe(200);
+        expect(readLabels.json).toEqual([
+          { id: 1, label: 'older_partition' },
+          { id: 2, label: 'recent_partition_updated' },
+        ]);
+      } finally {
+        await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
+        await pgClient.end();
+        await mongoClient.close();
+      }
+    });
+
+    test('rebuild of a strict partitioned FDA removes a dropped column and the partitions left without source rows', async () => {
+      const baseUrl = getBaseUrl();
+      const suffix = `${Date.now()}`;
+      const fixtureTable = `sw_schema_drop_${suffix}`;
+      const fdaId = `fda_sw_schema_drop_${suffix}`;
+
+      const pgClient = createPgClient();
+      await pgClient.connect();
+
+      const mongoClient = new MongoClient(getMongoUri());
+      await mongoClient.connect();
+      const agendaJobs = mongoClient.db('test-db').collection('agendaJobs');
+
+      try {
+        await createSchemaEvolutionFixture(pgClient, fixtureTable);
+        await createSchemaEvolutionFda(baseUrl, fdaId, fixtureTable);
+
+        await pgClient.query(`DELETE FROM public.${fixtureTable} WHERE id = 1`);
+        await pgClient.query(
+          `ALTER TABLE public.${fixtureTable} DROP COLUMN label`,
+        );
+
+        await forceWindowRefresh(agendaJobs, fdaId);
+
+        const fda = await getFdaState(baseUrl, fdaId);
+        expect(fda.status).toBe('completed');
+        expect(fda.schema.map(({ name }) => name)).toEqual([
+          'id',
+          'observed_at',
+        ]);
+
+        const createAllDa = await createDa(
+          baseUrl,
+          fdaId,
+          'all_columns_da',
+          'SELECT * ORDER BY id',
+        );
+        expect(createAllDa.status).toBe(204);
+
+        const readAll = await readDa(baseUrl, fdaId, 'all_columns_da');
+        expect(readAll.status).toBe(200);
+        expect(readAll.json.map(({ id }) => id)).toEqual([2]);
+        expect(readAll.json[0]).not.toHaveProperty('label');
+      } finally {
+        await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
+        await pgClient.end();
+        await mongoClient.close();
+      }
+    });
+
+    test('strict partitioned FDA fails its refresh while the time column is missing from the source and recovers afterwards', async () => {
+      const baseUrl = getBaseUrl();
+      const suffix = `${Date.now()}`;
+      const fixtureTable = `sw_schema_timecol_${suffix}`;
+      const fdaId = `fda_sw_schema_timecol_${suffix}`;
+
+      const pgClient = createPgClient();
+      await pgClient.connect();
+
+      const mongoClient = new MongoClient(getMongoUri());
+      await mongoClient.connect();
+      const agendaJobs = mongoClient.db('test-db').collection('agendaJobs');
+
+      try {
+        await createSchemaEvolutionFixture(pgClient, fixtureTable);
+        await createSchemaEvolutionFda(baseUrl, fdaId, fixtureTable);
+
+        const createLabelsDa = await createDa(
+          baseUrl,
+          fdaId,
+          'labels_da',
+          'SELECT id, label ORDER BY id',
+        );
+        expect(createLabelsDa.status).toBe(204);
+
+        await pgClient.query(
+          `ALTER TABLE public.${fixtureTable} RENAME COLUMN observed_at TO ts`,
+        );
+
+        await forceWindowRefresh(agendaJobs, fdaId);
+
+        let fda = await getFdaState(baseUrl, fdaId);
+        expect(fda.status).toBe('failed');
+        expect(fda.error).toContain('Time column "observed_at"');
+
+        const updateFda = await httpReq({
+          method: 'PUT',
+          url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
+          headers: { 'Fiware-Service': service },
+        });
+        expect(updateFda.status).toBe(400);
+        expect(updateFda.json.error).toBe('InvalidParam');
+
+        const readLabels = await readDa(baseUrl, fdaId, 'labels_da');
+        expect(readLabels.status).toBe(200);
+        expect(readLabels.json).toEqual([
+          { id: 1, label: 'older_partition' },
+          { id: 2, label: 'recent_partition' },
+        ]);
+
+        await pgClient.query(
+          `ALTER TABLE public.${fixtureTable} RENAME COLUMN ts TO observed_at`,
+        );
+
+        await forceWindowRefresh(agendaJobs, fdaId);
+
+        fda = await getFdaState(baseUrl, fdaId);
+        expect(fda.status).toBe('completed');
+        expect(fda.error ?? null).toBeNull();
+      } finally {
+        await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
+        await pgClient.end();
+        await mongoClient.close();
+      }
+    });
+
+    test('window refresh of an unchecked partitioned FDA shows a renamed column under both names', async () => {
+      const baseUrl = getBaseUrl();
+      const suffix = `${Date.now()}`;
+      const fixtureTable = `sw_schema_union_rename_${suffix}`;
+      const fdaId = `fda_sw_schema_union_rename_${suffix}`;
+
+      const pgClient = createPgClient();
+      await pgClient.connect();
+
+      const mongoClient = new MongoClient(getMongoUri());
+      await mongoClient.connect();
+      const agendaJobs = mongoClient.db('test-db').collection('agendaJobs');
+
+      try {
+        await createSchemaEvolutionFixture(pgClient, fixtureTable);
+        await createSchemaEvolutionFda(baseUrl, fdaId, fixtureTable, {
+          validationMode: 'unchecked',
+        });
+
+        await pgClient.query(
+          `ALTER TABLE public.${fixtureTable} RENAME COLUMN label TO name`,
+        );
+
+        await forceWindowRefresh(agendaJobs, fdaId);
+
+        const createBothNamesDa = await createDa(
+          baseUrl,
+          fdaId,
+          'both_names_da',
+          'SELECT id, label, name ORDER BY id',
+        );
+        expect(createBothNamesDa.status).toBe(204);
+
+        const readBothNames = await readDa(baseUrl, fdaId, 'both_names_da');
+        expect(readBothNames.status).toBe(200);
+        expect(readBothNames.json).toEqual([
+          { id: 1, label: 'older_partition', name: null },
+          { id: 2, label: null, name: 'recent_partition' },
         ]);
       } finally {
         await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);

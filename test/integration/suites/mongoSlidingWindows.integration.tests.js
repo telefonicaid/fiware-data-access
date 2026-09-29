@@ -917,5 +917,107 @@ export function registerMongoSlidingWindowsIntegrationTests({
         expect(extraByLabel.without_extra ?? null).toBeNull();
       });
     });
+
+    test('partitions written with different types for the same field are read together, unified to text', async () => {
+      const baseUrl = getBaseUrl();
+      const suffix = `${Date.now()}`;
+      const collectionName = `mongo_sw_union_types_${suffix}`;
+      const fdaId = `fda_mongo_sw_union_types_${suffix}`;
+      const now = Date.now();
+
+      await seedCollection(collectionName, [
+        {
+          label: 'old',
+          reading: 10,
+          observedAt: new Date(now - 4 * 24 * 60 * 60 * 1000),
+        },
+        {
+          label: 'recent',
+          reading: 20,
+          observedAt: new Date(now - 60 * 60 * 1000),
+        },
+      ]);
+
+      const createFda = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: fdaId,
+          datasourceId,
+          query: {
+            collection: collectionName,
+            filter: {},
+            projection: { label: 1, reading: 1, observedAt: 1 },
+          },
+          description: 'Mongo partitions with different types test',
+          refreshPolicy: {
+            type: 'window',
+            params: {
+              refreshInterval: '1 day',
+              fetchSize: 'day',
+              windowSize: 'week',
+            },
+          },
+          objStgConf: { partition: 'day' },
+          timeColumn: 'observedAt',
+        },
+      });
+
+      expect(createFda.status).toBe(202);
+      await waitUntilFDACompleted({ baseUrl, service, fdaId });
+
+      const readReadingType = async () => {
+        const res = await httpReq({
+          method: 'GET',
+          url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+        expect(res.status).toBe(200);
+        return res.json.schema.find(({ name }) => name === 'reading').type;
+      };
+
+      expect(await readReadingType()).toBe('BIGINT');
+
+      await withMongoClient(async (db) => {
+        await db
+          .collection(collectionName)
+          .updateOne({ label: 'recent' }, { $unset: { reading: '' } });
+
+        const agendaJobs = db.collection('agendaJobs');
+        const updateResult = await agendaJobs.updateOne(
+          { name: 'refresh-fda-recurring', 'data.fdaId': fdaId },
+          { $set: { nextRunAt: new Date() } },
+        );
+        expect(updateResult.modifiedCount).toBe(1);
+        await waitForJobToFinish(agendaJobs, fdaId, 'refresh-fda-recurring');
+      });
+
+      expect(await readReadingType()).toBe('VARCHAR');
+
+      const createCastDa = await createDA(
+        baseUrl,
+        fdaId,
+        'reading_cast',
+        'SELECT label, CAST(reading AS BIGINT) AS reading ORDER BY label',
+      );
+      expect(createCastDa.status).toBe(204);
+
+      const readRes = await readDaData(baseUrl, fdaId, 'reading_cast', {
+        pageSize: 100,
+        pageStart: 0,
+      });
+      expect(readRes.status).toBe(200);
+      expect(readRes.json).toEqual([
+        { label: 'old', reading: 10 },
+        { label: 'recent', reading: null },
+      ]);
+    });
   });
 }
