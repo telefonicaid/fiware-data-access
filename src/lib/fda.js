@@ -1470,7 +1470,7 @@ export async function processFDAAsync(
   const claimed = await claimFDAForFetch({ service, fdaId, servicePath });
   if (!claimed) {
     logger.info(
-      { fdaId, service, servicePath },
+      { fdaId, srv: service, subsrv: servicePath },
       'Skipping refresh: FDA no longer exists or is being deleted',
     );
     return;
@@ -2564,7 +2564,7 @@ async function refreshFDASchemaFromStorage(
     await updateFDASchema(service, fdaId, servicePath, schema);
   } catch (error) {
     logger.warn(
-      { err: error, fdaId },
+      { err: error, fdaId, srv: service, subsrv: servicePath },
       'Could not derive FDA schema from storage, keeping the previous one',
     );
   }
@@ -2822,7 +2822,10 @@ export async function uploadFDA({
   const normalizedVisibility = normalizeVisibility(visibility);
   const normalizedServicePath = normalizeServicePath(servicePath);
 
-  logger.debug({ fdaId }, 'Starting upload FDA');
+  logger.debug(
+    { fdaId, srv: service, subsrv: servicePath },
+    'Starting upload FDA',
+  );
 
   const refreshPolicy = { type: 'none' };
   validateUploadOptions(timeColumn, objStgConf);
@@ -2842,7 +2845,10 @@ export async function uploadFDA({
     FDA_VALIDATION_MODE_STRICT,
   );
 
-  logger.debug({ fdaId }, 'FDA record created');
+  logger.debug(
+    { fdaId, srv: service, subsrv: servicePath },
+    'FDA record created',
+  );
   const agenda = getAgenda();
   await agenda.now('upload-fda', {
     fdaId,
@@ -2886,13 +2892,19 @@ export async function processUploadFDAJob({
       if (tempFilePath && fs.existsSync(tempFilePath)) {
         fs.unlinkSync(tempFilePath);
         logger.debug(
-          { fdaId, tempFilePath },
+          { fdaId, srv: service, subsrv: servicePath, tempFilePath },
           'Temporary file deleted after reading',
         );
       }
     } catch (error) {
       logger.warn(
-        { fdaId, tempFilePath, error: error.message },
+        {
+          fdaId,
+          srv: service,
+          subsrv: servicePath,
+          tempFilePath,
+          error: error.message,
+        },
         'Failed to delete temp file immediately',
       );
     }
@@ -2926,7 +2938,10 @@ export async function processUploadFDAJob({
     const storagePath = getFDAStoragePath(fdaId, servicePath);
     tempKey = `tmp/${fdaId}_${Date.now()}`;
 
-    logger.debug({ fdaId, tempKey }, 'Uploading temporary CSV to MinIO');
+    logger.debug(
+      { fdaId, srv: service, subsrv: servicePath, tempKey },
+      'Uploading temporary CSV to MinIO',
+    );
     await updateFDAStatus({
       service,
       fdaId,
@@ -2941,7 +2956,10 @@ export async function processUploadFDAJob({
       csvContent,
     );
 
-    logger.debug({ fdaId }, 'Converting upload file to Parquet');
+    logger.debug(
+      { fdaId, srv: service, subsrv: servicePath },
+      'Converting upload file to Parquet',
+    );
     await updateFDAStatus({
       service,
       fdaId,
@@ -2980,7 +2998,10 @@ export async function processUploadFDAJob({
 
     await dropFile(s3Client, bucketName, `${tempKey}.csv`);
 
-    logger.debug({ fdaId }, 'Creating default DataAccess');
+    logger.debug(
+      { fdaId, srv: service, subsrv: servicePath },
+      'Creating default DataAccess',
+    );
     if (defaultDataAccessEnabled && cached) {
       const daDefinition = await buildDefaultDataAccessDefinition(
         service,
@@ -3012,9 +3033,15 @@ export async function processUploadFDAJob({
     });
     await updateFDALastFetch(service, fdaId, servicePath);
 
-    logger.info({ fdaId }, 'Upload FDA completed successfully');
+    logger.info(
+      { fdaId, srv: service, subsrv: servicePath },
+      'Upload FDA completed successfully',
+    );
   } catch (err) {
-    logger.error({ err, fdaId }, 'Upload FDA failed');
+    logger.error(
+      { err, fdaId, srv: service, subsrv: servicePath },
+      'Upload FDA failed',
+    );
     await updateFDAStatus({
       service,
       fdaId,

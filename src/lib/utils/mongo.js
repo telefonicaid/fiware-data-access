@@ -94,7 +94,10 @@ export async function createIndex() {
 }
 
 export async function createDatasource(service, datasourceId, type, dsConfig) {
-  logger.debug({ datasourceId, type }, '[DEBUG]: createDatasource');
+  logger.debug(
+    { datasourceId, srv: service, type },
+    '[DEBUG]: createDatasource',
+  );
   const collection = await getDatasourcesCollection();
   try {
     await collection.insertOne({
@@ -422,7 +425,7 @@ export async function validateMongoQuery(dsConfig, query) {
 }
 
 export async function retrieveDatasources(service) {
-  logger.debug('[DEBUG]: retrieveDatasources');
+  logger.debug({ srv: service }, '[DEBUG]: retrieveDatasources');
   const collection = await getDatasourcesCollection();
   try {
     return await collection
@@ -438,7 +441,7 @@ export async function retrieveDatasources(service) {
 }
 
 export async function retrieveDatasource(service, datasourceId) {
-  logger.debug({ datasourceId }, '[DEBUG]: retrieveDatasource');
+  logger.debug({ datasourceId, srv: service }, '[DEBUG]: retrieveDatasource');
   const collection = await getDatasourcesCollection();
   try {
     return await collection.findOne(
@@ -455,7 +458,10 @@ export async function retrieveDatasource(service, datasourceId) {
 }
 
 export async function updateDatasource(service, datasourceId, type, dsConfig) {
-  logger.debug({ datasourceId, type }, '[DEBUG]: updateDatasource');
+  logger.debug(
+    { datasourceId, srv: service, type },
+    '[DEBUG]: updateDatasource',
+  );
   const collection = await getDatasourcesCollection();
   try {
     const setFields = {};
@@ -495,7 +501,7 @@ export async function updateDatasource(service, datasourceId, type, dsConfig) {
 }
 
 export async function removeDatasource(service, datasourceId) {
-  logger.debug({ datasourceId }, '[DEBUG]: removeDatasource');
+  logger.debug({ datasourceId, srv: service }, '[DEBUG]: removeDatasource');
   const collection = await getDatasourcesCollection();
   try {
     const result = await collection.deleteOne({ service, datasourceId });
@@ -561,7 +567,10 @@ export async function createFDAMongo(
   validationMode = 'strict',
   schema = null,
 ) {
-  logger.debug({ fdaId, description }, '[DEBUG]: createFDA');
+  logger.debug(
+    { fdaId, srv: service, subsrv: servicePath, description },
+    '[DEBUG]: createFDA',
+  );
   const fdasCollection = await getCollection();
   const initialStatus = cached ? 'fetching' : 'completed';
   const initialProgress = cached ? 0 : 100;
@@ -730,7 +739,14 @@ export async function storeDA(
   params,
 ) {
   logger.debug(
-    { fdaId, daId, description, querySize: query.length },
+    {
+      fdaId,
+      srv: service,
+      subsrv: servicePath,
+      daId,
+      description,
+      querySize: query.length,
+    },
     '[DEBUG]: storeDA',
   );
   const collection = await getCollection();
@@ -749,7 +765,7 @@ export async function storeDA(
 }
 
 export async function retrieveFDAs(service) {
-  logger.debug('[DEBUG]: retrieveFDAs');
+  logger.debug({ srv: service }, '[DEBUG]: retrieveFDAs');
   const collection = await getCollection();
   try {
     return collection.find({ service }).toArray();
@@ -763,7 +779,10 @@ export async function retrieveFDAs(service) {
 }
 
 export async function retrieveFDA(service, fdaId, servicePath) {
-  logger.debug({ fdaId }, '[DEBUG]: retrieveFDA');
+  logger.debug(
+    { fdaId, srv: service, subsrv: servicePath },
+    '[DEBUG]: retrieveFDA',
+  );
   const collection = await getCollection();
   try {
     return await collection.findOne({ service, fdaId, servicePath });
@@ -777,7 +796,10 @@ export async function retrieveFDA(service, fdaId, servicePath) {
 }
 
 export async function removeFDA(service, fdaId, servicePath) {
-  logger.debug({ fdaId }, '[DEBUG]: removeFDA');
+  logger.debug(
+    { fdaId, srv: service, subsrv: servicePath },
+    '[DEBUG]: removeFDA',
+  );
   const collection = await getCollection();
   try {
     const result = await collection.deleteOne({ service, fdaId, servicePath });
@@ -798,7 +820,10 @@ export async function removeFDA(service, fdaId, servicePath) {
 }
 
 export async function retrieveDAs(service, fdaId, servicePath) {
-  logger.debug({ fdaId }, '[DEBUG]: retrieveDAs');
+  logger.debug(
+    { fdaId, srv: service, subsrv: servicePath },
+    '[DEBUG]: retrieveDAs',
+  );
   const collection = await getCollection();
   try {
     const das = await collection
@@ -835,7 +860,10 @@ export async function retrieveDAs(service, fdaId, servicePath) {
 }
 
 export async function retrieveDA(service, fdaId, daId, servicePath) {
-  logger.debug({ fdaId, daId }, '[DEBUG]: retrieveDA');
+  logger.debug(
+    { fdaId, daId, srv: service, subsrv: servicePath },
+    '[DEBUG]: retrieveDA',
+  );
   const collection = await getCollection();
   try {
     const result = await collection.findOne(
@@ -862,7 +890,14 @@ export async function updateDA(
   params,
 ) {
   logger.debug(
-    { fdaId, daId, description, querySize: query?.length },
+    {
+      fdaId,
+      daId,
+      srv: service,
+      subsrv: servicePath,
+      description,
+      querySize: query?.length,
+    },
     '[DEBUG]: updateDA',
   );
   const collection = await getCollection();
@@ -898,7 +933,10 @@ export async function updateDA(
 }
 
 export async function removeDA(service, fdaId, daId, servicePath) {
-  logger.debug({ fdaId, daId }, '[DEBUG]: removeDA');
+  logger.debug(
+    { fdaId, daId, srv: service, subsrv: servicePath },
+    '[DEBUG]: removeDA',
+  );
   const collection = await getCollection();
   try {
     const filter = { service, fdaId, servicePath };

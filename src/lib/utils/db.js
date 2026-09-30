@@ -350,8 +350,14 @@ export async function runPreparedStatement(
     : 'runPreparedStatement';
   logger.debug(
     streaming
-      ? { fdaId, daId, paramValues }
-      : { fdaId, daId, paramValues: JSON.stringify(paramValues) },
+      ? { fdaId, srv: service, subsrv: servicePath, daId, paramValues }
+      : {
+          fdaId,
+          srv: service,
+          subsrv: servicePath,
+          daId,
+          paramValues: JSON.stringify(paramValues),
+        },
     `[DEBUG]: ${method}`,
   );
 
@@ -907,7 +913,10 @@ export function buildDAQuery(
   partition,
   servicePath,
 ) {
-  logger.debug({ fdaId }, '[DEBUG]: buildDAQuery');
+  logger.debug(
+    { fdaId, srv: service, subsrv: servicePath },
+    '[DEBUG]: buildDAQuery',
+  );
   if (!userQuery || typeof userQuery !== 'string') {
     throw new FDAError(400, 'BadRequest', 'Invalid DA query');
   }
