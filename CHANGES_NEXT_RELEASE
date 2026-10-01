@@ -6,8 +6,9 @@
 - Fix: preserve numeric precision and consistent types across cached and fresh responses; large integers are returned as exact JSON numbers, cached DECIMAL values as strings, and large Number DA parameters are bound as exact integers (#291)
 - Fix: cron refresh intervals are now measured deterministically in UTC over a full cycle, so a valid combination such as a monthly cron with a `month` partition is no longer rejected depending on the date the FDA is created or on daylight saving changes (#316)
 - Fix: FDA upload flow now marks status as `completed` only after `defaultDataAccess` is created (308)
-- Replace MinIO docker image by PGsty image (#302)
 - Fix: MongoDB FDA aggregation pipelines are now validated against an allowlist of read-only stages instead of a blacklist of write stages. Cross-collection stages (`$lookup`, `$graphLookup`, `$unionWith`, `$documents`) and administrative/introspection stages (e.g. `$indexStats`, `$currentOp`) are no longer permitted, including when nested inside a `$facet` sub-pipeline. Existing FDAs using a now-disallowed stage will fail on their next refresh/query execution (#286)
 - Fix: `clean-partition` now removes the partitions that fall outside `windowSize`; it was looking under `<fdaId>/` instead of `<fdaId>.parquet/`, so no partition was ever deleted (#323)
 - Fix: object storage listings are now paginated and deletions batched, so FDAs with more than 1000 objects are fully removed on `DELETE` and fully considered by `clean-partition` (#323)
 - Fix: deleting an FDA also removes its leftover staging objects under `tmp/` (#323)
+- Update: @duckdb/node-api dependency version from 1.5.5-r.4 to 1.5.6-r1
+- Replace MinIO docker image by PGsty image (#302)
