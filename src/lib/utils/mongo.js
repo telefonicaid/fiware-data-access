@@ -624,6 +624,7 @@ export async function updateFDAStatus({
         ...(status === 'completed' && { lastFetch: new Date() }),
         ...(error && { error }),
       },
+      ...(status === 'completed' && { $unset: { error: '' } }),
     },
   );
 }

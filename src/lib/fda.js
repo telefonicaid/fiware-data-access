@@ -1411,6 +1411,12 @@ export async function updateFDA(service, fdaId, visibility, servicePath) {
 
   assertFDAIsCached(fda, fdaId);
 
+  const datasource = await resolveDatasource(
+    service,
+    fda.datasourceId ?? DEFAULT_DATASOURCE_ID,
+  );
+  await resolveSourceSchema(datasource, fda);
+
   const previous = await regenerateFDA(service, fdaId, normalizedServicePath);
 
   const agenda = getAgenda();
@@ -1420,10 +1426,6 @@ export async function updateFDA(service, fdaId, visibility, servicePath) {
 
   let firstQuery = previous.query;
   if (previous.refreshPolicy?.type === 'window') {
-    const datasource = await resolveDatasource(
-      service,
-      previous.datasourceId ?? DEFAULT_DATASOURCE_ID,
-    );
     const windowQueryFn =
       datasource.type === 'mongodb' ? getMongoWindowQuery : getWindowQuery;
     firstQuery = windowQueryFn(
@@ -1454,6 +1456,117 @@ export async function updateFDA(service, fdaId, visibility, servicePath) {
   }
 }
 
+async function resolveSourceSchema(datasource, fda) {
+  if (datasource.type !== 'postgres') {
+    return null;
+  }
+
+  const sourceSchema = await validateAndGetSourceSchema(
+    datasource,
+    fda.validationMode ?? FDA_VALIDATION_MODE_STRICT,
+    fda.query,
+    fda.timeColumn,
+    true,
+  );
+
+  return buildPersistedSchema(sourceSchema);
+}
+
+async function canonicalizeSchemaTypes(schemaFields) {
+  const conn = await getDBConnection();
+  try {
+    const selectList = schemaFields
+      .map(({ type }, index) => `CAST(NULL AS ${type}) AS c${index}`)
+      .join(', ');
+    const describeResult = await conn.run(`DESCRIBE SELECT ${selectList}`);
+    const describeRows = await Promise.resolve(
+      describeResult.getRowObjectsJson(),
+    );
+
+    return schemaFields.map(({ name }, index) => ({
+      name,
+      type: describeRows[index].column_type,
+    }));
+  } finally {
+    await releaseDBConnection(conn);
+  }
+}
+
+function diffSchemas(previousSchema, currentSchema) {
+  const previousTypes = new Map(
+    previousSchema.map(({ name, type }) => [name, type]),
+  );
+  const currentNames = new Set(currentSchema.map(({ name }) => name));
+  const keptInPreviousOrder = previousSchema
+    .map(({ name }) => name)
+    .filter((name) => currentNames.has(name));
+  const keptInCurrentOrder = currentSchema
+    .map(({ name }) => name)
+    .filter((name) => previousTypes.has(name));
+
+  return {
+    added: currentSchema
+      .filter(({ name }) => !previousTypes.has(name))
+      .map(({ name }) => name),
+    removed: previousSchema
+      .filter(({ name }) => !currentNames.has(name))
+      .map(({ name }) => name),
+    retyped: currentSchema
+      .filter(
+        ({ name, type }) =>
+          previousTypes.has(name) && previousTypes.get(name) !== type,
+      )
+      .map(({ name }) => name),
+    reordered: keptInPreviousOrder.some(
+      (name, index) => name !== keptInCurrentOrder[index],
+    ),
+  };
+}
+
+function isSameSchema(schemaA, schemaB) {
+  return (
+    schemaA.length === schemaB.length &&
+    schemaA.every(
+      ({ name, type }, index) =>
+        name === schemaB[index].name && type === schemaB[index].type,
+    )
+  );
+}
+
+async function detectSourceSchemaChange(
+  service,
+  fdaId,
+  servicePath,
+  datasourceId,
+) {
+  const fda = await retrieveFDA(service, fdaId, servicePath);
+  const storedSchemaFields = normalizePersistedSchemaFields(fda?.schema);
+  if (storedSchemaFields.length === 0) {
+    return null;
+  }
+
+  const datasource = await resolveDatasource(service, datasourceId);
+  const sourceSchemaFields = await resolveSourceSchema(datasource, fda);
+  if (!sourceSchemaFields) {
+    return null;
+  }
+
+  const [storedSchema, sourceSchema] = await Promise.all([
+    canonicalizeSchemaTypes(storedSchemaFields),
+    canonicalizeSchemaTypes(sourceSchemaFields),
+  ]);
+  if (isSameSchema(storedSchema, sourceSchema)) {
+    return null;
+  }
+
+  return {
+    fda,
+    datasource,
+    schema: sourceSchema,
+    diff: diffSchemas(storedSchema, sourceSchema),
+  };
+}
+
 export async function processFDAAsync(
   fdaId,
   query,
@@ -1477,16 +1590,37 @@ export async function processFDAAsync(
   }
 
   try {
+    const schemaChange = await detectSourceSchemaChange(
+      service,
+      fdaId,
+      servicePath,
+      datasourceId,
+    );
+    let refreshQuery = query;
+    if (schemaChange) {
+      logger.warn(
+        { fdaId, ...schemaChange.diff },
+        'Source schema changed, rebuilding the whole FDA',
+      );
+      refreshQuery = resolveRefreshQueries(
+        schemaChange.datasource,
+        refreshPolicy,
+        schemaChange.fda.query,
+        timeColumn,
+      ).firstQuery;
+    }
+
     await uploadTableToObjStg(
       service,
       datasourceId,
-      query,
+      refreshQuery,
       bucketName,
       storagePath,
       fdaId,
       servicePath,
       timeColumn,
       objStgConf,
+      schemaChange?.schema,
     );
 
     await refreshFDASchemaFromStorage(service, fdaId, servicePath, objStgConf);
@@ -1940,6 +2074,52 @@ export async function cleanPartition(
   await dropFiles(s3Client, bucketName, partitionsToRemove);
 }
 
+async function publishTmpPartitions(
+  s3Client,
+  bucket,
+  path,
+  partition,
+  dropStalePartitions,
+) {
+  const objectsList = await listObjects(
+    s3Client,
+    bucket,
+    `tmp/${path}.parquet/`,
+  );
+  const hasRealPartitionedParquet = objectsList.some((key) =>
+    key.endsWith('.parquet'),
+  );
+  const previousPartitions = dropStalePartitions
+    ? await listObjects(s3Client, bucket, `${path}.parquet/`)
+    : [];
+  for (const tempPartition of objectsList) {
+    await moveObject(
+      s3Client,
+      bucket,
+      `${bucket}/${tempPartition}`,
+      tempPartition.replace('tmp/', ''),
+    );
+    await dropFile(s3Client, bucket, tempPartition);
+  }
+
+  const rewrittenPartitions = new Set(
+    objectsList.map((key) => key.replace('tmp/', '')),
+  );
+  await dropFiles(
+    s3Client,
+    bucket,
+    previousPartitions.filter((key) => !rewrittenPartitions.has(key)),
+  );
+
+  if (hasRealPartitionedParquet) {
+    await dropFile(
+      s3Client,
+      bucket,
+      `${path}/${getSchemaPartitionPath(partition)}/schema.parquet`,
+    );
+  }
+}
+
 async function uploadTableToObjStg(
   service,
   datasourceId,
@@ -1950,6 +2130,7 @@ async function uploadTableToObjStg(
   servicePath,
   timeColumn,
   objStgConf,
+  rebuildSchema,
 ) {
   const s3Client = getS3Client(
     `${config.objstg.protocol}://${config.objstg.endpoint}`,
@@ -1958,7 +2139,8 @@ async function uploadTableToObjStg(
   );
   const datasource = await resolveDatasource(service, datasourceId);
   const fda = await retrieveFDA(service, fdaId, servicePath);
-  const schemaFields = normalizePersistedSchemaFields(fda?.schema);
+  const schemaFields =
+    rebuildSchema ?? normalizePersistedSchemaFields(fda?.schema);
   await updateFDAStatus({ service, fdaId, servicePath, progress: 20 });
 
   if (datasource.type === 'postgres') {
@@ -2015,31 +2197,13 @@ async function uploadTableToObjStg(
     }
 
     if (objStgConf?.partition) {
-      const objectsList = await listObjects(
+      await publishTmpPartitions(
         s3Client,
         bucket,
-        `tmp/${path}.parquet/`,
+        path,
+        objStgConf.partition,
+        Boolean(rebuildSchema),
       );
-      const hasRealPartitionedParquet = objectsList.some((key) =>
-        key.endsWith('.parquet'),
-      );
-      for (const tempPartition of objectsList) {
-        await moveObject(
-          s3Client,
-          bucket,
-          `${bucket}/${tempPartition}`,
-          tempPartition.replace('tmp/', ''),
-        );
-        await dropFile(s3Client, bucket, tempPartition);
-      }
-
-      if (hasRealPartitionedParquet) {
-        await dropFile(
-          s3Client,
-          bucket,
-          `${path}/${getSchemaPartitionPath(objStgConf.partition)}/schema.parquet`,
-        );
-      }
     }
 
     await updateFDAStatus({
@@ -2492,10 +2656,10 @@ async function getFDASchemaFromStorage(
       ? `s3://${bucketName}/${storagePath}.parquet/**/*.parquet`
       : `s3://${bucketName}/${storagePath}.parquet`;
     const safeParquetPath = parquetPath.replaceAll("'", "''");
-    const readOptions =
-      objStgConf?.partition && !hivePartitioning
-        ? ', hive_partitioning = false'
-        : '';
+    const hiveOption = hivePartitioning ? '' : ', hive_partitioning = false';
+    const readOptions = objStgConf?.partition
+      ? `${hiveOption}, union_by_name = true`
+      : '';
     const describeResult = await conn.run(
       `DESCRIBE SELECT * FROM read_parquet('${safeParquetPath}'${readOptions})`,
     );
