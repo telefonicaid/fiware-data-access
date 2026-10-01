@@ -22,11 +22,19 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
-import { beforeEach, describe, expect, jest, test } from '@jest/globals';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  jest,
+  test,
+} from '@jest/globals';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { FDAError } from '../../src/lib/fdaError.js';
+import { runWithLogger } from '../../src/lib/utils/logger.js';
 
 const dbMocks = {
   runPreparedStatement: jest.fn(),
@@ -2990,6 +2998,13 @@ describe('updateFDA', () => {
     const fixedDate = new Date('2026-07-21T00:00:00.000Z');
     jest.useFakeTimers({ now: fixedDate });
 
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      fdaId: 'fda42',
+      cached: true,
+      servicePath: '/servicepath',
+      visibility: 'public',
+      datasourceId: 'mongo-ds',
+    });
     mongoMocks.retrieveDatasource.mockResolvedValueOnce({
       datasourceId: 'mongo-ds',
       type: 'mongodb',
@@ -3080,6 +3095,106 @@ describe('updateFDA', () => {
         service: 'svc',
       }),
     );
+  });
+
+  test('validates the source query of a strict Postgres FDA before regenerating it', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      fdaId: 'fda42',
+      cached: true,
+      servicePath: '/servicepath',
+      visibility: 'public',
+      query: 'SELECT * FROM users',
+      timeColumn: 'observedAt',
+    });
+    pgMocks.validatePostgresQuery.mockResolvedValueOnce({
+      columns: ['id', 'observedAt'],
+      fields: [
+        { name: 'id', duckdbType: 'INTEGER' },
+        { name: 'observedAt', duckdbType: 'TIMESTAMP' },
+      ],
+    });
+
+    await updateFDA('svc', 'fda42', undefined, '/servicepath');
+
+    expect(pgMocks.validatePostgresQuery).toHaveBeenCalledWith(
+      {},
+      'SELECT * FROM users',
+      { timeColumn: 'observedAt', returnColumns: true },
+    );
+    expect(
+      pgMocks.validatePostgresQuery.mock.invocationCallOrder[0],
+    ).toBeLessThan(mongoMocks.regenerateFDA.mock.invocationCallOrder[0]);
+    expect(mongoMocks.updateFDASchema).not.toHaveBeenCalled();
+  });
+
+  test('does not regenerate the FDA when the source query is no longer valid', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      fdaId: 'fda42',
+      cached: true,
+      servicePath: '/servicepath',
+      visibility: 'public',
+      query: 'SELECT * FROM users',
+      timeColumn: 'observedAt',
+    });
+    pgMocks.validatePostgresQuery.mockRejectedValueOnce(
+      new FDAError(
+        400,
+        'InvalidParam',
+        'Time column "observedAt" is not present in the SELECT clause of the FDA query. ',
+      ),
+    );
+
+    await expect(
+      updateFDA('svc', 'fda42', undefined, '/servicepath'),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidParam',
+    });
+
+    expect(mongoMocks.regenerateFDA).not.toHaveBeenCalled();
+    expect(mongoMocks.updateFDASchema).not.toHaveBeenCalled();
+    expect(agenda.now).not.toHaveBeenCalled();
+  });
+
+  test('keeps the stored schema of unchecked Postgres FDAs', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      fdaId: 'fda42',
+      cached: true,
+      servicePath: '/servicepath',
+      visibility: 'public',
+      query: 'SELECT * FROM users',
+      validationMode: 'unchecked',
+    });
+
+    await updateFDA('svc', 'fda42', undefined, '/servicepath');
+
+    expect(pgMocks.validatePostgresQuery).not.toHaveBeenCalled();
+    expect(mongoMocks.updateFDASchema).not.toHaveBeenCalled();
+    expect(agenda.now).toHaveBeenCalledWith(
+      'refresh-fda',
+      expect.objectContaining({ fdaId: 'fda42' }),
+    );
+  });
+
+  test('keeps the stored schema of Mongo FDAs', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      fdaId: 'fda42',
+      cached: true,
+      servicePath: '/servicepath',
+      visibility: 'public',
+      datasourceId: 'mongo-ds',
+      query: { collection: 'events', projection: { device: 1 } },
+    });
+    mongoMocks.retrieveDatasource.mockResolvedValueOnce({
+      datasourceId: 'mongo-ds',
+      type: 'mongodb',
+      config: { uri: 'mongodb://mongo:27017', database: 'svc' },
+    });
+
+    await updateFDA('svc', 'fda42', undefined, '/servicepath');
+
+    expect(mongoMocks.updateFDASchema).not.toHaveBeenCalled();
+    expect(mongoMocks.regenerateFDA).toHaveBeenCalled();
   });
 
   test('throws when trying to manually refresh a fresh-only FDA', async () => {
@@ -3324,6 +3439,273 @@ describe('processFDAAsync', () => {
         { name: 'observedAt', type: 'TIMESTAMP' },
       ],
     );
+  });
+
+  test('derives the schema of partitioned FDAs from the union of every partition', async () => {
+    const describeRun = jest.fn().mockResolvedValue({
+      getRowObjectsJson: () => [
+        { column_name: 'id', column_type: 'BIGINT' },
+        { column_name: 'observed_at', column_type: 'TIMESTAMP' },
+        { column_name: 'email', column_type: 'VARCHAR' },
+      ],
+    });
+    dbMocks.getDBConnection
+      .mockReset()
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ run: describeRun });
+    awsMocks.listObjects.mockResolvedValueOnce([]);
+
+    await processFDAAsync(
+      'fda1',
+      'SELECT 1',
+      'svc',
+      '/servicepath',
+      'observed_at',
+      { type: 'none' },
+      { partition: 'day' },
+    );
+
+    expect(describeRun).toHaveBeenCalledWith(
+      "DESCRIBE SELECT * FROM read_parquet('s3://svc/servicepath/fda1.parquet/**/*.parquet', hive_partitioning = false, union_by_name = true)",
+    );
+  });
+
+  describe('source schema changes in strict Postgres FDAs', () => {
+    const storedFDA = {
+      query: 'SELECT * FROM public.events',
+      timeColumn: 'observed_at',
+      schema: [
+        { name: 'id', type: 'INTEGER' },
+        { name: 'observed_at', type: 'TIMESTAMPTZ' },
+      ],
+    };
+    const windowPolicy = {
+      type: 'window',
+      params: {
+        refreshInterval: '1 day',
+        fetchSize: 'day',
+        windowSize: 'week',
+      },
+    };
+    const canonicalTypes = { TIMESTAMPTZ: 'TIMESTAMP WITH TIME ZONE' };
+
+    function createDuckDBConnection() {
+      return {
+        run: jest.fn((sql) => {
+          const castTypes = [...sql.matchAll(/CAST\(NULL AS (.+?)\) AS c\d+/g)];
+          const rows = castTypes.map(([, type]) => ({
+            column_type: canonicalTypes[type] ?? type,
+          }));
+          return Promise.resolve({ getRowObjectsJson: () => rows });
+        }),
+      };
+    }
+
+    function mockSourceFields(fields) {
+      pgMocks.validatePostgresQuery.mockResolvedValueOnce({
+        columns: fields.map(({ name }) => name),
+        fields,
+      });
+    }
+
+    beforeEach(() => {
+      dbMocks.getDBConnection
+        .mockReset()
+        .mockImplementation(() => Promise.resolve(createDuckDBConnection()));
+      dbMocks.copyQueryToParquet.mockResolvedValue(undefined);
+      mongoMocks.retrieveFDA.mockResolvedValue(storedFDA);
+      awsMocks.listObjects.mockReset().mockResolvedValue([]);
+    });
+
+    afterEach(() => {
+      mongoMocks.retrieveFDA.mockReset();
+    });
+
+    test('keeps the incremental refresh when the source schema only differs in type aliases', async () => {
+      mockSourceFields([
+        { name: 'id', duckdbType: 'INTEGER' },
+        { name: 'observed_at', duckdbType: 'TIMESTAMP WITH TIME ZONE' },
+      ]);
+
+      await processFDAAsync(
+        'fda1',
+        'SELECT incremental',
+        'svc',
+        '/servicepath',
+        'observed_at',
+        windowPolicy,
+      );
+
+      expect(pgMocks.uploadTable).toHaveBeenCalledWith(
+        {},
+        'svc',
+        expect.anything(),
+        'SELECT incremental',
+        'servicepath/fda1',
+      );
+      expect(dbMocks.copyQueryToParquet.mock.calls[0][1]).not.toContain(
+        'extra',
+      );
+    });
+
+    test('rebuilds the whole window with the new schema when a column is added', async () => {
+      mockSourceFields([
+        { name: 'id', duckdbType: 'INTEGER' },
+        { name: 'observed_at', duckdbType: 'TIMESTAMPTZ' },
+        { name: 'extra', duckdbType: 'VARCHAR' },
+      ]);
+
+      await processFDAAsync(
+        'fda1',
+        'SELECT incremental',
+        'svc',
+        '/servicepath',
+        'observed_at',
+        windowPolicy,
+      );
+
+      expect(pgMocks.uploadTable).toHaveBeenCalledWith(
+        {},
+        'svc',
+        expect.anything(),
+        expect.stringMatching(
+          /^SELECT \* FROM \(SELECT \* FROM public\.events\) q WHERE observed_at >= TIMESTAMP '.*' AND observed_at < NOW\(\)$/,
+        ),
+        'servicepath/fda1',
+      );
+      expect(dbMocks.copyQueryToParquet.mock.calls[0][1]).toContain(
+        "'extra': 'VARCHAR'",
+      );
+    });
+
+    test('detects a renamed column even when the column count does not change', async () => {
+      mockSourceFields([
+        { name: 'identifier', duckdbType: 'INTEGER' },
+        { name: 'observed_at', duckdbType: 'TIMESTAMPTZ' },
+      ]);
+
+      await processFDAAsync(
+        'fda1',
+        'SELECT incremental',
+        'svc',
+        '/servicepath',
+        'observed_at',
+        windowPolicy,
+      );
+
+      expect(pgMocks.uploadTable.mock.calls[0][3]).not.toBe(
+        'SELECT incremental',
+      );
+      expect(dbMocks.copyQueryToParquet.mock.calls[0][1]).toContain(
+        "'identifier': 'INTEGER'",
+      );
+    });
+
+    test('logs a reordering as the reason of the rebuild when only the column order changes', async () => {
+      mockSourceFields([
+        { name: 'observed_at', duckdbType: 'TIMESTAMPTZ' },
+        { name: 'id', duckdbType: 'INTEGER' },
+      ]);
+      const requestLogger = {
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        debug: jest.fn(),
+      };
+
+      await runWithLogger(requestLogger, () =>
+        processFDAAsync(
+          'fda1',
+          'SELECT incremental',
+          'svc',
+          '/servicepath',
+          'observed_at',
+          windowPolicy,
+        ),
+      );
+
+      expect(pgMocks.uploadTable.mock.calls[0][3]).not.toBe(
+        'SELECT incremental',
+      );
+      expect(requestLogger.warn).toHaveBeenCalledWith(
+        {
+          fdaId: 'fda1',
+          added: [],
+          removed: [],
+          retyped: [],
+          reordered: true,
+        },
+        'Source schema changed, rebuilding the whole FDA',
+      );
+    });
+
+    test('drops the partitions that the rebuild does not rewrite', async () => {
+      mockSourceFields([
+        { name: 'id', duckdbType: 'INTEGER' },
+        { name: 'observed_at', duckdbType: 'TIMESTAMPTZ' },
+        { name: 'extra', duckdbType: 'VARCHAR' },
+      ]);
+      awsMocks.listObjects.mockImplementation((client, bucket, prefix) =>
+        Promise.resolve(
+          prefix.startsWith('tmp/')
+            ? [
+                'tmp/servicepath/fda1.parquet/year=2026/month=9/day=29/data_0.parquet',
+              ]
+            : [
+                'servicepath/fda1.parquet/year=2026/month=9/day=25/data_0.parquet',
+                'servicepath/fda1.parquet/year=2026/month=9/day=29/data_0.parquet',
+              ],
+        ),
+      );
+
+      await processFDAAsync(
+        'fda1',
+        'SELECT incremental',
+        'svc',
+        '/servicepath',
+        'observed_at',
+        windowPolicy,
+        { partition: 'day' },
+      );
+
+      expect(awsMocks.listObjects).toHaveBeenCalledWith(
+        {},
+        'svc',
+        'servicepath/fda1.parquet/',
+      );
+      expect(awsMocks.dropFiles).toHaveBeenCalledWith({}, 'svc', [
+        'servicepath/fda1.parquet/year=2026/month=9/day=25/data_0.parquet',
+      ]);
+    });
+
+    test('fails the refresh when the time column is no longer in the source', async () => {
+      pgMocks.validatePostgresQuery.mockRejectedValueOnce(
+        new FDAError(
+          400,
+          'InvalidParam',
+          'Time column "observed_at" is not present in the SELECT clause of the FDA query. ',
+        ),
+      );
+
+      await expect(
+        processFDAAsync(
+          'fda1',
+          'SELECT incremental',
+          'svc',
+          '/servicepath',
+          'observed_at',
+          windowPolicy,
+        ),
+      ).rejects.toMatchObject({ status: 400, type: 'InvalidParam' });
+
+      expect(pgMocks.uploadTable).not.toHaveBeenCalled();
+      expect(mongoMocks.updateFDAStatus).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          status: 'failed',
+          error: expect.stringContaining('observed_at'),
+        }),
+      );
+    });
   });
 
   test('does not derive a schema for FDAs created in unchecked mode', async () => {
