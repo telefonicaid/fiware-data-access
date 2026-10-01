@@ -1775,6 +1775,7 @@ export async function deleteFDA(service, fdaId, visibility, servicePath) {
       key.startsWith(`${storagePath}/`) || key.startsWith(`${storagePath}.`),
   );
   await dropFiles(s3Client, bucketName, objPaths);
+  await cleanTmpFolder(s3Client, bucketName, `tmp/${storagePath}.parquet`);
 
   await removeFDA(service, fdaId, targetServicePath);
 
