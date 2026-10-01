@@ -209,6 +209,50 @@ describe('aws utils', () => {
     expect(result).toEqual([]);
   });
 
+  test('listObjects follows continuation tokens until the listing is complete', async () => {
+    const { listObjects } = await loadAwsModule();
+
+    currentS3Client.send
+      .mockResolvedValueOnce({
+        Contents: [{ Key: 'a' }],
+        IsTruncated: true,
+        NextContinuationToken: 'token-1',
+      })
+      .mockResolvedValueOnce({
+        Contents: [{ Key: 'b' }],
+        IsTruncated: false,
+      });
+
+    const result = await listObjects(currentS3Client, 'bucket-a', 'prefix');
+
+    expect(result).toEqual(['a', 'b']);
+    expect(currentS3Client.send).toHaveBeenCalledTimes(2);
+    expect(currentS3Client.send.mock.calls[0][0].input).toEqual({
+      Bucket: 'bucket-a',
+      Prefix: 'prefix',
+      ContinuationToken: undefined,
+    });
+    expect(currentS3Client.send.mock.calls[1][0].input).toEqual({
+      Bucket: 'bucket-a',
+      Prefix: 'prefix',
+      ContinuationToken: 'token-1',
+    });
+  });
+
+  test('dropFiles deletes in batches of 1000 keys', async () => {
+    const { dropFiles } = await loadAwsModule();
+    const keys = Array.from({ length: 2500 }, (_, index) => `key-${index}`);
+
+    currentS3Client.send.mockResolvedValue({});
+
+    await dropFiles(currentS3Client, 'bucket-a', keys);
+
+    const batchSizes = currentS3Client.send.mock.calls.map(
+      ([command]) => command.input.Delete.Objects.length,
+    );
+    expect(batchSizes).toEqual([1000, 1000, 500]);
+  });
+
   test('createBucket logs when bucket already exists', async () => {
     const { createBucket } = await loadAwsModule();
 
