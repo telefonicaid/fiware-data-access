@@ -34,7 +34,7 @@ import {
 import { Upload } from '@aws-sdk/lib-storage';
 import { FDAError } from '../fdaError.js';
 import { getBasicLogger } from './logger.js';
-import { MAX_KEYS_PER_REQUEST } from './constants.js';
+import { MAX_KEYS_PER_REQUEST } from '../constants.js';
 
 let s3ClientInstance = null;
 const logger = getBasicLogger();
