@@ -8,3 +8,4 @@
 - Fix: FDA upload flow now marks status as `completed` only after `defaultDataAccess` is created (308)
 - Replace MinIO docker image by PGsty image (#302)
 - Fix: MongoDB FDA aggregation pipelines are now validated against an allowlist of read-only stages instead of a blacklist of write stages. Cross-collection stages (`$lookup`, `$graphLookup`, `$unionWith`, `$documents`) and administrative/introspection stages (e.g. `$indexStats`, `$currentOp`) are no longer permitted, including when nested inside a `$facet` sub-pipeline. Existing FDAs using a now-disallowed stage will fail on their next refresh/query execution (#286)
+- Update: @duckdb/node-api dependency version from 1.5.5-r.4 to 1.5.6-r1
