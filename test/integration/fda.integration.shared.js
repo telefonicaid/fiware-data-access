@@ -57,6 +57,7 @@ import { registerMongoFdasIntegrationTests } from './suites/mongoFdas.integratio
 import { registerMongoSlidingWindowsIntegrationTests } from './suites/mongoSlidingWindows.integration.tests.js';
 import { registerComplexCasesIntegrationTests } from './suites/complexCases.integration.tests.js';
 import { registerUploadFdasIntegrationTests } from './suites/uploadFdas.integration.tests.js';
+import { registerStorageCleanupIntegrationTests } from './suites/storageCleanup.integration.tests.js';
 import {
   httpReq,
   httpFormReq,
@@ -624,6 +625,16 @@ export function runFDAIntegrationSuite({ mode, label }) {
       httpReq,
       httpMultipartReq,
       waitUntilFDACompleted,
+    });
+
+    registerStorageCleanupIntegrationTests({
+      getBaseUrl: () => baseUrl,
+      getMinioUrl: () => minioUrl,
+      getPgHost: () => pgHost,
+      getPgPort: () => pgPort,
+      service,
+      visibility,
+      httpReq,
     });
   });
 }
