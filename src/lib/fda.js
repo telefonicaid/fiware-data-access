@@ -1917,7 +1917,7 @@ export async function cleanPartition(
   const bucketName = getBucketNameFromService(service);
 
   /* c8 ignore next 10 */
-  const cleanPartitionStoragePath = getFDAStoragePath(fdaId, servicePath);
+  const cleanPartitionStoragePath = `${getFDAStoragePath(fdaId, servicePath)}.parquet`;
   const allPartitionPaths = await listObjects(
     s3Client,
     bucketName,
