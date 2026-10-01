@@ -12,3 +12,4 @@
 - Fix: `strict` PostgreSQL FDAs now detect changes in the columns of their source query (added, removed, renamed, reordered or retyped) on every refresh and adopt them with a full rebuild of the FDA, instead of failing on every refresh or silently storing data under the old column names (#181)
 - Fix: `PUT /{visibility}/fdas/{fdaId}` validates the source query of `strict` PostgreSQL FDAs before regenerating them and returns `400 InvalidParam` if it is no longer valid (#181)
 - Fix: partitioned FDAs are read with DuckDB `union_by_name`, so partitions written with different columns or types (e.g. after a source schema change in `unchecked` FDAs, or MongoDB windows with sparse fields) can be queried together, filling missing columns with `NULL` (#181)
+- Update: @duckdb/node-api dependency version from 1.5.5-r.4 to 1.5.6-r1
