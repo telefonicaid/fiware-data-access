@@ -1909,6 +1909,7 @@ export async function deleteFDA(service, fdaId, visibility, servicePath) {
       key.startsWith(`${storagePath}/`) || key.startsWith(`${storagePath}.`),
   );
   await dropFiles(s3Client, bucketName, objPaths);
+  await cleanTmpFolder(s3Client, bucketName, `tmp/${storagePath}.parquet`);
 
   await removeFDA(service, fdaId, targetServicePath);
 
@@ -2051,7 +2052,7 @@ export async function cleanPartition(
   const bucketName = getBucketNameFromService(service);
 
   /* c8 ignore next 10 */
-  const cleanPartitionStoragePath = getFDAStoragePath(fdaId, servicePath);
+  const cleanPartitionStoragePath = `${getFDAStoragePath(fdaId, servicePath)}.parquet`;
   const allPartitionPaths = await listObjects(
     s3Client,
     bucketName,

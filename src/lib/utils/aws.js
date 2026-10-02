@@ -34,6 +34,7 @@ import {
 import { Upload } from '@aws-sdk/lib-storage';
 import { FDAError } from '../fdaError.js';
 import { getBasicLogger } from './logger.js';
+import { MAX_KEYS_PER_REQUEST } from '../constants.js';
 
 let s3ClientInstance = null;
 const logger = getBasicLogger();
@@ -106,26 +107,36 @@ export async function dropFile(s3Client, bucket, path) {
 }
 
 export async function dropFiles(s3Client, bucket, objsToRemove) {
-  logger.debug({ bucket, objsToRemove }, '[DEBUG]: dropFiles');
+  logger.debug(
+    { bucket, objects: objsToRemove?.length ?? 0 },
+    '[DEBUG]: dropFiles',
+  );
 
   if (!objsToRemove?.length) {
     return;
   }
 
   try {
-    await s3Client.send(
-      new DeleteObjectsCommand({
-        Bucket: bucket,
-        Delete: {
-          Objects: objsToRemove.map((k) => ({ Key: k })),
-        },
-      }),
-    );
+    for (
+      let offset = 0;
+      offset < objsToRemove.length;
+      offset += MAX_KEYS_PER_REQUEST
+    ) {
+      const batch = objsToRemove.slice(offset, offset + MAX_KEYS_PER_REQUEST);
+      await s3Client.send(
+        new DeleteObjectsCommand({
+          Bucket: bucket,
+          Delete: {
+            Objects: batch.map((k) => ({ Key: k })),
+          },
+        }),
+      );
+    }
   } catch (e) {
     throw new FDAError(
       500,
       'S3ServerError',
-      `Error deleting multiple objects ${objsToRemove} in bucket ${bucket}: ${e}`,
+      `Error deleting ${objsToRemove.length} objects in bucket ${bucket}: ${e}`,
     );
   }
 }
@@ -151,14 +162,27 @@ export async function moveObject(s3Client, bucket, sourceKey, destKey) {
 
 export async function listObjects(s3Client, bucket, prefix) {
   logger.debug({ bucket, prefix }, '[DEBUG]: listObjects');
-  let response;
+  const keys = [];
+  let continuationToken;
+
   try {
-    response = await s3Client.send(
-      new ListObjectsV2Command({
-        Bucket: bucket,
-        Prefix: prefix,
-      }),
-    );
+    do {
+      const response = await s3Client.send(
+        new ListObjectsV2Command({
+          Bucket: bucket,
+          Prefix: prefix,
+          ContinuationToken: continuationToken,
+        }),
+      );
+
+      for (const obj of response.Contents || []) {
+        keys.push(obj.Key);
+      }
+
+      continuationToken = response.IsTruncated
+        ? response.NextContinuationToken
+        : undefined;
+    } while (continuationToken);
   } catch (e) {
     throw new FDAError(
       500,
@@ -167,7 +191,7 @@ export async function listObjects(s3Client, bucket, prefix) {
     );
   }
 
-  return response.Contents?.map((obj) => obj.Key) || [];
+  return keys;
 }
 
 export async function createBucket(s3Client, bucket) {

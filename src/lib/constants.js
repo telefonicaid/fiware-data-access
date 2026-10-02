@@ -111,3 +111,6 @@ export const JSON_INTEGER_COLUMN_TYPES = new Set([
   'UBIGINT',
   'UHUGEINT',
 ]);
+
+// Maximum number of keys to delete in a single S3 request. This is a limitation of the S3 API.
+export const MAX_KEYS_PER_REQUEST = 1000;

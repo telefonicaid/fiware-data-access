@@ -4111,6 +4111,33 @@ describe('deleteFDA', () => {
     ]);
   });
 
+  test('deleteFDA removes the staging objects left under tmp/', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      _id: 'mongo-id',
+      status: 'completed',
+      visibility: 'private',
+      servicePath: '/servicepath',
+    });
+    awsMocks.listObjects.mockImplementation(async (_client, _bucket, prefix) =>
+      prefix.startsWith('tmp/')
+        ? ['tmp/servicepath/fdaA.parquet/year=2024/data_0.parquet']
+        : ['servicepath/fdaA.parquet/year=2024/data_0.parquet'],
+    );
+
+    await deleteFDA('svc', 'fdaA', 'private', '/servicepath');
+
+    expect(awsMocks.listObjects).toHaveBeenCalledWith(
+      {},
+      'svc',
+      'tmp/servicepath/fdaA.parquet/',
+    );
+    expect(awsMocks.dropFile).toHaveBeenCalledWith(
+      {},
+      'svc',
+      'tmp/servicepath/fdaA.parquet/year=2024/data_0.parquet',
+    );
+  });
+
   test('deleteFDA removes FDA even when Minio has no matching objects', async () => {
     mongoMocks.retrieveFDA.mockResolvedValue({
       _id: 'mongo-id',
@@ -5284,8 +5311,8 @@ describe('cleanPartition', () => {
     jest.clearAllMocks();
     awsMocks.getS3Client.mockReturnValue({});
     awsMocks.listObjects.mockResolvedValue([
-      'public/fdaA/2020-01-01.parquet',
-      'public/fdaA/2099-01-01.parquet',
+      'public/fdaA.parquet/2020-01-01.parquet',
+      'public/fdaA.parquet/2099-01-01.parquet',
     ]);
     awsMocks.dropFiles.mockResolvedValue(undefined);
     dbMocks.extractDate.mockReturnValue(new Date('2020-01-01'));
@@ -5306,10 +5333,14 @@ describe('cleanPartition', () => {
       '/public',
     );
 
-    expect(awsMocks.listObjects).toHaveBeenCalledWith({}, 'svc', 'public/fdaA');
+    expect(awsMocks.listObjects).toHaveBeenCalledWith(
+      {},
+      'svc',
+      'public/fdaA.parquet',
+    );
 
     expect(awsMocks.dropFiles).toHaveBeenCalledWith({}, 'svc', [
-      'public/fdaA/2020-01-01.parquet',
+      'public/fdaA.parquet/2020-01-01.parquet',
     ]);
   });
 
@@ -5327,7 +5358,7 @@ describe('cleanPartition', () => {
     expect(awsMocks.listObjects).toHaveBeenCalledWith(
       {},
       'service-name',
-      'public/fdaA',
+      'public/fdaA.parquet',
     );
     expect(awsMocks.dropFiles).toHaveBeenCalledWith({}, 'service-name', []);
   });
@@ -5363,7 +5394,7 @@ describe('cleanPartition', () => {
     );
 
     expect(awsMocks.dropFiles).toHaveBeenCalledWith({}, 'svc', [
-      'public/fdaA/2020-01-01.parquet',
+      'public/fdaA.parquet/2020-01-01.parquet',
     ]);
   });
 
