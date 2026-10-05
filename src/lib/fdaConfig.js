@@ -167,6 +167,10 @@ const envVarsSchema = {
       type: 'number',
       default: 1048576 * 50, // 50 MB
     },
+    FDA_ACCESS_FLUSH_INTERVAL_MS: {
+      type: 'number',
+      default: 10000,
+    },
   },
 };
 
@@ -234,5 +238,8 @@ export const config = {
     tmpDir: envVars.FDA_UPLOAD_TMP_DIR,
     partSizeMB: envVars.FDA_UPLOAD_PART_SIZE_MB,
     queueSize: envVars.FDA_UPLOAD_QUEUE_SIZE,
+  },
+  accessTracking: {
+    flushIntervalMs: envVars.FDA_ACCESS_FLUSH_INTERVAL_MS,
   },
 };

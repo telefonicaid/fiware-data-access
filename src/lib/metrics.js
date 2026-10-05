@@ -37,6 +37,7 @@ const state = {
   httpDurationByLabel: new Map(),
   httpErrorsByLabel: new Map(),
   fiwareRequestsByLabel: new Map(),
+  daQueriesByLabel: new Map(),
   servicesObserved: new Set(),
   servicePathsObserved: new Set(),
   fiwareHeaderRequestsTotal: 0,
@@ -189,6 +190,14 @@ async function getMongoSnapshot() {
       error: state.mongoSnapshotLastError,
     };
   }
+}
+
+export function onDAQuery({ service, servicePath, fdaId }) {
+  incrementCounter(state.daQueriesByLabel, {
+    fiware_service: service,
+    fiware_service_path: servicePath,
+    fda: fdaId,
+  });
 }
 
 export function onRequestStart() {
@@ -400,6 +409,14 @@ export async function buildMetricsText() {
       'fda_tenant_requests_total',
       state.fiwareRequestsByLabel,
     ),
+  );
+
+  lines.push(
+    '# HELP fda_da_queries_total Total cached DA queries served, by FDA.',
+  );
+  lines.push('# TYPE fda_da_queries_total counter');
+  lines.push(
+    ...renderMetricLines('fda_da_queries_total', state.daQueriesByLabel),
   );
 
   lines.push(

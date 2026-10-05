@@ -48,6 +48,7 @@ import fdasRouter from './routes/fdas.js';
 import dasRouter from './routes/das.js';
 import dataRouter from './routes/data.js';
 import cdaLegacyRouter from './routes/cdaLegacy.js';
+import { stopAccessTracker } from './lib/accessTracker.js';
 
 export const app = express();
 const PORT = config.port;
@@ -251,6 +252,7 @@ async function shutdown() {
       await shutdownAgenda();
     }
 
+    await stopAccessTracker();
     await disconnectClient();
     await destroyS3Client();
     await closePgPools();

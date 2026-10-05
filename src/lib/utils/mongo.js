@@ -648,6 +648,45 @@ export async function updateFDAStorage(service, fdaId, servicePath, storage) {
   );
 }
 
+export async function recordFDAAccesses(entries) {
+  if (!entries?.length) {
+    return;
+  }
+
+  const operations = [];
+  for (const entry of entries) {
+    const { service, servicePath, fdaId, count, lastAccessAt, das } = entry;
+    const filter = { service, servicePath, fdaId };
+
+    operations.push({
+      updateOne: {
+        filter,
+        update: {
+          $inc: { 'access.count': count },
+          $max: { 'access.lastAccessAt': lastAccessAt },
+        },
+      },
+    });
+
+    for (const [daId, daAccess] of Object.entries(das || {})) {
+      operations.push({
+        updateOne: {
+          filter: { ...filter, [`das.${daId}`]: { $exists: true } },
+          update: {
+            $inc: { [`das.${daId}.access.count`]: daAccess.count },
+            $max: {
+              [`das.${daId}.access.lastAccessAt`]: daAccess.lastAccessAt,
+            },
+          },
+        },
+      });
+    }
+  }
+
+  const collection = await getCollection();
+  await collection.bulkWrite(operations, { ordered: false });
+}
+
 export async function claimFDAForFetch({ service, fdaId, servicePath }) {
   const collection = await getCollection();
 

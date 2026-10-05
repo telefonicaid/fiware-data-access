@@ -286,6 +286,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
         FDA_DUCKDB_DIR: duckdbDir,
         FDA_DUCKDB_TEMP_DIR: '${duckdbDir}/temp',
         FDA_MAX_CONCURRENT_REFRESH_JOBS: '1',
+        FDA_ACCESS_FLUSH_INTERVAL_MS: '500',
         ...overrides,
       };
     }
