@@ -78,6 +78,7 @@ const mongoMocks = {
   updateFDALastFetch: jest.fn(),
   updateFDASchema: jest.fn(),
   updateFDAStorage: jest.fn(),
+  markFDADataPurged: jest.fn(),
   claimFDAForFetch: jest.fn(),
   claimFDAForDeletion: jest.fn(),
   createDatasource: jest.fn(),
@@ -92,12 +93,32 @@ const mongoMocks = {
   assertAllowedMongoAggregationStage: jest.fn(),
 };
 
+const UNLIMITED = {
+  service: { maxFDAs: null, maxBytes: null },
+  servicePath: { maxFDAs: null, maxBytes: null },
+  fda: { maxBytes: null, maxFetchBytes: null },
+};
+
+const quotasMocks = {
+  resolveLimits: jest.fn(async () => UNLIMITED),
+  assertCanCreateFDA: jest.fn(async () => {}),
+  assertFDAWithinStorageLimit: jest.fn(),
+  createFetchByteCounter: jest.fn(() => () => {}),
+};
+
 const jobsMocks = {
   getAgenda: jest.fn(),
 };
 
 await jest.unstable_mockModule('../../src/lib/jobs.js', () => ({
   getAgenda: jobsMocks.getAgenda,
+}));
+
+await jest.unstable_mockModule('../../src/lib/quotas.js', () => ({
+  resolveLimits: quotasMocks.resolveLimits,
+  assertCanCreateFDA: quotasMocks.assertCanCreateFDA,
+  assertFDAWithinStorageLimit: quotasMocks.assertFDAWithinStorageLimit,
+  createFetchByteCounter: quotasMocks.createFetchByteCounter,
 }));
 
 await jest.unstable_mockModule('../../src/lib/utils/db.js', () => ({
@@ -151,6 +172,7 @@ await jest.unstable_mockModule('../../src/lib/utils/mongo.js', () => ({
   updateFDALastFetch: mongoMocks.updateFDALastFetch,
   updateFDASchema: mongoMocks.updateFDASchema,
   updateFDAStorage: mongoMocks.updateFDAStorage,
+  markFDADataPurged: mongoMocks.markFDADataPurged,
   claimFDAForFetch: mongoMocks.claimFDAForFetch,
   claimFDAForDeletion: mongoMocks.claimFDAForDeletion,
   createDatasource: mongoMocks.createDatasource,
@@ -3393,6 +3415,7 @@ describe('processFDAAsync', () => {
       },
       'SELECT 1',
       'servicepath/fda1',
+      null,
     );
   });
 
@@ -3424,6 +3447,7 @@ describe('processFDAAsync', () => {
       },
       expect.stringContaining('SELECT id, observed_at FROM public.events'),
       'servicepath/fda1',
+      null,
     );
     expect(pgMocks.uploadTable.mock.calls[0][3]).toContain(
       'SELECT id, observed_at FROM public.events',

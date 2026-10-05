@@ -69,6 +69,11 @@ async function getDatasourcesCollection() {
   return db.collection('datasources');
 }
 
+async function getQuotasCollection() {
+  const db = await getDb();
+  return db.collection('quotas');
+}
+
 function getNestedMongoValue(doc, fieldPath) {
   return fieldPath.split('.').reduce((current, segment) => {
     if (current === null || current === undefined) {
@@ -89,6 +94,12 @@ export async function createIndex() {
   const datasourcesCollection = await getDatasourcesCollection();
   await datasourcesCollection.createIndex(
     { service: 1, datasourceId: 1 },
+    { unique: true },
+  );
+
+  const quotasCollection = await getQuotasCollection();
+  await quotasCollection.createIndex(
+    { service: 1, servicePath: 1 },
     { unique: true },
   );
 }
@@ -648,6 +659,25 @@ export async function updateFDAStorage(service, fdaId, servicePath, storage) {
   );
 }
 
+export async function markFDADataPurged(service, fdaId, servicePath) {
+  const collection = await getCollection();
+
+  await collection.updateOne(
+    { service, fdaId, servicePath },
+    {
+      $set: {
+        lastFetch: null,
+        storage: {
+          bytes: 0,
+          objects: 0,
+          partitions: 0,
+          measuredAt: new Date(),
+        },
+      },
+    },
+  );
+}
+
 export async function recordFDAAccesses(entries) {
   if (!entries?.length) {
     return;
@@ -685,6 +715,50 @@ export async function recordFDAAccesses(entries) {
 
   const collection = await getCollection();
   await collection.bulkWrite(operations, { ordered: false });
+}
+
+export async function retrieveQuotas(service) {
+  const collection = await getQuotasCollection();
+  try {
+    return await collection.find({ service }).toArray();
+  } catch (e) {
+    throw new FDAError(
+      500,
+      'MongoDBServerError',
+      `Error retrieving quotas of service ${service}: ${e}`,
+    );
+  }
+}
+
+export async function aggregateFDAUsage(service) {
+  const collection = await getCollection();
+  try {
+    const groups = await collection
+      .aggregate([
+        { $match: { service } },
+        {
+          $group: {
+            _id: '$servicePath',
+            fdas: { $sum: 1 },
+            bytes: { $sum: { $ifNull: ['$storage.bytes', 0] } },
+          },
+        },
+        { $sort: { _id: 1 } },
+      ])
+      .toArray();
+
+    return groups.map(({ _id, fdas, bytes }) => ({
+      servicePath: _id,
+      fdas,
+      bytes,
+    }));
+  } catch (e) {
+    throw new FDAError(
+      500,
+      'MongoDBServerError',
+      `Error aggregating usage of service ${service}: ${e}`,
+    );
+  }
 }
 
 export async function claimFDAForFetch({ service, fdaId, servicePath }) {

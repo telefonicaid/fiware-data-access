@@ -167,6 +167,30 @@ const envVarsSchema = {
       type: 'number',
       default: 1048576 * 50, // 50 MB
     },
+    FDA_QUOTA_MAX_FDAS_SERVICE: {
+      type: 'number',
+      default: 0,
+    },
+    FDA_QUOTA_MAX_FDAS_SERVICEPATH: {
+      type: 'number',
+      default: 0,
+    },
+    FDA_QUOTA_MAX_BYTES_SERVICE: {
+      type: 'number',
+      default: 0,
+    },
+    FDA_QUOTA_MAX_BYTES_SERVICEPATH: {
+      type: 'number',
+      default: 0,
+    },
+    FDA_QUOTA_MAX_BYTES_FDA: {
+      type: 'number',
+      default: 0,
+    },
+    FDA_QUOTA_MAX_FETCH_BYTES: {
+      type: 'number',
+      default: 0,
+    },
     FDA_ACCESS_FLUSH_INTERVAL_MS: {
       type: 'number',
       default: 10000,
@@ -238,6 +262,14 @@ export const config = {
     tmpDir: envVars.FDA_UPLOAD_TMP_DIR,
     partSizeMB: envVars.FDA_UPLOAD_PART_SIZE_MB,
     queueSize: envVars.FDA_UPLOAD_QUEUE_SIZE,
+  },
+  quotas: {
+    maxFDAsPerService: envVars.FDA_QUOTA_MAX_FDAS_SERVICE,
+    maxFDAsPerServicePath: envVars.FDA_QUOTA_MAX_FDAS_SERVICEPATH,
+    maxBytesPerService: envVars.FDA_QUOTA_MAX_BYTES_SERVICE,
+    maxBytesPerServicePath: envVars.FDA_QUOTA_MAX_BYTES_SERVICEPATH,
+    maxBytesPerFDA: envVars.FDA_QUOTA_MAX_BYTES_FDA,
+    maxFetchBytes: envVars.FDA_QUOTA_MAX_FETCH_BYTES,
   },
   accessTracking: {
     flushIntervalMs: envVars.FDA_ACCESS_FLUSH_INTERVAL_MS,
