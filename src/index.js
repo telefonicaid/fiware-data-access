@@ -48,6 +48,7 @@ import fdasRouter from './routes/fdas.js';
 import dasRouter from './routes/das.js';
 import dataRouter from './routes/data.js';
 import cdaLegacyRouter from './routes/cdaLegacy.js';
+import usageRouter from './routes/usage.js';
 import { stopAccessTracker } from './lib/accessTracker.js';
 
 export const app = express();
@@ -125,6 +126,7 @@ app.use(dasRouter);
 app.use(dataRouter);
 app.use(datasourcesRouter);
 app.use(cdaLegacyRouter);
+app.use(usageRouter);
 
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
