@@ -586,6 +586,7 @@ export async function createFDAMongo(
       datasourceId,
       validationMode,
       ...(schema && { schema }),
+      createdAt: new Date(),
     });
   } catch (e) {
     if (e.code === 11000) {
@@ -635,6 +636,15 @@ export async function updateFDASchema(service, fdaId, servicePath, schema) {
   await collection.updateOne(
     { service, fdaId, servicePath },
     hasSchema ? { $set: { schema } } : { $unset: { schema: '' } },
+  );
+}
+
+export async function updateFDAStorage(service, fdaId, servicePath, storage) {
+  const collection = await getCollection();
+
+  await collection.updateOne(
+    { service, fdaId, servicePath },
+    { $set: { storage } },
   );
 }
 

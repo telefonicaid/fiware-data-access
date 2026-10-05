@@ -59,6 +59,7 @@ const awsMocks = {
   dropFiles: jest.fn(),
   moveObject: jest.fn(),
   listObjects: jest.fn(),
+  listObjectsWithSize: jest.fn(),
 };
 
 const mongoMocks = {
@@ -76,6 +77,7 @@ const mongoMocks = {
   updateFDAStatus: jest.fn(),
   updateFDALastFetch: jest.fn(),
   updateFDASchema: jest.fn(),
+  updateFDAStorage: jest.fn(),
   claimFDAForFetch: jest.fn(),
   claimFDAForDeletion: jest.fn(),
   createDatasource: jest.fn(),
@@ -130,6 +132,7 @@ await jest.unstable_mockModule('../../src/lib/utils/aws.js', () => ({
   dropFiles: awsMocks.dropFiles,
   moveObject: awsMocks.moveObject,
   listObjects: awsMocks.listObjects,
+  listObjectsWithSize: awsMocks.listObjectsWithSize,
 }));
 
 await jest.unstable_mockModule('../../src/lib/utils/mongo.js', () => ({
@@ -147,6 +150,7 @@ await jest.unstable_mockModule('../../src/lib/utils/mongo.js', () => ({
   updateFDAStatus: mongoMocks.updateFDAStatus,
   updateFDALastFetch: mongoMocks.updateFDALastFetch,
   updateFDASchema: mongoMocks.updateFDASchema,
+  updateFDAStorage: mongoMocks.updateFDAStorage,
   claimFDAForFetch: mongoMocks.claimFDAForFetch,
   claimFDAForDeletion: mongoMocks.claimFDAForDeletion,
   createDatasource: mongoMocks.createDatasource,
