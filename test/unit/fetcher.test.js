@@ -26,6 +26,7 @@ import { describe, expect, jest, test } from '@jest/globals';
 
 const agendaMock = {
   define: jest.fn(),
+  jobs: jest.fn().mockResolvedValue([]),
   start: jest.fn().mockResolvedValue(undefined),
 };
 
@@ -50,6 +51,8 @@ async function loadFetcherModule() {
 
   agendaMock.define.mockClear();
   agendaMock.start.mockClear();
+  agendaMock.jobs.mockReset();
+  agendaMock.jobs.mockResolvedValue([]);
   getAgendaMock.mockClear();
   processFDAAsyncMock.mockClear();
   processUploadFDAJobMock.mockClear();
@@ -158,6 +161,78 @@ describe('fetcher', () => {
       {},
       undefined,
     );
+  });
+
+  describe('recurring refresh vs consistency refresh', () => {
+    const buildJob = (name) => ({
+      attrs: {
+        name,
+        data: {
+          fdaId: 'fdaA',
+          query: 'SELECT 1',
+          service: 'svcA',
+          servicePath: '/public',
+          timeColumn: 'timeinstant',
+          refreshPolicy: {},
+          objStgConf: {},
+        },
+      },
+    });
+
+    test('recurring refresh is skipped while the consistency refresh is locked', async () => {
+      const { startFetcher } = await loadFetcherModule();
+      agendaMock.jobs.mockResolvedValue([{ attrs: {} }]);
+      await startFetcher();
+
+      await getHandler('refresh-fda-recurring')(
+        buildJob('refresh-fda-recurring'),
+      );
+
+      expect(agendaMock.jobs).toHaveBeenCalledWith({
+        name: 'consistency-refresh-fda-recurring',
+        'data.service': 'svcA',
+        'data.fdaId': 'fdaA',
+        'data.servicePath': '/public',
+        lockedAt: { $ne: null },
+      });
+      expect(processFDAAsyncMock).not.toHaveBeenCalled();
+    });
+
+    test('recurring refresh runs when no consistency refresh is locked', async () => {
+      const { startFetcher } = await loadFetcherModule();
+      await startFetcher();
+
+      await getHandler('refresh-fda-recurring')(
+        buildJob('refresh-fda-recurring'),
+      );
+
+      expect(processFDAAsyncMock).toHaveBeenCalledTimes(1);
+    });
+
+    test('recurring refresh runs if the consistency check fails', async () => {
+      const { startFetcher } = await loadFetcherModule();
+      agendaMock.jobs.mockRejectedValue(new Error('mongo down'));
+      await startFetcher();
+
+      await getHandler('refresh-fda-recurring')(
+        buildJob('refresh-fda-recurring'),
+      );
+
+      expect(processFDAAsyncMock).toHaveBeenCalledTimes(1);
+    });
+
+    test('consistency refresh is never skipped', async () => {
+      const { startFetcher } = await loadFetcherModule();
+      agendaMock.jobs.mockResolvedValue([{ attrs: {} }]);
+      await startFetcher();
+
+      await getHandler('consistency-refresh-fda-recurring')(
+        buildJob('consistency-refresh-fda-recurring'),
+      );
+
+      expect(agendaMock.jobs).not.toHaveBeenCalled();
+      expect(processFDAAsyncMock).toHaveBeenCalledTimes(1);
+    });
   });
 
   test('registered clean partition handler delegates to cleanPartition', async () => {
