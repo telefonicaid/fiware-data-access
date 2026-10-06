@@ -565,10 +565,12 @@ export async function createFDAMongo(
   const fdasCollection = await getCollection();
   const initialStatus = cached ? 'fetching' : 'completed';
   const initialProgress = cached ? 0 : 100;
+  const createdAt = new Date();
   try {
     // As there is a unique index on (service, servicePath, fdaId), this throws an error when the same scoped FDA already exists.
     await fdasCollection.insertOne({
       fdaId,
+      createdAt,
       query,
       das: {},
       service,
@@ -650,6 +652,15 @@ export async function claimFDAForFetch({ service, fdaId, servicePath }) {
   return result.matchedCount > 0;
 }
 
+export async function updateFDAStorage(service, fdaId, servicePath, storage) {
+  const collection = await getCollection();
+
+  await collection.updateOne(
+    { service, fdaId, servicePath },
+    { $set: { storage } },
+  );
+}
+
 export async function claimFDAForDeletion(service, fdaId, servicePath) {
   const collection = await getCollection();
 
@@ -671,6 +682,76 @@ export async function updateFDALastFetch(service, fdaId, servicePath) {
     { service, fdaId, servicePath },
     { $set: { lastFetch: new Date() } },
   );
+}
+
+export async function recordFDAAccesses(entries) {
+  if (!entries?.length) {
+    return;
+  }
+
+  const operations = [];
+  for (const entry of entries) {
+    const { service, servicePath, fdaId, count, lastAccessAt, das } = entry;
+    const filter = { service, servicePath, fdaId };
+
+    operations.push({
+      updateOne: {
+        filter,
+        update: {
+          $inc: { 'access.count': count },
+          $max: { 'access.lastAccessAt': lastAccessAt },
+        },
+      },
+    });
+
+    for (const [daId, daAccess] of Object.entries(das || {})) {
+      operations.push({
+        updateOne: {
+          filter: { ...filter, [`das.${daId}`]: { $exists: true } },
+          update: {
+            $inc: { [`das.${daId}.access.count`]: daAccess.count },
+            $max: {
+              [`das.${daId}.access.lastAccessAt`]: daAccess.lastAccessAt,
+            },
+          },
+        },
+      });
+    }
+  }
+
+  const collection = await getCollection();
+  await collection.bulkWrite(operations, { ordered: false });
+}
+
+export async function aggregateFDAUsage(service) {
+  const collection = await getCollection();
+  try {
+    const groups = await collection
+      .aggregate([
+        { $match: { service } },
+        {
+          $group: {
+            _id: '$servicePath',
+            fdas: { $sum: 1 },
+            bytes: { $sum: { $ifNull: ['$storage.bytes', 0] } },
+          },
+        },
+        { $sort: { _id: 1 } },
+      ])
+      .toArray();
+
+    return groups.map(({ _id, fdas, bytes }) => ({
+      servicePath: _id,
+      fdas,
+      bytes,
+    }));
+  } catch (e) {
+    throw new FDAError(
+      500,
+      'MongoDBServerError',
+      `Error aggregating usage of service ${service}: ${e}`,
+    );
+  }
 }
 
 export async function regenerateFDA(service, fdaId, servicePath) {

@@ -52,6 +52,7 @@ import {
   dropFile,
   moveObject,
   listObjects,
+  listObjectsWithSize,
   dropFiles,
 } from './utils/aws.js';
 import {
@@ -68,6 +69,7 @@ import {
   updateFDAStatus,
   updateFDALastFetch,
   updateFDASchema,
+  updateFDAStorage,
   claimFDAForFetch,
   claimFDAForDeletion,
   createDatasource,
@@ -1624,6 +1626,7 @@ export async function processFDAAsync(
     );
 
     await refreshFDASchemaFromStorage(service, fdaId, servicePath, objStgConf);
+    await enforceFDAStorageLimit(service, fdaId, servicePath);
 
     await updateFDAStatus({
       service,
@@ -1649,6 +1652,60 @@ export async function processFDAAsync(
     await cleanTmpFolder(s3Client, bucketName, `tmp/${storagePath}.parquet`);
     throw err;
   }
+}
+
+export async function measureFDAStorage(service, fdaId, servicePath) {
+  const s3Client = getS3Client(
+    `${config.objstg.protocol}://${config.objstg.endpoint}`,
+    config.objstg.usr,
+    config.objstg.pass,
+  );
+  const bucketName = getBucketNameFromService(service);
+  const parquetPath = `${getFDAStoragePath(fdaId, servicePath)}.parquet`;
+  const listedObjects = await listObjectsWithSize(
+    s3Client,
+    bucketName,
+    parquetPath,
+  );
+  const fdaObjects = listedObjects.filter(
+    ({ key }) => key === parquetPath || key.startsWith(`${parquetPath}/`),
+  );
+  const partitionFolders = new Set(
+    fdaObjects
+      .filter(({ key }) => key !== parquetPath)
+      .map(({ key }) => key.slice(0, key.lastIndexOf('/'))),
+  );
+
+  const storage = {
+    bytes: fdaObjects.reduce((total, { size }) => total + size, 0),
+    objects: fdaObjects.length,
+    partitions: partitionFolders.size,
+    measuredAt: new Date(),
+  };
+
+  await updateFDAStorage(service, fdaId, servicePath, storage);
+  return storage;
+}
+
+async function measureFDAStorageSafely(service, fdaId, servicePath) {
+  try {
+    return await measureFDAStorage(service, fdaId, servicePath);
+  } catch (error) {
+    logger.warn(
+      { err: error, fdaId, service, servicePath },
+      'Could not measure FDA storage',
+    );
+    return null;
+  }
+}
+
+async function enforceFDAStorageLimit(service, fdaId, servicePath) {
+  const storage = await measureFDAStorageSafely(service, fdaId, servicePath);
+  if (!storage) {
+    return;
+  }
+
+  // TBD
 }
 
 async function cleanTmpFolder(s3Client, bucket, tmpPath) {

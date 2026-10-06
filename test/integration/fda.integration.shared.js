@@ -58,6 +58,7 @@ import { registerMongoSlidingWindowsIntegrationTests } from './suites/mongoSlidi
 import { registerComplexCasesIntegrationTests } from './suites/complexCases.integration.tests.js';
 import { registerUploadFdasIntegrationTests } from './suites/uploadFdas.integration.tests.js';
 import { registerStorageCleanupIntegrationTests } from './suites/storageCleanup.integration.tests.js';
+import { registerFdaAccoutingIntegrationTests } from './suites/fdaAccounting.integration.tests.js';
 import {
   httpReq,
   httpFormReq,
@@ -403,6 +404,17 @@ export function runFDAIntegrationSuite({ mode, label }) {
       await stopProcess(appProc);
       appProc = undefined;
     }
+
+    registerFdaAccoutingIntegrationTests({
+      getBaseUrl: () => baseUrl,
+      getMongoUri: () => mongoUri,
+      getMinioUrl: () => minioUrl,
+      getPgHost: () => pgHost,
+      getPgPort: () => pgPort,
+      service,
+      visibility,
+      httpReq,
+    });
 
     registerDatasourcesIntegrationTests({
       getBaseUrl: () => baseUrl,
