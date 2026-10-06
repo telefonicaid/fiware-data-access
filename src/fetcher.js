@@ -34,6 +34,7 @@ import {
   runWithLogger,
 } from './lib/utils/logger.js';
 import { config } from './lib/fdaConfig.js';
+import { buildFDAJobFilter } from './lib/utils/fdaScope.js';
 import { v4 as uuidv4 } from 'uuid';
 
 const logger = getBasicLogger();
@@ -61,6 +62,34 @@ export async function startFetcher() {
     });
 
     await runWithLogger(jobLogger, async () => {
+      if (job.attrs.name === 'refresh-fda-recurring') {
+        let consistencyInProgress = false;
+        try {
+          const consistencyJobs = await agenda.jobs({
+            ...buildFDAJobFilter(
+              'consistency-refresh-fda-recurring',
+              service,
+              fdaId,
+              servicePath,
+            ),
+            lockedAt: { $ne: null },
+          });
+          consistencyInProgress = consistencyJobs.length > 0;
+        } catch (e) {
+          jobLogger.warn(
+            { err: e, fdaId },
+            'Could not check consistency refresh status, continuing with recurring refresh',
+          );
+        }
+        if (consistencyInProgress) {
+          jobLogger.info(
+            { fdaId },
+            'Skipping recurring refresh because consistency refresh is in progress',
+          );
+          return;
+        }
+      }
+
       const start = Date.now();
       jobLogger.info({ fdaId }, 'Job started: refresh-fda');
       try {
