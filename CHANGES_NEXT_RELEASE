@@ -2,6 +2,7 @@
 - Add: MongoDB FDAs no longer report a `VARCHAR` placeholder before their first fetch; their columns are persisted with `"type": null` until the actual types can be derived from the materialized Parquet (#235)
 - Add: cached MongoDB FDAs created in `strict` mode must now declare their output columns (`projection`, or a final `$project`/`$group` aggregation stage). The column set is no longer inferred from a single sampled document, which could silently omit fields missing from that sample (#235)
 - Add: sliding-window (partitioned) refresh support for MongoDB FDAs, for both `filter` and `aggregation` queries, mirroring the existing PostgreSQL window refresh policy (#194)
+- Fix: the recurring refresh of an FDA is now skipped while its consistency refresh is running, avoiding redundant processing of the same data; the consistency refresh job now has a higher scheduling priority so it starts first when both are due at the same time (#243)
 - Fix: deleting an FDA while it is being fetched (including its initial fetch) is now rejected with `409 FDAProcessing`; deletion atomically moves the FDA to a new `deleting` status (#220)
 - Fix: the `error` of a failed FDA refresh is now cleared once a later refresh completes, instead of being reported alongside `status: completed` (#321)
 - Fix: preserve numeric precision and consistent types across cached and fresh responses; large integers are returned as exact JSON numbers, cached DECIMAL values as strings, and large Number DA parameters are bound as exact integers (#291)
