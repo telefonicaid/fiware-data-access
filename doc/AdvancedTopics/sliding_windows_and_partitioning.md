@@ -108,6 +108,39 @@ This separation provides flexibility, but also introduces potential misconfigura
 
 ---
 
+## Source schema changes
+
+On each sliding-window refresh, only the partitions of the latest `fetchSize` are rewritten. Older partitions keep the
+columns and types they were written with. If the source changes its shape (a column is added, removed or renamed, or its
+type changes), partitions written before and after the change will differ.
+
+Partitioned FDAs are read with DuckDB's `union_by_name` option, so partitions are combined by column name:
+
+-   A column present only in some partitions is returned as `NULL` for the rows of the other partitions.
+-   A renamed column shows up under both names, each one `NULL` where it does not exist.
+-   A column stored with different types in different partitions is unified to a common type (for example, `BIGINT` and
+    `VARCHAR` become `VARCHAR`). The persisted `schema` reports that unified type.
+
+How a source change is handled depends on the `validationMode`:
+
+-   **`strict`**: the persisted `schema`, the stored partitions and the DAs are kept consistent with each other. A
+    source change is detected and adopted by rebuilding the FDA.
+-   **`unchecked`**: best effort. Each refresh stores whatever the source returns, and `union_by_name` lets queries
+    combine partitions with different shapes.
+
+| FDA                               | After a source schema change                                                                                                                                                                                                                                                                                                            | Recovery                                                                                                                                  |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| PostgreSQL, `strict`              | Every refresh compares the columns of the source query (names, order and types) with the persisted `schema`. If they differ, that refresh becomes a full rebuild: it fetches the whole `windowSize` (or the whole query without it), rewrites every partition, removes the partitions it did not rewrite and persists the new `schema`. | Automatic. If the `timeColumn` is no longer in the source, the refresh fails with `InvalidParam` until the source or the FDA is fixed.    |
+| PostgreSQL / MongoDB, `unchecked` | New partitions are written with the columns of the current data and older partitions keep the previous ones. Queries combine them by name.                                                                                                                                                                                              | Not required. A `PUT` or a consistency refresh rewrites every partition inside `windowSize` with the current columns.                     |
+| MongoDB, `strict`                 | Columns are fixed by the declared projection, so source changes do not add or remove columns. Types are inferred on every refresh: a window in which a field is always missing stores it as `VARCHAR`, which makes the unified type of that column `VARCHAR`.                                                                           | Use an explicit `CAST` in DAs that compare such fields with non-text values. The type is restored once those partitions leave the window. |
+
+The `defaultDataAccess` is not regenerated when the `schema` changes: it keeps the columns and filters computed when the
+FDA was created. Custom DAs that reference a removed or renamed column fail once no partition contains it anymore: right
+after the rebuild in `strict` FDAs, and when the last old partition is rewritten or leaves the window in `unchecked`
+ones.
+
+---
+
 ## Recommended Approach
 
 For optimal performance and predictability:

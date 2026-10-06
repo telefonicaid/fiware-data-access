@@ -408,6 +408,30 @@ describe('mongo utils', () => {
     await expect(claimFDAForDeletion('svc', 'fdaA', '/sp')).resolves.toBeNull();
   });
 
+  test('updateFDAStatus clears the previous error once a fetch completes', async () => {
+    const { updateFDAStatus, collectionMock } = await loadMongoModule();
+
+    await updateFDAStatus({
+      service: 'svc',
+      fdaId: 'fdaA',
+      servicePath: '/sp',
+      status: 'completed',
+      progress: 100,
+    });
+
+    expect(collectionMock.updateOne).toHaveBeenCalledWith(
+      { service: 'svc', fdaId: 'fdaA', servicePath: '/sp' },
+      {
+        $set: expect.objectContaining({
+          status: 'completed',
+          progress: 100,
+          lastFetch: expect.any(Date),
+        }),
+        $unset: { error: '' },
+      },
+    );
+  });
+
   test('regenerateFDA throws NotFound when FDA does not exist', async () => {
     const { regenerateFDA, collectionMock } = await loadMongoModule();
 
