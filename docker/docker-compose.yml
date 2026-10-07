@@ -75,7 +75,7 @@ services:
     container_name: postgis
     hostname: postgis
     # Default env variables will be used if not specify in .env
-    image: ${FDA_POSTGIS_IMAGE:-postgis/postgis:15-3.3}
+    image: ${FDA_POSTGIS_IMAGE:-postgis/postgis:16-3.4}
     volumes:
       - ./postgis-data:/var/lib/postgresql/data
     expose:
