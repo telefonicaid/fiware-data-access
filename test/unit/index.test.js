@@ -72,6 +72,14 @@ const mongoMocks = {
   getOperationalCollectionsSnapshot: jest.fn(),
 };
 
+const quotasMocks = {
+  getUsage: jest.fn(),
+};
+
+const accessTrackerMocks = {
+  stopAccessTracker: jest.fn(async () => {}),
+};
+
 const awsMocks = {
   destroyS3Client: jest.fn(),
 };
@@ -330,6 +338,14 @@ async function loadIndexModule({
 
   await jest.unstable_mockModule('../../src/lib/utils/aws.js', () => ({
     destroyS3Client: awsMocks.destroyS3Client,
+  }));
+
+  await jest.unstable_mockModule('../../src/lib/quotas.js', () => ({
+    getUsage: quotasMocks.getUsage,
+  }));
+
+  await jest.unstable_mockModule('../../src/lib/accessTracker.js', () => ({
+    stopAccessTracker: accessTrackerMocks.stopAccessTracker,
   }));
 
   await jest.unstable_mockModule('../../src/lib/utils/pg.js', () => ({

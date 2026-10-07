@@ -50,6 +50,7 @@ const cursorCtorMock = jest.fn(function MockCursor(text, values) {
   this.values = values;
 });
 
+const createFetchByteGuardMock = jest.fn(() => 'byte-guard');
 const uploadCtorMock = jest.fn(function MockUpload(options) {
   this.options = options;
   this.on = jest.fn();
@@ -105,6 +106,10 @@ await jest.unstable_mockModule('@aws-sdk/lib-storage', () => ({
 
 await jest.unstable_mockModule('node:stream/promises', () => ({
   pipeline: pipelineMock,
+}));
+
+await jest.unstable_mockModule('../../src/lib/quotas.js', () => ({
+  createFetchByteGuard: createFetchByteGuardMock,
 }));
 
 await jest.unstable_mockModule('../../src/lib/utils/logger.js', () => ({

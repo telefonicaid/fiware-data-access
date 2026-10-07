@@ -58,6 +58,7 @@ import { registerMongoSlidingWindowsIntegrationTests } from './suites/mongoSlidi
 import { registerComplexCasesIntegrationTests } from './suites/complexCases.integration.tests.js';
 import { registerUploadFdasIntegrationTests } from './suites/uploadFdas.integration.tests.js';
 import { registerStorageCleanupIntegrationTests } from './suites/storageCleanup.integration.tests.js';
+import { registerResourceGovernanceIntegrationTests } from './suites/resourceGovernance.integration.tests.js';
 import {
   httpReq,
   httpFormReq,
@@ -286,6 +287,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
         FDA_DUCKDB_DIR: duckdbDir,
         FDA_DUCKDB_TEMP_DIR: '${duckdbDir}/temp',
         FDA_MAX_CONCURRENT_REFRESH_JOBS: '1',
+        FDA_ACCESS_FLUSH_INTERVAL_MS: '500',
         ...overrides,
       };
     }
@@ -403,6 +405,17 @@ export function runFDAIntegrationSuite({ mode, label }) {
       await stopProcess(appProc);
       appProc = undefined;
     }
+
+    registerResourceGovernanceIntegrationTests({
+      getBaseUrl: () => baseUrl,
+      getMongoUri: () => mongoUri,
+      getMinioUrl: () => minioUrl,
+      getPgHost: () => pgHost,
+      getPgPort: () => pgPort,
+      service,
+      visibility,
+      httpReq,
+    });
 
     registerDatasourcesIntegrationTests({
       getBaseUrl: () => baseUrl,

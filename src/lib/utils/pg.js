@@ -30,6 +30,7 @@ import { Upload } from '@aws-sdk/lib-storage';
 import { pipeline } from 'node:stream/promises';
 import { PassThrough } from 'node:stream';
 import { config } from '../fdaConfig.js';
+import { createFetchByteGuard } from '../quotas.js';
 import { FDAError } from '../fdaError.js';
 import { getBasicLogger } from './logger.js';
 
@@ -221,6 +222,7 @@ export async function uploadTable(
   pgCredentials,
   query,
   path,
+  maxFetchBytes = null,
 ) {
   const { username, password, host, port, database } = pgCredentials;
   logger.debug({ bucket, database, query, path }, '[DEBUG]: uploadTable');
@@ -254,7 +256,10 @@ export async function uploadTable(
 
   try {
     // Run pipeline (pgStream -> passThrough) and upload concurrently.
-    await Promise.all([pipeline(pgStream, passThrough), upload.done()]);
+    await Promise.all([
+      pipeline(pgStream, createFetchByteGuard(maxFetchBytes), passThrough),
+      upload.done(),
+    ]);
 
     logger.debug('Upload completed successfully');
   } catch (e) {
@@ -263,6 +268,10 @@ export async function uploadTable(
       pgStream.destroy(e);
     } catch {
       // ignore
+    }
+
+    if (e instanceof FDAError) {
+      throw e;
     }
 
     throw new FDAError(

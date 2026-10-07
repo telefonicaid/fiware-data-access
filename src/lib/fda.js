@@ -52,6 +52,7 @@ import {
   dropFile,
   moveObject,
   listObjects,
+  listObjectsWithSize,
   dropFiles,
 } from './utils/aws.js';
 import {
@@ -68,6 +69,8 @@ import {
   updateFDAStatus,
   updateFDALastFetch,
   updateFDASchema,
+  updateFDAStorage,
+  markFDADataPurged,
   claimFDAForFetch,
   claimFDAForDeletion,
   createDatasource,
@@ -106,6 +109,12 @@ import {
   getFDAStoragePath,
   normalizeServicePath,
 } from './utils/fdaScope.js';
+import {
+  resolveLimits,
+  assertCanCreateFDA,
+  assertFDAWithinStorageLimit,
+  createFetchByteCounter,
+} from './quotas.js';
 import { config } from './fdaConfig.js';
 import { FDAError } from './fdaError.js';
 
@@ -1009,6 +1018,7 @@ export async function fetchFDA(
 
   const persistedSchema = buildPersistedSchema(sourceSchema);
 
+  await assertCanCreateFDA(service, normalizedServicePath);
   await createFDAMongo(
     fdaId,
     query,
@@ -1624,6 +1634,7 @@ export async function processFDAAsync(
     );
 
     await refreshFDASchemaFromStorage(service, fdaId, servicePath, objStgConf);
+    await enforceFDAStorageLimit(service, fdaId, servicePath);
 
     await updateFDAStatus({
       service,
@@ -1649,6 +1660,83 @@ export async function processFDAAsync(
     await cleanTmpFolder(s3Client, bucketName, `tmp/${storagePath}.parquet`);
     throw err;
   }
+}
+
+export async function measureFDAStorage(service, fdaId, servicePath) {
+  const s3Client = getS3Client(
+    `${config.objstg.protocol}://${config.objstg.endpoint}`,
+    config.objstg.usr,
+    config.objstg.pass,
+  );
+  const bucketName = getBucketNameFromService(service);
+  const parquetPath = `${getFDAStoragePath(fdaId, servicePath)}.parquet`;
+  const listedObjects = await listObjectsWithSize(
+    s3Client,
+    bucketName,
+    parquetPath,
+  );
+  const fdaObjects = listedObjects.filter(
+    ({ key }) => key === parquetPath || key.startsWith(`${parquetPath}/`),
+  );
+  const partitionFolders = new Set(
+    fdaObjects
+      .filter(({ key }) => key !== parquetPath)
+      .map(({ key }) => key.slice(0, key.lastIndexOf('/'))),
+  );
+
+  const storage = {
+    bytes: fdaObjects.reduce((total, { size }) => total + size, 0),
+    objects: fdaObjects.length,
+    partitions: partitionFolders.size,
+    measuredAt: new Date(),
+  };
+
+  await updateFDAStorage(service, fdaId, servicePath, storage);
+  return storage;
+}
+
+async function measureFDAStorageSafely(service, fdaId, servicePath) {
+  try {
+    return await measureFDAStorage(service, fdaId, servicePath);
+  } catch (error) {
+    logger.warn(
+      { err: error, fdaId, service, servicePath },
+      'Could not measure FDA storage',
+    );
+    return null;
+  }
+}
+
+async function enforceFDAStorageLimit(service, fdaId, servicePath) {
+  const storage = await measureFDAStorageSafely(service, fdaId, servicePath);
+  if (!storage) {
+    return;
+  }
+
+  const limits = await resolveLimits(service, servicePath);
+  try {
+    assertFDAWithinStorageLimit(fdaId, storage.bytes, limits.fda.maxBytes);
+  } catch (error) {
+    await purgeFDAData(service, fdaId, servicePath);
+    throw error;
+  }
+}
+
+async function purgeFDAData(service, fdaId, servicePath) {
+  const s3Client = getS3Client(
+    `${config.objstg.protocol}://${config.objstg.endpoint}`,
+    config.objstg.usr,
+    config.objstg.pass,
+  );
+  const bucketName = getBucketNameFromService(service);
+  const parquetPath = `${getFDAStoragePath(fdaId, servicePath)}.parquet`;
+  const listedKeys = await listObjects(s3Client, bucketName, parquetPath);
+  const fdaKeys = listedKeys.filter(
+    (key) => key === parquetPath || key.startsWith(`${parquetPath}/`),
+  );
+
+  await dropFiles(s3Client, bucketName, fdaKeys);
+  await markFDADataPurged(service, fdaId, servicePath);
 }
 
 async function cleanTmpFolder(s3Client, bucket, tmpPath) {
@@ -1778,9 +1866,11 @@ async function uploadMongoCursorContentToObjectStorage(
   bucket,
   path,
   reader,
+  maxFetchBytes = null,
 ) {
   const uploadBody = new PassThrough();
   const upload = newUpload(s3Client, bucket, `${path}.csv`, uploadBody, 5, 1);
+  const countFetchedBytes = createFetchByteCounter(maxFetchBytes);
 
   const uploadDone = upload.done();
 
@@ -1801,6 +1891,7 @@ async function uploadMongoCursorContentToObjectStorage(
         const csvLine = columns
           .map((column) => escapeCsvValue(row[column]))
           .join(',');
+        countFetchedBytes(`${csvLine}\n`);
         await writeCsvLine(uploadBody, `${csvLine}\n`);
       }
 
@@ -1816,6 +1907,9 @@ async function uploadMongoCursorContentToObjectStorage(
   } catch (error) {
     uploadBody.destroy(error);
     await uploadDone.catch(() => {});
+    if (error instanceof FDAError) {
+      throw error;
+    }
     throw new FDAError(
       503,
       'UploadError',
@@ -2072,6 +2166,7 @@ export async function cleanPartition(
     }
   }
   await dropFiles(s3Client, bucketName, partitionsToRemove);
+  await measureFDAStorageSafely(service, fdaId, servicePath);
 }
 
 async function publishTmpPartitions(
@@ -2142,9 +2237,17 @@ async function uploadTableToObjStg(
   const schemaFields =
     rebuildSchema ?? normalizePersistedSchemaFields(fda?.schema);
   await updateFDAStatus({ service, fdaId, servicePath, progress: 20 });
+  const { maxFetchBytes } = (await resolveLimits(service, servicePath)).fda;
 
   if (datasource.type === 'postgres') {
-    await uploadTable(s3Client, bucket, datasource.config, query, path);
+    await uploadTable(
+      s3Client,
+      bucket,
+      datasource.config,
+      query,
+      path,
+      maxFetchBytes,
+    );
   } else {
     const reader = await createMongoFDAReader(
       service,
@@ -2157,6 +2260,7 @@ async function uploadTableToObjStg(
       bucket,
       path,
       reader,
+      maxFetchBytes,
     );
   }
 
@@ -2993,6 +3097,7 @@ export async function uploadFDA({
   const refreshPolicy = { type: 'none' };
   validateUploadOptions(timeColumn, objStgConf);
   validateScheduledOptions(refreshPolicy, objStgConf);
+  await assertCanCreateFDA(service, normalizedServicePath);
   await createFDAMongo(
     fdaId,
     null,
@@ -3168,6 +3273,7 @@ export async function processUploadFDAJob({
     }
 
     await refreshFDASchemaFromStorage(service, fdaId, servicePath, objStgConf);
+    await enforceFDAStorageLimit(service, fdaId, servicePath);
 
     await updateFDAStatus({
       service,
