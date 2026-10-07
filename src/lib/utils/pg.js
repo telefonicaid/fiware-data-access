@@ -30,7 +30,7 @@ import { Upload } from '@aws-sdk/lib-storage';
 import { pipeline } from 'node:stream/promises';
 import { PassThrough } from 'node:stream';
 import { config } from '../fdaConfig.js';
-import { FDAError } from '../fdaError.js';
+import { FDAError, storageQuotaErrorFor } from '../fdaError.js';
 import { getBasicLogger } from './logger.js';
 
 const { Client, Pool } = pg;
@@ -252,9 +252,11 @@ export async function uploadTable(
     logger.info(progress, 'Uploading table');
   });
 
+  let uploadDone;
   try {
     // Run pipeline (pgStream -> passThrough) and upload concurrently.
-    await Promise.all([pipeline(pgStream, passThrough), upload.done()]);
+    uploadDone = upload.done();
+    await Promise.all([pipeline(pgStream, passThrough), uploadDone]);
 
     logger.debug('Upload completed successfully');
   } catch (e) {
@@ -265,10 +267,19 @@ export async function uploadTable(
       // ignore
     }
 
-    throw new FDAError(
-      503,
-      'UploadError',
-      `Error uploading FDA to object storage: ${e.message}`,
+    passThrough.destroy();
+    const uploadError = await uploadDone?.then(
+      () => undefined,
+      (err) => err,
+    );
+    throw (
+      storageQuotaErrorFor(uploadError, bucket) ??
+      storageQuotaErrorFor(e, bucket) ??
+      new FDAError(
+        503,
+        'UploadError',
+        `Error uploading FDA to object storage: ${e.message}`,
+      )
     );
   } finally {
     try {

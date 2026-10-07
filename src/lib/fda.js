@@ -107,7 +107,7 @@ import {
   normalizeServicePath,
 } from './utils/fdaScope.js';
 import { config } from './fdaConfig.js';
-import { FDAError } from './fdaError.js';
+import { FDAError, storageQuotaErrorFor } from './fdaError.js';
 
 import { getBasicLogger } from './utils/logger.js';
 import {
@@ -1632,7 +1632,8 @@ export async function processFDAAsync(
       status: 'completed',
       progress: 100,
     });
-  } catch (err) {
+  } catch (error) {
+    const err = storageQuotaErrorFor(error, bucketName) ?? error;
     await updateFDAStatus({
       service,
       fdaId,
@@ -1641,18 +1642,31 @@ export async function processFDAAsync(
       progress: 0,
       error: err.message,
     });
+    await cleanFailedFetchObjects(bucketName, storagePath);
+    throw err;
+  }
+}
+
+async function cleanFailedFetchObjects(bucketName, storagePath) {
+  try {
     const s3Client = getS3Client(
       `${config.objstg.protocol}://${config.objstg.endpoint}`,
       config.objstg.usr,
       config.objstg.pass,
     );
+    await dropFile(s3Client, bucketName, `${storagePath}.csv`);
     await cleanTmpFolder(s3Client, bucketName, `tmp/${storagePath}.parquet`);
-    throw err;
+  } catch (cleanupError) {
+    logger.warn(
+      { err: cleanupError, bucketName, storagePath },
+      'Could not clean the objects left by a failed fetch',
+    );
   }
 }
 
 async function cleanTmpFolder(s3Client, bucket, tmpPath) {
   // We need to clean tmp folder in failed attempts to avoid accumulation of temp files in S3
+  await dropFile(s3Client, bucket, tmpPath);
   const remnantTempFiles = await listObjects(s3Client, bucket, `${tmpPath}/`);
   for (const tempPartition of remnantTempFiles) {
     await dropFile(s3Client, bucket, tempPartition);
@@ -1815,11 +1829,18 @@ async function uploadMongoCursorContentToObjectStorage(
     await uploadDone;
   } catch (error) {
     uploadBody.destroy(error);
-    await uploadDone.catch(() => {});
-    throw new FDAError(
-      503,
-      'UploadError',
-      `Error uploading FDA to object storage: ${error.message}`,
+    const uploadError = await uploadDone.then(
+      () => undefined,
+      (err) => err,
+    );
+    throw (
+      storageQuotaErrorFor(uploadError, bucket) ??
+      storageQuotaErrorFor(error, bucket) ??
+      new FDAError(
+        503,
+        'UploadError',
+        `Error uploading FDA to object storage: ${error.message}`,
+      )
     );
   } finally {
     await reader.close();
@@ -1836,10 +1857,13 @@ async function uploadCsvContentToObjectStorage(s3Client, bucket, path, body) {
     await upload.done();
   } catch (error) {
     uploadBody.destroy(error);
-    throw new FDAError(
-      503,
-      'UploadError',
-      `Error uploading FDA to object storage: ${error.message}`,
+    throw (
+      storageQuotaErrorFor(error, bucket) ??
+      new FDAError(
+        503,
+        'UploadError',
+        `Error uploading FDA to object storage: ${error.message}`,
+      )
     );
   }
 }
@@ -2074,6 +2098,12 @@ export async function cleanPartition(
   await dropFiles(s3Client, bucketName, partitionsToRemove);
 }
 
+async function publishTmpFile(s3Client, bucket, path) {
+  const tmpKey = `tmp/${path}.parquet`;
+  await moveObject(s3Client, bucket, `${bucket}/${tmpKey}`, `${path}.parquet`);
+  await dropFile(s3Client, bucket, tmpKey);
+}
+
 async function publishTmpPartitions(
   s3Client,
   bucket,
@@ -2170,10 +2200,8 @@ async function uploadTableToObjStg(
       progress: 60,
     });
 
-    // DuckDB cant overwrite files in Minio, so for partitioned files we upload them in a tmp file and then move them.
-    const parquetPath = objStgConf?.partition
-      ? getPath(bucket, `tmp/${path}.parquet`, '')
-      : getPath(bucket, path, '.parquet');
+    // DuckDB cant overwrite files in Minio, so we write them in a tmp path and then move them.
+    const parquetPath = getPath(bucket, `tmp/${path}.parquet`, '');
 
     const csvPath = getPath(bucket, path, '.csv');
     if (datasource.type === 'postgres' && schemaFields.length > 0) {
@@ -2196,6 +2224,8 @@ async function uploadTableToObjStg(
       );
     }
 
+    await dropFile(s3Client, bucket, `${path}.csv`);
+
     if (objStgConf?.partition) {
       await publishTmpPartitions(
         s3Client,
@@ -2204,6 +2234,8 @@ async function uploadTableToObjStg(
         objStgConf.partition,
         Boolean(rebuildSchema),
       );
+    } else {
+      await publishTmpFile(s3Client, bucket, path);
     }
 
     await updateFDAStatus({
@@ -2217,12 +2249,14 @@ async function uploadTableToObjStg(
     if (objStgConf?.partition) {
       await dropFile(s3Client, bucket, `${path}.parquet`);
     }
-    await dropFile(s3Client, bucket, `${path}.csv`);
   } catch (e) {
     if (e instanceof FDAError) {
       throw e;
     }
-    throw new FDAError(500, 'UploadError', e.message);
+    throw (
+      storageQuotaErrorFor(e, bucket) ??
+      new FDAError(500, 'UploadError', e.message)
+    );
   } finally {
     await releaseDBConnection(conn);
   }
@@ -2393,7 +2427,10 @@ async function createParquet(
     if (e instanceof FDAError) {
       throw e;
     }
-    throw new FDAError(500, 'UploadError', e.message);
+    throw (
+      storageQuotaErrorFor(e, bucketName) ??
+      new FDAError(500, 'UploadError', e.message)
+    );
   } finally {
     await releaseDBConnection(conn);
   }
@@ -3179,7 +3216,8 @@ export async function processUploadFDAJob({
     await updateFDALastFetch(service, fdaId, servicePath);
 
     logger.info({ fdaId }, 'Upload FDA completed successfully');
-  } catch (err) {
+  } catch (error) {
+    const err = storageQuotaErrorFor(error, bucketName) ?? error;
     logger.error({ err, fdaId }, 'Upload FDA failed');
     await updateFDAStatus({
       service,
