@@ -1,8 +1,8 @@
-// Copyright 2025 Telefónica Soluciones de Informática y Comunicaciones de España, S.A.U.
+// Copyright 2025 Telefï¿½nica Soluciones de Informï¿½tica y Comunicaciones de Espaï¿½a, S.A.U.
 // PROJECT: fiware-data-access
 //
-// This software and / or computer program has been developed by Telefónica Soluciones
-// de Informática y Comunicaciones de España, S.A.U (hereinafter TSOL) and is protected
+// This software and / or computer program has been developed by Telefï¿½nica Soluciones
+// de Informï¿½tica y Comunicaciones de Espaï¿½a, S.A.U (hereinafter TSOL) and is protected
 // as copyright by the applicable legislation on intellectual property.
 //
 // It belongs to TSOL, and / or its licensors, the exclusive rights of reproduction,
@@ -69,6 +69,9 @@ describe('accessTracker', () => {
     expect(entries).toEqual([
       {
         ...scope,
+        lastFetch: null,
+        trackerId: expect.any(String),
+        sequence: expect.any(Number),
         count: 3,
         lastAccessAt: expect.any(Date),
         das: {
@@ -80,6 +83,9 @@ describe('accessTracker', () => {
         service: 'svc',
         servicePath: '/a',
         fdaId: 'fda2',
+        lastFetch: null,
+        trackerId: expect.any(String),
+        sequence: expect.any(Number),
         count: 1,
         lastAccessAt: expect.any(Date),
         das: {},
@@ -110,5 +116,54 @@ describe('accessTracker', () => {
     await expect(flushAccesses()).resolves.toBeUndefined();
 
     expect(loggerMock.warn).toHaveBeenCalledTimes(1);
+  });
+
+  test('retries the same batch before flushing newer accesses', async () => {
+    recordFDAAccessesMock.mockRejectedValueOnce(new Error('mongo down'));
+    const scope = { service: 'svc', servicePath: '/a', fdaId: 'fda1' };
+    recordAccess(scope);
+    await flushAccesses();
+    recordAccess(scope);
+    await flushAccesses();
+    await flushAccesses();
+    expect(recordFDAAccessesMock.mock.calls[1][0]).toEqual(
+      recordFDAAccessesMock.mock.calls[0][0],
+    );
+    expect(recordFDAAccessesMock.mock.calls[2][0][0].sequence).toBeGreaterThan(
+      recordFDAAccessesMock.mock.calls[1][0][0].sequence,
+    );
+  });
+
+  test('keeps accesses from different refresh generations separate', async () => {
+    const scope = {
+      service: 'svc',
+      servicePath: '/a',
+      fdaId: 'fda1',
+      daId: 'da1',
+    };
+    const lastFetch = new Date();
+    recordAccess(scope);
+    recordAccess({ ...scope, lastFetch });
+    await flushAccesses();
+    expect(recordFDAAccessesMock.mock.calls[0][0]).toHaveLength(2);
+    expect(recordFDAAccessesMock.mock.calls[0][0][1].lastFetch).toEqual(
+      lastFetch,
+    );
+  });
+
+  test('serializes concurrent flushes', async () => {
+    let resolveWrite;
+    recordFDAAccessesMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveWrite = resolve;
+        }),
+    );
+    recordAccess({ service: 'svc', servicePath: '/a', fdaId: 'fda1' });
+    const first = flushAccesses();
+    const second = flushAccesses();
+    expect(recordFDAAccessesMock).toHaveBeenCalledTimes(1);
+    resolveWrite();
+    await Promise.all([first, second]);
   });
 });

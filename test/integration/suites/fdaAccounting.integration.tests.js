@@ -1,8 +1,8 @@
-// Copyright 2025 Telefónica Soluciones de Informática y Comunicaciones de España, S.A.U.
+// Copyright 2025 Telefï¿½nica Soluciones de Informï¿½tica y Comunicaciones de Espaï¿½a, S.A.U.
 // PROJECT: fiware-data-access
 //
-// This software and / or computer program has been developed by Telefónica Soluciones
-// de Informática y Comunicaciones de España, S.A.U (hereinafter TSOL) and is protected
+// This software and / or computer program has been developed by Telefï¿½nica Soluciones
+// de Informï¿½tica y Comunicaciones de Espaï¿½a, S.A.U (hereinafter TSOL) and is protected
 // as copyright by the applicable legislation on intellectual property.
 //
 // It belongs to TSOL, and / or its licensors, the exclusive rights of reproduction,
@@ -81,21 +81,26 @@ export function registerFdaAccoutingIntegrationTests({
     return objects;
   }
 
-  async function getFDA(fdaId) {
+  async function getFDA(fdaId, scopedHeaders = headers) {
     const res = await httpReq({
       method: 'GET',
       url: `${getBaseUrl()}/${visibility}/fdas/${fdaId}`,
-      headers,
+      headers: scopedHeaders,
     });
     return res.json;
   }
 
-  async function waitForFDA(fdaId, isReady, timeout = 120_000) {
+  async function waitForFDA(
+    fdaId,
+    isReady,
+    timeout = 120_000,
+    scopedHeaders = headers,
+  ) {
     const start = Date.now();
     let fda;
 
     while (Date.now() - start < timeout) {
-      fda = await getFDA(fdaId);
+      fda = await getFDA(fdaId, scopedHeaders);
       if (fda && isReady(fda)) {
         return fda;
       }
@@ -111,11 +116,11 @@ export function registerFdaAccoutingIntegrationTests({
     return fda.status === 'completed' || fda.status === 'failed';
   }
 
-  function createFDA(body) {
+  function createFDA(body, scopedHeaders = headers) {
     return httpReq({
       method: 'POST',
       url: `${getBaseUrl()}/${visibility}/fdas`,
-      headers,
+      headers: scopedHeaders,
       body,
     });
   }
@@ -207,15 +212,15 @@ export function registerFdaAccoutingIntegrationTests({
 
       const usage = await getUsage();
       expect(usage.status).toBe(200);
-      expect(usage.json.servicePath.used).toEqual({
+      expect(usage.json.servicePath).toMatchObject({
         fdas: 1,
         bytes: stored[0].Size,
+        objects: 1,
+        partitions: 0,
       });
-      expect(usage.json.servicePath.available).toEqual({
-        fdas: null,
-        bytes: null,
-      });
-      expect(usage.json.service.used.fdas).toBeGreaterThanOrEqual(1);
+      expect(usage.json.service.fdas).toBeGreaterThanOrEqual(1);
+      expect(fda.lastRefresh.durationMs).toBeGreaterThanOrEqual(0);
+      expect(fda.lastRefresh.bytesFetched).toBeGreaterThan(0);
     });
 
     test('counts every DA query on the FDA and on the DA', async () => {
@@ -235,7 +240,10 @@ export function registerFdaAccoutingIntegrationTests({
         const dataRes = await httpReq({
           method: 'GET',
           url: `${getBaseUrl()}/${visibility}/fdas/account_small/das/account_da/data`,
-          headers,
+          headers: {
+            ...headers,
+            Accept: i === 2 ? 'text/csv' : 'application/json',
+          },
         });
         expect(dataRes.status).toBe(200);
       }
@@ -247,16 +255,91 @@ export function registerFdaAccoutingIntegrationTests({
       );
 
       expect(fda.access.count).toBe(3);
+      expect(fda.access.sinceLastFetch).toBe(3);
       expect(fda.access.lastAccessAt).toEqual(expect.any(String));
       expect(fda.das.account_da.access.count).toBe(3);
+      expect(fda.das.account_da.access.sinceLastFetch).toBe(3);
 
-      const metrics = await httpReq({
-        method: 'GET',
-        url: `${getBaseUrl()}/metrics`,
-      });
+      const storageMetric = `fda_usage_storage_bytes{fiware_service="${service}",fiware_service_path="/accounting"} ${fda.storage.bytes}`;
+      const startedAt = Date.now();
+      let metrics;
+      do {
+        metrics = await httpReq({
+          method: 'GET',
+          url: `${getBaseUrl()}/metrics`,
+        });
+        if (metrics.text.includes(storageMetric)) {
+          break;
+        }
+        await wait(300);
+      } while (Date.now() - startedAt < 15000);
       expect(metrics.text).toContain(
         'fda_da_queries_total{fda="account_small",fiware_service="myservice",fiware_service_path="/accounting"} 3',
       );
+      expect(metrics.text).toContain(storageMetric);
+    });
+
+    test('resets queries since refresh while preserving FDA and DA lifetime counts', async () => {
+      const previous = await getFDA('account_small');
+      const res = await httpReq({
+        method: 'PUT',
+        url: `${getBaseUrl()}/${visibility}/fdas/account_small`,
+        headers,
+      });
+      expect(res.status).toBeLessThan(300);
+      const fda = await waitForFDA(
+        'account_small',
+        (candidate) =>
+          candidate.status === 'completed' &&
+          candidate.lastFetch !== previous.lastFetch,
+      );
+      expect(fda.access).toMatchObject({ count: 3, sinceLastFetch: 0 });
+      expect(fda.das.account_da.access).toMatchObject({
+        count: 3,
+        sinceLastFetch: 0,
+      });
+      expect(fda.lastRefresh.bytesFetched).toBeGreaterThan(0);
+    });
+
+    test('counts cached CDA reads through the shared query tracker', async () => {
+      const cdaHeaders = {
+        'Fiware-Service': service,
+        'Fiware-ServicePath': '/public',
+      };
+      const res = await createFDA(
+        {
+          id: 'account_cda',
+          query: 'SELECT id, value FROM public.accounting_events',
+        },
+        cdaHeaders,
+      );
+      expect(res.status).toBe(202);
+      const created = await waitForFDA(
+        'account_cda',
+        hasFinished,
+        120000,
+        cdaHeaders,
+      );
+      expect(created.status).toBe('completed');
+      const url = new URL(`${getBaseUrl()}/plugin/cda/api/doQuery`);
+      url.searchParams.set(
+        'path',
+        `/public/${service}/verticals/sql/account_cda`,
+      );
+      url.searchParams.set('dataAccessId', 'defaultDataAccess');
+      const data = await httpReq({ method: 'GET', url: url.toString() });
+      expect(data.status).toBe(200);
+      const fda = await waitForFDA(
+        'account_cda',
+        (candidate) => candidate.access?.count === 1,
+        15000,
+        cdaHeaders,
+      );
+      expect(fda.access.sinceLastFetch).toBe(1);
+      expect(fda.das.defaultDataAccess.access).toMatchObject({
+        count: 1,
+        sinceLastFetch: 1,
+      });
     });
 
     test('measures and fully deletes a partitioned FDA with more than 1000 objects', async () => {
@@ -434,6 +517,16 @@ export function registerFdaAccoutingIntegrationTests({
 
       expect(keys).not.toContain(expiredKey);
       expect(keys).toContain(livePartition.Key);
+      const measured = await waitForFDA(
+        'account_window',
+        (candidate) =>
+          candidate.storage?.measuredAt !== fda.storage.measuredAt &&
+          candidate.storage?.objects === keys.length,
+      );
+      const stored = await listStoredObjects(partitionPrefix);
+      expect(measured.storage.bytes).toBe(
+        stored.reduce((total, { Size }) => total + Size, 0),
+      );
     });
   });
 }

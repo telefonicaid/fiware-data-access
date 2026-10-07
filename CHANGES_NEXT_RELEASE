@@ -1,0 +1,3 @@
+Add persisted FDA resource accounting: creation time, Parquet storage measurements,
+buffered FDA/DA query counters, queries since the last successful refresh and refresh cost.
+Expose service/servicePath accounting through GET /usage and Prometheus gauges.

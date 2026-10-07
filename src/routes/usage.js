@@ -1,8 +1,8 @@
-// Copyright 2025 Telefónica Soluciones de Informática y Comunicaciones de España, S.A.U.
+// Copyright 2025 Telefï¿½nica Soluciones de Informï¿½tica y Comunicaciones de Espaï¿½a, S.A.U.
 // PROJECT: fiware-data-access
 //
-// This software and / or computer program has been developed by Telefónica Soluciones
-// de Informática y Comunicaciones de España, S.A.U (hereinafter TSOL) and is protected
+// This software and / or computer program has been developed by Telefï¿½nica Soluciones
+// de Informï¿½tica y Comunicaciones de Espaï¿½a, S.A.U (hereinafter TSOL) and is protected
 // as copyright by the applicable legislation on intellectual property.
 //
 // It belongs to TSOL, and / or its licensors, the exclusive rights of reproduction,
@@ -25,6 +25,8 @@
 import express from 'express';
 
 import { normalizeServicePath } from '../lib/utils/fdaScope.js';
+import { aggregateFDAUsage } from '../lib/utils/mongo.js';
+import { summarizeUsage } from '../lib/utils/usage.js';
 
 const router = express.Router();
 
@@ -34,11 +36,11 @@ const router = express.Router();
  *   get:
  *     tags: [Usage]
  *     operationId: getUsage
- *     summary: Retrieve resource usage
+ *     summary: Retrieve persisted resource accounting
  *     description: >
- *       Returns the storage and FDA count consumed by the provided `Fiware-Service`, the limits that apply and
- *       the remaining room. When `Fiware-ServicePath` is sent the response also includes that servicePath scope;
- *       otherwise it lists the usage of every servicePath in the service. A `null` limit means unlimited.
+ *       Returns service totals and either the requested servicePath or a breakdown by servicePath.
+ *       Access counters are eventually consistent with in-memory buffers. Refresh totals sum the last
+ *       successful refresh of each FDA, not the historical cost of all refreshes. No limits are enforced.
  *     parameters:
  *       - $ref: '#/components/parameters/FiwareServiceHeader'
  *       - name: Fiware-ServicePath
@@ -49,7 +51,7 @@ const router = express.Router();
  *         example: /servicepath
  *     responses:
  *       '200':
- *         description: Usage, limits and available room.
+ *         description: Persisted service and servicePath accounting.
  *         content:
  *           application/json:
  *             schema:
@@ -59,40 +61,36 @@ const router = express.Router();
  *                   $ref: '#/components/schemas/UsageScope'
  *                 servicePath:
  *                   $ref: '#/components/schemas/UsageScope'
- *                 fda:
- *                   type: object
- *                   properties:
- *                     limits:
- *                       type: object
- *                       properties:
- *                         maxBytes:
- *                           type: integer
- *                           nullable: true
- *                         maxFetchBytes:
- *                           type: integer
- *                           nullable: true
  *                 byServicePath:
  *                   type: array
  *                   items:
- *                     type: object
- *                     properties:
- *                       servicePath:
- *                         type: string
- *                       fdas:
- *                         type: integer
- *                       bytes:
- *                         type: integer
+ *                     allOf:
+ *                       - $ref: '#/components/schemas/UsageScope'
+ *                       - type: object
+ *                         properties:
+ *                           servicePath:
+ *                             type: string
  *             example:
  *               service:
- *                 limits: { maxFDAs: 20, maxBytes: 10737418240 }
- *                 used: { fdas: 3, bytes: 52428800 }
- *                 available: { fdas: 17, bytes: 10684989440 }
+ *                 fdas: 3
+ *                 bytes: 52428800
+ *                 objects: 365
+ *                 partitions: 365
+ *                 queries: 42
+ *                 sinceLastFetch: 3
+ *                 lastAccessAt: '2026-10-01T09:31:02.000Z'
+ *                 refreshDurationMs: 1200
+ *                 refreshBytesFetched: 100000000
  *               servicePath:
- *                 limits: { maxFDAs: null, maxBytes: null }
- *                 used: { fdas: 2, bytes: 41943040 }
- *                 available: { fdas: null, bytes: null }
- *               fda:
- *                 limits: { maxBytes: 1073741824, maxFetchBytes: null }
+ *                 fdas: 2
+ *                 bytes: 41943040
+ *                 objects: 300
+ *                 partitions: 300
+ *                 queries: 30
+ *                 sinceLastFetch: 2
+ *                 lastAccessAt: '2026-10-01T09:31:02.000Z'
+ *                 refreshDurationMs: 1000
+ *                 refreshBytesFetched: 80000000
  *       '400':
  *         $ref: '#/components/responses/BadRequest'
  * components:
@@ -100,31 +98,26 @@ const router = express.Router();
  *     UsageScope:
  *       type: object
  *       properties:
- *         limits:
- *           type: object
- *           properties:
- *             maxFDAs:
- *               type: integer
- *               nullable: true
- *             maxBytes:
- *               type: integer
- *               nullable: true
- *         used:
- *           type: object
- *           properties:
- *             fdas:
- *               type: integer
- *             bytes:
- *               type: integer
- *         available:
- *           type: object
- *           properties:
- *             fdas:
- *               type: integer
- *               nullable: true
- *             bytes:
- *               type: integer
- *               nullable: true
+ *         fdas:
+ *           type: integer
+ *         bytes:
+ *           type: integer
+ *         objects:
+ *           type: integer
+ *         partitions:
+ *           type: integer
+ *         queries:
+ *           type: integer
+ *         sinceLastFetch:
+ *           type: integer
+ *         lastAccessAt:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *         refreshDurationMs:
+ *           type: integer
+ *         refreshBytesFetched:
+ *           type: integer
  */
 router.get('/usage', async (req, res) => {
   const service = req.get('Fiware-Service');
@@ -136,12 +129,16 @@ router.get('/usage', async (req, res) => {
       description: 'Missing Fiware-Service header',
     });
   }
-  // TBD: try to get it from mongo
-  // const usage = await getUsage(
-  //   service,
-  //   servicePath === undefined ? undefined : normalizeServicePath(servicePath),
-  // );
-  const usage = {};
+  const groups = await aggregateFDAUsage(service);
+  const usage = { service: summarizeUsage(groups) };
+  if (servicePath === undefined) {
+    usage.byServicePath = groups;
+  } else {
+    const normalizedPath = normalizeServicePath(servicePath);
+    usage.servicePath = summarizeUsage(
+      groups.filter((group) => group.servicePath === normalizedPath),
+    );
+  }
   return res.status(200).json(usage);
 });
 

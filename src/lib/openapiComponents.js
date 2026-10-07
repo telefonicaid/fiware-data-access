@@ -520,6 +520,16 @@
  *       type: object
  *       description: Fields common to both FDA response representations (list item and single-FDA detail).
  *       properties:
+ *         createdAt:
+ *           type: string
+ *           format: date-time
+ *           readOnly: true
+ *         storage:
+ *           $ref: '#/components/schemas/StorageAccounting'
+ *         access:
+ *           $ref: '#/components/schemas/AccessAccounting'
+ *         lastRefresh:
+ *           $ref: '#/components/schemas/RefreshAccounting'
  *         datasourceId:
  *           type: string
  *         validationMode:
@@ -571,6 +581,48 @@
  *                 description: >
  *                   DuckDB type of the column, or `null` while it is not known yet.
  *
+ *     StorageAccounting:
+ *       type: object
+ *       readOnly: true
+ *       description: Final Parquet objects only; excludes staging CSV and tmp/ objects.
+ *       properties:
+ *         bytes:
+ *           type: integer
+ *         objects:
+ *           type: integer
+ *         partitions:
+ *           type: integer
+ *           description: Number of distinct partition folders; zero for non-partitioned FDAs.
+ *         measuredAt:
+ *           type: string
+ *           format: date-time
+ *
+ *     AccessAccounting:
+ *       type: object
+ *       readOnly: true
+ *       description: Successful cached queries, buffered and periodically persisted.
+ *       properties:
+ *         count:
+ *           type: integer
+ *         sinceLastFetch:
+ *           type: integer
+ *           description: Queries belonging to the last successful refresh generation.
+ *         lastAccessAt:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *
+ *     RefreshAccounting:
+ *       type: object
+ *       readOnly: true
+ *       description: Cost of the last successful fetch or upload. Failed refreshes retain the previous cost.
+ *       properties:
+ *         durationMs:
+ *           type: integer
+ *         bytesFetched:
+ *           type: integer
+ *           description: Extracted CSV bytes including the header for database fetches, or uploaded file bytes.
+ *
  *     FdaListItem:
  *       description: FDA representation returned by `GET /{visibility}/fdas` (includes `id`).
  *       allOf:
@@ -591,6 +643,8 @@
  *     Da:
  *       type: object
  *       properties:
+ *         access:
+ *           $ref: '#/components/schemas/AccessAccounting'
  *         id:
  *           type: string
  *           example: da_all_alarms

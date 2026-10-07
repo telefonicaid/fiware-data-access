@@ -1,8 +1,8 @@
-// Copyright 2025 Telefónica Soluciones de Informática y Comunicaciones de España, S.A.U.
+// Copyright 2025 Telefï¿½nica Soluciones de Informï¿½tica y Comunicaciones de Espaï¿½a, S.A.U.
 // PROJECT: fiware-data-access
 //
-// This software and / or computer program has been developed by Telefónica Soluciones
-// de Informática y Comunicaciones de España, S.A.U (hereinafter TSOL) and is protected
+// This software and / or computer program has been developed by Telefï¿½nica Soluciones
+// de Informï¿½tica y Comunicaciones de Espaï¿½a, S.A.U (hereinafter TSOL) and is protected
 // as copyright by the applicable legislation on intellectual property.
 //
 // It belongs to TSOL, and / or its licensors, the exclusive rights of reproduction,
@@ -26,9 +26,14 @@ import { config } from './fdaConfig.js';
 import { recordFDAAccesses } from './utils/mongo.js';
 import { onDAQuery } from './metrics.js';
 import { getBasicLogger } from './utils/logger.js';
+import { randomUUID } from 'node:crypto';
 
 const logger = getBasicLogger();
 const pendingAccesses = new Map();
+const trackerId = randomUUID();
+let sequence = 0;
+let retryEntries;
+let flushing;
 let flushTimer;
 
 function ensureFlushTimer() {
@@ -42,13 +47,20 @@ function ensureFlushTimer() {
   flushTimer.unref?.();
 }
 
-export function recordAccess({ service, servicePath, fdaId, daId }) {
+export function recordAccess({
+  service,
+  servicePath,
+  fdaId,
+  daId,
+  lastFetch = null,
+}) {
   const now = new Date();
-  const key = JSON.stringify([service, servicePath, fdaId]);
+  const key = JSON.stringify([service, servicePath, fdaId, lastFetch]);
   const entry = pendingAccesses.get(key) ?? {
     service,
     servicePath,
     fdaId,
+    lastFetch,
     count: 0,
     lastAccessAt: now,
     das: {},
@@ -70,21 +82,39 @@ export function recordAccess({ service, servicePath, fdaId, daId }) {
 }
 
 export async function flushAccesses() {
-  if (pendingAccesses.size === 0) {
-    return;
+  if (flushing) {
+    return await flushing;
+  }
+  if (!retryEntries && pendingAccesses.size === 0) {
+    return undefined;
   }
 
-  const entries = [...pendingAccesses.values()];
-  pendingAccesses.clear();
-
-  try {
-    await recordFDAAccesses(entries);
-  } catch (error) {
-    logger.warn(
-      { err: error, entries: entries.length },
-      'Failed to persist FDA access counters',
-    );
+  const entries =
+    retryEntries ??
+    [...pendingAccesses.values()].map((entry) => ({
+      ...entry,
+      trackerId,
+      sequence: ++sequence,
+    }));
+  if (!retryEntries) {
+    pendingAccesses.clear();
   }
+
+  flushing = (async () => {
+    try {
+      await recordFDAAccesses(entries);
+      retryEntries = undefined;
+    } catch (error) {
+      retryEntries = entries;
+      logger.warn(
+        { err: error, entries: entries.length },
+        'Failed to persist FDA access counters',
+      );
+    } finally {
+      flushing = undefined;
+    }
+  })();
+  return await flushing;
 }
 
 export async function stopAccessTracker() {
@@ -94,4 +124,12 @@ export async function stopAccessTracker() {
   }
 
   await flushAccesses();
+  if (pendingAccesses.size > 0 && !retryEntries) {
+    await flushAccesses();
+  }
+  if (retryEntries) {
+    throw new Error(
+      'FDA access counters could not be persisted during shutdown',
+    );
+  }
 }

@@ -32,6 +32,7 @@ import {
   NESTED_SUBPIPELINE_MONGO_STAGES,
 } from '../constants.js';
 import { getMongoDeclaredColumns } from './mongoQuery.js';
+import { USAGE_SUM_FIELDS } from './usage.js';
 
 const uri = config.mongo.uri;
 const client = new MongoClient(uri);
@@ -573,6 +574,7 @@ export async function createFDAMongo(
       createdAt,
       query,
       das: {},
+      access: { count: 0, sinceLastFetch: 0, lastAccessAt: null },
       service,
       visibility,
       status: initialStatus,
@@ -613,8 +615,56 @@ export async function updateFDAStatus({
   status,
   progress,
   error = null,
+  lastRefresh,
 }) {
   const collection = await getCollection();
+
+  if (status === 'completed' && lastRefresh) {
+    await collection.updateOne({ service, fdaId, servicePath }, [
+      {
+        $set: {
+          status,
+          progress,
+          lastFetch: new Date(),
+          lastRefresh: { $literal: lastRefresh },
+          access: {
+            $mergeObjects: [
+              { count: 0, lastAccessAt: null },
+              '$access',
+              { sinceLastFetch: 0 },
+            ],
+          },
+          das: {
+            $arrayToObject: {
+              $map: {
+                input: { $objectToArray: { $ifNull: ['$das', {}] } },
+                as: 'da',
+                in: {
+                  k: '$$da.k',
+                  v: {
+                    $mergeObjects: [
+                      '$$da.v',
+                      {
+                        access: {
+                          $mergeObjects: [
+                            { count: 0, lastAccessAt: null },
+                            '$$da.v.access',
+                            { sinceLastFetch: 0 },
+                          ],
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      { $unset: 'error' },
+    ]);
+    return;
+  }
 
   await collection.updateOne(
     { service, fdaId, servicePath },
@@ -691,37 +741,98 @@ export async function recordFDAAccesses(entries) {
 
   const operations = [];
   for (const entry of entries) {
-    const { service, servicePath, fdaId, count, lastAccessAt, das } = entry;
-    const filter = { service, servicePath, fdaId };
-
-    operations.push({
-      updateOne: {
-        filter,
-        update: {
-          $inc: { 'access.count': count },
-          $max: { 'access.lastAccessAt': lastAccessAt },
+    const {
+      service,
+      servicePath,
+      fdaId,
+      count,
+      lastAccessAt,
+      das,
+      trackerId,
+      sequence,
+      lastFetch,
+    } = entry;
+    const sameRefresh = {
+      $eq: [{ $ifNull: ['$lastFetch', null] }, { $literal: lastFetch ?? null }],
+    };
+    const incrementAccess = (path, delta, timestamp) => ({
+      $mergeObjects: [
+        path,
+        {
+          count: { $add: [{ $ifNull: [`${path}.count`, 0] }, delta] },
+          sinceLastFetch: {
+            $add: [
+              { $ifNull: [`${path}.sinceLastFetch`, 0] },
+              { $cond: [sameRefresh, delta, 0] },
+            ],
+          },
+          lastAccessAt: {
+            $max: [`${path}.lastAccessAt`, { $literal: timestamp }],
+          },
         },
-      },
+      ],
     });
-
-    for (const [daId, daAccess] of Object.entries(das || {})) {
-      operations.push({
-        updateOne: {
-          filter: { ...filter, [`das.${daId}`]: { $exists: true } },
-          update: {
-            $inc: { [`das.${daId}.access.count`]: daAccess.count },
-            $max: {
-              [`das.${daId}.access.lastAccessAt`]: daAccess.lastAccessAt,
+    const branches = Object.entries(das || {}).map(([daId, daAccess]) => ({
+      case: { $eq: ['$$da.k', { $literal: daId }] },
+      then: {
+        $mergeObjects: [
+          '$$da.v',
+          {
+            access: incrementAccess(
+              '$$da.v.access',
+              daAccess.count,
+              daAccess.lastAccessAt,
+            ),
+          },
+        ],
+      },
+    }));
+    const fields = {
+      access: incrementAccess('$access', count, lastAccessAt),
+      [`_accessFlushes.${trackerId}`]: sequence,
+    };
+    if (branches.length > 0) {
+      fields.das = {
+        $arrayToObject: {
+          $map: {
+            input: { $objectToArray: { $ifNull: ['$das', {}] } },
+            as: 'da',
+            in: {
+              k: '$$da.k',
+              v: { $switch: { branches, default: '$$da.v' } },
             },
           },
         },
-      });
+      };
     }
+    operations.push({
+      updateOne: {
+        filter: {
+          service,
+          servicePath,
+          fdaId,
+          $expr: {
+            $lt: [{ $ifNull: [`$_accessFlushes.${trackerId}`, 0] }, sequence],
+          },
+        },
+        update: [{ $set: fields }],
+      },
+    });
   }
 
   const collection = await getCollection();
-  await collection.bulkWrite(operations, { ordered: false });
+  await collection.bulkWrite(operations, { ordered: true });
 }
+
+const usageGroupFields = {
+  ...Object.fromEntries(
+    Object.entries(USAGE_SUM_FIELDS).map(([field, path]) => [
+      field,
+      { $sum: { $ifNull: [`$${path}`, 0] } },
+    ]),
+  ),
+  lastAccessAt: { $max: '$access.lastAccessAt' },
+};
 
 export async function aggregateFDAUsage(service) {
   const collection = await getCollection();
@@ -731,19 +842,18 @@ export async function aggregateFDAUsage(service) {
         { $match: { service } },
         {
           $group: {
-            _id: '$servicePath',
+            _id: { $ifNull: ['$servicePath', '/'] },
             fdas: { $sum: 1 },
-            bytes: { $sum: { $ifNull: ['$storage.bytes', 0] } },
+            ...usageGroupFields,
           },
         },
         { $sort: { _id: 1 } },
       ])
       .toArray();
 
-    return groups.map(({ _id, fdas, bytes }) => ({
+    return groups.map(({ _id, ...usage }) => ({
       servicePath: _id,
-      fdas,
-      bytes,
+      ...usage,
     }));
   } catch (e) {
     throw new FDAError(
@@ -817,10 +927,25 @@ export async function storeDA(
   );
   const collection = await getCollection();
   try {
-    await collection.updateOne(
-      { service, fdaId, servicePath },
-      { $set: { [`das.${daId}`]: { description, query, params } } },
-    );
+    await collection.updateOne({ service, fdaId, servicePath }, [
+      {
+        $set: {
+          [`das.${daId}`]: {
+            $mergeObjects: [
+              { $literal: { description, query, params } },
+              {
+                access: {
+                  $ifNull: [
+                    `$das.${daId}.access`,
+                    { count: 0, sinceLastFetch: 0, lastAccessAt: null },
+                  ],
+                },
+              },
+            ],
+          },
+        },
+      },
+    ]);
   } catch (e) {
     throw new FDAError(
       500,
@@ -1030,6 +1155,7 @@ export async function getOperationalCollectionsSnapshot() {
               servicePath: { $ifNull: ['$servicePath', '/'] },
             },
             count: { $sum: 1 },
+            ...usageGroupFields,
           },
         },
       ])
@@ -1075,10 +1201,10 @@ export async function getOperationalCollectionsSnapshot() {
       status: item._id,
       count: item.count,
     })),
-    fdasByServiceAndPath: fdasByServiceAndPath.map((item) => ({
-      service: item._id.service,
-      servicePath: item._id.servicePath,
-      count: item.count,
+    fdasByServiceAndPath: fdasByServiceAndPath.map(({ _id, ...usage }) => ({
+      service: _id.service,
+      servicePath: _id.servicePath,
+      ...usage,
     })),
     agenda: {
       total: agendaTotal,

@@ -70,6 +70,7 @@ const mongoMocks = {
   createIndex: jest.fn(),
   disconnectClient: jest.fn(),
   getOperationalCollectionsSnapshot: jest.fn(),
+  aggregateFDAUsage: jest.fn(),
 };
 
 const accessTrackerMocks = {
@@ -161,6 +162,7 @@ function resetModuleMocks() {
 
   mongoMocks.createIndex.mockReset().mockResolvedValue(undefined);
   mongoMocks.disconnectClient.mockReset().mockResolvedValue(undefined);
+  mongoMocks.aggregateFDAUsage.mockReset().mockResolvedValue([]);
   mongoMocks.getOperationalCollectionsSnapshot.mockReset().mockResolvedValue({
     fdasTotal: 2,
     dasTotal: 5,
@@ -328,6 +330,7 @@ async function loadIndexModule({
   await jest.unstable_mockModule('../../src/lib/utils/mongo.js', () => ({
     createIndex: mongoMocks.createIndex,
     disconnectClient: mongoMocks.disconnectClient,
+    aggregateFDAUsage: mongoMocks.aggregateFDAUsage,
     getOperationalCollectionsSnapshot:
       mongoMocks.getOperationalCollectionsSnapshot,
   }));
@@ -882,6 +885,150 @@ describe('index routes - validation and middleware branches', () => {
     expect(res.text).toContain('fda_catalog_fdas_by_service');
     expect(res.text).toContain('fda_jobs_agenda_total');
     expect(res.text).toContain('# EOF');
+  });
+
+  test('returns service totals and the servicePath breakdown from persisted accounting', async () => {
+    mongoMocks.aggregateFDAUsage.mockResolvedValue([
+      {
+        servicePath: '/a',
+        fdas: 1,
+        bytes: 10,
+        objects: 2,
+        partitions: 1,
+        queries: 3,
+        sinceLastFetch: 1,
+        refreshDurationMs: 10,
+        refreshBytesFetched: 20,
+        lastAccessAt: '2026-10-01T00:00:00.000Z',
+      },
+      {
+        servicePath: '/b',
+        fdas: 2,
+        bytes: 30,
+        objects: 4,
+        partitions: 2,
+        queries: 5,
+        sinceLastFetch: 2,
+        refreshDurationMs: 30,
+        refreshBytesFetched: 40,
+        lastAccessAt: '2026-10-02T00:00:00.000Z',
+      },
+    ]);
+    const res = await request(app)
+      .get('/usage')
+      .set('Fiware-Service', 'svc')
+      .expect(200);
+    expect(mongoMocks.aggregateFDAUsage).toHaveBeenCalledWith('svc');
+    expect(res.body.service).toEqual({
+      fdas: 3,
+      bytes: 40,
+      objects: 6,
+      partitions: 3,
+      queries: 8,
+      sinceLastFetch: 3,
+      refreshDurationMs: 40,
+      refreshBytesFetched: 60,
+      lastAccessAt: '2026-10-02T00:00:00.000Z',
+    });
+    expect(res.body.byServicePath).toHaveLength(2);
+    const scoped = await request(app)
+      .get('/usage')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/a')
+      .expect(200);
+    expect(scoped.body.service).toEqual(res.body.service);
+    expect(scoped.body.servicePath).toMatchObject({
+      fdas: 1,
+      bytes: 10,
+      queries: 3,
+    });
+    expect(scoped.body.byServicePath).toBeUndefined();
+  });
+
+  test('returns zero accounting for an empty service or servicePath', async () => {
+    const res = await request(app)
+      .get('/usage')
+      .set('Fiware-Service', 'empty')
+      .set('Fiware-ServicePath', '/missing')
+      .expect(200);
+    expect(res.body.servicePath).toEqual(res.body.service);
+    expect(res.body.service).toEqual({
+      fdas: 0,
+      bytes: 0,
+      objects: 0,
+      partitions: 0,
+      queries: 0,
+      sinceLastFetch: 0,
+      refreshDurationMs: 0,
+      refreshBytesFetched: 0,
+      lastAccessAt: null,
+    });
+  });
+
+  test('requires a service for usage and forwards persistence failures', async () => {
+    await request(app).get('/usage').expect(400);
+    expect(mongoMocks.aggregateFDAUsage).not.toHaveBeenCalled();
+    mongoMocks.aggregateFDAUsage.mockRejectedValueOnce(
+      new FDAError(500, 'MongoDBServerError', 'offline'),
+    );
+    const res = await request(app)
+      .get('/usage')
+      .set('Fiware-Service', 'svc')
+      .expect(500);
+    expect(res.body.error).toBe('MongoDBServerError');
+  });
+
+  test('exposes persisted accounting metrics for paths and their service total', async () => {
+    const snapshot = await mongoMocks.getOperationalCollectionsSnapshot();
+    mongoMocks.getOperationalCollectionsSnapshot.mockResolvedValue({
+      ...snapshot,
+      fdasByServiceAndPath: [
+        {
+          service: 'svc',
+          servicePath: '/a',
+          count: 1,
+          bytes: 10,
+          objects: 2,
+          partitions: 1,
+          queries: 3,
+          sinceLastFetch: 1,
+          refreshDurationMs: 1500,
+          refreshBytesFetched: 20,
+          lastAccessAt: new Date('2026-10-01T00:00:00Z'),
+        },
+        {
+          service: 'svc',
+          servicePath: '/b',
+          count: 2,
+          bytes: 30,
+          objects: 4,
+          partitions: 2,
+          queries: 5,
+          sinceLastFetch: 2,
+          refreshDurationMs: 2500,
+          refreshBytesFetched: 40,
+        },
+      ],
+    });
+    const res = await request(app).get('/metrics').expect(200);
+    expect(res.text).toContain(
+      'fda_usage_storage_bytes{fiware_service="svc",fiware_service_path="/a"} 10',
+    );
+    expect(res.text).toContain(
+      'fda_usage_storage_bytes{fiware_service="svc"} 40',
+    );
+    expect(res.text).toContain('fda_usage_queries{fiware_service="svc"} 8');
+    expect(res.text).toContain(
+      'fda_usage_queries_since_last_fetch{fiware_service="svc"} 3',
+    );
+    expect(res.text).toContain(
+      'fda_usage_last_refresh_duration_seconds{fiware_service="svc"} 4',
+    );
+    expect(res.text).toContain(
+      'fda_usage_last_refresh_bytes_fetched{fiware_service="svc"} 60',
+    );
+    expect(res.text).toContain('# TYPE fda_usage_storage_objects gauge');
+    expect(res.text).toContain('# TYPE fda_usage_storage_partitions gauge');
   });
 
   test('serves OpenAPI/Swagger documentation at /api-docs and /api-docs.json', async () => {

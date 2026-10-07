@@ -209,6 +209,7 @@ const {
   getStoredFDA,
   updateFDA,
   processFDAAsync,
+  measureFDAStorage,
   deleteFDA,
   deleteDA,
   getDA,
@@ -2764,6 +2765,11 @@ describe('processUploadFDAJob', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    awsMocks.listObjectsWithSize
+      .mockReset()
+      .mockResolvedValue([
+        { key: 'servicepath/upload_csv_ok.parquet', size: 123 },
+      ]);
     awsMocks.getS3Client.mockReturnValue({});
     awsMocks.newUpload.mockReturnValue({
       done: jest.fn().mockResolvedValue(undefined),
@@ -2802,11 +2808,6 @@ describe('processUploadFDAJob', () => {
         undefined,
         undefined,
       );
-      expect(mongoMocks.updateFDALastFetch).toHaveBeenCalledWith(
-        'svc',
-        'upload_csv_ok',
-        '/servicepath',
-      );
       expect(mongoMocks.updateFDAStatus).toHaveBeenCalledWith(
         expect.objectContaining({
           service: 'svc',
@@ -2814,9 +2815,24 @@ describe('processUploadFDAJob', () => {
           servicePath: '/servicepath',
           status: 'completed',
           progress: 100,
+          lastRefresh: {
+            durationMs: expect.any(Number),
+            bytesFetched: Buffer.byteLength('id,value\n1,10\n2,20\n'),
+          },
         }),
       );
       expect(fs.existsSync(filePath)).toBe(false);
+      expect(mongoMocks.updateFDAStorage).toHaveBeenCalledWith(
+        'svc',
+        'upload_csv_ok',
+        '/servicepath',
+        {
+          bytes: 123,
+          objects: 1,
+          partitions: 0,
+          measuredAt: expect.any(Date),
+        },
+      );
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -3353,6 +3369,7 @@ describe('datasource service helpers', () => {
 describe('processFDAAsync', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    awsMocks.listObjectsWithSize.mockReset().mockResolvedValue([]);
     awsMocks.getS3Client.mockReturnValue({});
     awsMocks.dropFile.mockResolvedValue(undefined);
     awsMocks.newUpload.mockReturnValue({
@@ -3415,7 +3432,33 @@ describe('processFDAAsync', () => {
       servicePath: '/servicepath',
       status: 'completed',
       progress: 100,
+      lastRefresh: { durationMs: expect.any(Number), bytesFetched: 0 },
     });
+  });
+
+  test('persists measured storage and extracted bytes after a successful fetch', async () => {
+    pgMocks.uploadTable.mockResolvedValueOnce(456);
+    awsMocks.listObjectsWithSize.mockResolvedValueOnce([
+      { key: 'servicepath/fda1.parquet', size: 123 },
+    ]);
+    await processFDAAsync('fda1', 'SELECT 1', 'svc', '/servicepath');
+    expect(mongoMocks.updateFDAStorage).toHaveBeenCalledWith(
+      'svc',
+      'fda1',
+      '/servicepath',
+      {
+        bytes: 123,
+        objects: 1,
+        partitions: 0,
+        measuredAt: expect.any(Date),
+      },
+    );
+    expect(mongoMocks.updateFDAStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: 'completed',
+        lastRefresh: { durationMs: expect.any(Number), bytesFetched: 456 },
+      }),
+    );
   });
 
   test('derives the persisted schema from the materialized Parquet once ingestion succeeds', async () => {
@@ -3750,6 +3793,7 @@ describe('processFDAAsync', () => {
       servicePath: '/servicepath',
       status: 'completed',
       progress: 100,
+      lastRefresh: { durationMs: expect.any(Number), bytesFetched: 0 },
     });
   });
 
@@ -3935,6 +3979,16 @@ describe('processFDAAsync', () => {
     expect(uploadBody.write).toHaveBeenCalledWith('dev-1,ok\n');
     expect(uploadBody.write).toHaveBeenCalledWith('dev-2,warn\n');
     expect(uploadBody.end).toHaveBeenCalled();
+    expect(mongoMocks.updateFDAStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        lastRefresh: {
+          durationMs: expect.any(Number),
+          bytesFetched: Buffer.byteLength(
+            'device,status\ndev-1,ok\ndev-2,warn\n',
+          ),
+        },
+      }),
+    );
     expect(reader.close).toHaveBeenCalled();
     expect(dbMocks.toParquet).toHaveBeenCalledWith(
       {},
@@ -5312,6 +5366,58 @@ describe('getFDA', () => {
       query: 'SELECT 9',
       status: 'completed',
     });
+  });
+});
+
+describe('FDA storage accounting', () => {
+  test('excludes temporary objects and FDA prefix collisions', async () => {
+    jest.clearAllMocks();
+    awsMocks.getS3Client.mockReturnValue({});
+    awsMocks.listObjectsWithSize.mockResolvedValueOnce([
+      { key: 'public/fda1.parquet/year=2026/day=1/part1.parquet', size: 10 },
+      { key: 'public/fda1.parquet/year=2026/day=1/part2.parquet', size: 20 },
+      { key: 'public/fda1.parquet/year=2026/day=2/part1.parquet', size: 30 },
+      { key: 'public/fda10.parquet', size: 999 },
+      { key: 'public/fda1.parquet_backup/part1.parquet', size: 999 },
+      {
+        key: 'tmp/public/fda1.parquet/year=2026/day=1/part1.parquet',
+        size: 999,
+      },
+      { key: 'public/fda1.csv', size: 999 },
+    ]);
+    await expect(measureFDAStorage('svc', 'fda1', '/public')).resolves.toEqual({
+      bytes: 60,
+      objects: 3,
+      partitions: 2,
+      measuredAt: expect.any(Date),
+    });
+  });
+
+  test('remeasures storage after cleaning partitions', async () => {
+    jest.clearAllMocks();
+    awsMocks.getS3Client.mockReturnValue({});
+    awsMocks.listObjects.mockResolvedValueOnce([]);
+    awsMocks.dropFiles.mockResolvedValueOnce(undefined);
+    awsMocks.listObjectsWithSize.mockResolvedValueOnce([]);
+    await cleanPartition(
+      'svc',
+      'fda1',
+      '1 day',
+      { partition: 'day' },
+      '/public',
+    );
+    expect(mongoMocks.updateFDAStorage).toHaveBeenCalledWith(
+      'svc',
+      'fda1',
+      '/public',
+      {
+        bytes: 0,
+        objects: 0,
+        partitions: 0,
+        measuredAt: expect.any(Date),
+      },
+    );
+    expect(mongoMocks.updateFDALastFetch).not.toHaveBeenCalled();
   });
 });
 

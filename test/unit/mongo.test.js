@@ -46,6 +46,7 @@ async function loadMongoModule({ connectError } = {}) {
     countDocuments: jest.fn().mockResolvedValue(0),
     insertOne: jest.fn().mockResolvedValue(undefined),
     updateOne: jest.fn().mockResolvedValue(undefined),
+    bulkWrite: jest.fn().mockResolvedValue(undefined),
     findOneAndUpdate: jest.fn().mockResolvedValue({ id: 'prev' }),
     findOne: jest.fn().mockResolvedValue({ status: 'completed' }),
     deleteOne: jest.fn().mockResolvedValue({ deletedCount: 1 }),
@@ -95,6 +96,107 @@ async function loadMongoModule({ connectError } = {}) {
 describe('mongo utils', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  test('persists each FDA and its DA counters atomically with an idempotent sequence', async () => {
+    const { recordFDAAccesses, collectionMock } = await loadMongoModule();
+    const lastFetch = new Date('2026-10-01T00:00:00Z');
+    const lastAccessAt = new Date('2026-10-02T00:00:00Z');
+    await recordFDAAccesses([
+      {
+        service: 'svc',
+        servicePath: '/sp',
+        fdaId: 'fda1',
+        trackerId: 'tracker1',
+        sequence: 3,
+        lastFetch,
+        count: 2,
+        lastAccessAt,
+        das: { da1: { count: 2, lastAccessAt } },
+      },
+    ]);
+    const [operations, options] = collectionMock.bulkWrite.mock.calls[0];
+    expect(options).toEqual({ ordered: true });
+    expect(operations).toHaveLength(1);
+    expect(operations[0].updateOne.filter).toEqual({
+      service: 'svc',
+      servicePath: '/sp',
+      fdaId: 'fda1',
+      $expr: { $lt: [{ $ifNull: ['$_accessFlushes.tracker1', 0] }, 3] },
+    });
+    const fields = operations[0].updateOne.update[0].$set;
+    expect(fields['_accessFlushes.tracker1']).toBe(3);
+    expect(fields.access.$mergeObjects[1].sinceLastFetch.$add[1]).toEqual({
+      $cond: [
+        { $eq: [{ $ifNull: ['$lastFetch', null] }, { $literal: lastFetch }] },
+        2,
+        0,
+      ],
+    });
+    expect(fields.das.$arrayToObject.$map.input).toEqual({
+      $objectToArray: { $ifNull: ['$das', {}] },
+    });
+  });
+
+  test('completes a refresh and resets FDA and DA generations in one write', async () => {
+    const { updateFDAStatus, collectionMock } = await loadMongoModule();
+    const lastRefresh = { durationMs: 123, bytesFetched: 456 };
+    await updateFDAStatus({
+      service: 'svc',
+      servicePath: '/sp',
+      fdaId: 'fda1',
+      status: 'completed',
+      progress: 100,
+      lastRefresh,
+    });
+    const [filter, pipeline] = collectionMock.updateOne.mock.calls[0];
+    expect(filter).toEqual({
+      service: 'svc',
+      servicePath: '/sp',
+      fdaId: 'fda1',
+    });
+    expect(pipeline[0].$set.lastRefresh).toEqual({ $literal: lastRefresh });
+    expect(pipeline[0].$set.lastFetch).toEqual(expect.any(Date));
+    expect(pipeline[0].$set.access.$mergeObjects.at(-1)).toEqual({
+      sinceLastFetch: 0,
+    });
+    expect(
+      pipeline[0].$set.das.$arrayToObject.$map.in.v.$mergeObjects[1].access.$mergeObjects.at(
+        -1,
+      ),
+    ).toEqual({ sinceLastFetch: 0 });
+    expect(pipeline[1]).toEqual({ $unset: 'error' });
+  });
+
+  test('aggregates every accounting figure within the requested service', async () => {
+    const { aggregateFDAUsage, collectionMock } = await loadMongoModule();
+    const usage = {
+      fdas: 2,
+      bytes: 10,
+      objects: 3,
+      partitions: 2,
+      queries: 5,
+      sinceLastFetch: 1,
+      refreshDurationMs: 123,
+      refreshBytesFetched: 456,
+      lastAccessAt: null,
+    };
+    collectionMock.aggregate.mockReturnValueOnce({
+      toArray: jest.fn().mockResolvedValue([{ _id: '/sp', ...usage }]),
+    });
+    await expect(aggregateFDAUsage('svc')).resolves.toEqual([
+      { servicePath: '/sp', ...usage },
+    ]);
+    const [pipeline] = collectionMock.aggregate.mock.calls[0];
+    expect(pipeline[0]).toEqual({ $match: { service: 'svc' } });
+    expect(pipeline[1].$group).toMatchObject({
+      _id: { $ifNull: ['$servicePath', '/'] },
+      queries: { $sum: { $ifNull: ['$access.count', 0] } },
+      partitions: { $sum: { $ifNull: ['$storage.partitions', 0] } },
+      refreshBytesFetched: {
+        $sum: { $ifNull: ['$lastRefresh.bytesFetched', 0] },
+      },
+    });
   });
 
   test('createIndex wraps connection failures as MongoConnectionError', async () => {

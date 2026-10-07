@@ -24,6 +24,7 @@
 
 import { config } from './fdaConfig.js';
 import { getOperationalCollectionsSnapshot } from './utils/mongo.js';
+import { summarizeUsage } from './utils/usage.js';
 
 const SERVICE_VERSION = process.env.npm_package_version || 'unknown';
 const PROCESS_START_TIME_SECONDS = Math.floor(Date.now() / 1000);
@@ -470,6 +471,54 @@ export async function buildMetricsText() {
       lines.push(
         `fda_catalog_fdas_by_service${formatLabels({ fiware_service: item.service, fiware_service_path: item.servicePath })} ${item.count}`,
       );
+    }
+
+    const services = new Map();
+    const scopes = mongoSnapshot.fdasByServiceAndPath.map((item) => {
+      const usage = { ...item, fdas: item.count };
+      const groups = services.get(item.service) ?? [];
+      groups.push(usage);
+      services.set(item.service, groups);
+      return {
+        labels: {
+          fiware_service: item.service,
+          fiware_service_path: item.servicePath,
+        },
+        usage,
+      };
+    });
+    for (const [service, groups] of services) {
+      scopes.push({
+        labels: { fiware_service: service },
+        usage: summarizeUsage(groups),
+      });
+    }
+    const usageMetrics = [
+      ['fdas', 'fdas', 1],
+      ['storage_bytes', 'bytes', 1],
+      ['storage_objects', 'objects', 1],
+      ['storage_partitions', 'partitions', 1],
+      ['queries', 'queries', 1],
+      ['queries_since_last_fetch', 'sinceLastFetch', 1],
+      ['last_refresh_duration_seconds', 'refreshDurationMs', 1000],
+      ['last_refresh_bytes_fetched', 'refreshBytesFetched', 1],
+      ['last_access_timestamp_seconds', 'lastAccessAt', 1000],
+    ];
+    for (const [name, field, divisor] of usageMetrics) {
+      const metricName = `fda_usage_${name}`;
+      lines.push(
+        `# HELP ${metricName} Persisted ${field} by service and servicePath.`,
+      );
+      lines.push(`# TYPE ${metricName} gauge`);
+      for (const { labels, usage } of scopes) {
+        const value =
+          field === 'lastAccessAt'
+            ? usage[field]
+              ? new Date(usage[field]).getTime()
+              : 0
+            : usage[field] ?? 0;
+        lines.push(`${metricName}${formatLabels(labels)} ${value / divisor}`);
+      }
     }
 
     lines.push(

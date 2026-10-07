@@ -369,6 +369,7 @@ export async function runPreparedStatement(
     objStgConf,
     servicePath: storedServicePath,
     schema,
+    lastFetch,
   } = await retrieveFDA(service, fdaId, servicePath);
   const query = buildDAQuery(
     service,
@@ -400,6 +401,7 @@ export async function runPreparedStatement(
       servicePath: storedServicePath ?? servicePath,
       fdaId,
       daId,
+      lastFetch,
     });
     return prepared.result;
   } catch (e) {

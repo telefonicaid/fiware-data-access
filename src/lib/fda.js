@@ -22,7 +22,7 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
-import { PassThrough } from 'node:stream';
+import { PassThrough, Transform } from 'node:stream';
 import fs from 'node:fs';
 import { getAgenda } from './jobs.js';
 import {
@@ -67,7 +67,6 @@ import {
   updateDA,
   removeDA,
   updateFDAStatus,
-  updateFDALastFetch,
   updateFDASchema,
   updateFDAStorage,
   claimFDAForFetch,
@@ -1579,6 +1578,7 @@ export async function processFDAAsync(
   objStgConf,
   datasourceId = DEFAULT_DATASOURCE_ID,
 ) {
+  const startedAt = Date.now();
   const storagePath = getFDAStoragePath(fdaId, servicePath);
   const bucketName = getBucketNameFromService(service);
 
@@ -1612,7 +1612,7 @@ export async function processFDAAsync(
       ).firstQuery;
     }
 
-    await uploadTableToObjStg(
+    const bytesFetched = await uploadTableToObjStg(
       service,
       datasourceId,
       refreshQuery,
@@ -1626,7 +1626,7 @@ export async function processFDAAsync(
     );
 
     await refreshFDASchemaFromStorage(service, fdaId, servicePath, objStgConf);
-    await enforceFDAStorageLimit(service, fdaId, servicePath);
+    await measureFDAStorageSafely(service, fdaId, servicePath);
 
     await updateFDAStatus({
       service,
@@ -1634,6 +1634,7 @@ export async function processFDAAsync(
       servicePath,
       status: 'completed',
       progress: 100,
+      lastRefresh: { durationMs: Date.now() - startedAt, bytesFetched },
     });
   } catch (err) {
     await updateFDAStatus({
@@ -1697,15 +1698,6 @@ async function measureFDAStorageSafely(service, fdaId, servicePath) {
     );
     return null;
   }
-}
-
-async function enforceFDAStorageLimit(service, fdaId, servicePath) {
-  const storage = await measureFDAStorageSafely(service, fdaId, servicePath);
-  if (!storage) {
-    return;
-  }
-
-  // TBD
 }
 
 async function cleanTmpFolder(s3Client, bucket, tmpPath) {
@@ -1836,7 +1828,13 @@ async function uploadMongoCursorContentToObjectStorage(
   path,
   reader,
 ) {
-  const uploadBody = new PassThrough();
+  let bytesFetched = 0;
+  const uploadBody = new Transform({
+    transform(chunk, encoding, callback) {
+      bytesFetched += chunk.length;
+      callback(null, chunk);
+    },
+  });
   const upload = newUpload(s3Client, bucket, `${path}.csv`, uploadBody, 5, 1);
 
   const uploadDone = upload.done();
@@ -1870,6 +1868,7 @@ async function uploadMongoCursorContentToObjectStorage(
 
     uploadBody.end();
     await uploadDone;
+    return bytesFetched;
   } catch (error) {
     uploadBody.destroy(error);
     await uploadDone.catch(() => {});
@@ -2129,6 +2128,7 @@ export async function cleanPartition(
     }
   }
   await dropFiles(s3Client, bucketName, partitionsToRemove);
+  await measureFDAStorageSafely(service, fdaId, servicePath);
 }
 
 async function publishTmpPartitions(
@@ -2200,8 +2200,15 @@ async function uploadTableToObjStg(
     rebuildSchema ?? normalizePersistedSchemaFields(fda?.schema);
   await updateFDAStatus({ service, fdaId, servicePath, progress: 20 });
 
+  let bytesFetched;
   if (datasource.type === 'postgres') {
-    await uploadTable(s3Client, bucket, datasource.config, query, path);
+    bytesFetched = await uploadTable(
+      s3Client,
+      bucket,
+      datasource.config,
+      query,
+      path,
+    );
   } else {
     const reader = await createMongoFDAReader(
       service,
@@ -2209,7 +2216,7 @@ async function uploadTableToObjStg(
       query,
       timeColumn,
     );
-    await uploadMongoCursorContentToObjectStorage(
+    bytesFetched = await uploadMongoCursorContentToObjectStorage(
       s3Client,
       bucket,
       path,
@@ -2283,6 +2290,7 @@ async function uploadTableToObjStg(
   } finally {
     await releaseDBConnection(conn);
   }
+  return bytesFetched ?? 0;
 }
 
 async function ensureFDAReadyForQuery(service, fdaId, visibility, servicePath) {
@@ -3098,6 +3106,7 @@ export async function processUploadFDAJob({
   cached,
   defaultDataAccessEnabled,
 }) {
+  const startedAt = Date.now();
   let s3Client;
   let bucketName;
   let tempKey;
@@ -3225,6 +3234,7 @@ export async function processUploadFDAJob({
     }
 
     await refreshFDASchemaFromStorage(service, fdaId, servicePath, objStgConf);
+    await measureFDAStorageSafely(service, fdaId, servicePath);
 
     await updateFDAStatus({
       service,
@@ -3232,8 +3242,11 @@ export async function processUploadFDAJob({
       servicePath,
       status: 'completed',
       progress: 100,
+      lastRefresh: {
+        durationMs: Date.now() - startedAt,
+        bytesFetched: fileBuffer.length,
+      },
     });
-    await updateFDALastFetch(service, fdaId, servicePath);
 
     logger.info({ fdaId }, 'Upload FDA completed successfully');
   } catch (err) {
