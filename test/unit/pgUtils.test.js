@@ -437,6 +437,34 @@ describe('pg utils', () => {
     expect(currentClient.release).toHaveBeenCalledTimes(1);
   });
 
+  test('uploadTable reports a MinIO bucket quota failure as StorageQuotaExceeded', async () => {
+    currentClient.query.mockReturnValue({ destroy: jest.fn() });
+    uploadCtorMock.mockImplementationOnce(() => ({
+      on: jest.fn(),
+      done: jest.fn().mockRejectedValue(
+        Object.assign(new Error('Bucket quota exceeded'), {
+          Code: 'XMinioAdminBucketQuotaExceeded',
+        }),
+      ),
+    }));
+
+    const creds = {
+      username: 'u',
+      password: 'p',
+      host: 'h',
+      port: 5432,
+      database: 'svc_db',
+    };
+    await expect(
+      uploadTable({}, 'bucketA', creds, 'SELECT * FROM t', 'path/file'),
+    ).rejects.toMatchObject({
+      status: 507,
+      type: 'StorageQuotaExceeded',
+      message: expect.stringContaining('"bucketA"'),
+    });
+    expect(currentClient.release).toHaveBeenCalledTimes(1);
+  });
+
   test('uploadTable uploads successfully', async () => {
     const stream = {
       destroy: jest.fn(),

@@ -1030,6 +1030,27 @@ describe('db utils', () => {
     expect(sql).not.toContain('PARTITION_BY');
   });
 
+  test('toParquet reports a DuckDB bucket quota failure as StorageQuotaExceeded', async () => {
+    const { toParquet } = await loadDbModule();
+    const conn = {
+      run: jest
+        .fn()
+        .mockRejectedValue(
+          new Error(
+            'HTTP Error: Unable to connect to URL s3://test-bucket/target: Bad Request (HTTP code 400)\n\nXMinioAdminBucketQuotaExceeded: Bucket quota exceeded',
+          ),
+        ),
+    };
+
+    await expect(
+      toParquet(conn, 'test-bucket/source', 'test-bucket/target', 'ts', 'none'),
+    ).rejects.toMatchObject({
+      status: 507,
+      type: 'StorageQuotaExceeded',
+      message: expect.stringContaining('"test-bucket"'),
+    });
+  });
+
   test('toParquet calls getPartitionConf path for day partition and includes partition by clause', async () => {
     const { toParquet } = await loadDbModule();
     const conn = { run: jest.fn().mockResolvedValue(undefined) };
