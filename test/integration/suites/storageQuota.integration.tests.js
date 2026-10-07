@@ -29,6 +29,8 @@ import {
   CreateBucketCommand,
   ListObjectsV2Command,
   HeadObjectCommand,
+  GetObjectCommand,
+  PutObjectCommand,
 } from '@aws-sdk/client-s3';
 
 const { Client } = pg;
@@ -64,6 +66,15 @@ export function registerStorageQuotaIntegrationTests({
       new ListObjectsV2Command({ Bucket: quotaService, Prefix: prefix }),
     );
     return (page.Contents ?? []).map(({ Key }) => Key);
+  }
+
+  async function snapshotStoredObjects(prefix) {
+    const page = await s3.send(
+      new ListObjectsV2Command({ Bucket: quotaService, Prefix: prefix }),
+    );
+    return Object.fromEntries(
+      (page.Contents ?? []).map(({ Key, ETag }) => [Key, ETag]),
+    );
   }
 
   async function waitUntilFDAFinished(fdaId, timeout = 120_000) {
@@ -113,6 +124,12 @@ export function registerStorageQuotaIntegrationTests({
     });
   }
 
+  async function versionsOf(fdaId) {
+    const res = await readDefaultDataAccess(fdaId);
+    expect(res.status).toBe(200);
+    return [...new Set(res.json.map(({ version }) => version))].sort();
+  }
+
   async function setBucketQuota(size) {
     mcContainer = await new GenericContainer('minio/mc:latest')
       .withNetworkMode('host')
@@ -154,6 +171,7 @@ export function registerStorageQuotaIntegrationTests({
         forcePathStyle: true,
       });
       await s3.send(new CreateBucketCommand({ Bucket: quotaService }));
+      await setBucketQuota('1MiB');
 
       const pgClient = new Client({
         host: getPgHost(),
@@ -170,6 +188,24 @@ export function registerStorageQuotaIntegrationTests({
       await pgClient.query(
         `INSERT INTO public.quota_events
          SELECT g, md5(g::text) FROM generate_series(1, ${goodRows}) g`,
+      );
+      await pgClient.query('DROP TABLE IF EXISTS public.quota_mixed');
+      await pgClient.query(
+        'CREATE TABLE public.quota_mixed (id INT, observed_at TIMESTAMP, version TEXT)',
+      );
+      await pgClient.query(
+        `INSERT INTO public.quota_mixed
+         SELECT g, TIMESTAMP '2026-01-01' + (g % 3 || ' days')::interval, 'v1'
+         FROM generate_series(1, 9) g`,
+      );
+      await pgClient.query('DROP TABLE IF EXISTS public.quota_partitioned');
+      await pgClient.query(
+        'CREATE TABLE public.quota_partitioned (id INT, observed_at TIMESTAMP, payload TEXT)',
+      );
+      await pgClient.query(
+        `INSERT INTO public.quota_partitioned
+         SELECT g, TIMESTAMP '2026-01-01' + (g % 3 || ' days')::interval, md5(g::text)
+         FROM generate_series(1, ${goodRows}) g`,
       );
       await pgClient.end();
     }, 120_000);
@@ -196,8 +232,6 @@ export function registerStorageQuotaIntegrationTests({
       const dataBefore = await readDefaultDataAccess('quota_refresh');
       expect(dataBefore.status).toBe(200);
       expect(dataBefore.json).toHaveLength(goodRows);
-
-      await setBucketQuota('1MiB');
 
       const pgClient = new Client({
         host: getPgHost(),
@@ -234,6 +268,103 @@ export function registerStorageQuotaIntegrationTests({
       const dataAfter = await readDefaultDataAccess('quota_refresh');
       expect(dataAfter.status).toBe(200);
       expect(dataAfter.json).toHaveLength(goodRows);
+    }, 240_000);
+
+    test('a partitioned refresh that exceeds the bucket quota fails explicitly and leaves the published partitions untouched', async () => {
+      const res = await createFDA({
+        id: 'quota_partitioned',
+        query: 'SELECT id, observed_at, payload FROM public.quota_partitioned',
+        timeColumn: 'observed_at',
+        objStgConf: { partition: 'day' },
+      });
+      expect(res.status).toBe(202);
+
+      const created = await waitUntilFDAFinished('quota_partitioned');
+      expect(created.status).toBe('completed');
+
+      const partitionPrefix = `${storagePrefix}quota_partitioned.parquet/`;
+      const before = await snapshotStoredObjects(partitionPrefix);
+      expect(Object.keys(before).length).toBeGreaterThanOrEqual(3);
+
+      const pgClient = new Client({
+        host: getPgHost(),
+        port: getPgPort(),
+        user: 'postgres',
+        password: 'postgres',
+        database: databaseName,
+      });
+      await pgClient.connect();
+      await pgClient.query(
+        `INSERT INTO public.quota_partitioned
+         SELECT g, TIMESTAMP '2026-01-05', repeat(md5(g::text), 6)
+         FROM generate_series(${goodRows + 1}, ${oversizedRows}) g`,
+      );
+      await pgClient.end();
+
+      const refreshRes = await refreshFDA('quota_partitioned');
+      expect(refreshRes.status).toBeLessThan(300);
+
+      const failed = await waitUntilFDAFinished('quota_partitioned');
+      expect(failed.status).toBe('failed');
+      expect(failed.error).toContain('Storage quota exceeded');
+
+      await expect(snapshotStoredObjects(partitionPrefix)).resolves.toEqual(
+        before,
+      );
+      await expect(listStoredKeys('tmp/')).resolves.toEqual([]);
+      await expect(
+        listStoredKeys(`${storagePrefix}quota_partitioned.csv`),
+      ).resolves.toEqual([]);
+    }, 240_000);
+
+    test('the next refresh repairs a partitioned FDA left with partitions of two different fetches', async () => {
+      const res = await createFDA({
+        id: 'quota_mixed',
+        query: 'SELECT id, observed_at, version FROM public.quota_mixed',
+        timeColumn: 'observed_at',
+        objStgConf: { partition: 'day' },
+      });
+      expect(res.status).toBe(202);
+      expect((await waitUntilFDAFinished('quota_mixed')).status).toBe(
+        'completed',
+      );
+
+      const firstDayKey = `${storagePrefix}quota_mixed.parquet/year=2026/month=1/day=1/data_0.parquet`;
+      const firstDayV1 = await s3
+        .send(new GetObjectCommand({ Bucket: quotaService, Key: firstDayKey }))
+        .then(({ Body }) => Body.transformToByteArray());
+
+      const pgClient = new Client({
+        host: getPgHost(),
+        port: getPgPort(),
+        user: 'postgres',
+        password: 'postgres',
+        database: databaseName,
+      });
+      await pgClient.connect();
+      await pgClient.query("UPDATE public.quota_mixed SET version = 'v2'");
+      await pgClient.end();
+
+      await refreshFDA('quota_mixed');
+      expect((await waitUntilFDAFinished('quota_mixed')).status).toBe(
+        'completed',
+      );
+      await expect(versionsOf('quota_mixed')).resolves.toEqual(['v2']);
+
+      await s3.send(
+        new PutObjectCommand({
+          Bucket: quotaService,
+          Key: firstDayKey,
+          Body: firstDayV1,
+        }),
+      );
+      await expect(versionsOf('quota_mixed')).resolves.toEqual(['v1', 'v2']);
+
+      await refreshFDA('quota_mixed');
+      expect((await waitUntilFDAFinished('quota_mixed')).status).toBe(
+        'completed',
+      );
+      await expect(versionsOf('quota_mixed')).resolves.toEqual(['v2']);
     }, 240_000);
   });
 }
