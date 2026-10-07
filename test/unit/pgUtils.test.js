@@ -435,6 +435,7 @@ describe('pg utils', () => {
     expect(stream.destroy).toHaveBeenCalledWith(expect.any(Error));
     expect(stream.destroy).toHaveBeenCalledTimes(1);
     expect(currentClient.release).toHaveBeenCalledTimes(1);
+    expect(currentClient.release).toHaveBeenCalledWith(true);
   });
 
   test('uploadTable reports a MinIO bucket quota failure as StorageQuotaExceeded', async () => {
