@@ -117,13 +117,13 @@ export function getPgPool(username, password, host, port, database) {
   return pool;
 }
 
-function releasePgClient(key, pgClient) {
+function releasePgClient(key, pgClient, discard = false) {
   if (!pgClient || typeof pgClient.release !== 'function') {
     return;
   }
 
   try {
-    pgClient.release();
+    pgClient.release(discard);
     schedulePoolIdleClose(key);
   } catch {
     // Ignore release errors to avoid masking the original operation error.
@@ -253,6 +253,7 @@ export async function uploadTable(
   });
 
   let uploadDone;
+  let failed = false;
   try {
     // Run pipeline (pgStream -> passThrough) and upload concurrently.
     uploadDone = upload.done();
@@ -260,6 +261,7 @@ export async function uploadTable(
 
     logger.debug('Upload completed successfully');
   } catch (e) {
+    failed = true;
     // Ensure PG stream is closed
     try {
       pgStream.destroy(e);
@@ -287,7 +289,7 @@ export async function uploadTable(
     } catch {
       // Ignore
     }
-    releasePgClient(key, pgClient);
+    releasePgClient(key, pgClient, failed);
   }
 }
 
