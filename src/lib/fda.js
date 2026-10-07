@@ -2895,6 +2895,7 @@ async function scheduleFDAJobs({
           servicePath,
         ),
       );
+      consistencyRefreshJob.priority('high');
       consistencyRefreshJob.repeatEvery(consistencyRefreshInterval, {
         skipImmediate: true,
       });
