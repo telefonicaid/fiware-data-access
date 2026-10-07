@@ -1139,6 +1139,7 @@ describe('fetchFDA', () => {
         data,
         unique: jest.fn().mockReturnThis(),
         repeatEvery: jest.fn().mockReturnThis(),
+        priority: jest.fn().mockReturnThis(),
         save: jest.fn().mockResolvedValue(undefined),
       };
 
@@ -2415,6 +2416,7 @@ describe('fetchFDA', () => {
       'data.fdaId': 'fda1',
       'data.servicePath': '/servicepath',
     });
+    expect(consistencyJob.priority).toHaveBeenCalledWith('high');
     expect(consistencyJob.repeatEvery).toHaveBeenCalledWith('1 week', {
       skipImmediate: true,
     });
@@ -4513,6 +4515,7 @@ describe('fetchFDA with refresh policies', () => {
         data,
         unique: jest.fn().mockReturnThis(),
         repeatEvery: jest.fn().mockReturnThis(),
+        priority: jest.fn().mockReturnThis(),
         save: jest.fn().mockResolvedValue(undefined),
       };
 
@@ -4932,6 +4935,7 @@ describe('fetchFDA with Mongo window refresh policies', () => {
         data,
         unique: jest.fn().mockReturnThis(),
         repeatEvery: jest.fn().mockReturnThis(),
+        priority: jest.fn().mockReturnThis(),
         save: jest.fn().mockResolvedValue(undefined),
       };
 

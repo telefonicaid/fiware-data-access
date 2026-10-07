@@ -37,6 +37,22 @@ In both datasources, the upper bound is evaluated at query execution time: Postg
 `$expr` with `$$NOW`. This ensures that the current time is determined by the database server when each scheduled
 refresh job runs.
 
+### Recurring refresh and consistency refresh overlap
+
+The recurring refresh and the consistency refresh are independent jobs, so their schedules can coincide (for example, an
+hourly refresh and a consistency refresh every 24 hours both fire at midnight). To avoid processing the same data twice:
+
+-   If the consistency refresh of an FDA is running when its recurring refresh is due, the recurring refresh is
+    **skipped**: the consistency refresh already rebuilds everything the recurring one would fetch.
+-   The consistency refresh has a higher scheduling priority, so when both are due at the same instant (typical with
+    cron expressions) it is the one that starts first.
+
+This matters most for long refreshes, and when `consistencyRefreshInterval` is a multiple of `refreshInterval` (e.g.
+every hour vs. every 24 hours), because then the schedules coincide regularly.
+
+The check is only made when the recurring refresh starts. A recurring refresh that is already running is not
+interrupted, and a recurring refresh that starts right after the consistency refresh has finished is not skipped.
+
 ### Bootstrap snapshot and object storage
 
 A cached MongoDB FDA created in `strict` mode needs a schema before its first refresh. A zero-row Parquet snapshot is
