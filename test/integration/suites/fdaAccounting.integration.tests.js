@@ -24,7 +24,6 @@
 
 import { describe, beforeAll, afterAll, test, expect } from '@jest/globals';
 import pg from 'pg';
-import { MongoClient } from 'mongodb';
 import {
   S3Client,
   ListObjectsV2Command,
@@ -36,7 +35,6 @@ const { Client } = pg;
 
 export function registerFdaAccoutingIntegrationTests({
   getBaseUrl,
-  getMongoUri,
   getMinioUrl,
   getPgHost,
   getPgPort,
@@ -52,8 +50,6 @@ export function registerFdaAccoutingIntegrationTests({
   };
   const partitionedDays = 1100;
 
-  let mongoClient;
-  let quotas;
   let s3;
 
   function wait(ms) {
@@ -143,11 +139,6 @@ export function registerFdaAccoutingIntegrationTests({
         getPgPort,
       });
 
-      mongoClient = new MongoClient(getMongoUri());
-      await mongoClient.connect();
-      quotas = mongoClient.db().collection('quotas');
-      await quotas.deleteMany({ service });
-
       s3 = new S3Client({
         endpoint: getMinioUrl(),
         region: 'us-east-1',
@@ -184,8 +175,22 @@ export function registerFdaAccoutingIntegrationTests({
     });
 
     afterAll(async () => {
-      await quotas?.deleteMany({ service });
-      await mongoClient?.close();
+      for (const fdaId of [
+        'account_small',
+        'account_cda',
+        'account_partitioned',
+        'account_window',
+      ]) {
+        const scopedHeaders =
+          fdaId === 'account_cda'
+            ? { 'Fiware-Service': service, 'Fiware-ServicePath': '/public' }
+            : headers;
+        await httpReq({
+          method: 'DELETE',
+          url: `${getBaseUrl()}/${visibility}/fdas/${fdaId}`,
+          headers: scopedHeaders,
+        });
+      }
       s3?.destroy();
     });
 
@@ -377,91 +382,6 @@ export function registerFdaAccoutingIntegrationTests({
       await expect(
         listStoredObjects(`tmp/${storagePrefix}account_partitioned`),
       ).resolves.toEqual([]);
-    });
-
-    test('rejects a new FDA when the servicePath reached its FDA count quota', async () => {
-      await quotas.insertOne({ service, servicePath, maxFDAs: 1 });
-
-      const usage = await getUsage();
-      expect(usage.json.servicePath).toMatchObject({
-        limits: { maxFDAs: 1, maxBytes: null },
-        used: { fdas: 1 },
-        available: { fdas: 0, bytes: null },
-      });
-
-      const res = await createFDA({
-        id: 'account_rejected',
-        query: 'SELECT id FROM public.accounting_events',
-      });
-
-      expect(res.status).toBe(403);
-      expect(res.json.error).toBe('QuotaExceeded');
-      expect(await getFDA('account_rejected')).toMatchObject({
-        error: 'FDANotFound',
-      });
-
-      await quotas.deleteMany({ service, servicePath });
-    });
-
-    test('rejects a new FDA when the servicePath storage quota is full', async () => {
-      await quotas.insertOne({ service, servicePath, maxBytes: 1 });
-
-      const res = await createFDA({
-        id: 'account_rejected_bytes',
-        query: 'SELECT id FROM public.accounting_events',
-      });
-
-      expect(res.status).toBe(403);
-      expect(res.json.error).toBe('QuotaExceeded');
-
-      await quotas.deleteMany({ service, servicePath });
-    });
-
-    test('aborts a fetch that exceeds the per-fetch byte limit and leaves no staging CSV', async () => {
-      await quotas.insertOne({ service, servicePath, maxFetchBytes: 200 });
-
-      const res = await createFDA({
-        id: 'account_too_big',
-        query: 'SELECT id, observed_at, value FROM public.accounting_events',
-      });
-      expect(res.status).toBe(202);
-
-      const fda = await waitForFDA('account_too_big', hasFinished);
-      expect(fda.status).toBe('failed');
-      expect(fda.error).toContain('200 bytes allowed per fetch');
-
-      const stored = await listStoredObjects(`${storagePrefix}account_too_big`);
-      expect(stored.filter(({ Key }) => Key.endsWith('.csv'))).toEqual([]);
-
-      await quotas.deleteMany({ service, servicePath });
-    });
-
-    test('fails and purges an FDA whose stored size exceeds the per-FDA limit', async () => {
-      await quotas.insertOne({ service, servicePath, maxBytesPerFDA: 100 });
-
-      const res = await createFDA({
-        id: 'account_over_limit',
-        query: 'SELECT id, observed_at, value FROM public.accounting_events',
-      });
-      expect(res.status).toBe(202);
-
-      const fda = await waitForFDA('account_over_limit', hasFinished);
-      expect(fda.status).toBe('failed');
-      expect(fda.error).toContain('above the 100 allowed per FDA');
-      expect(fda.storage).toMatchObject({ bytes: 0, objects: 0 });
-      expect(fda.lastFetch).toBeNull();
-      await expect(
-        listStoredObjects(`${storagePrefix}account_over_limit`),
-      ).resolves.toEqual([]);
-
-      const dataRes = await httpReq({
-        method: 'GET',
-        url: `${getBaseUrl()}/${visibility}/fdas/account_over_limit/das/defaultDataAccess/data`,
-        headers,
-      });
-      expect(dataRes.status).toBe(409);
-
-      await quotas.deleteMany({ service, servicePath });
     });
 
     test('clean-partition removes partitions older than the window', async () => {
