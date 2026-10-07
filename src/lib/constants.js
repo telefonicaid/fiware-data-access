@@ -116,5 +116,5 @@ export const JSON_INTEGER_COLUMN_TYPES = new Set([
 export const MAX_KEYS_PER_REQUEST = 1000;
 
 // Pattern to detect storage quota errors from MinIO S3 server responses
-const STORAGE_QUOTA_PATTERN =
+export const STORAGE_QUOTA_PATTERN =
   /XMinioAdminBucketQuotaExceeded|bucket quota exceeded/i;
