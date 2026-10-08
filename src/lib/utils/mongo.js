@@ -774,6 +774,7 @@ export async function recordFDAAccesses(entries) {
     });
     const branches = Object.entries(das || {}).map(([daId, daAccess]) => ({
       case: { $eq: ['$$da.k', { $literal: daId }] },
+      // NOSONAR: MongoDB $switch requires a 'then' property
       then: {
         $mergeObjects: [
           '$$da.v',
