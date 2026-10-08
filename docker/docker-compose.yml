@@ -39,7 +39,7 @@ services:
       - fda-net
 
   mc:
-    image: minio/mc:latest
+    image: pgsty/mc:latest
     container_name: minio-mc
     depends_on:
       - minio

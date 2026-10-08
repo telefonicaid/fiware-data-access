@@ -30,7 +30,7 @@ The easiest way to run FIWARE Data Access is using **Docker Compose**, which sta
 -   PostgreSQL (PostGIS)
 -   MongoDB
 -   MinIO (object storage)
--   MinIO client (`mc`) to initialize the bucket
+-   MinIO client (`mc`, image `pgsty/mc`) to initialize the bucket
 
 ### Steps
 
