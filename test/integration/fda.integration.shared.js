@@ -125,7 +125,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
         .start();
       mongoUri = `mongodb://${mongo.getHost()}:${mongo.getMappedPort(27017)}/test-db`;
 
-      postgis = await new GenericContainer('postgis/postgis:15-3.3')
+      postgis = await new GenericContainer('postgis/postgis:16-3.4')
         .withEnvironment({
           POSTGRES_USER: 'postgres',
           POSTGRES_PASSWORD: 'postgres',
