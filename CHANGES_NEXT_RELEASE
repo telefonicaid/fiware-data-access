@@ -1,0 +1,1 @@
+- Upgrade: MinIO client image in docker-compose replaced from `minio/mc` to `pgsty/mc` (#302)
