@@ -35,8 +35,35 @@ jest.unstable_mockModule('logops', () => ({
   },
 }));
 
-const { createChildLogger } = await import('../../src/lib/utils/logger.js');
+const { createChildLogger, getInitialLogger } = await import(
+  '../../src/lib/utils/logger.js'
+);
 const { v4: uuidv4 } = await import('uuid');
+const { default: logger } = await import('logops');
+
+describe('getInitialLogger', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test('includes object storage settings and dependency versions', () => {
+    const result = getInitialLogger({
+      objstg: {
+        protocol: 'https',
+        endpoint: 'storage.example.com',
+        usr: 'test-user',
+      },
+    });
+
+    expect(result.envVars).toBe(
+      '[objStgHost=https://storage.example.com objStgUsr=test-user]',
+    );
+    expect(result.dependencies).toMatch(
+      /^@aws-sdk\/lib-storage:.+ @duckdb\/node-api:.+ express:.+ mongodb:.+ pg:.+$/,
+    );
+    expect(logger.child).toHaveBeenCalledWith(result);
+  });
+});
 
 describe('createChildLogger', () => {
   beforeEach(() => {

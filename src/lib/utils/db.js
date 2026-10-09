@@ -23,6 +23,7 @@
 // criminal actions it may exercise to protect its rights.
 
 import { retrieveDA, retrieveFDA } from './mongo.js';
+import { recordAccess } from '../accessTracker.js';
 import { FDAError } from '../fdaError.js';
 import { getBasicLogger } from './logger.js';
 import { config } from '../fdaConfig.js';
@@ -368,6 +369,7 @@ export async function runPreparedStatement(
     objStgConf,
     servicePath: storedServicePath,
     schema,
+    lastFetch,
   } = await retrieveFDA(service, fdaId, servicePath);
   const query = buildDAQuery(
     service,
@@ -394,6 +396,13 @@ export async function runPreparedStatement(
     );
 
     stmt = prepared.stmt;
+    recordAccess({
+      service,
+      servicePath: storedServicePath ?? servicePath,
+      fdaId,
+      daId,
+      lastFetch,
+    });
     return prepared.result;
   } catch (e) {
     if (streaming) {

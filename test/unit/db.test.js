@@ -62,6 +62,8 @@ function createDuckContext({ withDisconnect = true } = {}) {
   return { instance, configConn, runtimeConn };
 }
 
+const recordAccessMock = jest.fn();
+
 async function loadDbModule({ retrieveDAResult, duckContext } = {}) {
   jest.resetModules();
 
@@ -82,6 +84,10 @@ async function loadDbModule({ retrieveDAResult, duckContext } = {}) {
   await jest.unstable_mockModule('../../src/lib/utils/mongo.js', () => ({
     retrieveDA: retrieveDAMock,
     retrieveFDA: retrieveFDAMock,
+  }));
+
+  await jest.unstable_mockModule('../../src/lib/accessTracker.js', () => ({
+    recordAccess: recordAccessMock,
   }));
 
   await jest.unstable_mockModule('@duckdb/node-api', () => ({
@@ -191,6 +197,13 @@ describe('db utils', () => {
     );
 
     expect(result.stream).toBe('stream-ref');
+    expect(recordAccessMock).toHaveBeenCalledWith({
+      service: 'svc',
+      servicePath: '/sp',
+      fdaId: 'fdaA',
+      daId: 'daA',
+      lastFetch: undefined,
+    });
     await result.close();
 
     expect(stmt.close).toHaveBeenCalledTimes(1);
@@ -246,6 +259,13 @@ describe('db utils', () => {
     );
 
     expect(rows[0].total).toBe(3);
+    expect(recordAccessMock).toHaveBeenCalledWith({
+      service: 'svc',
+      servicePath: '/sp',
+      fdaId: 'fdaA',
+      daId: 'daA',
+      lastFetch: undefined,
+    });
     expect(JSON.stringify(rows)).toBe(
       '[{"id":1,"big_value":9007199254740993,"total":3,"amount":"12.34","label":"42"},' +
         '{"id":2,"big_value":null,"total":3,"amount":null,"label":null}]',
