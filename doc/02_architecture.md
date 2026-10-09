@@ -150,12 +150,15 @@ Fresh mode:
 
 `Fiware-Data-Access` uses MongoDB collections for FDA/DA metadata and datasource provisioning.
 
+Usage accounting does not introduce a separate collection: its metadata is stored in the existing `fdas` documents.
+
 ### FDAs collection
 
 Each document corresponds to one FDA:
 
 -   **\_id**: MongoDB unique identifier
 -   **fdaId**: FDA identifier
+-   **createdAt**: timestamp of FDA creation (MongoDB Date)
 -   **service**: FIWARE service (`fiware-service`) name
 -   **servicePath**: FIWARE service path (`fiware-servicePath`) for access control
 -   **visibility**: FDA access visibility level (`public` or `private`)
@@ -167,6 +170,11 @@ Each document corresponds to one FDA:
 -   **progress**: execution progress percentage (0–100)
 -   **initFetch**: timestamp of the current/last fetch start (ISO date)
 -   **lastFetch**: timestamp of the last successful fetch completion (ISO date)
+-   **access**: query counters (`count`, `sinceLastFetch`) and latest query timestamp (`lastAccessAt`)
+-   **storage**: latest object-storage measurement (`bytes`, `objects`, `partitions`, `measuredAt`), when available
+-   **lastRefresh**: metrics for the latest successful fetch or upload (`durationMs`, `bytesFetched`), when available
+-   **\_accessFlushes**: internal map from tracker UUID to the last applied flush sequence, used to prevent duplicate
+    counting when a batch is retried
 -   **datasourceId**: datasource identifier used to resolve source credentials (default `default` when omitted)
 -   **validationMode**: validation mode (`strict` or `unchecked`, default `strict`)
 -   **schema**: array of column definitions (`name` and `type`) for the materialized Parquet (`strict` mode, cached FDAs
@@ -179,6 +187,26 @@ Each DA contains:
 -   **description**: description of the DA
 -   **query**: parameterized SQL query executed on the FDA
 -   **params**: array of parameter definitions (optional)
+-   **access**: the same counter structure as FDA-level `access`, restricted to queries of this DA
+
+#### Usage accounting fields
+
+FDA and DA `access` objects start with `count: 0`, `sinceLastFetch: 0`, and `lastAccessAt: null`. Accesses are buffered
+in memory and periodically flushed to MongoDB, so persisted counters may lag behind recent queries. A successful fetch
+or upload resets `sinceLastFetch` for the FDA and its DAs without resetting their lifetime `count`. A delayed batch from
+an earlier fetch still updates `count`, but does not increment `sinceLastFetch` for the new dataset.
+
+`storage` records the total size in bytes and number of objects belonging to the FDA, the number of partition folders,
+and the measurement timestamp (`measuredAt`, a MongoDB Date). `lastRefresh.durationMs` records processing duration in
+milliseconds, and `lastRefresh.bytesFetched` records the fetched or uploaded input size in bytes. These are latest
+measurements, not cumulative totals.
+
+Each tracker process generates a new UUID at startup. `_accessFlushes` retains one sequence per tracker that has flushed
+accesses to the FDA; entries are currently not pruned. This map is internal deduplication metadata, not an access
+history or a separate collection.
+
+Older FDA documents may lack accounting fields until the corresponding operation populates them. Usage aggregation
+treats missing numeric fields as zero.
 
 #### Example MongoDB document
 
