@@ -1,4 +1,4 @@
-// Copyright 2025 Telef�nica Soluciones de Inform�tica y Comunicaciones de Espa�a, S.A.U.
+// Copyright 2025 Telefónica Soluciones de Informática y Comunicaciones de España, S.A.U.
 // PROJECT: fiware-data-access
 //
 // This software and / or computer program has been developed by Telef�nica Soluciones
