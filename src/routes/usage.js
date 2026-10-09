@@ -2,7 +2,7 @@
 // PROJECT: fiware-data-access
 //
 // This software and / or computer program has been developed by Telefónica Soluciones
-// de Inform�tica y Comunicaciones de Espa�a, S.A.U (hereinafter TSOL) and is protected
+// de Informática y Comunicaciones de España, S.A.U (hereinafter TSOL) and is protected
 // as copyright by the applicable legislation on intellectual property.
 //
 // It belongs to TSOL, and / or its licensors, the exclusive rights of reproduction,
