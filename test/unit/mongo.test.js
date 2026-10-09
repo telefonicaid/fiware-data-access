@@ -422,6 +422,18 @@ describe('mongo utils', () => {
     );
   });
 
+  test('updateFDAStorage persists storage for the scoped FDA', async () => {
+    const { updateFDAStorage, collectionMock } = await loadMongoModule();
+    const storage = { size: 123, objects: 2 };
+
+    await updateFDAStorage('svc', 'fdaA', '/sp', storage);
+
+    expect(collectionMock.updateOne).toHaveBeenCalledWith(
+      { service: 'svc', fdaId: 'fdaA', servicePath: '/sp' },
+      { $set: { storage } },
+    );
+  });
+
   test('updateFDAStatus updates initFetch timestamp on each fetching status update', async () => {
     const { updateFDAStatus, collectionMock } = await loadMongoModule();
 
