@@ -366,17 +366,18 @@ const USAGE_METRICS = [
  * Adds the HELP, TYPE and value lines for a metric with one value.
  */
 function appendScalarMetric(lines, name, help, type, value) {
-  lines.push(`# HELP ${name} ${help}`);
-  lines.push(`# TYPE ${name} ${type}`);
-  lines.push(`${name} ${value}`);
+  lines.push(
+    `# HELP ${name} ${help}`,
+    `# TYPE ${name} ${type}`,
+    `${name} ${value}`,
+  );
 }
 
 /**
  * Adds the HELP and TYPE headers for a metric family.
  */
 function appendMetricHeader(lines, name, help, type) {
-  lines.push(`# HELP ${name} ${help}`);
-  lines.push(`# TYPE ${name} ${type}`);
+  lines.push(`# HELP ${name} ${help}`, `# TYPE ${name} ${type}`);
 }
 
 /**
