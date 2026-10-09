@@ -1,7 +1,7 @@
 // Copyright 2025 Telefónica Soluciones de Informática y Comunicaciones de España, S.A.U.
 // PROJECT: fiware-data-access
 //
-// This software and / or computer program has been developed by Telef�nica Soluciones
+// This software and / or computer program has been developed by Telefónica Soluciones
 // de Inform�tica y Comunicaciones de Espa�a, S.A.U (hereinafter TSOL) and is protected
 // as copyright by the applicable legislation on intellectual property.
 //
