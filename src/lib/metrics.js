@@ -314,21 +314,97 @@ export async function buildHealthPayload() {
   };
 }
 
-// NOSONAR
-export async function buildMetricsText() {
-  const lines = [];
-  const memory = process.memoryUsage();
-  const mongoData = await getMongoSnapshot();
-  const mongoSnapshot = mongoData.snapshot;
+const USAGE_METRICS = [
+  {
+    name: 'fdas',
+    field: 'fdas',
+    divisor: 1,
+  },
+  {
+    name: 'storage_bytes',
+    field: 'bytes',
+    divisor: 1,
+  },
+  {
+    name: 'storage_objects',
+    field: 'objects',
+    divisor: 1,
+  },
+  {
+    name: 'storage_partitions',
+    field: 'partitions',
+    divisor: 1,
+  },
+  {
+    name: 'queries',
+    field: 'queries',
+    divisor: 1,
+  },
+  {
+    name: 'queries_since_last_fetch',
+    field: 'sinceLastFetch',
+    divisor: 1,
+  },
+  {
+    name: 'last_refresh_duration_seconds',
+    field: 'refreshDurationMs',
+    divisor: 1000,
+  },
+  {
+    name: 'last_refresh_bytes_fetched',
+    field: 'refreshBytesFetched',
+    divisor: 1,
+  },
+  {
+    name: 'last_access_timestamp_seconds',
+    field: 'lastAccessAt',
+    divisor: 1000,
+  },
+];
 
-  lines.push('# HELP fda_up Service liveness indicator (1=up).');
-  lines.push('# TYPE fda_up gauge');
-  lines.push('fda_up 1');
+/**
+ * Adds the HELP, TYPE and value lines for a metric with one value.
+ */
+function appendScalarMetric(lines, name, help, type, value) {
+  lines.push(`# HELP ${name} ${help}`);
+  lines.push(`# TYPE ${name} ${type}`);
+  lines.push(`${name} ${value}`);
+}
 
-  lines.push('# HELP fda_info Service build/runtime information.');
-  lines.push('# TYPE fda_info gauge');
-  lines.push(
-    `fda_info${formatLabels({
+/**
+ * Adds the HELP and TYPE headers for a metric family.
+ */
+function appendMetricHeader(lines, name, help, type) {
+  lines.push(`# HELP ${name} ${help}`);
+  lines.push(`# TYPE ${name} ${type}`);
+}
+
+/**
+ * Adds a metric family stored in a map of label/value entries.
+ */
+function appendMappedMetric(lines, name, help, type, entries) {
+  appendMetricHeader(lines, name, help, type);
+  lines.push(...renderMetricLines(name, entries));
+}
+
+/**
+ * Renders the basic service and runtime metrics.
+ */
+function appendRuntimeMetrics(lines) {
+  appendScalarMetric(
+    lines,
+    'fda_up',
+    'Service liveness indicator (1=up).',
+    'gauge',
+    1,
+  );
+
+  appendScalarMetric(
+    lines,
+    'fda_info',
+    'Service build/runtime information.',
+    'gauge',
+    `${formatLabels({
       version: SERVICE_VERSION,
       node_version: process.version,
       env: config.env,
@@ -338,236 +414,365 @@ export async function buildMetricsText() {
     })} 1`,
   );
 
-  lines.push(
-    '# HELP fda_process_start_time_seconds Process start time since unix epoch in seconds.',
-  );
-  lines.push('# TYPE fda_process_start_time_seconds gauge');
-  lines.push(`fda_process_start_time_seconds ${PROCESS_START_TIME_SECONDS}`);
-
-  lines.push('# HELP fda_uptime_seconds Process uptime in seconds.');
-  lines.push('# TYPE fda_uptime_seconds gauge');
-  lines.push(`fda_uptime_seconds ${Math.floor(process.uptime())}`);
-
-  lines.push(
-    '# HELP fda_http_server_in_flight_requests Current in-flight HTTP requests.',
-  );
-  lines.push('# TYPE fda_http_server_in_flight_requests gauge');
-  lines.push(`fda_http_server_in_flight_requests ${state.inFlightRequests}`);
-
-  lines.push(
-    '# HELP fda_http_server_requests_total Total HTTP requests served.',
-  );
-  lines.push('# TYPE fda_http_server_requests_total counter');
-  lines.push(
-    ...renderMetricLines(
-      'fda_http_server_requests_total',
-      state.httpRequestsByLabel,
-    ),
+  appendScalarMetric(
+    lines,
+    'fda_process_start_time_seconds',
+    'Process start time since unix epoch in seconds.',
+    'gauge',
+    PROCESS_START_TIME_SECONDS,
   );
 
-  lines.push(
-    '# HELP fda_http_server_request_duration_ms_sum Total HTTP request latency in milliseconds.',
+  appendScalarMetric(
+    lines,
+    'fda_uptime_seconds',
+    'Process uptime in seconds.',
+    'gauge',
+    Math.floor(process.uptime()),
   );
-  lines.push('# TYPE fda_http_server_request_duration_ms_sum counter');
-  lines.push(
-    ...Array.from(state.httpDurationByLabel.values())
-      .sort((a, b) => labelsKey(a.labels).localeCompare(labelsKey(b.labels)))
-      .map(
-        (entry) =>
-          `fda_http_server_request_duration_ms_sum${formatLabels(entry.labels)} ${entry.sumMs}`,
-      ),
+}
+
+/**
+ * Sorts HTTP duration entries so their rendering remains deterministic.
+ */
+function getSortedHttpDurationEntries() {
+  return Array.from(state.httpDurationByLabel.values()).sort((a, b) =>
+    labelsKey(a.labels).localeCompare(labelsKey(b.labels)),
+  );
+}
+
+/**
+ * Adds one metric family derived from the HTTP duration entries.
+ */
+function appendHttpDurationMetric(lines, entries, name, help, valueSelector) {
+  appendMetricHeader(lines, name, help, 'counter');
+
+  for (const entry of entries) {
+    lines.push(`${name}${formatLabels(entry.labels)} ${valueSelector(entry)}`);
+  }
+}
+
+/**
+ * Renders all metrics associated with HTTP traffic.
+ */
+function appendHttpMetrics(lines) {
+  appendScalarMetric(
+    lines,
+    'fda_http_server_in_flight_requests',
+    'Current in-flight HTTP requests.',
+    'gauge',
+    state.inFlightRequests,
   );
 
-  lines.push(
-    '# HELP fda_http_server_request_duration_ms_count Total number of timed HTTP requests.',
-  );
-  lines.push('# TYPE fda_http_server_request_duration_ms_count counter');
-  lines.push(
-    ...Array.from(state.httpDurationByLabel.values())
-      .sort((a, b) => labelsKey(a.labels).localeCompare(labelsKey(b.labels)))
-      .map(
-        (entry) =>
-          `fda_http_server_request_duration_ms_count${formatLabels(entry.labels)} ${entry.count}`,
-      ),
+  appendMappedMetric(
+    lines,
+    'fda_http_server_requests_total',
+    'Total HTTP requests served.',
+    'counter',
+    state.httpRequestsByLabel,
   );
 
-  lines.push(
-    '# HELP fda_http_server_errors_total Total HTTP requests resulting in error status codes.',
-  );
-  lines.push('# TYPE fda_http_server_errors_total counter');
-  lines.push(
-    ...renderMetricLines(
-      'fda_http_server_errors_total',
-      state.httpErrorsByLabel,
-    ),
+  const durationEntries = getSortedHttpDurationEntries();
+
+  appendHttpDurationMetric(
+    lines,
+    durationEntries,
+    'fda_http_server_request_duration_ms_sum',
+    'Total HTTP request latency in milliseconds.',
+    (entry) => entry.sumMs,
   );
 
-  lines.push(
-    '# HELP fda_tenant_requests_total Total HTTP requests carrying FIWARE tenant headers.',
-  );
-  lines.push('# TYPE fda_tenant_requests_total counter');
-  lines.push(
-    ...renderMetricLines(
-      'fda_tenant_requests_total',
-      state.fiwareRequestsByLabel,
-    ),
+  appendHttpDurationMetric(
+    lines,
+    durationEntries,
+    'fda_http_server_request_duration_ms_count',
+    'Total number of timed HTTP requests.',
+    (entry) => entry.count,
   );
 
-  lines.push(
-    '# HELP fda_da_queries_total Total cached DA queries served, by FDA.',
-  );
-  lines.push('# TYPE fda_da_queries_total counter');
-  lines.push(
-    ...renderMetricLines('fda_da_queries_total', state.daQueriesByLabel),
-  );
-
-  lines.push(
-    '# HELP fda_catalog_services_observed Distinct Fiware-Service values seen in traffic.',
-  );
-  lines.push('# TYPE fda_catalog_services_observed gauge');
-  lines.push(`fda_catalog_services_observed ${state.servicesObserved.size}`);
-
-  lines.push(
-    '# HELP fda_catalog_service_paths_observed Distinct Fiware-ServicePath values seen in traffic.',
-  );
-  lines.push('# TYPE fda_catalog_service_paths_observed gauge');
-  lines.push(
-    `fda_catalog_service_paths_observed ${state.servicePathsObserved.size}`,
+  appendMappedMetric(
+    lines,
+    'fda_http_server_errors_total',
+    'Total HTTP requests resulting in error status codes.',
+    'counter',
+    state.httpErrorsByLabel,
   );
 
-  lines.push(
-    '# HELP fda_mongo_scrape_success Mongo operational metrics scrape status (1=ok,0=error).',
+  appendMappedMetric(
+    lines,
+    'fda_tenant_requests_total',
+    'Total HTTP requests carrying FIWARE tenant headers.',
+    'counter',
+    state.fiwareRequestsByLabel,
   );
-  lines.push('# TYPE fda_mongo_scrape_success gauge');
-  lines.push(`fda_mongo_scrape_success ${mongoData.ok ? 1 : 0}`);
 
-  if (mongoSnapshot) {
+  appendMappedMetric(
+    lines,
+    'fda_da_queries_total',
+    'Total cached DA queries served, by FDA.',
+    'counter',
+    state.daQueriesByLabel,
+  );
+}
+
+/**
+ * Renders catalog information collected from application traffic.
+ */
+function appendObservedCatalogMetrics(lines) {
+  appendScalarMetric(
+    lines,
+    'fda_catalog_services_observed',
+    'Distinct Fiware-Service values seen in traffic.',
+    'gauge',
+    state.servicesObserved.size,
+  );
+
+  appendScalarMetric(
+    lines,
+    'fda_catalog_service_paths_observed',
+    'Distinct Fiware-ServicePath values seen in traffic.',
+    'gauge',
+    state.servicePathsObserved.size,
+  );
+}
+
+/**
+ * Renders whether the MongoDB scrape succeeded.
+ */
+function appendMongoScrapeMetric(lines, mongoData) {
+  appendScalarMetric(
+    lines,
+    'fda_mongo_scrape_success',
+    'Mongo operational metrics scrape status (1=ok,0=error).',
+    'gauge',
+    mongoData.ok ? 1 : 0,
+  );
+}
+
+/**
+ * Renders general FDA and DA catalog metrics from MongoDB.
+ */
+function appendMongoCatalogMetrics(lines, mongoSnapshot) {
+  appendScalarMetric(
+    lines,
+    'fda_catalog_fdas_total',
+    'Total number of FDA documents stored in MongoDB.',
+    'gauge',
+    mongoSnapshot.fdasTotal,
+  );
+
+  appendScalarMetric(
+    lines,
+    'fda_catalog_das_total',
+    'Total number of DA entries across all FDA documents.',
+    'gauge',
+    mongoSnapshot.dasTotal,
+  );
+
+  appendMetricHeader(
+    lines,
+    'fda_catalog_fdas_by_status',
+    'Number of FDA documents by execution status.',
+    'gauge',
+  );
+
+  for (const item of mongoSnapshot.fdasByStatus) {
     lines.push(
-      '# HELP fda_catalog_fdas_total Total number of FDA documents stored in MongoDB.',
+      `fda_catalog_fdas_by_status${formatLabels({
+        status: item.status,
+      })} ${item.count}`,
     );
-    lines.push('# TYPE fda_catalog_fdas_total gauge');
-    lines.push(`fda_catalog_fdas_total ${mongoSnapshot.fdasTotal}`);
-
-    lines.push(
-      '# HELP fda_catalog_das_total Total number of DA entries across all FDA documents.',
-    );
-    lines.push('# TYPE fda_catalog_das_total gauge');
-    lines.push(`fda_catalog_das_total ${mongoSnapshot.dasTotal}`);
-
-    lines.push(
-      '# HELP fda_catalog_fdas_by_status Number of FDA documents by execution status.',
-    );
-    lines.push('# TYPE fda_catalog_fdas_by_status gauge');
-    for (const item of mongoSnapshot.fdasByStatus) {
-      lines.push(
-        `fda_catalog_fdas_by_status${formatLabels({ status: item.status })} ${item.count}`,
-      );
-    }
-
-    lines.push(
-      '# HELP fda_catalog_fdas_by_service Number of FDA documents by fiware service and servicePath.',
-    );
-    lines.push('# TYPE fda_catalog_fdas_by_service gauge');
-    for (const item of mongoSnapshot.fdasByServiceAndPath) {
-      lines.push(
-        `fda_catalog_fdas_by_service${formatLabels({ fiware_service: item.service, fiware_service_path: item.servicePath })} ${item.count}`,
-      );
-    }
-
-    const services = new Map();
-    const scopes = mongoSnapshot.fdasByServiceAndPath.map((item) => {
-      const usage = { ...item, fdas: item.count };
-      const groups = services.get(item.service) ?? [];
-      groups.push(usage);
-      services.set(item.service, groups);
-      return {
-        labels: {
-          fiware_service: item.service,
-          fiware_service_path: item.servicePath,
-        },
-        usage,
-      };
-    });
-    for (const [service, groups] of services) {
-      scopes.push({
-        labels: { fiware_service: service },
-        usage: summarizeUsage(groups),
-      });
-    }
-    const usageMetrics = [
-      ['fdas', 'fdas', 1],
-      ['storage_bytes', 'bytes', 1],
-      ['storage_objects', 'objects', 1],
-      ['storage_partitions', 'partitions', 1],
-      ['queries', 'queries', 1],
-      ['queries_since_last_fetch', 'sinceLastFetch', 1],
-      ['last_refresh_duration_seconds', 'refreshDurationMs', 1000],
-      ['last_refresh_bytes_fetched', 'refreshBytesFetched', 1],
-      ['last_access_timestamp_seconds', 'lastAccessAt', 1000],
-    ];
-    for (const [name, field, divisor] of usageMetrics) {
-      const metricName = `fda_usage_${name}`;
-      lines.push(
-        `# HELP ${metricName} Persisted ${field} by service and servicePath.`,
-      );
-      lines.push(`# TYPE ${metricName} gauge`);
-      for (const { labels, usage } of scopes) {
-        const value =
-          field === 'lastAccessAt'
-            ? usage[field]
-              ? new Date(usage[field]).getTime()
-              : 0
-            : usage[field] ?? 0;
-        lines.push(`${metricName}${formatLabels(labels)} ${value / divisor}`);
-      }
-    }
-
-    lines.push(
-      '# HELP fda_jobs_agenda_total Total number of Agenda jobs stored in MongoDB.',
-    );
-    lines.push('# TYPE fda_jobs_agenda_total gauge');
-    lines.push(`fda_jobs_agenda_total ${mongoSnapshot.agenda.total}`);
-
-    lines.push(
-      '# HELP fda_jobs_agenda_failed_total Number of Agenda jobs with failures (failCount > 0).',
-    );
-    lines.push('# TYPE fda_jobs_agenda_failed_total gauge');
-    lines.push(`fda_jobs_agenda_failed_total ${mongoSnapshot.agenda.failed}`);
-
-    lines.push(
-      '# HELP fda_jobs_agenda_locked_total Number of Agenda jobs currently locked.',
-    );
-    lines.push('# TYPE fda_jobs_agenda_locked_total gauge');
-    lines.push(`fda_jobs_agenda_locked_total ${mongoSnapshot.agenda.locked}`);
-
-    lines.push(
-      '# HELP fda_jobs_agenda_by_name Number of Agenda jobs by job name.',
-    );
-    lines.push('# TYPE fda_jobs_agenda_by_name gauge');
-    for (const item of mongoSnapshot.agenda.byName) {
-      lines.push(
-        `fda_jobs_agenda_by_name${formatLabels({ job_name: item.name })} ${item.count}`,
-      );
-    }
   }
 
-  lines.push(
-    '# HELP fda_process_resident_memory_bytes Resident memory size in bytes.',
+  appendMetricHeader(
+    lines,
+    'fda_catalog_fdas_by_service',
+    'Number of FDA documents by fiware service and servicePath.',
+    'gauge',
   );
-  lines.push('# TYPE fda_process_resident_memory_bytes gauge');
-  lines.push(`fda_process_resident_memory_bytes ${memory.rss}`);
 
-  lines.push(
-    '# HELP fda_process_heap_total_bytes Total V8 heap size in bytes.',
+  for (const item of mongoSnapshot.fdasByServiceAndPath) {
+    lines.push(
+      `fda_catalog_fdas_by_service${formatLabels({
+        fiware_service: item.service,
+        fiware_service_path: item.servicePath,
+      })} ${item.count}`,
+    );
+  }
+}
+
+/**
+ * Creates usage scopes at servicePath level and service level.
+ */
+function buildUsageScopes(fdasByServiceAndPath) {
+  const services = new Map();
+
+  const scopes = fdasByServiceAndPath.map((item) => {
+    const usage = {
+      ...item,
+      fdas: item.count,
+    };
+
+    const serviceGroups = services.get(item.service) ?? [];
+    serviceGroups.push(usage);
+    services.set(item.service, serviceGroups);
+
+    return {
+      labels: {
+        fiware_service: item.service,
+        fiware_service_path: item.servicePath,
+      },
+      usage,
+    };
+  });
+
+  for (const [service, groups] of services) {
+    scopes.push({
+      labels: {
+        fiware_service: service,
+      },
+      usage: summarizeUsage(groups),
+    });
+  }
+
+  return scopes;
+}
+
+/**
+ * Converts the stored usage value to the value exposed to Prometheus.
+ */
+function getUsageMetricValue(usage, field, divisor) {
+  if (field !== 'lastAccessAt') {
+    return (usage[field] ?? 0) / divisor;
+  }
+
+  if (!usage[field]) {
+    return 0;
+  }
+
+  return new Date(usage[field]).getTime() / divisor;
+}
+
+/**
+ * Renders one usage metric for every service/servicePath scope.
+ */
+function appendUsageMetric(lines, scopes, metricDefinition) {
+  const { name, field, divisor } = metricDefinition;
+  const metricName = `fda_usage_${name}`;
+
+  appendMetricHeader(
+    lines,
+    metricName,
+    `Persisted ${field} by service and servicePath.`,
+    'gauge',
   );
-  lines.push('# TYPE fda_process_heap_total_bytes gauge');
-  lines.push(`fda_process_heap_total_bytes ${memory.heapTotal}`);
 
-  lines.push('# HELP fda_process_heap_used_bytes Used V8 heap size in bytes.');
-  lines.push('# TYPE fda_process_heap_used_bytes gauge');
-  lines.push(`fda_process_heap_used_bytes ${memory.heapUsed}`);
+  for (const { labels, usage } of scopes) {
+    const value = getUsageMetricValue(usage, field, divisor);
+    lines.push(`${metricName}${formatLabels(labels)} ${value}`);
+  }
+}
+
+function appendUsageMetrics(lines, mongoSnapshot) {
+  const scopes = buildUsageScopes(mongoSnapshot.fdasByServiceAndPath);
+
+  for (const metricDefinition of USAGE_METRICS) {
+    appendUsageMetric(lines, scopes, metricDefinition);
+  }
+}
+
+function appendAgendaMetrics(lines, agenda) {
+  appendScalarMetric(
+    lines,
+    'fda_jobs_agenda_total',
+    'Total number of Agenda jobs stored in MongoDB.',
+    'gauge',
+    agenda.total,
+  );
+
+  appendScalarMetric(
+    lines,
+    'fda_jobs_agenda_failed_total',
+    'Number of Agenda jobs with failures (failCount > 0).',
+    'gauge',
+    agenda.failed,
+  );
+
+  appendScalarMetric(
+    lines,
+    'fda_jobs_agenda_locked_total',
+    'Number of Agenda jobs currently locked.',
+    'gauge',
+    agenda.locked,
+  );
+
+  appendMetricHeader(
+    lines,
+    'fda_jobs_agenda_by_name',
+    'Number of Agenda jobs by job name.',
+    'gauge',
+  );
+
+  for (const item of agenda.byName) {
+    lines.push(
+      `fda_jobs_agenda_by_name${formatLabels({
+        job_name: item.name,
+      })} ${item.count}`,
+    );
+  }
+}
+
+function appendMongoSnapshotMetrics(lines, mongoSnapshot) {
+  appendMongoCatalogMetrics(lines, mongoSnapshot);
+  appendUsageMetrics(lines, mongoSnapshot);
+  appendAgendaMetrics(lines, mongoSnapshot.agenda);
+}
+
+function appendProcessMemoryMetrics(lines, memory) {
+  appendScalarMetric(
+    lines,
+    'fda_process_resident_memory_bytes',
+    'Resident memory size in bytes.',
+    'gauge',
+    memory.rss,
+  );
+
+  appendScalarMetric(
+    lines,
+    'fda_process_heap_total_bytes',
+    'Total V8 heap size in bytes.',
+    'gauge',
+    memory.heapTotal,
+  );
+
+  appendScalarMetric(
+    lines,
+    'fda_process_heap_used_bytes',
+    'Used V8 heap size in bytes.',
+    'gauge',
+    memory.heapUsed,
+  );
+}
+
+export async function buildMetricsText() {
+  const lines = [];
+  const memory = process.memoryUsage();
+
+  const mongoData = await getMongoSnapshot();
+
+  appendRuntimeMetrics(lines);
+  appendHttpMetrics(lines);
+  appendObservedCatalogMetrics(lines);
+
+  appendMongoScrapeMetric(lines, mongoData);
+
+  if (mongoData.snapshot) {
+    appendMongoSnapshotMetrics(lines, mongoData.snapshot);
+  }
+
+  appendProcessMemoryMetrics(lines, memory);
 
   lines.push('# EOF');
+
   return `${lines.join('\n')}\n`;
 }
 
