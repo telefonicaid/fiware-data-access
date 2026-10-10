@@ -62,6 +62,8 @@ function createDuckContext({ withDisconnect = true } = {}) {
   return { instance, configConn, runtimeConn };
 }
 
+const recordAccessMock = jest.fn();
+
 async function loadDbModule({ retrieveDAResult, duckContext } = {}) {
   jest.resetModules();
 
@@ -82,6 +84,10 @@ async function loadDbModule({ retrieveDAResult, duckContext } = {}) {
   await jest.unstable_mockModule('../../src/lib/utils/mongo.js', () => ({
     retrieveDA: retrieveDAMock,
     retrieveFDA: retrieveFDAMock,
+  }));
+
+  await jest.unstable_mockModule('../../src/lib/accessTracker.js', () => ({
+    recordAccess: recordAccessMock,
   }));
 
   await jest.unstable_mockModule('@duckdb/node-api', () => ({
