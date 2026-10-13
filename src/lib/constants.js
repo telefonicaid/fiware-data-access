@@ -114,3 +114,8 @@ export const JSON_INTEGER_COLUMN_TYPES = new Set([
 
 // Maximum number of keys to delete in a single S3 request. This is a limitation of the S3 API.
 export const MAX_KEYS_PER_REQUEST = 1000;
+
+// Time constants for partition pruning
+export const DAY_MS = 24 * 60 * 60 * 1000;
+export const WEEK_MS = 7 * DAY_MS;
+export const RANGE_MARGIN_MS = DAY_MS;
