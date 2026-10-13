@@ -934,12 +934,12 @@ This object configures certain aspects of the object storage app when uploading 
 
 These fields are **provided in responses** but **cannot be included or modified** in POST or PUT requests:
 
-| Parameter   | Optional | Type   | Description                                                                                                                                                                                                                                                                                                                                                              |
-| ----------- | -------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `status`    |          | string | Current FDA execution status (`fetching`, `transforming`, `uploading`, `completed`, `failed`, `deleting`)                                                                                                                                                                                                                                                                |
-| `progress`  |          | number | Execution progress percentage (0–100)                                                                                                                                                                                                                                                                                                                                    |
-| `initFetch` |          | string | Timestamp of the current/last fetch start (ISO date format)                                                                                                                                                                                                                                                                                                              |
-| `lastFetch` |          | string | Timestamp of the last completed fetch (ISO date format)                                                                                                                                                                                                                                                                                                                  |
+| Parameter   | Optional | Type   | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ----------- | -------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `status`    |          | string | Current FDA execution status (`fetching`, `transforming`, `uploading`, `completed`, `failed`, `deleting`)                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `progress`  |          | number | Execution progress percentage (0–100)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `initFetch` |          | string | Timestamp of the current/last fetch start (ISO date format)                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `lastFetch` |          | string | Timestamp of the last completed fetch (ISO date format)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `schema`    | ✓        | array  | `[{name, type}]` describing the FDA columns, e.g. `[{"name":"age","type":"INTEGER"}]`. For cached FDAs created in `strict` mode. PostgreSQL FDAs use the actual database types; MongoDB FDAs use `null` as the type until the first fetch, when the schema is derived from the materialized Parquet (please check more details about MongoDB schema [in this specific section in documentation](02_architecture.md#schema-generation-for-schemaless-datasources).) `type` value refers to DuckDB (the underlying DB technology) types. |
 
 > Note: Including operational fields like `progress` or `status` in POST/PUT requests is ignored by the server. Requests
@@ -1518,12 +1518,13 @@ None
 
 A DA is represented by a JSON object with the following fields:
 
-| Parameter     | Optional | Type   | Description                                                                                            |
-| ------------- | -------- | ------ | ------------------------------------------------------------------------------------------------------ |
-| `id`          | (\*)     | string | DA identifier, unique within the associated FDA.                                                       |
-| `description` | ✓        | string | A free text used by the client to describe the DA. If omitted, no description is stored.               |
-| `query`       |          | string | Query string, without **FROM**, clause to run over the FDA when invoking the DA                        |
-| `params`      | ✓        | array  | Array of [param objects](#params) to control param values. If omitted, the DA has no query parameters. |
+| Parameter     | Optional | Type   | Description                                                                                                                              |
+| ------------- | -------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`          | (\*)     | string | DA identifier, unique within the associated FDA.                                                                                         |
+| `description` | ✓        | string | A free text used by the client to describe the DA. If omitted, no description is stored.                                                 |
+| `query`       |          | string | Query string, without **FROM**, clause to run over the FDA when invoking the DA                                                          |
+| `params`      | ✓        | array  | Array of [param objects](#params) to control param values. If omitted, the DA has no query parameters.                                   |
+| `timeRange`   | ✓        | object | [Time range object](#time-range) naming the params that bound the FDA `timeColumn`. If omitted, queries read every partition of the FDA. |
 
 (\*) The `id` field is mandatory when creating a DA (`POST`) and must not be included when updating a DA (`PUT`).
 
@@ -1585,6 +1586,37 @@ Example array:
         "range": [10, 14]
     }
 ]
+```
+
+#### Time range
+
+The optional `timeRange` object tells which params of the DA hold the bounds of the FDA `timeColumn` in the query:
+
+| Parameter | Optional | Type   | Description                                               |
+| --------- | -------- | ------ | --------------------------------------------------------- |
+| `start`   | ✓        | string | Name of the param with the lower bound of the time range. |
+| `finish`  | ✓        | string | Name of the param with the upper bound of the time range. |
+
+At least one of them is required, and each one must be the name of a param declared in `params`; otherwise the request
+fails with `400 InvalidParam`.
+
+When the FDA is partitioned, the values received in these params are used to read only the partitions that overlap the
+requested range, instead of every partition of the FDA. `timeRange` does not filter rows by itself: the `query` must
+still compare `timeColumn` with those params. It has no effect in non-partitioned FDAs. See
+[Partition pruning](/doc/AdvancedTopics/sliding_windows_and_partitioning.md#partition-pruning) for details.
+
+Example:
+
+```json
+{
+    "id": "da_alarms_by_date",
+    "query": "SELECT * WHERE ($from IS NULL OR timeinstant >= CAST($from AS TIMESTAMP)) AND ($to IS NULL OR timeinstant < CAST($to AS TIMESTAMP))",
+    "params": [
+        { "name": "from", "default": null },
+        { "name": "to", "default": null }
+    ],
+    "timeRange": { "start": "from", "finish": "to" }
+}
 ```
 
 ### DAs operations
