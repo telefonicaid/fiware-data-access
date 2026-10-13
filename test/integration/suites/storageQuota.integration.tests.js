@@ -131,7 +131,7 @@ export function registerStorageQuotaIntegrationTests({
   }
 
   async function setBucketQuota(size) {
-    mcContainer = await new GenericContainer('minio/mc:latest')
+    mcContainer = await new GenericContainer('pgsty/mc:latest')
       .withNetworkMode('host')
       .withEntrypoint(['/bin/sh', '-c'])
       .withCommand([
