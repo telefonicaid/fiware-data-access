@@ -10,6 +10,7 @@
         -   [Health Check `GET /health`](#health-check-get-health)
     -   [Metrics Endpoint](#metrics-endpoint)
         -   [Retrieve metrics `GET /metrics`](#retrieve-metrics-get-metrics)
+    -   [Resource Accounting](#resource-accounting)
     -   [Datasource payload datamodel](#datasource-payload-datamodel)
     -   [Datasources operations](#datasources-operations)
         -   [List Datasources](#list-datasources-get-datasources)
@@ -37,6 +38,40 @@
         -   [Data Access query](#data-access-query-get-visibilityfdasfdaiddasdaiddata)
         -   [Query (Pentaho CDA legacy support)](#query-plugincdaapidoquery-pentaho-cda-legacy-support)
 -   [Navigation](#-navigation)
+
+## Resource Accounting
+
+`GET /{visibility}/fdas/{fdaId}` includes these read-only fields:
+
+```json
+{
+    "createdAt": "2026-10-01T09:20:05.120Z",
+    "storage": { "bytes": 18734211, "objects": 365, "partitions": 365, "measuredAt": "2026-10-01T09:20:11.000Z" },
+    "access": { "count": 42, "sinceLastFetch": 3, "lastAccessAt": "2026-10-01T09:31:02.000Z" },
+    "lastRefresh": { "durationMs": 1200, "bytesFetched": 25000000 }
+}
+```
+
+Each DA also exposes `access`. Cached JSON, streaming and CDA queries are counted once after successful statement
+execution; fresh source queries are not counted. Streaming queries count when execution starts, even if the client later
+disconnects. `sinceLastFetch` resets on a successful fetch or upload, not on `clean-partition`; delayed accesses from an
+older refresh still increase `count`, but not `sinceLastFetch`. Failed refreshes retain the previous refresh cost and
+counters. Editing or regenerating a DA preserves its counters.
+
+Storage is measured after fetch, upload and partition cleanup. It excludes staging CSV and `tmp/` objects. `partitions`
+counts distinct partition folders, or zero for a non-partitioned FDA. `bytesFetched` counts the extracted CSV bytes
+including the header for PostgreSQL and MongoDB, and original file bytes for uploads; it is not the compressed Parquet
+size or the database wire-protocol traffic. Duration covers the complete refresh.
+
+`GET /usage` requires `Fiware-Service`. It returns `service` totals and `byServicePath`; when `Fiware-ServicePath` is
+provided, it returns `service` and `servicePath` totals instead. Each scope contains `fdas`, `bytes`, `objects`,
+`partitions`, `queries`, `sinceLastFetch`, `lastAccessAt`, `refreshDurationMs` and `refreshBytesFetched`. Refresh
+figures sum the last successful refresh of each FDA, not all historical refreshes. Empty scopes return zero counts and
+`lastAccessAt: null`. No quotas or limits are enforced.
+
+Access totals are eventually consistent, flushed every `FDA_ACCESS_FLUSH_INTERVAL_MS` (default: 10000). Legacy FDAs
+without accounting fields contribute zero until measured or accessed; their original creation time cannot be
+reconstructed. Measurement failures leave the previous `storage.measuredAt` unchanged.
 
 ## Introduction
 
@@ -934,12 +969,12 @@ This object configures certain aspects of the object storage app when uploading 
 
 These fields are **provided in responses** but **cannot be included or modified** in POST or PUT requests:
 
-| Parameter   | Optional | Type   | Description                                                                                                                                                                                                                                                                                                                                                              |
-| ----------- | -------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `status`    |          | string | Current FDA execution status (`fetching`, `transforming`, `uploading`, `completed`, `failed`, `deleting`)                                                                                                                                                                                                                                                                |
-| `progress`  |          | number | Execution progress percentage (0–100)                                                                                                                                                                                                                                                                                                                                    |
-| `initFetch` |          | string | Timestamp of the current/last fetch start (ISO date format)                                                                                                                                                                                                                                                                                                              |
-| `lastFetch` |          | string | Timestamp of the last completed fetch (ISO date format)                                                                                                                                                                                                                                                                                                                  |
+| Parameter   | Optional | Type   | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ----------- | -------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `status`    |          | string | Current FDA execution status (`fetching`, `transforming`, `uploading`, `completed`, `failed`, `deleting`)                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `progress`  |          | number | Execution progress percentage (0–100)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `initFetch` |          | string | Timestamp of the current/last fetch start (ISO date format)                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `lastFetch` |          | string | Timestamp of the last completed fetch (ISO date format)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `schema`    | ✓        | array  | `[{name, type}]` describing the FDA columns, e.g. `[{"name":"age","type":"INTEGER"}]`. For cached FDAs created in `strict` mode. PostgreSQL FDAs use the actual database types; MongoDB FDAs use `null` as the type until the first fetch, when the schema is derived from the materialized Parquet (please check more details about MongoDB schema [in this specific section in documentation](02_architecture.md#schema-generation-for-schemaless-datasources).) `type` value refers to DuckDB (the underlying DB technology) types. |
 
 > Note: Including operational fields like `progress` or `status` in POST/PUT requests is ignored by the server. Requests

@@ -83,6 +83,10 @@ export const openApiSpec = swaggerJsdoc({
         description: 'Endpoints that execute queries and return result rows.',
       },
       {
+        name: 'Usage',
+        description: 'Storage consumption scoped by `Fiware-Service`.',
+      },
+      {
         name: 'CDA Legacy',
         description:
           'Backward-compatible endpoint for legacy Pentaho CDA clients.',
@@ -100,5 +104,6 @@ export const openApiSpec = swaggerJsdoc({
     join(__dirname, '../routes/das.js'),
     join(__dirname, '../routes/data.js'),
     join(__dirname, '../routes/cdaLegacy.js'),
+    join(__dirname, '../routes/usage.js'),
   ],
 });

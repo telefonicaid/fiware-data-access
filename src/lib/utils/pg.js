@@ -28,7 +28,7 @@ import { to as copyTo } from 'pg-copy-streams';
 import Cursor from 'pg-cursor';
 import { Upload } from '@aws-sdk/lib-storage';
 import { pipeline } from 'node:stream/promises';
-import { PassThrough } from 'node:stream';
+import { Transform } from 'node:stream';
 import { config } from '../fdaConfig.js';
 import { FDAError } from '../fdaError.js';
 import { getBasicLogger } from './logger.js';
@@ -232,7 +232,14 @@ export async function uploadTable(
   const pgStream = pgClient.query(copyTo(baseQuery));
 
   // PassThrough to enforce backpressure and limit in-flight buffers
-  const passThrough = new PassThrough({ highWaterMark: 64 * 1024 }); // 64KB
+  let bytesFetched = 0;
+  const passThrough = new Transform({
+    highWaterMark: 64 * 1024,
+    transform(chunk, encoding, callback) {
+      bytesFetched += chunk.length;
+      callback(null, chunk);
+    },
+  });
 
   const partSizeMB = Number(config.fileUpload?.partSizeMB) || 10;
   const queueSize = Number(config.fileUpload?.queueSize) || 1;
@@ -257,6 +264,7 @@ export async function uploadTable(
     await Promise.all([pipeline(pgStream, passThrough), upload.done()]);
 
     logger.debug('Upload completed successfully');
+    return bytesFetched;
   } catch (e) {
     // Ensure PG stream is closed
     try {

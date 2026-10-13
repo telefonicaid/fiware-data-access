@@ -151,6 +151,12 @@ const envVarsSchema = {
       type: 'number',
       default: 60000,
     },
+    FDA_ACCESS_FLUSH_INTERVAL_MS: {
+      type: 'integer',
+      minimum: 1,
+      maximum: 2147483647,
+      default: 10000,
+    },
     FDA_MAX_CONCURRENT_FRESH_QUERIES: {
       type: 'number',
       default: 5,
@@ -222,6 +228,9 @@ export const config = {
   fetcher: {
     heartbeatIntervalMs: envVars.FDA_FETCHER_HEARTBEAT_INTERVAL_MS,
     maxConcurrentRefreshJobs: envVars.FDA_MAX_CONCURRENT_REFRESH_JOBS,
+  },
+  accessTracking: {
+    flushIntervalMs: envVars.FDA_ACCESS_FLUSH_INTERVAL_MS,
   },
   freshQueries: {
     maxConcurrent: envVars.FDA_MAX_CONCURRENT_FRESH_QUERIES,

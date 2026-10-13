@@ -171,6 +171,28 @@ describe('pg utils', () => {
     expect(client).toBe(currentClient);
   });
 
+  test('uploadTable returns extracted CSV bytes without buffering the source', async () => {
+    currentClient.query.mockReturnValue({ destroy: jest.fn() });
+    pipelineMock.mockImplementationOnce(async (source, destination) => {
+      destination.resume();
+      destination.write(Buffer.from('name\n'));
+      destination.end(Buffer.from('Espa\u00f1a\n'));
+    });
+    uploadCtorMock.mockImplementationOnce(() => ({
+      on: jest.fn(),
+      done: jest.fn().mockResolvedValue(undefined),
+    }));
+    const bytes = await uploadTable(
+      {},
+      'bucket',
+      { username: 'u', password: 'p', host: 'h', port: 5432, database: 'svc' },
+      'SELECT name',
+      'fda',
+    );
+    expect(bytes).toBe(Buffer.byteLength('name\nEspa\u00f1a\n'));
+    expect(currentClient.release).toHaveBeenCalledTimes(1);
+  });
+
   test('runPgQuery returns rows on success', async () => {
     currentClient.query.mockResolvedValue({ rows: [{ id: 1 }] });
 

@@ -1,2 +1,4 @@
+- Add persisted FDA resource accounting: creation time, Parquet storage measurements,
+buffered FDA/DA query counters, queries since the last successful refresh and refresh cost. Expose service/servicePath accounting through GET /usage and Prometheus gauges. (#324)
 - Upgrade: PostGIS image from `postgis/postgis:15-3.3` to `postgis/postgis:16-3.4` (docker-compose and integration tests). Existing `docker/postgis-data` volumes created with PostgreSQL 15 must be recreated or migrated (#334)
 - Upgrade: MinIO client image in docker-compose replaced from `minio/mc` to `pgsty/mc` (#302)
