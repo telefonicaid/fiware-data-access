@@ -20,9 +20,6 @@ container already has the alias `local`.
 | Review the real usage | `mc du local/<bucket>`                     |
 | Remove the quota      | `mc quota clear local/<bucket>`            |
 
-With the provided `docker compose`, setting `FDA_BUCKET_QUOTA` (for example `FDA_BUCKET_QUOTA=10GiB`) makes the `mc`
-container apply that quota to the `trantor` bucket when it starts. It is not set by default.
-
 Older `mc` releases use `mc admin bucket quota local/<bucket> --hard 10GiB` instead of `mc quota`.
 
 The quota counts every object of the bucket, so it includes the temporary objects FDA creates during a fetch (see below)
