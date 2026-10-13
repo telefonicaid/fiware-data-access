@@ -774,6 +774,7 @@ export function toFDAApiResponse(fda, { includeId }) {
   const fdaId = response.fdaId;
 
   delete response._id;
+  delete response._accessFlushes;
   delete response.fdaId;
   delete response.service;
   delete response.visibility;

@@ -271,6 +271,20 @@ Health endpoint with liveness and runtime summary.
 
 OpenMetrics/Prometheus telemetry endpoint.
 
+Resource accounting is available through `GET /usage` with a required `Fiware-Service` header and optional
+`Fiware-ServicePath`. The `fda_usage_*` gauges expose the same persisted figures per service and per servicePath:
+`fdas`, `storage_bytes`, `storage_objects`, `storage_partitions`, `queries`, `queries_since_last_fetch`,
+`last_access_timestamp_seconds`, `last_refresh_duration_seconds` and `last_refresh_bytes_fetched`. Service totals omit
+the `fiware_service_path` label. Do not sum service totals and path totals together. Refresh gauges sum only the last
+successful refresh of each FDA. Metrics reuse the Mongo snapshot cache (10 seconds). The existing `fda_da_queries_total`
+is a per-process counter.
+
+`FDA_ACCESS_FLUSH_INTERVAL_MS` controls access persistence (integer, 1 through 2147483647, default 10000). Queries
+perform no additional Mongo writes. Failed batches are retried before newer batches; atomic FDA/DA updates and internal
+per-process sequence markers prevent duplicate increments after partial failures. Flushes are serialized, and shutdown
+attempts to drain the buffer before disconnecting MongoDB. Abrupt termination can lose unflushed accesses. Internal
+`_accessFlushes` metadata is not exposed by the FDA API.
+
 **Response code**
 
 -   `200 OK` on success.

@@ -163,9 +163,9 @@ export async function moveObject(s3Client, bucket, sourceKey, destKey) {
   }
 }
 
-export async function listObjects(s3Client, bucket, prefix) {
-  logger.debug({ bucket, prefix }, '[DEBUG]: listObjects');
-  const keys = [];
+export async function listObjectsWithSize(s3Client, bucket, prefix) {
+  logger.debug({ bucket, prefix }, '[DEBUG]: listObjectsWithSize');
+  const objects = [];
   let continuationToken;
 
   try {
@@ -179,7 +179,7 @@ export async function listObjects(s3Client, bucket, prefix) {
       );
 
       for (const obj of response.Contents || []) {
-        keys.push(obj.Key);
+        objects.push({ key: obj.Key, size: obj.Size ?? 0 });
       }
 
       continuationToken = response.IsTruncated
@@ -194,7 +194,12 @@ export async function listObjects(s3Client, bucket, prefix) {
     );
   }
 
-  return keys;
+  return objects;
+}
+
+export async function listObjects(s3Client, bucket, prefix) {
+  const objects = await listObjectsWithSize(s3Client, bucket, prefix);
+  return objects.map((obj) => obj.key);
 }
 
 export async function createBucket(s3Client, bucket) {

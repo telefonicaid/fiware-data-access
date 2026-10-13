@@ -59,6 +59,7 @@ import { registerComplexCasesIntegrationTests } from './suites/complexCases.inte
 import { registerUploadFdasIntegrationTests } from './suites/uploadFdas.integration.tests.js';
 import { registerStorageCleanupIntegrationTests } from './suites/storageCleanup.integration.tests.js';
 import { registerStorageQuotaIntegrationTests } from './suites/storageQuota.integration.tests.js';
+import { registerFdaAccoutingIntegrationTests } from './suites/fdaAccounting.integration.tests.js';
 import {
   httpReq,
   httpFormReq,
@@ -280,6 +281,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
         FDA_OBJSTG_PROTOCOL: 'http',
         FDA_OBJSTG_ENDPOINT: minioHostPort,
         FDA_MONGO_URI: mongoUri,
+        FDA_ACCESS_FLUSH_INTERVAL_MS: '100',
         FDA_MAX_CONCURRENT_FRESH_QUERIES: '1',
         FDA_DUCKDB_MEMORY_LIMIT: '0.5GB',
         FDA_DUCKDB_MAX_THREADS: '1',
@@ -404,6 +406,17 @@ export function runFDAIntegrationSuite({ mode, label }) {
       await stopProcess(appProc);
       appProc = undefined;
     }
+
+    registerFdaAccoutingIntegrationTests({
+      getBaseUrl: () => baseUrl,
+      getMongoUri: () => mongoUri,
+      getMinioUrl: () => minioUrl,
+      getPgHost: () => pgHost,
+      getPgPort: () => pgPort,
+      service,
+      visibility,
+      httpReq,
+    });
 
     registerDatasourcesIntegrationTests({
       getBaseUrl: () => baseUrl,
