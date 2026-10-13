@@ -1,2 +1,3 @@
 - Upgrade: PostGIS image from `postgis/postgis:15-3.3` to `postgis/postgis:16-3.4` (docker-compose and integration tests). Existing `docker/postgis-data` volumes created with PostgreSQL 15 must be recreated or migrated (#334)
 - Upgrade: MinIO client image in docker-compose replaced from `minio/mc` to `pgsty/mc` (#302)
+- Add: optional `timeRange` field in DAs (declared by default in `defaultDataAccess`) so queries by time range on partitioned FDAs read only the partitions overlapping the range instead of all of them (#328)
