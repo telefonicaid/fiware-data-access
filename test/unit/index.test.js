@@ -706,6 +706,7 @@ describe('index routes - validation and middleware branches', () => {
       undefined,
       'public',
       '/servicepath',
+      undefined,
     );
     expect(fdaMocks.putDA).toHaveBeenCalledWith(
       'svc',
@@ -716,6 +717,7 @@ describe('index routes - validation and middleware branches', () => {
       undefined,
       'public',
       '/servicepath',
+      undefined,
     );
     expect(utilsMocks.validateAllowedFieldsBody).toHaveBeenCalled();
   });

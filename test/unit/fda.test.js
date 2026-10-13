@@ -44,6 +44,7 @@ const dbMocks = {
   toParquet: jest.fn(),
   copyQueryToParquet: jest.fn(),
   checkParams: jest.fn(),
+  checkTimeRange: jest.fn((timeRange) => timeRange ?? undefined),
   validateDAParamBindings: jest.fn(),
   resolveDAParams: jest.fn(),
   validateDAQuery: jest.fn(),
@@ -114,6 +115,7 @@ await jest.unstable_mockModule('../../src/lib/utils/db.js', () => ({
   toParquet: dbMocks.toParquet,
   copyQueryToParquet: dbMocks.copyQueryToParquet,
   checkParams: dbMocks.checkParams,
+  checkTimeRange: dbMocks.checkTimeRange,
   validateDAParamBindings: dbMocks.validateDAParamBindings,
   resolveDAParams: dbMocks.resolveDAParams,
   validateDAQuery: dbMocks.validateDAQuery,
@@ -1327,6 +1329,7 @@ describe('fetchFDA', () => {
         { name: 'pageSize', default: '9223372036854775807' },
         { name: 'pageStart', default: 0 },
       ],
+      { start: 'start', finish: 'finish' },
     );
   });
 
@@ -1387,6 +1390,7 @@ describe('fetchFDA', () => {
         { name: 'pageSize', default: '9223372036854775807' },
         { name: 'pageStart', default: 0 },
       ],
+      { start: 'start', finish: 'finish' },
     );
   });
 
@@ -1797,6 +1801,7 @@ describe('fetchFDA', () => {
         { name: 'pageSize', default: '9223372036854775807' },
         { name: 'pageStart', default: 0 },
       ],
+      undefined,
     );
   });
 
@@ -1852,6 +1857,7 @@ describe('fetchFDA', () => {
         { name: 'pageSize', default: '9223372036854775807' },
         { name: 'pageStart', default: 0 },
       ],
+      { start: 'start', finish: 'finish' },
     );
   });
 
@@ -1905,6 +1911,7 @@ describe('fetchFDA', () => {
         { name: 'pageSize', default: '9223372036854775807' },
         { name: 'pageStart', default: 0 },
       ],
+      undefined,
     );
   });
 
@@ -1953,6 +1960,7 @@ describe('fetchFDA', () => {
         { name: 'pageSize', default: '9223372036854775807' },
         { name: 'pageStart', default: 0 },
       ],
+      undefined,
     );
   });
 
@@ -2010,6 +2018,7 @@ describe('fetchFDA', () => {
         { name: 'pageSize', default: '9223372036854775807' },
         { name: 'pageStart', default: 0 },
       ],
+      undefined,
     );
   });
 
@@ -4382,6 +4391,7 @@ describe('DA access and update helpers', () => {
       'desc',
       'SELECT id',
       [{ name: 'id' }],
+      null,
     );
     expect(dbMocks.releaseDBConnection).toHaveBeenCalledWith({});
   });
@@ -4404,6 +4414,7 @@ describe('DA access and update helpers', () => {
       'desc',
       'SELECT id',
       normalizedParams,
+      null,
     );
   });
 
@@ -4446,6 +4457,7 @@ describe('DA access and update helpers', () => {
       'desc',
       'SELECT id',
       [{ name: 'id' }],
+      undefined,
     );
   });
 
@@ -4477,6 +4489,7 @@ describe('DA access and update helpers', () => {
       'desc',
       'SELECT id',
       [{ name: 'id' }],
+      null,
     );
   });
 });
