@@ -1936,5 +1936,176 @@ export function registerSlidingWindowsIntegrationTests({
         await mongoClient.close();
       }
     });
+
+    describe.each(['day', 'week'])(
+      'Partition pruning (%s partition)',
+      (partition) => {
+        const suffix = `${partition}_${Date.now()}`;
+        const fixtureTable = `sw_pruning_fixture_${suffix}`;
+        const fdaId = `fda_sw_pruning_${suffix}`;
+
+        async function readIds(baseUrl, daId, params = {}) {
+          const res = await httpReq({
+            method: 'GET',
+            url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId, params),
+            headers: { 'Fiware-Service': service },
+          });
+
+          if (res.status >= 400) {
+            console.error(
+              'GET /das/data failed:',
+              res.status,
+              res.json ?? res.text,
+            );
+          }
+          expect(res.status).toBe(200);
+          return res.json.map((row) => row.id).sort((a, b) => a - b);
+        }
+
+        async function sendDa(baseUrl, method, daId, body) {
+          const path = method === 'POST' ? 'das' : `das/${daId}`;
+          return await httpReq({
+            method,
+            url: `${baseUrl}/${visibility}/fdas/${fdaId}/${path}`,
+            headers: {
+              'Fiware-Service': service,
+              'Fiware-ServicePath': servicePath,
+            },
+            body: method === 'POST' ? { id: daId, ...body } : body,
+          });
+        }
+
+        async function getDa(baseUrl, daId) {
+          const res = await httpReq({
+            method: 'GET',
+            url: `${baseUrl}/${visibility}/fdas/${fdaId}/das/${daId}`,
+            headers: {
+              'Fiware-Service': service,
+              'Fiware-ServicePath': servicePath,
+            },
+          });
+          expect(res.status).toBe(200);
+          return res.json;
+        }
+
+        beforeAll(async () => {
+          const baseUrl = getBaseUrl();
+          const pgClient = createPgClient();
+          await pgClient.connect();
+
+          try {
+            await pgClient.query(`
+              CREATE TABLE public.${fixtureTable} (
+                id INT PRIMARY KEY,
+                observed_at TIMESTAMPTZ NOT NULL
+              )
+            `);
+            await pgClient.query(`
+              INSERT INTO public.${fixtureTable} (id, observed_at)
+              VALUES
+                (1, '2025-01-30T12:00:00Z'),
+                (2, '2025-01-31T12:00:00Z'),
+                (3, '2025-02-01T12:00:00Z'),
+                (4, '2025-02-02T12:00:00Z'),
+                (5, '2025-12-31T23:30:00Z'),
+                (6, '2026-01-01T00:30:00Z')
+            `);
+          } finally {
+            await pgClient.end();
+          }
+
+          const createFda = await httpReq({
+            method: 'POST',
+            url: `${baseUrl}/${visibility}/fdas`,
+            headers: {
+              'Fiware-Service': service,
+              'Fiware-ServicePath': servicePath,
+            },
+            body: {
+              id: fdaId,
+              query: `SELECT id, observed_at FROM public.${fixtureTable}`,
+              description: 'partition pruning test',
+              refreshPolicy: {
+                type: 'window',
+                params: { refreshInterval: '1 day', fetchSize: partition },
+              },
+              timeColumn: 'observed_at',
+              objStgConf: { partition },
+            },
+          });
+
+          expect(createFda.status).toBe(202);
+          await waitUntilFDACompleted({ baseUrl, service, fdaId });
+        });
+
+        test('default DA declares the time range params', async () => {
+          const da = await getDa(getBaseUrl(), 'defaultDataAccess');
+
+          expect(da.timeRange).toEqual({ start: 'start', finish: 'finish' });
+        });
+
+        test.each([
+          ['no range', {}, [1, 2, 3, 4, 5, 6]],
+          [
+            'a range across months',
+            { start: '2025-01-31T00:00:00Z', finish: '2025-02-01T23:59:59Z' },
+            [2, 3],
+          ],
+          [
+            'an open-ended range across years',
+            { start: '2025-12-31T23:00:00Z' },
+            [5, 6],
+          ],
+          ['only an upper bound', { finish: '2025-01-30T23:00:00Z' }, [1]],
+          [
+            'a range within one partition',
+            { start: '2025-02-02T00:00:00Z', finish: '2025-02-02T23:00:00Z' },
+            [4],
+          ],
+          ['a range without data', { start: '2030-01-01T00:00:00Z' }, []],
+        ])('default DA returns the rows of %s', async (_name, params, ids) => {
+          expect(
+            await readIds(getBaseUrl(), 'defaultDataAccess', params),
+          ).toEqual(ids);
+        });
+
+        test('custom DA can declare, replace and drop its time range', async () => {
+          const baseUrl = getBaseUrl();
+          const daId = 'pruned_da';
+          const body = {
+            description: 'time range da',
+            query:
+              'SELECT id WHERE CAST(observed_at AS TIMESTAMP) >= CAST($from AS TIMESTAMP)',
+            params: [{ name: 'from', default: null }],
+          };
+
+          const invalid = await sendDa(baseUrl, 'POST', daId, {
+            ...body,
+            timeRange: { start: 'missing' },
+          });
+          expect(invalid.status).toBe(400);
+          expect(invalid.json.error).toBe('InvalidParam');
+
+          const created = await sendDa(baseUrl, 'POST', daId, {
+            ...body,
+            timeRange: { start: 'from' },
+          });
+          expect(created.status).toBe(204);
+          expect((await getDa(baseUrl, daId)).timeRange).toEqual({
+            start: 'from',
+          });
+          expect(
+            await readIds(baseUrl, daId, { from: '2025-02-02T00:00:00Z' }),
+          ).toEqual([4, 5, 6]);
+
+          const updated = await sendDa(baseUrl, 'PUT', daId, body);
+          expect(updated.status).toBe(204);
+          expect((await getDa(baseUrl, daId)).timeRange).toBeUndefined();
+          expect(
+            await readIds(baseUrl, daId, { from: '2025-02-02T00:00:00Z' }),
+          ).toEqual([4, 5, 6]);
+        });
+      },
+    );
   });
 }
