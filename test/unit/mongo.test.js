@@ -584,6 +584,61 @@ describe('mongo utils', () => {
     expect(collectionMock.updateOne).not.toHaveBeenCalled();
   });
 
+  test('storeDA persists timeRange only when provided', async () => {
+    const { storeDA, collectionMock } = await loadMongoModule();
+
+    await storeDA('svc', 'fdaA', '/sp', 'daA', 'desc', 'SELECT 1', [], {
+      start: 'start',
+    });
+    await storeDA('svc', 'fdaA', '/sp', 'daB', 'desc', 'SELECT 1', []);
+
+    expect(collectionMock.updateOne.mock.calls[0][1]).toEqual({
+      $set: {
+        'das.daA': {
+          description: 'desc',
+          query: 'SELECT 1',
+          params: [],
+          timeRange: { start: 'start' },
+        },
+      },
+    });
+    expect(collectionMock.updateOne.mock.calls[1][1]).toEqual({
+      $set: {
+        'das.daB': { description: 'desc', query: 'SELECT 1', params: [] },
+      },
+    });
+  });
+
+  test('updateDA sets or removes timeRange', async () => {
+    const { updateDA, collectionMock } = await loadMongoModule();
+
+    await updateDA('svc', 'fdaA', '/sp', 'daA', undefined, 'SELECT 1', [], {
+      finish: 'finish',
+    });
+    await updateDA(
+      'svc',
+      'fdaA',
+      '/sp',
+      'daA',
+      undefined,
+      'SELECT 1',
+      [],
+      null,
+    );
+
+    expect(collectionMock.updateOne.mock.calls[0][1]).toEqual({
+      $set: {
+        'das.daA.query': 'SELECT 1',
+        'das.daA.params': [],
+        'das.daA.timeRange': { finish: 'finish' },
+      },
+    });
+    expect(collectionMock.updateOne.mock.calls[1][1]).toEqual({
+      $unset: { 'das.daA.timeRange': '' },
+      $set: { 'das.daA.query': 'SELECT 1', 'das.daA.params': [] },
+    });
+  });
+
   test('updateDA wraps update errors', async () => {
     const { updateDA, collectionMock } = await loadMongoModule();
 
