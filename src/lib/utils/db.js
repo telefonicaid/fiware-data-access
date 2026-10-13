@@ -33,6 +33,8 @@ import {
   JSON_INTEGER_COLUMN_TYPES,
 } from '../constants.js';
 import { convertRefreshIntervalToMs, toJsonInteger } from './utils.js';
+import { getS3Client, listObjects } from './aws.js';
+import { resolveTimeRange, selectPartitionFiles } from './partitionPruning.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -369,13 +371,7 @@ export async function runPreparedStatement(
     servicePath: storedServicePath,
     schema,
   } = await retrieveFDA(service, fdaId, servicePath);
-  const query = buildDAQuery(
-    service,
-    fdaId,
-    da.query,
-    objStgConf?.partition,
-    storedServicePath ?? servicePath,
-  );
+  const fdaServicePath = storedServicePath ?? servicePath;
 
   let stmt;
 
@@ -383,13 +379,33 @@ export async function runPreparedStatement(
     validateDAParamBindings(da.query, da.params || []);
     const resolvedParams = applyParams(paramValues || {}, da.params);
     const boundParams = normalizeParamsForDuckDB(resolvedParams);
+    const fallbackQuery = buildStoredSchemaQuery(schema, da.query);
+    const files = await listPrunedPartitionFiles(
+      service,
+      fdaId,
+      fdaServicePath,
+      objStgConf?.partition,
+      da.timeRange,
+      resolvedParams,
+    );
+    const query =
+      files?.length === 0 && fallbackQuery
+        ? fallbackQuery
+        : buildDAQuery(
+            service,
+            fdaId,
+            da.query,
+            objStgConf?.partition,
+            fdaServicePath,
+            files?.length ? files : undefined,
+          );
     const prepared = await prepareAndRunStatementWithFallback(
       conn,
       query,
       boundParams,
       {
         streaming,
-        fallbackQuery: buildStoredSchemaQuery(schema, da.query),
+        fallbackQuery,
       },
     );
 
@@ -527,6 +543,97 @@ export function checkParams(params) {
 
     return normalizedParam;
   });
+}
+
+export function checkTimeRange(timeRange, params) {
+  if (timeRange === undefined || timeRange === null) {
+    return undefined;
+  }
+
+  if (typeof timeRange !== 'object' || Array.isArray(timeRange)) {
+    throw new FDAError(400, 'InvalidParam', `timeRange must be an object.`);
+  }
+
+  const bounds = Object.keys(timeRange);
+  if (bounds.length === 0) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `timeRange must include "start", "finish" or both.`,
+    );
+  }
+
+  const declaredParamNames = new Set(
+    Array.isArray(params) ? params.map((param) => param?.name) : [],
+  );
+  const normalized = {};
+
+  for (const bound of bounds) {
+    if (bound !== 'start' && bound !== 'finish') {
+      throw new FDAError(
+        400,
+        'InvalidParam',
+        `Invalid timeRange field "${bound}". Only "start" and "finish" are allowed.`,
+      );
+    }
+
+    const paramName = timeRange[bound];
+    if (typeof paramName !== 'string' || !declaredParamNames.has(paramName)) {
+      throw new FDAError(
+        400,
+        'InvalidParam',
+        `timeRange.${bound} must be the name of a param declared in DA params.`,
+      );
+    }
+
+    normalized[bound] = paramName;
+  }
+
+  return normalized;
+}
+
+async function listPrunedPartitionFiles(
+  service,
+  fdaId,
+  servicePath,
+  partition,
+  timeRange,
+  resolvedParams,
+) {
+  if (!partition) {
+    return null;
+  }
+
+  const range = resolveTimeRange(timeRange, resolvedParams);
+  if (!range) {
+    return null;
+  }
+
+  const s3Client = getS3Client(
+    `${config.objstg.protocol}://${config.objstg.endpoint}`,
+    config.objstg.usr,
+    config.objstg.pass,
+  );
+  const bucketName = getBucketNameFromService(service);
+  const keys = await listObjects(
+    s3Client,
+    bucketName,
+    `${getFDAStoragePath(fdaId, servicePath)}.parquet/`,
+  );
+
+  if (!keys.some((key) => key.endsWith('.parquet'))) {
+    return null;
+  }
+
+  const files = selectPartitionFiles(keys, range).map(
+    (key) => `s3://${bucketName}/${key}`,
+  );
+  logger.debug(
+    { fdaId, selected: files.length, total: keys.length },
+    '[DEBUG]: listPrunedPartitionFiles',
+  );
+
+  return files;
 }
 
 export function getNamedParamsFromQuery(query) {
@@ -906,6 +1013,7 @@ export function buildDAQuery(
   userQuery,
   partition,
   servicePath,
+  files,
 ) {
   logger.debug({ fdaId }, '[DEBUG]: buildDAQuery');
   if (!userQuery || typeof userQuery !== 'string') {
@@ -925,6 +1033,13 @@ export function buildDAQuery(
   const objectKey = getFDAStoragePath(fdaId, servicePath);
   const bucketName = getBucketNameFromService(service);
   const parquetPath = `s3://${bucketName}/${objectKey}`;
+
+  if (partition && Array.isArray(files) && files.length > 0) {
+    const fileList = files
+      .map((file) => `'${file.replaceAll("'", "''")}'`)
+      .join(', ');
+    return `FROM read_parquet([${fileList}], hive_partitioning = true, union_by_name = true) ${trimmed}`;
+  }
 
   if (partition) {
     return `FROM read_parquet('${parquetPath}.parquet/**/*.parquet', union_by_name = true) ${trimmed}`;
