@@ -5,6 +5,28 @@ The application is configured primarily through environment variables.
 
 ---
 
+## Table of Contents
+
+-   [Introduction](#introduction)
+-   [Environment Variables](#environment-variables)
+    -   [Environment](#environment)
+    -   [Instance Roles](#instance-roles)
+    -   [PostgreSQL pool and datasources](#postgresql-pool-and-datasources)
+    -   [Object bucket-based storage system](#object-bucket-based-storage-system)
+    -   [DuckDB](#duckdb)
+    -   [MongoDB](#mongodb)
+    -   [Uploads](#uploads)
+    -   [Logger](#logger)
+-   [Example `.env` file](#example-env-file)
+-   [Health and Metrics Endpoints](#health-and-metrics-endpoints)
+    -   [`GET /health`](#get-health)
+    -   [`GET /metrics`](#get-metrics)
+    -   [Metrics Reference Table](#metrics-reference-table)
+-   [Logging and Traceability](#logging-and-traceability)
+-   [Navigation](#-navigation)
+
+---
+
 ## Introduction
 
 `Fiware-data-access` supports configuration via a `.env` file, or in docker service in
@@ -50,6 +72,7 @@ Variables that define which components of the application are executed by this i
 | `FDA_CREATE_DEFAULT_DATA_ACCESS`    | ✓        | boolean | If `true`, FDA creation also creates a built-in `defaultDataAccess` DA unless the request overrides it. Default `true`.                                              |
 | `FDA_FETCHER_HEARTBEAT_INTERVAL_MS` | ✓        | number  | Interval in milliseconds between Fetcher heartbeat logs. Default `60000`. Set to `0` to disable the heartbeat.                                                       |
 | `FDA_MAX_CONCURRENT_REFRESH_JOBS`   | ✓        | number  | Maximum number of concurrent refresh jobs done by fetcher. Memory consuption is incresed when concurrent refresh jobs grows. Default `1`.                            |
+| `FDA_ACCESS_FLUSH_INTERVAL_MS`      | ✓        | integer | Interval in milliseconds between MongoDB flushes of buffered FDA/DA access counters. Default `10000`; valid range is `1` to `2147483647`.                            |
 
 > Note: By default, an instance runs both roles (API server and Fetcher). You can disable one to separate
 > responsibilities.
@@ -176,6 +199,7 @@ FDA_ROLE_SYNCQUERIES=true
 FDA_MAX_CONCURRENT_FRESH_QUERIES=5
 FDA_CREATE_DEFAULT_DATA_ACCESS=true
 FDA_FETCHER_HEARTBEAT_INTERVAL_MS=60000
+FDA_ACCESS_FLUSH_INTERVAL_MS=10000
 
 # POSTGRESQL POOL
 FDA_PG_POOL_MAX=10
