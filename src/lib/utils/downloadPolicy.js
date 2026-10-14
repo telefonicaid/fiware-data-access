@@ -24,6 +24,56 @@
 
 import { FDAError } from '../fdaError.js';
 
+function parseExpirationDate(expirationDate) {
+  if (expirationDate === undefined) {
+    return undefined;
+  }
+  const timestampPattern =
+    /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,3})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/;
+  if (
+    typeof expirationDate !== 'string' ||
+    !timestampPattern.test(expirationDate)
+  ) {
+    throw new FDAError(
+      400,
+      'InvalidDownloadPolicy',
+      'expirationDate must be an ISO 8601 timestamp with a timezone',
+    );
+  }
+  const calendarDate = new Date(`${expirationDate.slice(0, 10)}T00:00:00Z`);
+  if (
+    Number.isNaN(calendarDate.getTime()) ||
+    calendarDate.toISOString().slice(0, 10) !== expirationDate.slice(0, 10)
+  ) {
+    throw new FDAError(
+      400,
+      'InvalidDownloadPolicy',
+      'expirationDate contains an invalid calendar date',
+    );
+  }
+  return new Date(expirationDate);
+}
+
+function parseValidityPeriod(validityPeriod, now) {
+  if (validityPeriod === undefined) {
+    return undefined;
+  }
+  const duration =
+    typeof validityPeriod === 'string' &&
+    /^P(?:(\d+)D)?(?:T(\d+)H)?$/.exec(validityPeriod);
+  const durationMs =
+    duration &&
+    (Number(duration[1] ?? 0) * 24 + Number(duration[2] ?? 0)) * 3600000;
+  if (!Number.isSafeInteger(durationMs) || durationMs <= 0) {
+    throw new FDAError(
+      400,
+      'InvalidDownloadPolicy',
+      'validityPeriod must be a positive ISO 8601 duration in days and hours, for example P7D or P1DT12H',
+    );
+  }
+  return new Date(now.getTime() + durationMs);
+}
+
 export function normalizeDownloadPolicy(
   { maxDownloads, expirationDate, validityPeriod },
   now = new Date(),
@@ -46,49 +96,9 @@ export function normalizeDownloadPolicy(
     );
   }
 
-  let expiresAt;
-  if (expirationDate !== undefined) {
-    const timestampPattern =
-      /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,3})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/;
-    if (
-      typeof expirationDate !== 'string' ||
-      !timestampPattern.test(expirationDate)
-    ) {
-      throw new FDAError(
-        400,
-        'InvalidDownloadPolicy',
-        'expirationDate must be an ISO 8601 timestamp with a timezone',
-      );
-    }
-    const calendarDate = new Date(`${expirationDate.slice(0, 10)}T00:00:00Z`);
-    if (
-      Number.isNaN(calendarDate.getTime()) ||
-      calendarDate.toISOString().slice(0, 10) !== expirationDate.slice(0, 10)
-    ) {
-      throw new FDAError(
-        400,
-        'InvalidDownloadPolicy',
-        'expirationDate contains an invalid calendar date',
-      );
-    }
-    expiresAt = new Date(expirationDate);
-  }
-  if (validityPeriod !== undefined) {
-    const duration =
-      typeof validityPeriod === 'string' &&
-      /^P(?:(\d+)D)?(?:T(\d+)H)?$/.exec(validityPeriod);
-    const durationMs =
-      duration &&
-      (Number(duration[1] ?? 0) * 24 + Number(duration[2] ?? 0)) * 3600000;
-    if (!Number.isSafeInteger(durationMs) || durationMs <= 0) {
-      throw new FDAError(
-        400,
-        'InvalidDownloadPolicy',
-        'validityPeriod must be a positive ISO 8601 duration in days and hours, for example P7D or P1DT12H',
-      );
-    }
-    expiresAt = new Date(now.getTime() + durationMs);
-  }
+  const expiresAt =
+    parseExpirationDate(expirationDate) ??
+    parseValidityPeriod(validityPeriod, now);
   if (
     expiresAt &&
     (!Number.isFinite(expiresAt.getTime()) || expiresAt <= now)
@@ -119,15 +129,17 @@ export function getDownloadMetadata(fda, now = new Date()) {
       ? null
       : Math.max(0, maxDownloads - downloadsUsed);
   const expired = expirationDate && new Date(expirationDate) <= now;
+  let downloadStatus = 'available';
+  if (expired) {
+    downloadStatus = 'expired';
+  } else if (remainingDownloads === 0) {
+    downloadStatus = 'exhausted';
+  }
   return {
     maxDownloads: maxDownloads ?? null,
     expirationDate: expirationDate ?? null,
     downloadsUsed,
     remainingDownloads,
-    downloadStatus: expired
-      ? 'expired'
-      : remainingDownloads === 0
-        ? 'exhausted'
-        : 'available',
+    downloadStatus,
   };
 }
