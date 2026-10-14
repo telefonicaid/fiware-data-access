@@ -441,6 +441,41 @@ describe('index routes - validation and middleware branches', () => {
       .expect(400);
   });
 
+  test('forwards download restrictions when creating a public FDA without authentication', async () => {
+    await request(app)
+      .post('/public/fdas')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/public')
+      .send({
+        id: 'limited',
+        query: 'SELECT 1',
+        maxDownloads: 5,
+        validityPeriod: 'P7D',
+      })
+      .expect(202);
+    expect(fdaMocks.fetchFDA.mock.calls[0][13]).toEqual({
+      maxDownloads: 5,
+      validityPeriod: 'P7D',
+      expirationDate: undefined,
+    });
+  });
+
+  test.each(['FDAExpired', 'DownloadLimitReached'])(
+    'public data propagates %s with no-store',
+    async (type) => {
+      fdaMocks.executeQuery.mockRejectedValueOnce(
+        new FDAError(410, type, 'Unavailable'),
+      );
+      await request(app)
+        .get(
+          '/public/fdas/limited/das/da1/data?service=svc&servicePath=%2Fpublic&outputType=json',
+        )
+        .expect('Cache-Control', 'no-store')
+        .expect(410)
+        .expect({ error: type, description: 'Unavailable' });
+    },
+  );
+
   test('forwards validationMode in POST /:visibility/fdas', async () => {
     await request(app)
       .post('/public/fdas')
@@ -468,6 +503,11 @@ describe('index routes - validation and middleware branches', () => {
       true,
       undefined,
       'unchecked',
+      {
+        maxDownloads: undefined,
+        expirationDate: undefined,
+        validityPeriod: undefined,
+      },
     );
   });
 
@@ -695,6 +735,11 @@ describe('index routes - validation and middleware branches', () => {
       true,
       undefined,
       'strict',
+      {
+        maxDownloads: undefined,
+        expirationDate: undefined,
+        validityPeriod: undefined,
+      },
     );
     expect(fdaMocks.updateFDA).toHaveBeenCalledWith(
       'svc',
@@ -1846,6 +1891,8 @@ describe('index upload route', () => {
       .field('timeColumn', 'event_date')
       .field('objStgConf', '{"partition":"day"}')
       .field('defaultDataAccess', 'false')
+      .field('maxDownloads', '5')
+      .field('validityPeriod', 'P7D')
       .attach('file', Buffer.from('id,value\n1,10\n'), 'data.csv')
       .expect(202);
 
@@ -1861,6 +1908,8 @@ describe('index upload route', () => {
         objStgConf: { partition: 'day' },
         defaultDataAccessEnabled: false,
         originalname: 'data.csv',
+        maxDownloads: 5,
+        validityPeriod: 'P7D',
       }),
     );
 

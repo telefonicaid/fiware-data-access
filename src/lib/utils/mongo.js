@@ -561,6 +561,7 @@ export async function createFDAMongo(
   datasourceId = DEFAULT_DATASOURCE_ID,
   validationMode = 'strict',
   schema = null,
+  downloadPolicy,
 ) {
   logger.debug({ fdaId, description }, '[DEBUG]: createFDA');
   const fdasCollection = await getCollection();
@@ -590,6 +591,7 @@ export async function createFDAMongo(
       datasourceId,
       validationMode,
       ...(schema && { schema }),
+      ...(downloadPolicy && { downloadPolicy, downloadsUsed: 0 }),
     });
   } catch (e) {
     if (e.code === 11000) {
@@ -605,6 +607,89 @@ export async function createFDAMongo(
         `Error creating fda ${fdaId} in service ${service}: ${e}`,
       );
     }
+  }
+}
+
+export async function claimFDADownload(fda) {
+  if (!fda.downloadPolicy) {
+    return;
+  }
+  const collection = await getCollection();
+  const scope = {
+    service: fda.service,
+    servicePath: fda.servicePath ?? '/',
+    fdaId: fda.fdaId,
+    visibility: fda.visibility,
+    ...(fda._id && { _id: fda._id }),
+  };
+  const expirationDate = { $ifNull: ['$downloadPolicy.expirationDate', null] };
+  const maxDownloads = { $ifNull: ['$downloadPolicy.maxDownloads', null] };
+  try {
+    const claimed = await collection.findOneAndUpdate(
+      {
+        ...scope,
+        $expr: {
+          $and: [
+            {
+              $or: [
+                { $eq: [expirationDate, null] },
+                { $gt: [expirationDate, '$$NOW'] },
+              ],
+            },
+            {
+              $or: [
+                { $eq: [maxDownloads, null] },
+                { $lt: [{ $ifNull: ['$downloadsUsed', 0] }, maxDownloads] },
+              ],
+            },
+          ],
+        },
+      },
+      { $inc: { downloadsUsed: 1 } },
+      { returnDocument: 'after' },
+    );
+    if (claimed) {
+      return;
+    }
+    const [current] = await collection
+      .aggregate([
+        { $match: scope },
+        {
+          $project: {
+            expired: {
+              $and: [
+                { $ne: [expirationDate, null] },
+                { $lte: [expirationDate, '$$NOW'] },
+              ],
+            },
+          },
+        },
+      ])
+      .toArray();
+    if (!current) {
+      throw new FDAError(404, 'FDANotFound', 'FDA no longer exists');
+    }
+    if (current.expired) {
+      throw new FDAError(
+        410,
+        'FDAExpired',
+        'The FDA download validity period has expired',
+      );
+    }
+    throw new FDAError(
+      410,
+      'DownloadLimitReached',
+      'The FDA download limit has been reached',
+    );
+  } catch (error) {
+    if (error instanceof FDAError) {
+      throw error;
+    }
+    throw new FDAError(
+      503,
+      'DownloadAuthorizationUnavailable',
+      'Cannot reserve an FDA download',
+    );
   }
 }
 

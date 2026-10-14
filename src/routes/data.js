@@ -91,6 +91,12 @@ const router = express.Router();
  *               $ref: '#/components/schemas/Error'
  *       '406':
  *         $ref: '#/components/responses/NotAcceptable'
+ *       '410':
+ *         description: '`FDAExpired` or `DownloadLimitReached`. No data is delivered.'
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  *       '409':
  *         description: '`FDAUnavailable` (first fetch not completed) or `RequestStyleConflict` (mixed request styles).'
  *         content:
@@ -99,6 +105,7 @@ const router = express.Router();
  *               $ref: '#/components/schemas/Error'
  */
 router.get('/:visibility/fdas/:fdaId/das/:daId/data', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
   const { visibility, fdaId, daId } = req.params;
   const { service, servicePath, style } = resolveServiceContextFromRequest(req);
 
@@ -204,6 +211,12 @@ router.get('/:visibility/fdas/:fdaId/das/:daId/data', async (req, res) => {
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
+ *       '410':
+ *         description: '`FDAExpired` or `DownloadLimitReached`. No data is delivered.'
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  *       '429':
  *         description: '`TooManyFreshQueries`: `FDA_MAX_CONCURRENT_FRESH_QUERIES` exceeded.'
  *         content:
@@ -218,6 +231,7 @@ router.get('/:visibility/fdas/:fdaId/das/:daId/data', async (req, res) => {
  *               $ref: '#/components/schemas/Error'
  */
 router.get('/:visibility/fdas/:fdaId/data', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
   const { visibility, fdaId } = req.params;
   const { service, servicePath, style } = resolveServiceContextFromRequest(req);
 

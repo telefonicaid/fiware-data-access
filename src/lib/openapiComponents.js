@@ -432,6 +432,21 @@
  *       additionalProperties: false
  *       required: [id, query]
  *       properties:
+ *         maxDownloads:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 9007199254740991
+ *           description: Optional lifetime quota shared by all data endpoints, DAs and formats. Admitted requests consume quota even if interrupted or execution fails.
+ *           example: 5
+ *         expirationDate:
+ *           type: string
+ *           format: date-time
+ *           description: Future ISO 8601 timestamp with timezone. Mutually exclusive with validityPeriod.
+ *         validityPeriod:
+ *           type: string
+ *           pattern: '^P(?:(\d+)D)?(?:T(\d+)H)?$'
+ *           description: Positive duration in whole days and hours, starting at creation. Mutually exclusive with expirationDate.
+ *           example: P7D
  *         id:
  *           type: string
  *           pattern: '^[a-zA-Z0-9_-]+$'
@@ -482,6 +497,18 @@
  *       description: Multipart form fields accepted by `POST /{visibility}/fdas/upload`.
  *       required: [id, file]
  *       properties:
+ *         maxDownloads:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 9007199254740991
+ *           description: Lifetime download quota, supplied as a multipart form field.
+ *         expirationDate:
+ *           type: string
+ *           format: date-time
+ *           description: Future timestamp with timezone. Mutually exclusive with validityPeriod.
+ *         validityPeriod:
+ *           type: string
+ *           description: Positive duration in whole days and hours from creation, for example P7D or P1DT12H. Mutually exclusive with expirationDate.
  *         id:
  *           type: string
  *           description: >
@@ -520,6 +547,30 @@
  *       type: object
  *       description: Fields common to both FDA response representations (list item and single-FDA detail).
  *       properties:
+ *         maxDownloads:
+ *           type: integer
+ *           nullable: true
+ *           readOnly: true
+ *           description: Lifetime quota; null means unlimited. Download metadata is present only on restricted FDAs.
+ *         downloadsUsed:
+ *           type: integer
+ *           readOnly: true
+ *           description: Atomically admitted download requests; independent of buffered access statistics and never reset on refresh.
+ *         remainingDownloads:
+ *           type: integer
+ *           nullable: true
+ *           readOnly: true
+ *           description: Remaining admissions, or null when unlimited. Informational; the download reservation is authoritative.
+ *         expirationDate:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *           readOnly: true
+ *         downloadStatus:
+ *           type: string
+ *           enum: [available, expired, exhausted]
+ *           readOnly: true
+ *           description: Policy status, independent of fetch readiness. Does not remove access to management metadata.
  *         createdAt:
  *           type: string
  *           format: date-time

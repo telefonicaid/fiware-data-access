@@ -30,6 +30,7 @@ import { CronExpressionParser } from 'cron-parser';
 import { FDAError } from '../fdaError.js';
 import { getBasicLogger } from './logger.js';
 import { VALID_VISIBILITIES_SET } from '../constants.js';
+import { getDownloadMetadata } from './downloadPolicy.js';
 const logger = getBasicLogger();
 
 let activeFreshQueries = 0;
@@ -770,7 +771,7 @@ export function toFDAApiResponse(fda, { includeId }) {
     return fda;
   }
 
-  const response = { ...fda };
+  const response = { ...fda, ...getDownloadMetadata(fda) };
   const fdaId = response.fdaId;
 
   delete response._id;
@@ -779,6 +780,7 @@ export function toFDAApiResponse(fda, { includeId }) {
   delete response.service;
   delete response.visibility;
   delete response.servicePath;
+  delete response.downloadPolicy;
 
   if (!includeId) {
     return response;
