@@ -95,30 +95,37 @@ described in the sizing section is what avoids this case.
 
 ## Decision: FDA-managed quotas
 
-The branch `poc/resource-governance` implements quotas managed by FDA (per service, per `servicePath`, per FDA, per
-fetch and number of FDAs, plus a `GET /usage` endpoint). It was used to compare both options:
+Resource accounting (see [Resource Accounting](/doc/03_api.md#resource-accounting)) already measures the storage of
+every FDA after each fetch and exposes it, together with access counters, in `GET /{visibility}/fdas/{fdaId}` and in
+`GET /usage` per service and per `servicePath`. It enforces nothing: "No quotas or limits are enforced". A tenant can
+therefore already see how much it uses, but not a limit or the room left.
 
-|                       | MinIO bucket quota   | FDA-managed quotas                                    |
-| --------------------- | -------------------- | ----------------------------------------------------- |
-| Granularity           | Service (bucket)     | Service, servicePath, single FDA, number of FDAs      |
-| Visible to the tenant | No                   | Yes, limits and remaining room                        |
-| When it acts          | During the write     | Before creating, during the fetch, or after measuring |
-| Who manages it        | Operators, with `mc` | API or configuration                                  |
-| Cost for us           | Error handling only  | New code, storage and API to maintain                 |
+The branch `poc/resource-governance` goes one step further and implements quotas managed by FDA on top of that
+measurement (per service, per `servicePath`, per FDA, per fetch and number of FDAs). It was used to compare both
+options:
+
+|                       | MinIO bucket quota             | FDA-managed quotas                                    |
+| --------------------- | ------------------------------ | ----------------------------------------------------- |
+| Granularity           | Service (bucket)               | Service, servicePath, single FDA, number of FDAs      |
+| Visible to the tenant | Usage yes (`/usage`), limit no | Yes, limits and remaining room                        |
+| When it acts          | During the write               | Before creating, during the fetch, or after measuring |
+| Who manages it        | Operators, with `mc`           | API or configuration                                  |
+| Cost for us           | Error handling only            | Limits, enforcement and API on top of the accounting  |
 
 One limit of the MinIO option to keep in mind: its quota is approximate (see above). If an exact limit per service is
-needed, only a measurement done by FDA can provide it.
+needed, only the measurement done by FDA can provide it.
 
 **Decision: the MinIO bucket quota with the error handling described above is enough for now.** The risk to cover is the
-object storage filling up, and the quota of the service is enforced by the storage itself, with no measurement or
-accounting code in FDA that could drift from the real usage.
+object storage filling up, and the quota of the service is enforced by the storage itself.
 
 FDA-managed quotas are left out until one of these needs appears:
 
--   Tenants need to see their limits and remaining room through the API.
+-   Tenants need to see their limits and remaining room through the API. The natural place is `GET /usage`, which would
+    add the limits and the remaining room next to the figures it already returns.
 -   A limit is needed below the service level (per `servicePath` or per FDA).
 -   A limit on the number of FDAs is needed, which the storage cannot enforce.
 
-If they are added, a quota rejection raised by FDA before or during the fetch should use a different error type from
-`StorageQuotaExceeded` (which means the storage itself refused the write), so that clients and operators can tell a
-tenant limit from a full bucket.
+If they are added, they should extend the accounting and `GET /usage` instead of introducing a second measurement, and a
+quota rejection raised by FDA before or during the fetch should use a different error type from `StorageQuotaExceeded`
+(which means the storage itself refused the write), so that clients and operators can tell a tenant limit from a full
+bucket.
