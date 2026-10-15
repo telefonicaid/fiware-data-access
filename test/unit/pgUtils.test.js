@@ -171,6 +171,28 @@ describe('pg utils', () => {
     expect(client).toBe(currentClient);
   });
 
+  test('uploadTable returns extracted CSV bytes without buffering the source', async () => {
+    currentClient.query.mockReturnValue({ destroy: jest.fn() });
+    pipelineMock.mockImplementationOnce(async (source, destination) => {
+      destination.resume();
+      destination.write(Buffer.from('name\n'));
+      destination.end(Buffer.from('Espa\u00f1a\n'));
+    });
+    uploadCtorMock.mockImplementationOnce(() => ({
+      on: jest.fn(),
+      done: jest.fn().mockResolvedValue(undefined),
+    }));
+    const bytes = await uploadTable(
+      {},
+      'bucket',
+      { username: 'u', password: 'p', host: 'h', port: 5432, database: 'svc' },
+      'SELECT name',
+      'fda',
+    );
+    expect(bytes).toBe(Buffer.byteLength('name\nEspa\u00f1a\n'));
+    expect(currentClient.release).toHaveBeenCalledTimes(1);
+  });
+
   test('runPgQuery returns rows on success', async () => {
     currentClient.query.mockResolvedValue({ rows: [{ id: 1 }] });
 
@@ -434,6 +456,35 @@ describe('pg utils', () => {
     );
     expect(stream.destroy).toHaveBeenCalledWith(expect.any(Error));
     expect(stream.destroy).toHaveBeenCalledTimes(1);
+    expect(currentClient.release).toHaveBeenCalledTimes(1);
+    expect(currentClient.release).toHaveBeenCalledWith(true);
+  });
+
+  test('uploadTable reports a MinIO bucket quota failure as StorageQuotaExceeded', async () => {
+    currentClient.query.mockReturnValue({ destroy: jest.fn() });
+    uploadCtorMock.mockImplementationOnce(() => ({
+      on: jest.fn(),
+      done: jest.fn().mockRejectedValue(
+        Object.assign(new Error('Bucket quota exceeded'), {
+          Code: 'XMinioAdminBucketQuotaExceeded',
+        }),
+      ),
+    }));
+
+    const creds = {
+      username: 'u',
+      password: 'p',
+      host: 'h',
+      port: 5432,
+      database: 'svc_db',
+    };
+    await expect(
+      uploadTable({}, 'bucketA', creds, 'SELECT * FROM t', 'path/file'),
+    ).rejects.toMatchObject({
+      status: 507,
+      type: 'StorageQuotaExceeded',
+      message: expect.stringContaining('"bucketA"'),
+    });
     expect(currentClient.release).toHaveBeenCalledTimes(1);
   });
 

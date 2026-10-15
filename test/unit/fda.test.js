@@ -68,6 +68,7 @@ const awsMocks = {
   dropFiles: jest.fn(),
   moveObject: jest.fn(),
   listObjects: jest.fn(),
+  listObjectsWithSize: jest.fn(),
 };
 
 const mongoMocks = {
@@ -85,6 +86,7 @@ const mongoMocks = {
   updateFDAStatus: jest.fn(),
   updateFDALastFetch: jest.fn(),
   updateFDASchema: jest.fn(),
+  updateFDAStorage: jest.fn(),
   claimFDAForFetch: jest.fn(),
   claimFDAForDeletion: jest.fn(),
   createDatasource: jest.fn(),
@@ -122,6 +124,7 @@ await jest.unstable_mockModule('../../src/lib/utils/db.js', () => ({
   extractDate: dbMocks.extractDate,
   PARTITION_TYPES: dbMocks.PARTITION_TYPES,
   refreshIntervalPartitionCheck: dbMocks.refreshIntervalPartitionCheck,
+  listObjectsWithSize: awsMocks.listObjectsWithSize,
 }));
 
 await jest.unstable_mockModule('../../src/lib/utils/pg.js', () => ({
@@ -140,6 +143,7 @@ await jest.unstable_mockModule('../../src/lib/utils/aws.js', () => ({
   dropFiles: awsMocks.dropFiles,
   moveObject: awsMocks.moveObject,
   listObjects: awsMocks.listObjects,
+  listObjectsWithSize: awsMocks.listObjectsWithSize,
 }));
 
 await jest.unstable_mockModule('../../src/lib/utils/mongo.js', () => ({
@@ -157,6 +161,7 @@ await jest.unstable_mockModule('../../src/lib/utils/mongo.js', () => ({
   updateFDAStatus: mongoMocks.updateFDAStatus,
   updateFDALastFetch: mongoMocks.updateFDALastFetch,
   updateFDASchema: mongoMocks.updateFDASchema,
+  updateFDAStorage: mongoMocks.updateFDAStorage,
   claimFDAForFetch: mongoMocks.claimFDAForFetch,
   claimFDAForDeletion: mongoMocks.claimFDAForDeletion,
   createDatasource: mongoMocks.createDatasource,
@@ -206,6 +211,7 @@ const {
   getStoredFDA,
   updateFDA,
   processFDAAsync,
+  measureFDAStorage,
   deleteFDA,
   deleteDA,
   getDA,
@@ -2768,6 +2774,11 @@ describe('processUploadFDAJob', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    awsMocks.listObjectsWithSize
+      .mockReset()
+      .mockResolvedValue([
+        { key: 'servicepath/upload_csv_ok.parquet', size: 123 },
+      ]);
     awsMocks.getS3Client.mockReturnValue({});
     awsMocks.newUpload.mockReturnValue({
       done: jest.fn().mockResolvedValue(undefined),
@@ -2806,11 +2817,6 @@ describe('processUploadFDAJob', () => {
         undefined,
         undefined,
       );
-      expect(mongoMocks.updateFDALastFetch).toHaveBeenCalledWith(
-        'svc',
-        'upload_csv_ok',
-        '/servicepath',
-      );
       expect(mongoMocks.updateFDAStatus).toHaveBeenCalledWith(
         expect.objectContaining({
           service: 'svc',
@@ -2818,9 +2824,24 @@ describe('processUploadFDAJob', () => {
           servicePath: '/servicepath',
           status: 'completed',
           progress: 100,
+          lastRefresh: {
+            durationMs: expect.any(Number),
+            bytesFetched: Buffer.byteLength('id,value\n1,10\n2,20\n'),
+          },
         }),
       );
       expect(fs.existsSync(filePath)).toBe(false);
+      expect(mongoMocks.updateFDAStorage).toHaveBeenCalledWith(
+        'svc',
+        'upload_csv_ok',
+        '/servicepath',
+        {
+          bytes: 123,
+          objects: 1,
+          partitions: 0,
+          measuredAt: expect.any(Date),
+        },
+      );
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -3357,6 +3378,7 @@ describe('datasource service helpers', () => {
 describe('processFDAAsync', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    awsMocks.listObjectsWithSize.mockReset().mockResolvedValue([]);
     awsMocks.getS3Client.mockReturnValue({});
     awsMocks.dropFile.mockResolvedValue(undefined);
     awsMocks.newUpload.mockReturnValue({
@@ -3419,7 +3441,33 @@ describe('processFDAAsync', () => {
       servicePath: '/servicepath',
       status: 'completed',
       progress: 100,
+      lastRefresh: { durationMs: expect.any(Number), bytesFetched: 0 },
     });
+  });
+
+  test('persists measured storage and extracted bytes after a successful fetch', async () => {
+    pgMocks.uploadTable.mockResolvedValueOnce(456);
+    awsMocks.listObjectsWithSize.mockResolvedValueOnce([
+      { key: 'servicepath/fda1.parquet', size: 123 },
+    ]);
+    await processFDAAsync('fda1', 'SELECT 1', 'svc', '/servicepath');
+    expect(mongoMocks.updateFDAStorage).toHaveBeenCalledWith(
+      'svc',
+      'fda1',
+      '/servicepath',
+      {
+        bytes: 123,
+        objects: 1,
+        partitions: 0,
+        measuredAt: expect.any(Date),
+      },
+    );
+    expect(mongoMocks.updateFDAStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: 'completed',
+        lastRefresh: { durationMs: expect.any(Number), bytesFetched: 456 },
+      }),
+    );
   });
 
   test('derives the persisted schema from the materialized Parquet once ingestion succeeds', async () => {
@@ -3754,6 +3802,7 @@ describe('processFDAAsync', () => {
       servicePath: '/servicepath',
       status: 'completed',
       progress: 100,
+      lastRefresh: { durationMs: expect.any(Number), bytesFetched: 0 },
     });
   });
 
@@ -3840,6 +3889,150 @@ describe('processFDAAsync', () => {
       {},
       'svc',
       'servicepath/fdaA.parquet',
+    );
+  });
+
+  test('marks FDA as failed with StorageQuotaExceeded and removes staging objects when the bucket quota is exceeded', async () => {
+    pgMocks.uploadTable.mockRejectedValue(
+      Object.assign(new Error('Bucket quota exceeded'), {
+        Code: 'XMinioAdminBucketQuotaExceeded',
+      }),
+    );
+    awsMocks.listObjects.mockResolvedValue([
+      'tmp/servicepath/fda2.parquet/data_0.parquet',
+    ]);
+
+    await expect(
+      processFDAAsync('fda2', 'SELECT 2', 'svc', '/servicepath'),
+    ).rejects.toMatchObject({ status: 507, type: 'StorageQuotaExceeded' });
+
+    expect(mongoMocks.updateFDAStatus).toHaveBeenCalledWith({
+      service: 'svc',
+      fdaId: 'fda2',
+      servicePath: '/servicepath',
+      status: 'failed',
+      progress: 0,
+      error: expect.stringContaining('Storage quota exceeded for bucket "svc"'),
+    });
+    expect(awsMocks.dropFile).toHaveBeenCalledWith(
+      {},
+      'svc',
+      'servicepath/fda2.csv',
+    );
+    expect(awsMocks.dropFile).toHaveBeenCalledWith(
+      {},
+      'svc',
+      'tmp/servicepath/fda2.parquet',
+    );
+    expect(awsMocks.dropFile).toHaveBeenCalledWith(
+      {},
+      'svc',
+      'tmp/servicepath/fda2.parquet/data_0.parquet',
+    );
+  });
+
+  test('keeps the original error when cleaning the objects of a failed fetch also fails', async () => {
+    pgMocks.uploadTable.mockRejectedValue(new Error('upload failed'));
+    awsMocks.dropFile.mockRejectedValue(new Error('cleanup exploded'));
+
+    await expect(
+      processFDAAsync('fda2', 'SELECT 2', 'svc', '/servicepath'),
+    ).rejects.toThrow('upload failed');
+
+    expect(mongoMocks.updateFDAStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'failed', error: 'upload failed' }),
+    );
+  });
+
+  test('publishes a non partitioned parquet from tmp only after it was fully written', async () => {
+    await processFDAAsync('fda1', 'SELECT 1', 'svc', '/servicepath');
+
+    expect(dbMocks.toParquet).toHaveBeenCalledWith(
+      {},
+      'svc/servicepath/fda1.csv',
+      'svc/tmp/servicepath/fda1.parquet',
+      undefined,
+      undefined,
+      undefined,
+    );
+    expect(awsMocks.moveObject).toHaveBeenCalledWith(
+      {},
+      'svc',
+      'svc/tmp/servicepath/fda1.parquet',
+      'servicepath/fda1.parquet',
+    );
+    expect(awsMocks.dropFile).toHaveBeenCalledWith(
+      {},
+      'svc',
+      'tmp/servicepath/fda1.parquet',
+    );
+  });
+
+  test('reports StorageQuotaExceeded and removes the staging objects when the quota is hit while publishing partitions', async () => {
+    awsMocks.listObjects.mockImplementation((client, bucket, prefix) =>
+      Promise.resolve(
+        prefix.startsWith('tmp/')
+          ? [
+              'tmp/servicepath/fda1.parquet/year=2026/month=1/day=1/data_0.parquet',
+              'tmp/servicepath/fda1.parquet/year=2026/month=1/day=2/data_0.parquet',
+            ]
+          : [],
+      ),
+    );
+    awsMocks.moveObject
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(
+        new FDAError(
+          507,
+          'StorageQuotaExceeded',
+          'Storage quota exceeded for bucket "svc".',
+        ),
+      );
+
+    await expect(
+      processFDAAsync(
+        'fda1',
+        'SELECT 1',
+        'svc',
+        '/servicepath',
+        'observed_at',
+        undefined,
+        { partition: 'day' },
+      ),
+    ).rejects.toMatchObject({ status: 507, type: 'StorageQuotaExceeded' });
+
+    expect(mongoMocks.updateFDAStatus).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'failed',
+        error: expect.stringContaining('Storage quota exceeded'),
+      }),
+    );
+    expect(awsMocks.dropFile).toHaveBeenCalledWith(
+      {},
+      'svc',
+      'tmp/servicepath/fda1.parquet/year=2026/month=1/day=2/data_0.parquet',
+    );
+    expect(awsMocks.dropFile).toHaveBeenCalledWith(
+      {},
+      'svc',
+      'servicepath/fda1.csv',
+    );
+  });
+
+  test('does not touch the published parquet when writing the new one fails', async () => {
+    dbMocks.toParquet.mockRejectedValueOnce(
+      new FDAError(507, 'StorageQuotaExceeded', 'quota'),
+    );
+
+    await expect(
+      processFDAAsync('fda1', 'SELECT 1', 'svc', '/servicepath'),
+    ).rejects.toMatchObject({ status: 507 });
+
+    expect(awsMocks.moveObject).not.toHaveBeenCalled();
+    expect(awsMocks.dropFile).not.toHaveBeenCalledWith(
+      {},
+      'svc',
+      'servicepath/fda1.parquet',
     );
   });
 
@@ -3939,11 +4132,21 @@ describe('processFDAAsync', () => {
     expect(uploadBody.write).toHaveBeenCalledWith('dev-1,ok\n');
     expect(uploadBody.write).toHaveBeenCalledWith('dev-2,warn\n');
     expect(uploadBody.end).toHaveBeenCalled();
+    expect(mongoMocks.updateFDAStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        lastRefresh: {
+          durationMs: expect.any(Number),
+          bytesFetched: Buffer.byteLength(
+            'device,status\ndev-1,ok\ndev-2,warn\n',
+          ),
+        },
+      }),
+    );
     expect(reader.close).toHaveBeenCalled();
     expect(dbMocks.toParquet).toHaveBeenCalledWith(
       {},
       'svc/servicepath/fda_mongo_cached.csv',
-      'svc/servicepath/fda_mongo_cached.parquet',
+      'svc/tmp/servicepath/fda_mongo_cached.parquet',
       undefined,
       undefined,
       undefined,
@@ -5320,6 +5523,58 @@ describe('getFDA', () => {
       query: 'SELECT 9',
       status: 'completed',
     });
+  });
+});
+
+describe('FDA storage accounting', () => {
+  test('excludes temporary objects and FDA prefix collisions', async () => {
+    jest.clearAllMocks();
+    awsMocks.getS3Client.mockReturnValue({});
+    awsMocks.listObjectsWithSize.mockResolvedValueOnce([
+      { key: 'public/fda1.parquet/year=2026/day=1/part1.parquet', size: 10 },
+      { key: 'public/fda1.parquet/year=2026/day=1/part2.parquet', size: 20 },
+      { key: 'public/fda1.parquet/year=2026/day=2/part1.parquet', size: 30 },
+      { key: 'public/fda10.parquet', size: 999 },
+      { key: 'public/fda1.parquet_backup/part1.parquet', size: 999 },
+      {
+        key: 'tmp/public/fda1.parquet/year=2026/day=1/part1.parquet',
+        size: 999,
+      },
+      { key: 'public/fda1.csv', size: 999 },
+    ]);
+    await expect(measureFDAStorage('svc', 'fda1', '/public')).resolves.toEqual({
+      bytes: 60,
+      objects: 3,
+      partitions: 2,
+      measuredAt: expect.any(Date),
+    });
+  });
+
+  test('remeasures storage after cleaning partitions', async () => {
+    jest.clearAllMocks();
+    awsMocks.getS3Client.mockReturnValue({});
+    awsMocks.listObjects.mockResolvedValueOnce([]);
+    awsMocks.dropFiles.mockResolvedValueOnce(undefined);
+    awsMocks.listObjectsWithSize.mockResolvedValueOnce([]);
+    await cleanPartition(
+      'svc',
+      'fda1',
+      '1 day',
+      { partition: 'day' },
+      '/public',
+    );
+    expect(mongoMocks.updateFDAStorage).toHaveBeenCalledWith(
+      'svc',
+      'fda1',
+      '/public',
+      {
+        bytes: 0,
+        objects: 0,
+        partitions: 0,
+        measuredAt: expect.any(Date),
+      },
+    );
+    expect(mongoMocks.updateFDALastFetch).not.toHaveBeenCalled();
   });
 });
 

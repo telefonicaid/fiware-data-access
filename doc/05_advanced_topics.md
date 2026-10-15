@@ -15,6 +15,7 @@ topics related to this system.
 -   [File name convention](#file-name-convention)
 -   [Data origin](#data-origin)
 -   [Default Data Access](#default-data-access)
+-   [Storage quotas](#storage-quotas)
 
 ### Bucket name convention
 
@@ -66,6 +67,14 @@ This topic covers:
 -   scope limited to cached DAs after the fresh-query split
 
 Full documentation available at: [`Default Data Access`](/doc/AdvancedTopics/default_data_access.md)
+
+### Storage quotas
+
+The storage used by a `Fiware-Service` is limited with a MinIO hard quota on its bucket, set by the operator with `mc`.
+When a fetch reaches the quota the FDA ends in `failed` with a `StorageQuotaExceeded` error, the temporary objects are
+removed and the last published data keeps being served.
+
+Full documentation available at: [`Storage quotas`](/doc/AdvancedTopics/storage_quotas.md)
 
 ---
 

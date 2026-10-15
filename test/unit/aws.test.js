@@ -184,6 +184,23 @@ describe('aws utils', () => {
     });
   });
 
+  test('moveObject reports a MinIO bucket quota failure as StorageQuotaExceeded', async () => {
+    const { moveObject } = await loadAwsModule();
+
+    currentS3Client.send.mockRejectedValueOnce(
+      Object.assign(new Error('Bucket quota exceeded'), {
+        Code: 'XMinioAdminBucketQuotaExceeded',
+      }),
+    );
+
+    await expect(
+      moveObject(currentS3Client, 'bucket-a', 'bucket-a/file-a', 'file-b'),
+    ).rejects.toMatchObject({
+      status: 507,
+      type: 'StorageQuotaExceeded',
+    });
+  });
+
   test('listObjects wraps aws listing objects errors with FDAError', async () => {
     const { listObjects } = await loadAwsModule();
 
@@ -214,12 +231,12 @@ describe('aws utils', () => {
 
     currentS3Client.send
       .mockResolvedValueOnce({
-        Contents: [{ Key: 'a' }],
+        Contents: [{ Key: 'a', Size: 1 }],
         IsTruncated: true,
         NextContinuationToken: 'token-1',
       })
       .mockResolvedValueOnce({
-        Contents: [{ Key: 'b' }],
+        Contents: [{ Key: 'b', Size: 2 }],
         IsTruncated: false,
       });
 
@@ -237,6 +254,19 @@ describe('aws utils', () => {
       Prefix: 'prefix',
       ContinuationToken: 'token-1',
     });
+  });
+
+  test('listObjectsWithSize returns key and size of every object', async () => {
+    const { listObjectsWithSize } = await loadAwsModule();
+    currentS3Client.send.mockResolvedValueOnce({
+      Contents: [{ Key: 'a', Size: 10 }, { Key: 'b' }],
+      IsTruncated: false,
+    });
+    const result = await listObjectsWithSize(currentS3Client, 'bucket-a', 'p');
+    expect(result).toEqual([
+      { key: 'a', size: 10 },
+      { key: 'b', size: 0 },
+    ]);
   });
 
   test('dropFiles deletes in batches of 1000 keys', async () => {

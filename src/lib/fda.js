@@ -22,7 +22,7 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
-import { PassThrough } from 'node:stream';
+import { PassThrough, Transform } from 'node:stream';
 import fs from 'node:fs';
 import { getAgenda } from './jobs.js';
 import {
@@ -53,6 +53,7 @@ import {
   dropFile,
   moveObject,
   listObjects,
+  listObjectsWithSize,
   dropFiles,
 } from './utils/aws.js';
 import {
@@ -67,8 +68,8 @@ import {
   updateDA,
   removeDA,
   updateFDAStatus,
-  updateFDALastFetch,
   updateFDASchema,
+  updateFDAStorage,
   claimFDAForFetch,
   claimFDAForDeletion,
   createDatasource,
@@ -108,7 +109,7 @@ import {
   normalizeServicePath,
 } from './utils/fdaScope.js';
 import { config } from './fdaConfig.js';
-import { FDAError } from './fdaError.js';
+import { FDAError, storageQuotaErrorFor } from './fdaError.js';
 
 import { getBasicLogger } from './utils/logger.js';
 import {
@@ -1581,6 +1582,7 @@ export async function processFDAAsync(
   objStgConf,
   datasourceId = DEFAULT_DATASOURCE_ID,
 ) {
+  const startedAt = Date.now();
   const storagePath = getFDAStoragePath(fdaId, servicePath);
   const bucketName = getBucketNameFromService(service);
 
@@ -1614,7 +1616,7 @@ export async function processFDAAsync(
       ).firstQuery;
     }
 
-    await uploadTableToObjStg(
+    const bytesFetched = await uploadTableToObjStg(
       service,
       datasourceId,
       refreshQuery,
@@ -1628,6 +1630,7 @@ export async function processFDAAsync(
     );
 
     await refreshFDASchemaFromStorage(service, fdaId, servicePath, objStgConf);
+    await measureFDAStorageSafely(service, fdaId, servicePath);
 
     await updateFDAStatus({
       service,
@@ -1635,8 +1638,10 @@ export async function processFDAAsync(
       servicePath,
       status: 'completed',
       progress: 100,
+      lastRefresh: { durationMs: Date.now() - startedAt, bytesFetched },
     });
-  } catch (err) {
+  } catch (error) {
+    const err = storageQuotaErrorFor(error, bucketName) ?? error;
     await updateFDAStatus({
       service,
       fdaId,
@@ -1645,18 +1650,76 @@ export async function processFDAAsync(
       progress: 0,
       error: err.message,
     });
+    await cleanFailedFetchObjects(bucketName, storagePath);
+    throw err;
+  }
+}
+
+async function cleanFailedFetchObjects(bucketName, storagePath) {
+  try {
     const s3Client = getS3Client(
       `${config.objstg.protocol}://${config.objstg.endpoint}`,
       config.objstg.usr,
       config.objstg.pass,
     );
+    await dropFile(s3Client, bucketName, `${storagePath}.csv`);
     await cleanTmpFolder(s3Client, bucketName, `tmp/${storagePath}.parquet`);
-    throw err;
+  } catch (cleanupError) {
+    logger.warn(
+      { err: cleanupError, bucketName, storagePath },
+      'Could not clean the objects left by a failed fetch',
+    );
+  }
+}
+
+export async function measureFDAStorage(service, fdaId, servicePath) {
+  const s3Client = getS3Client(
+    `${config.objstg.protocol}://${config.objstg.endpoint}`,
+    config.objstg.usr,
+    config.objstg.pass,
+  );
+  const bucketName = getBucketNameFromService(service);
+  const parquetPath = `${getFDAStoragePath(fdaId, servicePath)}.parquet`;
+  const listedObjects = await listObjectsWithSize(
+    s3Client,
+    bucketName,
+    parquetPath,
+  );
+  const fdaObjects = listedObjects.filter(
+    ({ key }) => key === parquetPath || key.startsWith(`${parquetPath}/`),
+  );
+  const partitionFolders = new Set(
+    fdaObjects
+      .filter(({ key }) => key !== parquetPath)
+      .map(({ key }) => key.slice(0, key.lastIndexOf('/'))),
+  );
+
+  const storage = {
+    bytes: fdaObjects.reduce((total, { size }) => total + size, 0),
+    objects: fdaObjects.length,
+    partitions: partitionFolders.size,
+    measuredAt: new Date(),
+  };
+
+  await updateFDAStorage(service, fdaId, servicePath, storage);
+  return storage;
+}
+
+async function measureFDAStorageSafely(service, fdaId, servicePath) {
+  try {
+    return await measureFDAStorage(service, fdaId, servicePath);
+  } catch (error) {
+    logger.warn(
+      { err: error, fdaId, service, servicePath },
+      'Could not measure FDA storage',
+    );
+    return null;
   }
 }
 
 async function cleanTmpFolder(s3Client, bucket, tmpPath) {
   // We need to clean tmp folder in failed attempts to avoid accumulation of temp files in S3
+  await dropFile(s3Client, bucket, tmpPath);
   const remnantTempFiles = await listObjects(s3Client, bucket, `${tmpPath}/`);
   for (const tempPartition of remnantTempFiles) {
     await dropFile(s3Client, bucket, tempPartition);
@@ -1783,7 +1846,13 @@ async function uploadMongoCursorContentToObjectStorage(
   path,
   reader,
 ) {
-  const uploadBody = new PassThrough();
+  let bytesFetched = 0;
+  const uploadBody = new Transform({
+    transform(chunk, encoding, callback) {
+      bytesFetched += chunk.length;
+      callback(null, chunk);
+    },
+  });
   const upload = newUpload(s3Client, bucket, `${path}.csv`, uploadBody, 5, 1);
 
   const uploadDone = upload.done();
@@ -1817,13 +1886,21 @@ async function uploadMongoCursorContentToObjectStorage(
 
     uploadBody.end();
     await uploadDone;
+    return bytesFetched;
   } catch (error) {
     uploadBody.destroy(error);
-    await uploadDone.catch(() => {});
-    throw new FDAError(
-      503,
-      'UploadError',
-      `Error uploading FDA to object storage: ${error.message}`,
+    const uploadError = await uploadDone.then(
+      () => undefined,
+      (err) => err,
+    );
+    throw (
+      storageQuotaErrorFor(uploadError, bucket) ??
+      storageQuotaErrorFor(error, bucket) ??
+      new FDAError(
+        503,
+        'UploadError',
+        `Error uploading FDA to object storage: ${error.message}`,
+      )
     );
   } finally {
     await reader.close();
@@ -1840,10 +1917,13 @@ async function uploadCsvContentToObjectStorage(s3Client, bucket, path, body) {
     await upload.done();
   } catch (error) {
     uploadBody.destroy(error);
-    throw new FDAError(
-      503,
-      'UploadError',
-      `Error uploading FDA to object storage: ${error.message}`,
+    throw (
+      storageQuotaErrorFor(error, bucket) ??
+      new FDAError(
+        503,
+        'UploadError',
+        `Error uploading FDA to object storage: ${error.message}`,
+      )
     );
   }
 }
@@ -2079,6 +2159,13 @@ export async function cleanPartition(
     }
   }
   await dropFiles(s3Client, bucketName, partitionsToRemove);
+  await measureFDAStorageSafely(service, fdaId, servicePath);
+}
+
+async function publishTmpFile(s3Client, bucket, path) {
+  const tmpKey = `tmp/${path}.parquet`;
+  await moveObject(s3Client, bucket, `${bucket}/${tmpKey}`, `${path}.parquet`);
+  await dropFile(s3Client, bucket, tmpKey);
 }
 
 async function publishTmpPartitions(
@@ -2150,8 +2237,15 @@ async function uploadTableToObjStg(
     rebuildSchema ?? normalizePersistedSchemaFields(fda?.schema);
   await updateFDAStatus({ service, fdaId, servicePath, progress: 20 });
 
+  let bytesFetched;
   if (datasource.type === 'postgres') {
-    await uploadTable(s3Client, bucket, datasource.config, query, path);
+    bytesFetched = await uploadTable(
+      s3Client,
+      bucket,
+      datasource.config,
+      query,
+      path,
+    );
   } else {
     const reader = await createMongoFDAReader(
       service,
@@ -2159,7 +2253,7 @@ async function uploadTableToObjStg(
       query,
       timeColumn,
     );
-    await uploadMongoCursorContentToObjectStorage(
+    bytesFetched = await uploadMongoCursorContentToObjectStorage(
       s3Client,
       bucket,
       path,
@@ -2177,10 +2271,8 @@ async function uploadTableToObjStg(
       progress: 60,
     });
 
-    // DuckDB cant overwrite files in Minio, so for partitioned files we upload them in a tmp file and then move them.
-    const parquetPath = objStgConf?.partition
-      ? getPath(bucket, `tmp/${path}.parquet`, '')
-      : getPath(bucket, path, '.parquet');
+    // DuckDB cant overwrite files in Minio, so we write them in a tmp path and then move them.
+    const parquetPath = getPath(bucket, `tmp/${path}.parquet`, '');
 
     const csvPath = getPath(bucket, path, '.csv');
     if (datasource.type === 'postgres' && schemaFields.length > 0) {
@@ -2203,6 +2295,8 @@ async function uploadTableToObjStg(
       );
     }
 
+    await dropFile(s3Client, bucket, `${path}.csv`);
+
     if (objStgConf?.partition) {
       await publishTmpPartitions(
         s3Client,
@@ -2211,6 +2305,8 @@ async function uploadTableToObjStg(
         objStgConf.partition,
         Boolean(rebuildSchema),
       );
+    } else {
+      await publishTmpFile(s3Client, bucket, path);
     }
 
     await updateFDAStatus({
@@ -2224,15 +2320,18 @@ async function uploadTableToObjStg(
     if (objStgConf?.partition) {
       await dropFile(s3Client, bucket, `${path}.parquet`);
     }
-    await dropFile(s3Client, bucket, `${path}.csv`);
   } catch (e) {
     if (e instanceof FDAError) {
       throw e;
     }
-    throw new FDAError(500, 'UploadError', e.message);
+    throw (
+      storageQuotaErrorFor(e, bucket) ??
+      new FDAError(500, 'UploadError', e.message)
+    );
   } finally {
     await releaseDBConnection(conn);
   }
+  return bytesFetched ?? 0;
 }
 
 async function ensureFDAReadyForQuery(service, fdaId, visibility, servicePath) {
@@ -2400,7 +2499,10 @@ async function createParquet(
     if (e instanceof FDAError) {
       throw e;
     }
-    throw new FDAError(500, 'UploadError', e.message);
+    throw (
+      storageQuotaErrorFor(e, bucketName) ??
+      new FDAError(500, 'UploadError', e.message)
+    );
   } finally {
     await releaseDBConnection(conn);
   }
@@ -3054,6 +3156,7 @@ export async function processUploadFDAJob({
   cached,
   defaultDataAccessEnabled,
 }) {
+  const startedAt = Date.now();
   let s3Client;
   let bucketName;
   let tempKey;
@@ -3182,6 +3285,7 @@ export async function processUploadFDAJob({
     }
 
     await refreshFDASchemaFromStorage(service, fdaId, servicePath, objStgConf);
+    await measureFDAStorageSafely(service, fdaId, servicePath);
 
     await updateFDAStatus({
       service,
@@ -3189,11 +3293,15 @@ export async function processUploadFDAJob({
       servicePath,
       status: 'completed',
       progress: 100,
+      lastRefresh: {
+        durationMs: Date.now() - startedAt,
+        bytesFetched: fileBuffer.length,
+      },
     });
-    await updateFDALastFetch(service, fdaId, servicePath);
 
     logger.info({ fdaId }, 'Upload FDA completed successfully');
-  } catch (err) {
+  } catch (error) {
+    const err = storageQuotaErrorFor(error, bucketName) ?? error;
     logger.error({ err, fdaId }, 'Upload FDA failed');
     await updateFDAStatus({
       service,
