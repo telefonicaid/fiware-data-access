@@ -22,6 +22,8 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
+import { STORAGE_QUOTA_PATTERN } from './constants.js';
+
 export class FDAError extends Error {
   constructor(status = 500, type = 'InternalServerError', message) {
     super(message);
@@ -32,4 +34,26 @@ export class FDAError extends Error {
 
     Error.captureStackTrace(this, this.constructor);
   }
+}
+
+export function isStorageQuotaError(error) {
+  return (
+    error?.Code === 'XMinioAdminBucketQuotaExceeded' ||
+    error?.name === 'XMinioAdminBucketQuotaExceeded' ||
+    STORAGE_QUOTA_PATTERN.test(String(error?.message ?? error ?? ''))
+  );
+}
+
+export function storageQuotaErrorFor(error, bucket) {
+  if (error instanceof FDAError && error.type === 'StorageQuotaExceeded') {
+    return error;
+  }
+  if (!isStorageQuotaError(error)) {
+    return undefined;
+  }
+  return new FDAError(
+    507,
+    'StorageQuotaExceeded',
+    `Storage quota exceeded for bucket "${bucket}". Free up space or ask the operator to increase the bucket quota.`,
+  );
 }
