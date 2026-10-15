@@ -468,11 +468,13 @@ router.post('/:visibility/fdas/upload', (req, res) => {
         cached: true,
         defaultDataAccessEnabled: uploadData.defaultDataAccessBool,
         maxDownloads:
-          req.body.maxDownloads === undefined
+          req.body.maxDownloads === undefined || req.body.maxDownloads === ''
             ? undefined
             : Number(req.body.maxDownloads),
-        expirationDate: req.body.expirationDate,
-        validityPeriod: req.body.validityPeriod,
+        expirationDate:
+          req.body.expirationDate === '' ? undefined : req.body.expirationDate,
+        validityPeriod:
+          req.body.validityPeriod === '' ? undefined : req.body.validityPeriod,
       });
 
       return res.status(202).json({

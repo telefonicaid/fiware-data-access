@@ -561,7 +561,7 @@ export async function createFDAMongo(
   datasourceId = DEFAULT_DATASOURCE_ID,
   validationMode = 'strict',
   schema = null,
-  downloadPolicy,
+  downloadPolicy = null,
 ) {
   logger.debug({ fdaId, description }, '[DEBUG]: createFDA');
   const fdasCollection = await getCollection();

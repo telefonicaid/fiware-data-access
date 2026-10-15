@@ -461,6 +461,31 @@ Content-Type: application/json; charset=utf-8
 
 If the response is `202`, the FDA was accepted and it will be created.
 
+For an optional restricted-download example, create a separate FDA with a maximum of five downloads and seven days of
+validity from the creation request:
+
+```bash
+curl -i -X POST http://localhost:8080/public/fdas \
+  -H "Content-Type: application/json" \
+  -H "Fiware-Service: trantor" \
+  -H "Fiware-ServicePath: /public" \
+  -d '{
+    "id": "fda_alarms_limited",
+    "query": "SELECT * FROM public.alarms",
+    "maxDownloads": 5,
+    "validityPeriod": "P7D"
+  }'
+```
+
+Once its first fetch completes, its default DA can be queried at
+`/public/fdas/fda_alarms_limited/das/defaultDataAccess/data?service=trantor&servicePath=%2Fpublic&outputType=csv` when
+automatic default DA creation is enabled. Each admitted request consumes one download. New requests return `410` after
+the quota is exhausted or the FDA expires. To use a fixed expiry instead, replace `validityPeriod` with a future
+`expirationDate`, such as `2027-01-21T12:00:00Z`; do not supply both fields. See
+[Public links with download restrictions](05_advanced_topics.md#public-links-with-download-restrictions) for quota
+semantics and gateway configuration before exposing the URL publicly. The remaining steps use the unrestricted
+`fda_alarms` created above.
+
 ### 6. Verify the FDA was created
 
 List FDAs again to confirm:

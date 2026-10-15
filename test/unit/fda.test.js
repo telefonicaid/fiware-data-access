@@ -253,8 +253,6 @@ async function loadFdaModule() {
 
 describe('FDA download restrictions', () => {
   const variants = [
-    ['cached JSON', executeQuery, false, false],
-    ['cached stream', executeQueryStream, false, false],
     ['fresh DA JSON', executeQuery, true, false],
     ['fresh DA stream', executeQueryStream, true, false],
     ['fresh FDA JSON', executeFDAQuery, false, true],
@@ -345,11 +343,27 @@ describe('FDA download restrictions', () => {
     },
   );
 
-  test('invalid DA parameters do not reserve a download', async () => {
+  test.each([
+    ['cached JSON', executeQuery, 'runPreparedStatement'],
+    ['cached stream', executeQueryStream, 'runPreparedStatementStream'],
+  ])(
+    '%s delegates restrictions without duplicate reads',
+    async (name, execute, method) => {
+      await execute(queryArgs(false));
+
+      expect(dbMocks[method]).toHaveBeenCalledTimes(1);
+      expect(mongoMocks.retrieveFDA).toHaveBeenCalledTimes(1);
+      expect(mongoMocks.retrieveDA).not.toHaveBeenCalled();
+      expect(dbMocks.resolveDAParams).not.toHaveBeenCalled();
+      expect(mongoMocks.claimFDADownload).not.toHaveBeenCalled();
+    },
+  );
+
+  test('invalid fresh DA parameters do not reserve a download', async () => {
     dbMocks.resolveDAParams.mockImplementation(() => {
       throw new FDAError(400, 'InvalidParam', 'invalid');
     });
-    await expect(executeQuery(queryArgs(false))).rejects.toMatchObject({
+    await expect(executeQuery(queryArgs(true))).rejects.toMatchObject({
       status: 400,
     });
     expect(mongoMocks.claimFDADownload).not.toHaveBeenCalled();

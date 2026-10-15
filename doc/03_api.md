@@ -866,6 +866,9 @@ A FDA is represented by a JSON object with the following fields:
 | `cached`                                                 | ✓        | boolean                 | If `false`, the FDA is created as only-fresh: no parquet snapshot is maintained, no DAs are allowed, and the FDA is queried through `GET /{visibility}/fdas/{fdaId}/data`. Default `true`.                                                                                                                                      |
 | `datasourceId`                                           | ✓        | string                  | Datasource id used to resolve DB credentials for this FDA. If omitted, FDA uses `default`.                                                                                                                                                                                                                                      |
 | `validationMode`                                         | ✓        | string                  | Controls synchronous validation during creation. Allowed values: `strict` and `unchecked`. Default `strict`.                                                                                                                                                                                                                    |
+| `maxDownloads`                                           | ✓        | integer                 | Optional positive safe integer limiting downloads across the FDA. Omit for unlimited downloads.                                                                                                                                                                                                                                 |
+| `expirationDate`                                         | ✓        | string                  | Optional future ISO 8601 timestamp with seconds and timezone, e.g. `2027-01-21T12:00:00Z`. Mutually exclusive with `validityPeriod`.                                                                                                                                                                                            |
+| `validityPeriod`                                         | ✓        | string                  | Optional positive ISO 8601 duration in whole days and hours, e.g. `P7D`, `PT12H` or `P1DT12H`, measured from the creation request. Mutually exclusive with `expirationDate`.                                                                                                                                                    |
 
 For MongoDB datasources, `query` is an object with the following keys:
 
@@ -1067,59 +1070,13 @@ Creates a new FDA
 
 ##### Public links with download restrictions
 
-Creation accepts optional `maxDownloads`, `expirationDate` and `validityPeriod` fields:
-
-```json
-{
-    "id": "audit",
-    "query": "SELECT * FROM public.events",
-    "maxDownloads": 5,
-    "validityPeriod": "P7D"
-}
-```
-
-`maxDownloads` must be a positive safe integer. Omit it for unlimited downloads. Supply either a future `expirationDate`
-(an ISO 8601 timestamp with seconds and timezone, such as `2027-01-21T12:00:00Z`) or a `validityPeriod`, never both.
-Durations accept whole days and hours, for example `P7D`, `PT12H` or `P1DT12H`, and must be positive. Invalid policies
-return `400 InvalidDownloadPolicy` before provisioning begins. The same fields are accepted on
-`POST /{visibility}/fdas/upload` as multipart form fields.
-
-The validity period starts when creation is requested, not when the first fetch completes. It is stored as an absolute
-expiration date. Existing FDAs and new FDAs without restrictions retain their previous behavior. Policies are also
-enforced if configured on a private FDA; they do not change its visibility or authorization.
-
-A cached FDA can be shared using its DA URL, for example:
-
-```text
-/public/fdas/audit/das/defaultDataAccess/data?service=trantor&servicePath=%2Fpublic&outputType=csv
-```
-
-Only-fresh FDAs use `/public/fdas/audit/data` with the same context query parameters. No authentication headers are
-required by FDA itself. In deployments with a gateway, explicitly allow anonymous access only to the intended public
-data routes. Keep creation, updates, deletion, listing, datasources and FDA/DA metadata protected: metadata can contain
-query definitions and storage configuration. Do not expose private routes, or enable anonymous CDA compatibility routes
-without validating their resolved visibility and tenant. Public links are not secret or signed tokens, and FDA
-identifiers are not an authorization mechanism.
-
-Each admitted data request consumes one download, including empty results, individual pagination requests and client
-retries. The quota is shared by all DAs, formats, cached/fresh query paths and CDA compatibility access for the FDA.
-Invalid request parameters, missing DAs and unavailable snapshots do not consume quota. Once reserved, a download is not
-refunded if execution fails or the connection is interrupted. Reservations are atomic in MongoDB, so multiple API
-instances cannot exceed the configured quota. If MongoDB is unavailable, the request fails without delivering data.
-Download responses carry `Cache-Control: no-store`; configure proxies and CDNs to respect it, disable cache overrides
-and purge any previously cached public responses.
-
-At or after expiration, new downloads return `410 FDAExpired`. Exhausted quotas return `410 DownloadLimitReached`.
-Expiration takes precedence when both conditions hold. Already admitted streams can finish. Neither condition deletes
-the FDA or its objects, cancels scheduled refreshes, or prevents authorized metadata and management access. Refreshes do
-not reset the quota or extend the expiration date.
-
-FDA detail and list responses expose `maxDownloads`, `downloadsUsed`, `remainingDownloads`, `expirationDate` and
-`downloadStatus` (`available`, `expired` or `exhausted`) when a policy is configured. `null` means unlimited downloads
-or no expiration, respectively. The policy status is independent of snapshot readiness. Remaining downloads are
-informational, not a reservation; another client may consume them before the next request. These fields are read-only
-and are not the buffered `access.count` statistics. Expiration enforcement uses MongoDB's clock; the informational
-metadata status uses the API clock, so keep host clocks synchronized.
+Creation accepts optional `maxDownloads` and either `expirationDate` or `validityPeriod`, as described in the
+[FDA payload datamodel](#fda-payload-datamodel). The same fields are accepted as multipart fields on upload. Invalid
+policies return `400 InvalidDownloadPolicy`; expired or exhausted policies reject new downloads with `410 FDAExpired` or
+`410 DownloadLimitReached`. Restrictions apply to the whole FDA, including private FDAs, and do not replace
+authorization. See
+[Public links with download restrictions](05_advanced_topics.md#public-links-with-download-restrictions) for examples,
+quota semantics, metadata and deployment guidance.
 
 _**Request path parameters**_
 
@@ -1344,6 +1301,9 @@ _**Request payload (multipart form fields)**_
 | `timeColumn`        | ✓        | string         | Time column name. Presence and type are validated asynchronously during processing; the API accepts the value on upload.                                                                                              |
 | `objStgConf`        | ✓        | JSON string    | Object storage options (`partition`, `compression`).                                                                                                                                                                  |
 | `defaultDataAccess` | ✓        | boolean/string | Overrides default DA auto-creation for this upload.                                                                                                                                                                   |
+| `maxDownloads`      | ✓        | integer/string | Positive safe integer download limit; omitted or empty means unlimited.                                                                                                                                               |
+| `expirationDate`    | ✓        | string         | Future ISO 8601 timestamp with seconds and timezone. Mutually exclusive with `validityPeriod`; empty is ignored.                                                                                                      |
+| `validityPeriod`    | ✓        | string         | Positive ISO 8601 duration in whole days and hours, e.g. `P7D`. Mutually exclusive with `expirationDate`; empty is ignored.                                                                                           |
 
 Upload-based FDAs do not use a datasource or query. Their `datasourceId` and `query` metadata fields are stored as
 `null`.

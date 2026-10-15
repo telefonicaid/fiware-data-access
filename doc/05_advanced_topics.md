@@ -6,6 +6,69 @@ The `FDA` app interacts and communicates with various systems. To keep that comm
 documentation files describing the different structures and functionalities involved. This file documents the advanced
 topics and FDA internals that don't fit in the other documents.
 
+## Public links with download restrictions
+
+FDA creation accepts optional `maxDownloads`, `expirationDate` and `validityPeriod` fields:
+
+```json
+{
+    "id": "audit",
+    "query": "SELECT * FROM public.events",
+    "maxDownloads": 5,
+    "validityPeriod": "P7D"
+}
+```
+
+`maxDownloads` must be a positive safe integer. Omit it for unlimited downloads. Supply either a future `expirationDate`
+(an ISO 8601 timestamp with seconds and timezone, such as `2027-01-21T12:00:00Z`) or a `validityPeriod`, never both.
+Durations accept whole days and hours, for example `P7D`, `PT12H` or `P1DT12H`, and must be positive. Invalid policies
+return `400 InvalidDownloadPolicy` before provisioning begins. The same fields are accepted on
+`POST /{visibility}/fdas/upload` as multipart form fields; empty strings in these multipart fields are ignored. See the
+[API reference](03_api.md#fda-payload-datamodel) for the payload datamodel.
+
+The validity period starts when creation is requested, not when the first fetch completes. It is stored as an absolute
+expiration date. Existing FDAs and new FDAs without restrictions retain their previous behavior. Policies are also
+enforced if configured on a private FDA; they do not change its visibility or authorization.
+
+### Sharing and gateway configuration
+
+A cached FDA can be shared using its DA URL, for example:
+
+```text
+/public/fdas/audit/das/defaultDataAccess/data?service=trantor&servicePath=%2Fpublic&outputType=csv
+```
+
+Only-fresh FDAs use `/public/fdas/audit/data` with the same context query parameters. No authentication headers are
+required by FDA itself. In deployments with a gateway, explicitly allow anonymous access only to the intended public
+data routes. Keep creation, updates, deletion, listing, datasources and FDA/DA metadata protected: metadata can contain
+query definitions and storage configuration. Do not expose private routes, or enable anonymous CDA compatibility routes
+without validating their resolved visibility and tenant. Public links are not secret or signed tokens, and FDA
+identifiers are not an authorization mechanism.
+
+### Quota and expiration semantics
+
+Each admitted data request consumes one download, including empty results, individual pagination requests and client
+retries. The quota is shared by all DAs, formats, cached/fresh query paths and CDA compatibility access for the FDA.
+Invalid request parameters, missing DAs and unavailable snapshots do not consume quota. Once reserved, a download is not
+refunded if execution fails or the connection is interrupted. Reservations are atomic in MongoDB, so multiple API
+instances cannot exceed the configured quota. If MongoDB is unavailable, the request fails without delivering data.
+Download responses carry `Cache-Control: no-store`; configure proxies and CDNs to respect it, disable cache overrides
+and purge any previously cached public responses.
+
+At or after expiration, new downloads return `410 FDAExpired`. Exhausted quotas return `410 DownloadLimitReached`.
+Expiration takes precedence when both conditions hold. Already admitted streams can finish. Neither condition deletes
+the FDA or its objects, cancels scheduled refreshes, or prevents authorized metadata and management access. Refreshes do
+not reset the quota or extend the expiration date.
+
+### Download metadata
+
+FDA detail and list responses expose `maxDownloads`, `downloadsUsed`, `remainingDownloads`, `expirationDate` and
+`downloadStatus` (`available`, `expired` or `exhausted`) when a policy is configured. `null` means unlimited downloads
+or no expiration, respectively. The policy status is independent of snapshot readiness. Remaining downloads are
+informational, not a reservation; another client may consume them before the next request. These fields are read-only
+and are not the buffered `access.count` statistics. Expiration enforcement uses MongoDB's clock; the informational
+metadata status uses the API clock, so keep host clocks synchronized.
+
 ## Object Bucket-Based Storage System
 
 `FDA` uses an object bucket-based storage system to efficiently store the data to query. In this section we have the

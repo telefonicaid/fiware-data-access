@@ -1922,6 +1922,55 @@ describe('index upload route', () => {
     }
   });
 
+  test.each([
+    {
+      maxDownloads: '',
+      expirationDate: '',
+      validityPeriod: '',
+      expected: {},
+    },
+    {
+      maxDownloads: '5',
+      expirationDate: '',
+      validityPeriod: 'P7D',
+      expected: { maxDownloads: 5, validityPeriod: 'P7D' },
+    },
+    {
+      maxDownloads: '',
+      expirationDate: '2099-01-01T00:00:00Z',
+      validityPeriod: '',
+      expected: { expirationDate: '2099-01-01T00:00:00Z' },
+    },
+  ])(
+    'upload ignores empty download fields: $expected',
+    async ({ maxDownloads, expirationDate, validityPeriod, expected }) => {
+      await request(app)
+        .post('/public/fdas/upload')
+        .set('Fiware-Service', 'svc')
+        .set('Fiware-ServicePath', '/servicepath')
+        .field('id', 'csv_upload_demo')
+        .field('maxDownloads', maxDownloads)
+        .field('expirationDate', expirationDate)
+        .field('validityPeriod', validityPeriod)
+        .attach('file', Buffer.from('id,value\n1,10\n'), 'data.csv')
+        .expect(202);
+
+      expect(fdaMocks.uploadFDA).toHaveBeenCalledWith(
+        expect.objectContaining({
+          maxDownloads: undefined,
+          expirationDate: undefined,
+          validityPeriod: undefined,
+          ...expected,
+        }),
+      );
+
+      const [{ tempFilePath }] = fdaMocks.uploadFDA.mock.calls[0];
+      if (tempFilePath && fs.existsSync(tempFilePath)) {
+        fs.unlinkSync(tempFilePath);
+      }
+    },
+  );
+
   test('POST /:visibility/fdas/upload returns 400 when Fiware headers are missing', async () => {
     await request(app)
       .post('/public/fdas/upload')

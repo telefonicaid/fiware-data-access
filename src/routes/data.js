@@ -91,14 +91,14 @@ const router = express.Router();
  *               $ref: '#/components/schemas/Error'
  *       '406':
  *         $ref: '#/components/responses/NotAcceptable'
- *       '410':
- *         description: '`FDAExpired` or `DownloadLimitReached`. No data is delivered.'
+ *       '409':
+ *         description: '`FDAUnavailable` (first fetch not completed) or `RequestStyleConflict` (mixed request styles).'
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
- *       '409':
- *         description: '`FDAUnavailable` (first fetch not completed) or `RequestStyleConflict` (mixed request styles).'
+ *       '410':
+ *         description: '`FDAExpired` or `DownloadLimitReached`. No data is delivered.'
  *         content:
  *           application/json:
  *             schema:

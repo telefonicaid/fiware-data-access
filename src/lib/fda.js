@@ -415,13 +415,7 @@ export async function executeQuery({
 
   const { fdaId, daId, ...rest } = params;
 
-  const fda = await ensureFDAReadyForQuery(
-    service,
-    fdaId,
-    visibility,
-    servicePath,
-  );
-  await claimCachedFDADownload(fda, service, fdaId, daId, rest, servicePath);
+  await ensureFDAReadyForQuery(service, fdaId, visibility, servicePath);
 
   const conn = await getDBConnection();
 
@@ -484,7 +478,6 @@ export async function executeQueryStream({
   fresh = false,
   format = 'ndjson',
 }) {
-  res.setHeader('Cache-Control', 'no-store');
   const source = fresh
     ? await createFreshRowSource({
         service,
@@ -555,7 +548,6 @@ export async function executeFDAQueryStream({
   res,
   format = 'ndjson',
 }) {
-  res.setHeader('Cache-Control', 'no-store');
   const source = await createFreshFDARowSource({
     service,
     visibility,
@@ -614,13 +606,7 @@ async function createCachedRowSource({
 }) {
   const { fdaId, daId, ...rest } = params;
 
-  const fda = await ensureFDAReadyForQuery(
-    service,
-    fdaId,
-    visibility,
-    servicePath,
-  );
-  await claimCachedFDADownload(fda, service, fdaId, daId, rest, servicePath);
+  await ensureFDAReadyForQuery(service, fdaId, visibility, servicePath);
 
   const conn = await getDBConnection();
 
@@ -1046,7 +1032,7 @@ export async function fetchFDA(
     datasourceId,
     validationMode,
     persistedSchema,
-    ...(downloadPolicy ? [downloadPolicy] : []),
+    downloadPolicy,
   );
 
   if (cached && validationMode === FDA_VALIDATION_MODE_STRICT) {
@@ -2316,30 +2302,6 @@ async function uploadTableToObjStg(
   return bytesFetched ?? 0;
 }
 
-async function claimCachedFDADownload(
-  fda,
-  service,
-  fdaId,
-  daId,
-  params,
-  servicePath,
-) {
-  if (!fda.downloadPolicy) {
-    return;
-  }
-  const da = await retrieveDA(service, fdaId, daId, servicePath);
-  if (!da?.query) {
-    throw new FDAError(
-      404,
-      'DaNotFound',
-      `DA ${daId} does not exist in FDA ${fdaId}`,
-    );
-  }
-  validateDAParamBindings(da.query, da.params || []);
-  resolveDAParams(params, da.params);
-  await claimFDADownload(fda);
-}
-
 async function ensureFDAReadyForQuery(service, fdaId, visibility, servicePath) {
   const fda = await getAccessibleFDA(service, fdaId, visibility, servicePath);
   assertFDAIsCached(fda, fdaId);
@@ -3127,7 +3089,8 @@ export async function uploadFDA({
     cached,
     null,
     FDA_VALIDATION_MODE_STRICT,
-    ...(downloadPolicy ? [null, downloadPolicy] : []),
+    null,
+    downloadPolicy,
   );
 
   logger.debug({ fdaId }, 'FDA record created');
