@@ -706,20 +706,19 @@ describe('mongo utils', () => {
     });
     await storeDA('svc', 'fdaA', '/sp', 'daB', 'desc', 'SELECT 1', []);
 
-    expect(collectionMock.updateOne.mock.calls[0][1]).toEqual({
-      $set: {
-        'das.daA': {
-          description: 'desc',
-          query: 'SELECT 1',
-          params: [],
-          timeRange: { start: 'start' },
-        },
-      },
+    const literalOf = (call, daId) =>
+      call[1][0].$set[`das.${daId}`].$mergeObjects[0].$literal;
+
+    expect(literalOf(collectionMock.updateOne.mock.calls[0], 'daA')).toEqual({
+      description: 'desc',
+      query: 'SELECT 1',
+      params: [],
+      timeRange: { start: 'start' },
     });
-    expect(collectionMock.updateOne.mock.calls[1][1]).toEqual({
-      $set: {
-        'das.daB': { description: 'desc', query: 'SELECT 1', params: [] },
-      },
+    expect(literalOf(collectionMock.updateOne.mock.calls[1], 'daB')).toEqual({
+      description: 'desc',
+      query: 'SELECT 1',
+      params: [],
     });
   });
 
