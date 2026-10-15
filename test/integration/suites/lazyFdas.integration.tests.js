@@ -114,6 +114,24 @@ export function registerLazyFdasIntegrationTests({
     return `SELECT id, nextval('public.${sequence}')::int AS fetch_number FROM public.lazy_rows`;
   }
 
+  function idsAndValues(rows) {
+    return rows
+      .map(({ id, value }) => ({ id, value }))
+      .sort((a, b) => a.id - b.id);
+  }
+
+  async function waitUntilCompleted(fdaId) {
+    let fda;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      fda = (await getFDA(fdaId)).json;
+      if (fda.status === 'completed' || fda.status === 'failed') {
+        return fda;
+      }
+      await wait(200);
+    }
+    throw new Error(`Timeout waiting for FDA ${fdaId}: ${JSON.stringify(fda)}`);
+  }
+
   function jobsOf(fdaId) {
     return agendaJobs.find({ 'data.fdaId': fdaId }).toArray();
   }
@@ -139,6 +157,15 @@ export function registerLazyFdasIntegrationTests({
       await pgClient.query('DROP TABLE IF EXISTS public.lazy_rows');
       await pgClient.query('CREATE TABLE public.lazy_rows (id INT)');
       await pgClient.query('INSERT INTO public.lazy_rows VALUES (1)');
+      await pgClient.query('DROP TABLE IF EXISTS public.lazy_events');
+      await pgClient.query(
+        'CREATE TABLE public.lazy_events (id INT, value TEXT, observed_at TIMESTAMP)',
+      );
+      await pgClient.query(
+        `INSERT INTO public.lazy_events VALUES
+           (1, 'old', NOW() - INTERVAL '3 days'),
+           (2, 'outside', NOW() - INTERVAL '10 days')`,
+      );
       await pgClient.query('DROP TABLE IF EXISTS public.lazy_broken');
       await pgClient.query('CREATE TABLE public.lazy_broken (id INT)');
 
@@ -297,6 +324,92 @@ export function registerLazyFdasIntegrationTests({
       expect(cda.json.resultset[0][0]).toBe(1);
     });
 
+    test('a lazy window FDA only fetches its window and schedules its jobs on the first query', async () => {
+      const res = await createFDA({
+        id: 'lazy_window',
+        query: 'SELECT id, value, observed_at FROM public.lazy_events',
+        timeColumn: 'observed_at',
+        objStgConf: { partition: 'day' },
+        refreshPolicy: {
+          type: 'window',
+          params: {
+            refreshInterval: '1 day',
+            fetchSize: 'day',
+            windowSize: '1 week',
+          },
+        },
+        lazy: true,
+      });
+      expect(res.status).toBe(202);
+      expect(res.json.status).toBe('idle');
+      await expect(jobsOf('lazy_window')).resolves.toEqual([]);
+
+      const data = await queryFDA('lazy_window');
+      expect(data.status).toBe(200);
+      expect(idsAndValues(data.rows)).toEqual([{ id: 1, value: 'old' }]);
+
+      const jobs = (await jobsOf('lazy_window')).map(({ name }) => name);
+      expect(jobs).toEqual(
+        expect.arrayContaining([
+          'refresh-fda-recurring',
+          'clean-partition-recurring',
+        ]),
+      );
+    });
+
+    test('an expired partitioned onDemand FDA only refetches from the partition of its last fetch', async () => {
+      const res = await createFDA({
+        id: 'lazy_incremental',
+        query: 'SELECT id, value, observed_at FROM public.lazy_events',
+        timeColumn: 'observed_at',
+        objStgConf: { partition: 'day' },
+        refreshPolicy: {
+          type: 'onDemand',
+          params: { maxAge: '3 seconds', windowSize: '1 week' },
+        },
+      });
+      expect(res.status).toBe(202);
+
+      const first = await queryFDA('lazy_incremental');
+      expect(first.status).toBe(200);
+      expect(idsAndValues(first.rows)).toEqual([{ id: 1, value: 'old' }]);
+
+      await pgClient.query(
+        "UPDATE public.lazy_events SET value = 'changed' WHERE id = 1",
+      );
+      await pgClient.query(
+        "INSERT INTO public.lazy_events VALUES (3, 'new', NOW() - INTERVAL '1 second')",
+      );
+      await wait(4000);
+
+      const incremental = await queryFDA('lazy_incremental');
+      expect(incremental.status).toBe(200);
+      expect(idsAndValues(incremental.rows)).toEqual([
+        { id: 1, value: 'old' },
+        { id: 3, value: 'new' },
+      ]);
+      await expect(jobsOf('lazy_incremental')).resolves.toEqual([]);
+
+      const rebuild = await httpReq({
+        method: 'PUT',
+        url: `${getBaseUrl()}/${visibility}/fdas/lazy_incremental`,
+        headers,
+      });
+      expect(rebuild.status).toBeLessThan(300);
+      await waitUntilCompleted('lazy_incremental');
+
+      const rebuilt = await queryFDA('lazy_incremental');
+      expect(idsAndValues(rebuilt.rows)).toEqual([
+        { id: 1, value: 'changed' },
+        { id: 3, value: 'new' },
+      ]);
+
+      await pgClient.query('DELETE FROM public.lazy_events WHERE id = 3');
+      await pgClient.query(
+        "UPDATE public.lazy_events SET value = 'old' WHERE id = 1",
+      );
+    });
+
     test('an idle FDA can be deleted', async () => {
       const res = await createFDA({
         id: 'lazy_deleted',
@@ -329,14 +442,7 @@ export function registerLazyFdasIntegrationTests({
       });
       expect(refresh.status).toBeLessThan(300);
 
-      let fda;
-      for (let attempt = 0; attempt < 50; attempt++) {
-        fda = (await getFDA('lazy_manual')).json;
-        if (fda.status === 'completed') {
-          break;
-        }
-        await wait(200);
-      }
+      const fda = await waitUntilCompleted('lazy_manual');
       expect(fda.status).toBe('completed');
       expect(fda.lastFetch).not.toBeNull();
     });
