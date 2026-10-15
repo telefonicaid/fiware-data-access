@@ -100,9 +100,8 @@ every FDA after each fetch and exposes it, together with access counters, in `GE
 `GET /usage` per service and per `servicePath`. It enforces nothing: "No quotas or limits are enforced". A tenant can
 therefore already see how much it uses, but not a limit or the room left.
 
-The branch `poc/resource-governance` goes one step further and implements quotas managed by FDA on top of that
-measurement (per service, per `servicePath`, per FDA, per fetch and number of FDAs). It was used to compare both
-options:
+Quotas managed by FDA itself would go one step further and enforce limits on top of that measurement (per service, per
+`servicePath`, per FDA, per fetch and number of FDAs). Both options compare as follows:
 
 |                       | MinIO bucket quota             | FDA-managed quotas                                    |
 | --------------------- | ------------------------------ | ----------------------------------------------------- |
