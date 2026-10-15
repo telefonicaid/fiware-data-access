@@ -112,14 +112,14 @@ async function handleCdaDoQuery(req, res) {
  *         $ref: '#/components/responses/CdaQueryResult'
  *       '400':
  *         $ref: '#/components/responses/BadRequest'
- *       '410':
- *         description: '`FDAExpired` or `DownloadLimitReached`.'
+ *       '404':
+ *         description: '`FDANotFound` or `DaNotFound`.'
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
- *       '404':
- *         description: '`FDANotFound` or `DaNotFound`.'
+ *       '410':
+ *         description: '`FDAExpired` or `DownloadLimitReached`.'
  *         content:
  *           application/json:
  *             schema:
@@ -152,14 +152,14 @@ router.post('/plugin/cda/api/doQuery', handleCdaDoQuery);
  *         $ref: '#/components/responses/CdaQueryResult'
  *       '400':
  *         $ref: '#/components/responses/BadRequest'
- *       '410':
- *         description: '`FDAExpired` or `DownloadLimitReached`.'
+ *       '404':
+ *         description: '`FDANotFound` or `DaNotFound`.'
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
- *       '404':
- *         description: '`FDANotFound` or `DaNotFound`.'
+ *       '410':
+ *         description: '`FDAExpired` or `DownloadLimitReached`.'
  *         content:
  *           application/json:
  *             schema:
