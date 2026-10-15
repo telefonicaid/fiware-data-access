@@ -88,18 +88,18 @@ export function getPartitionInterval(key) {
     return null;
   }
 
-  const yearMatch = key.match(/(?:^|\/)year=(\d{4})(?:\/|$)/);
+  const yearMatch = /(?:^|\/)year=(\d{4})(?:\/|$)/.exec(key);
   if (!yearMatch) {
     return null;
   }
   const year = Number(yearMatch[1]);
 
-  const weekMatch = key.match(/(?:^|\/)week=(\d{4})-(\d{1,2})(?:\/|$)/);
+  const weekMatch = /(?:^|\/)week=(\d{4})-(\d{1,2})(?:\/|$)/.exec(key);
   if (weekMatch) {
     return getWeekInterval(Number(weekMatch[1]), Number(weekMatch[2]));
   }
 
-  const monthMatch = key.match(/(?:^|\/)month=(\d{1,2})(?:\/|$)/);
+  const monthMatch = /(?:^|\/)month=(\d{1,2})(?:\/|$)/.exec(key);
   if (!monthMatch) {
     return {
       start: new Date(Date.UTC(year, 0, 1)),
@@ -108,7 +108,7 @@ export function getPartitionInterval(key) {
   }
   const month = Number(monthMatch[1]);
 
-  const dayMatch = key.match(/(?:^|\/)day=(\d{1,2})(?:\/|$)/);
+  const dayMatch = /(?:^|\/)day=(\d{1,2})(?:\/|$)/.exec(key);
   if (!dayMatch) {
     return {
       start: new Date(Date.UTC(year, month - 1, 1)),
