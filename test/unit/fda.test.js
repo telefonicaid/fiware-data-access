@@ -1333,6 +1333,7 @@ describe('fetchFDA', () => {
       'default',
       'strict',
       null,
+      undefined,
     );
     expect(pgMocks.uploadTable).toHaveBeenCalledWith(
       {},
@@ -1689,6 +1690,7 @@ describe('fetchFDA', () => {
       'mongo-ds',
       'unchecked',
       null,
+      undefined,
     );
     expect(mongoMocks.validateMongoQuery).not.toHaveBeenCalled();
   });
@@ -1819,6 +1821,7 @@ describe('fetchFDA', () => {
         { name: 'label', type: null },
         { name: 'observedAt', type: null },
       ],
+      undefined,
     );
 
     // The bootstrap snapshot is written as a pure, zero-row DuckDB query
@@ -2812,6 +2815,8 @@ describe('uploadFDA', () => {
       true,
       null,
       'strict',
+      null,
+      undefined,
     );
     expect(agenda.now).toHaveBeenCalledWith(
       'upload-fda',
