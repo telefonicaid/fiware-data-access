@@ -226,6 +226,7 @@ const {
   getFDAs,
   validateMongoFDAContract,
   cleanPartition,
+  getPartitionStart,
 } = await import('../../src/lib/fda.js');
 
 function createReqRes() {
@@ -6306,12 +6307,14 @@ describe('lazy and onDemand FDAs', () => {
     ['onDemand is not cached', onDemandPolicy, { cached: false }],
     ['lazy is not cached', { type: 'none' }, { lazy: true, cached: false }],
     [
-      'lazy is used with a window policy',
-      {
-        type: 'window',
-        params: { refreshInterval: '1 day', fetchSize: 'day' },
-      },
-      { lazy: true },
+      'onDemand has a windowSize without partitioning',
+      { type: 'onDemand', params: { maxAge: '1 hour', windowSize: '1 week' } },
+      {},
+    ],
+    [
+      'onDemand has an invalid windowSize',
+      { type: 'onDemand', params: { maxAge: '1 hour', windowSize: 'ages' } },
+      {},
     ],
   ])('rejects the FDA when %s', async (_name, refreshPolicy, options) => {
     await expect(
@@ -6551,5 +6554,201 @@ describe('lazy and onDemand FDAs', () => {
     await expect(
       updateFDA('svc', 'fdaLazy', undefined, '/servicepath'),
     ).rejects.toMatchObject({ status: 409, type: 'AlreadyFetching' });
+  });
+
+  test('creating a lazy window FDA schedules no job', async () => {
+    const result = await fetchFDA(
+      'fdaLazy',
+      'SELECT id, observed_at FROM users',
+      'svc',
+      'public',
+      '/servicepath',
+      'desc',
+      {
+        type: 'window',
+        params: {
+          refreshInterval: '1 day',
+          fetchSize: 'day',
+          windowSize: '1 week',
+        },
+      },
+      'observed_at',
+      { partition: 'day' },
+      false,
+      true,
+      'default',
+      'strict',
+      true,
+    );
+
+    expect(result).toEqual({ status: 'idle' });
+    expect(agenda.now).not.toHaveBeenCalled();
+    expect(agenda.create).not.toHaveBeenCalled();
+  });
+
+  test('a lazy window FDA computes its window and schedules its jobs on first access', async () => {
+    const lazyWindow = storedFDA({
+      lazy: true,
+      query: 'SELECT id, observed_at FROM users',
+      timeColumn: 'observed_at',
+      objStgConf: { partition: 'day' },
+      refreshPolicy: {
+        type: 'window',
+        params: {
+          refreshInterval: '1 day',
+          fetchSize: 'day',
+          windowSize: '1 week',
+        },
+      },
+    });
+    mongoMocks.retrieveFDA
+      .mockResolvedValueOnce(lazyWindow)
+      .mockResolvedValueOnce({
+        ...lazyWindow,
+        status: 'completed',
+        lastFetch: new Date(),
+      });
+    mongoMocks.claimOnDemandRefresh.mockResolvedValueOnce(lazyWindow);
+
+    await expect(queryLazyFDA()).resolves.toEqual([{ id: 1 }]);
+
+    const [, firstFetch] = agenda.now.mock.calls[0];
+    expect(firstFetch.query).toMatch(/observed_at >= TIMESTAMP '/);
+    expect(agenda.create.mock.calls.map(([name]) => name)).toEqual(
+      expect.arrayContaining([
+        'refresh-fda-recurring',
+        'clean-partition-recurring',
+      ]),
+    );
+  });
+
+  test('the first fetch of an onDemand FDA with windowSize only asks for the window', async () => {
+    const idle = storedFDA({
+      query: 'SELECT id, observed_at FROM users',
+      timeColumn: 'observed_at',
+      objStgConf: { partition: 'day' },
+      refreshPolicy: {
+        type: 'onDemand',
+        params: { maxAge: '15 minutes', windowSize: '1 week' },
+      },
+    });
+    mongoMocks.retrieveFDA.mockResolvedValueOnce(idle).mockResolvedValueOnce({
+      ...idle,
+      status: 'completed',
+      lastFetch: new Date(),
+    });
+    mongoMocks.claimOnDemandRefresh.mockResolvedValueOnce(idle);
+
+    await expect(queryLazyFDA()).resolves.toEqual([{ id: 1 }]);
+
+    expect(agenda.now).toHaveBeenCalledTimes(1);
+    const [, firstFetch] = agenda.now.mock.calls[0];
+    expect(firstFetch.query).toMatch(/observed_at >= TIMESTAMP '/);
+    expect(agenda.create).not.toHaveBeenCalled();
+  });
+
+  test('an expired partitioned onDemand FDA only fetches from the partition of its last fetch', async () => {
+    const lastFetchStartedAt = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    const expired = storedFDA({
+      status: 'completed',
+      query: 'SELECT id, observed_at FROM users',
+      timeColumn: 'observed_at',
+      objStgConf: { partition: 'day' },
+      lastFetchStartedAt,
+      lastFetch: new Date(lastFetchStartedAt.getTime() + 1000),
+    });
+    mongoMocks.retrieveFDA
+      .mockResolvedValueOnce(expired)
+      .mockResolvedValueOnce({ ...expired, lastFetch: new Date() });
+    mongoMocks.claimOnDemandRefresh.mockResolvedValueOnce(expired);
+
+    await expect(queryLazyFDA()).resolves.toEqual([{ id: 1 }]);
+
+    const partitionStart = getPartitionStart(lastFetchStartedAt, 'day');
+    expect(agenda.now).toHaveBeenCalledTimes(1);
+    expect(agenda.now).toHaveBeenCalledWith(
+      'refresh-fda',
+      expect.objectContaining({
+        query: `SELECT * FROM (SELECT id, observed_at FROM users) q WHERE observed_at >= TIMESTAMP '${partitionStart.toISOString()}' AND observed_at < NOW()`,
+      }),
+    );
+    expect(agenda.create).not.toHaveBeenCalled();
+  });
+
+  test('an incremental onDemand refresh never asks for data older than the window and cleans it', async () => {
+    const expired = storedFDA({
+      status: 'completed',
+      query: 'SELECT id, observed_at FROM users',
+      timeColumn: 'observed_at',
+      objStgConf: { partition: 'day' },
+      refreshPolicy: {
+        type: 'onDemand',
+        params: { maxAge: '15 minutes', windowSize: '2 days' },
+      },
+      lastFetchStartedAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+      lastFetch: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+    });
+    mongoMocks.retrieveFDA
+      .mockResolvedValueOnce(expired)
+      .mockResolvedValueOnce({ ...expired, lastFetch: new Date() });
+    mongoMocks.claimOnDemandRefresh.mockResolvedValueOnce(expired);
+
+    await expect(queryLazyFDA()).resolves.toEqual([{ id: 1 }]);
+
+    const [, refresh] = agenda.now.mock.calls[0];
+    const start = new Date(refresh.query.match(/TIMESTAMP '([^']+)'/)[1]);
+    const twoDaysAgo = new Date();
+    twoDaysAgo.setUTCDate(twoDaysAgo.getUTCDate() - 2);
+    twoDaysAgo.setUTCHours(0, 0, 0, 0);
+    expect(start).toEqual(twoDaysAgo);
+    expect(agenda.now).toHaveBeenCalledWith(
+      'clean-partition',
+      expect.objectContaining({ fdaId: 'fdaLazy', windowSize: '2 days' }),
+    );
+  });
+
+  test('an incremental onDemand refresh of a Mongo FDA uses the Mongo window condition', async () => {
+    mongoMocks.retrieveDatasource.mockResolvedValue({
+      datasourceId: 'mongo-ds',
+      type: 'mongodb',
+      config: {},
+    });
+    const lastFetchStartedAt = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    const expired = storedFDA({
+      status: 'completed',
+      datasourceId: 'mongo-ds',
+      query: {
+        collection: 'events',
+        filter: {},
+        projection: { observedAt: 1 },
+      },
+      timeColumn: 'observedAt',
+      objStgConf: { partition: 'month' },
+      lastFetchStartedAt,
+      lastFetch: lastFetchStartedAt,
+    });
+    mongoMocks.retrieveFDA
+      .mockResolvedValueOnce(expired)
+      .mockResolvedValueOnce({ ...expired, lastFetch: new Date() });
+    mongoMocks.claimOnDemandRefresh.mockResolvedValueOnce(expired);
+
+    await expect(queryLazyFDA()).resolves.toEqual([{ id: 1 }]);
+
+    const [, refresh] = agenda.now.mock.calls[0];
+    expect(refresh.query.filter.$and[1].$expr.$and[0]).toEqual({
+      $gte: ['$observedAt', getPartitionStart(lastFetchStartedAt, 'month')],
+    });
+  });
+
+  test.each([
+    ['day', '2026-10-15T13:45:00Z', '2026-10-15T00:00:00.000Z'],
+    ['week', '2026-10-15T13:45:00Z', '2026-10-12T00:00:00.000Z'],
+    ['week', '2026-01-02T08:00:00Z', '2026-01-01T00:00:00.000Z'],
+    ['month', '2026-10-15T13:45:00Z', '2026-10-01T00:00:00.000Z'],
+    ['year', '2026-10-15T13:45:00Z', '2026-01-01T00:00:00.000Z'],
+  ])('the %s partition of %s starts at %s', (partition, date, expected) => {
+    expect(getPartitionStart(new Date(date), partition).toISOString()).toBe(
+      expected,
+    );
   });
 });

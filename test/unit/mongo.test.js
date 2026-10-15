@@ -625,6 +625,26 @@ describe('mongo utils', () => {
     );
   });
 
+  test('updateFDAStatus keeps the start of the last successful fetch', async () => {
+    const { updateFDAStatus, collectionMock } = await loadMongoModule();
+
+    await updateFDAStatus({
+      service: 'svc',
+      fdaId: 'fdaA',
+      servicePath: '/sp',
+      status: 'completed',
+      progress: 100,
+      lastRefresh: { durationMs: 10, bytesFetched: 20 },
+    });
+
+    const [, pipeline] = collectionMock.updateOne.mock.calls[0];
+    expect(pipeline[0].$set).toMatchObject({
+      status: 'completed',
+      lastFetch: expect.any(Date),
+      lastFetchStartedAt: '$initFetch',
+    });
+  });
+
   test('regenerateFDA throws NotFound when FDA does not exist', async () => {
     const { regenerateFDA, collectionMock } = await loadMongoModule();
 
