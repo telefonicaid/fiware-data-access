@@ -399,7 +399,7 @@ export async function runPreparedStatement(
             da.query,
             objStgConf?.partition,
             fdaServicePath,
-            files?.length ? files : undefined,
+            files,
           );
     const prepared = await prepareAndRunStatementWithFallback(
       conn,
