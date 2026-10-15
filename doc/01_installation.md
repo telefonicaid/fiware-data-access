@@ -629,6 +629,23 @@ Content-Type: application/json; charset=utf-8
 ]
 ```
 
+If you also created the optional `fda_alarms_limited` FDA, the list contains a second entry with the same structure plus
+its download restriction metadata:
+
+```json
+{
+    "id": "fda_alarms_limited",
+    "maxDownloads": 5,
+    "expirationDate": "2026-07-22T13:13:32.120Z",
+    "downloadsUsed": 0,
+    "remainingDownloads": 5,
+    "downloadStatus": "available"
+}
+```
+
+`downloadsUsed` and `remainingDownloads` change with each admitted download. `downloadStatus` becomes `exhausted` once
+`remainingDownloads` reaches `0`, or `expired` after `expirationDate`.
+
 > **Note**: to execute queries against an FDA, it will be necesary to has `"status": "completed"`.
 
 ### 7. Create a DA (Data Access) for the FDA and run a query
