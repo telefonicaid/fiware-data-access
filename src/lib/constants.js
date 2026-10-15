@@ -114,3 +114,7 @@ export const JSON_INTEGER_COLUMN_TYPES = new Set([
 
 // Maximum number of keys to delete in a single S3 request. This is a limitation of the S3 API.
 export const MAX_KEYS_PER_REQUEST = 1000;
+
+// Pattern to detect storage quota errors from MinIO S3 server responses
+export const STORAGE_QUOTA_PATTERN =
+  /XMinioAdminBucketQuotaExceeded|bucket quota exceeded/i;

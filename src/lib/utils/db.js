@@ -23,8 +23,8 @@
 // criminal actions it may exercise to protect its rights.
 
 import { retrieveDA, retrieveFDA, claimFDADownload } from './mongo.js';
+import { FDAError, storageQuotaErrorFor } from '../fdaError.js';
 import { recordAccess } from '../accessTracker.js';
-import { FDAError } from '../fdaError.js';
 import { getBasicLogger } from './logger.js';
 import { config } from '../fdaConfig.js';
 import { getBucketNameFromService, getFDAStoragePath } from './fdaScope.js';
@@ -803,7 +803,7 @@ export async function toParquet(
   }
 }
 
-export function copyQueryToParquet(
+export async function copyQueryToParquet(
   conn,
   sourceQuery,
   resultPath,
@@ -816,11 +816,15 @@ export function copyQueryToParquet(
   const { cols, partitionBy } = getPartitionConf(partitionType, timeColumn);
   const compressionString = compression ? `, COMPRESSION ZSTD` : '';
 
-  return conn.run(
-    `COPY ( SELECT ${cols}
+  try {
+    return await conn.run(
+      `COPY ( SELECT ${cols}
                 FROM (${sourceQuery}) AS fda_source) 
       TO 's3://${resultPath}' (FORMAT PARQUET ${partitionBy} ${compressionString});`,
-  );
+    );
+  } catch (e) {
+    throw storageQuotaErrorFor(e, resultPath.split('/')[0]) ?? e;
+  }
 }
 
 export function refreshIntervalPartitionCheck(refreshInterval, partition) {
