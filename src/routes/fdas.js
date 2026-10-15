@@ -203,6 +203,7 @@ router.post('/:visibility/fdas', async (req, res) => {
     'cached',
     'datasourceId',
     'validationMode',
+    'lazy',
   ]);
   const {
     id,
@@ -214,6 +215,7 @@ router.post('/:visibility/fdas', async (req, res) => {
     cached,
     datasourceId,
     validationMode,
+    lazy,
   } = body;
   const service = req.get('Fiware-Service');
   const servicePath = req.get('Fiware-ServicePath');
@@ -232,6 +234,8 @@ router.post('/:visibility/fdas', async (req, res) => {
       ? true
       : parseBooleanQueryParam(cached, 'cached', true);
   const resolvedValidationMode = parseValidationMode(validationMode);
+  const lazyEnabled =
+    lazy === undefined ? undefined : parseBooleanQueryParam(lazy, 'lazy');
 
   if (!id || !query || !service || !servicePath || !visibility) {
     return res.status(400).json({
@@ -245,7 +249,7 @@ router.post('/:visibility/fdas', async (req, res) => {
   const finalRefreshPolicy = refreshPolicy ?? { type: 'none' };
   const finalObjStgConf = objStgConf ?? {};
 
-  await fetchFDA(
+  const { status } = await fetchFDA(
     id,
     query,
     service,
@@ -259,11 +263,12 @@ router.post('/:visibility/fdas', async (req, res) => {
     cachedEnabled,
     datasourceId,
     resolvedValidationMode,
+    lazyEnabled,
   );
 
   return res.status(202).json({
     id,
-    status: 'pending',
+    status,
   });
 });
 

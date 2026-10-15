@@ -71,6 +71,8 @@ import {
   updateFDAStorage,
   claimFDAForFetch,
   claimFDAForDeletion,
+  claimOnDemandRefresh,
+  releaseOnDemandRefresh,
   createDatasource,
   retrieveDatasources,
   retrieveDatasource,
@@ -120,6 +122,7 @@ import {
   VALID_WINDOW_FETCH_SIZES,
   PARTITION_TYPES,
   UNKNOWN_COLUMN_TYPE,
+  FDA_REFRESH_IN_PROGRESS_STATUSES,
 } from './constants.js';
 const logger = getBasicLogger();
 const TIME_COLUMN_NAME_PATTERN = /^\w+$/;
@@ -990,11 +993,13 @@ export async function fetchFDA(
   cached = true,
   datasourceId = DEFAULT_DATASOURCE_ID,
   validationMode = FDA_VALIDATION_MODE_STRICT,
+  lazy,
 ) {
   const normalizedVisibility = normalizeVisibility(visibility);
   const normalizedServicePath = normalizeServicePath(servicePath);
   const datasource = await getDatasourceForService(service, datasourceId);
   validateScheduledOptions(refreshPolicy, objStgConf, timeColumn);
+  const lazyEnabled = resolveLazy(lazy, refreshPolicy, cached);
 
   if (datasource.type === 'mongodb') {
     validateMongoFDAContract(query, timeColumn);
@@ -1024,6 +1029,7 @@ export async function fetchFDA(
     datasourceId,
     validationMode,
     persistedSchema,
+    lazyEnabled,
   );
 
   if (cached && validationMode === FDA_VALIDATION_MODE_STRICT) {
@@ -1042,7 +1048,11 @@ export async function fetchFDA(
   }
 
   if (!cached) {
-    return;
+    return { status: 'pending' };
+  }
+
+  if (lazyEnabled) {
+    return { status: 'idle' };
   }
 
   // Schedule refreshes according to the refresh policy
@@ -1056,6 +1066,38 @@ export async function fetchFDA(
     objStgConf,
     datasource,
   });
+
+  return { status: 'pending' };
+}
+
+function resolveLazy(lazy, refreshPolicy, cached) {
+  const onDemand = refreshPolicy?.type === 'onDemand';
+
+  if ((lazy || onDemand) && cached === false) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      'lazy and onDemand refresh policy are only supported for cached FDAs.',
+    );
+  }
+
+  if (onDemand && lazy === false) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      'onDemand refresh policy is always lazy; lazy cannot be false.',
+    );
+  }
+
+  if (lazy && refreshPolicy?.type === 'window') {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      'lazy is not supported yet for window refresh policy.',
+    );
+  }
+
+  return onDemand || lazy === true;
 }
 
 async function validateAndGetSourceSchema(
@@ -1189,6 +1231,50 @@ function getMongoWindowQuery(query, timeColumn, startDate) {
   return getUpdateMongoWindowQuery(query, timeColumn, prevWindowStartDate);
 }
 
+function validateOnDemandOptions(refreshPolicy, objStgConf, timeColumn) {
+  const { maxAge, ...unsupported } = refreshPolicy.params || {};
+
+  if (!maxAge) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      'Missing required refresh policy parameter: maxAge.',
+    );
+  }
+
+  if (convertRefreshIntervalToMs(maxAge) === null) {
+    throw new FDAError(400, 'InvalidParam', `Invalid maxAge "${maxAge}".`);
+  }
+
+  const unsupportedParams = Object.keys(unsupported);
+  if (unsupportedParams.length > 0) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Unsupported onDemand refresh policy parameters: ${unsupportedParams.join(', ')}.`,
+    );
+  }
+
+  if (objStgConf?.partition && !timeColumn) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      'timeColumn is required when using partitioning.',
+    );
+  }
+
+  if (
+    objStgConf?.partition &&
+    !PARTITION_TYPES.includes(objStgConf.partition)
+  ) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Invalid partition type "${objStgConf.partition}".`,
+    );
+  }
+}
+
 function validateScheduledOptions(refreshPolicy, objStgConf, timeColumn) {
   if (!refreshPolicy) {
     return;
@@ -1203,6 +1289,11 @@ function validateScheduledOptions(refreshPolicy, objStgConf, timeColumn) {
   }
 
   if (refreshPolicy.type === 'none') {
+    return;
+  }
+
+  if (refreshPolicy.type === 'onDemand') {
+    validateOnDemandOptions(refreshPolicy, objStgConf, timeColumn);
     return;
   }
 
@@ -1418,6 +1509,11 @@ export async function updateFDA(service, fdaId, visibility, servicePath) {
   );
   await resolveSourceSchema(datasource, fda);
 
+  if (isMaterializedOnDemand(fda) && !fda.lastFetch) {
+    await materializeIdleFDA(fda);
+    return;
+  }
+
   const previous = await regenerateFDA(service, fdaId, normalizedServicePath);
 
   const agenda = getAgenda();
@@ -1455,6 +1551,18 @@ export async function updateFDA(service, fdaId, visibility, servicePath) {
       objStgConf: previous.objStgConf,
     });
   }
+}
+
+async function materializeIdleFDA(fda) {
+  if (await requestOnDemandRefresh(fda, { ignoreRetryBackoff: true })) {
+    return;
+  }
+
+  throw new FDAError(
+    409,
+    'AlreadyFetching',
+    `FDA ${fda.fdaId} is already being materialized`,
+  );
 }
 
 async function resolveSourceSchema(datasource, fda) {
@@ -2331,6 +2439,11 @@ async function ensureFDAReadyForQuery(service, fdaId, visibility, servicePath) {
   const fda = await getAccessibleFDA(service, fdaId, visibility, servicePath);
   assertFDAIsCached(fda, fdaId);
 
+  if (isMaterializedOnDemand(fda)) {
+    await waitForOnDemandData(fda);
+    return;
+  }
+
   // Queries are blocked only before the first successful fetch.
   if (!fda.lastFetch) {
     throw new FDAError(
@@ -2339,6 +2452,154 @@ async function ensureFDAReadyForQuery(service, fdaId, visibility, servicePath) {
       `FDA ${fdaId} is not queryable yet because the first fetch has not completed`,
     );
   }
+}
+
+function isMaterializedOnDemand(fda) {
+  return fda.lazy === true || fda.refreshPolicy?.type === 'onDemand';
+}
+
+function getOnDemandMaxAgeMs(fda) {
+  if (fda.refreshPolicy?.type !== 'onDemand') {
+    return null;
+  }
+
+  return convertRefreshIntervalToMs(fda.refreshPolicy.params?.maxAge);
+}
+
+function hasFreshData(fda) {
+  if (!fda.lastFetch) {
+    return false;
+  }
+
+  const maxAgeMs = getOnDemandMaxAgeMs(fda);
+  return (
+    maxAgeMs === null ||
+    Date.now() - new Date(fda.lastFetch).getTime() < maxAgeMs
+  );
+}
+
+async function waitForOnDemandData(fda) {
+  const { service, fdaId, servicePath } = fda;
+  const deadline = Date.now() + config.onDemand.waitTimeoutMs;
+  let current = fda;
+
+  for (;;) {
+    if (hasFreshData(current)) {
+      return;
+    }
+
+    if (current.status === 'deleting') {
+      throw onDemandUnavailableError(fdaId);
+    }
+
+    if (
+      !FDA_REFRESH_IN_PROGRESS_STATUSES.includes(current.status) &&
+      !(await requestOnDemandRefresh(current))
+    ) {
+      current = await retrieveExistingFDA(service, fdaId, servicePath);
+
+      if (hasFreshData(current)) {
+        return;
+      }
+
+      if (current.status === 'failed') {
+        throw new FDAError(
+          503,
+          'FDAMaterializationFailed',
+          `FDA ${fdaId} could not be materialized: ${current.error ?? 'unknown error'}`,
+        );
+      }
+    }
+
+    if (Date.now() >= deadline) {
+      throw onDemandUnavailableError(fdaId);
+    }
+
+    await delay(config.onDemand.pollIntervalMs);
+    current = await retrieveExistingFDA(service, fdaId, servicePath);
+  }
+}
+
+function onDemandUnavailableError(fdaId) {
+  return new FDAError(
+    409,
+    'FDAUnavailable',
+    `FDA ${fdaId} is not queryable yet because its data is being materialized`,
+  );
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function retrieveExistingFDA(service, fdaId, servicePath) {
+  const fda = await retrieveFDA(service, fdaId, servicePath);
+
+  if (!fda) {
+    throw new FDAError(
+      404,
+      'FDANotFound',
+      `FDA ${fdaId} not found in service ${service}`,
+    );
+  }
+
+  return fda;
+}
+
+async function requestOnDemandRefresh(
+  fda,
+  { ignoreRetryBackoff = false } = {},
+) {
+  const { service, fdaId, servicePath } = fda;
+  const now = Date.now();
+  const maxAgeMs = getOnDemandMaxAgeMs(fda);
+  const retryBackoffMs = ignoreRetryBackoff
+    ? 0
+    : config.onDemand.retryBackoffMs;
+
+  const claimed = await claimOnDemandRefresh({
+    service,
+    fdaId,
+    servicePath,
+    staleBefore: maxAgeMs === null ? null : new Date(now - maxAgeMs),
+    retryBefore: new Date(now - retryBackoffMs),
+  });
+
+  if (!claimed) {
+    return false;
+  }
+
+  try {
+    const datasource = await resolveDatasource(
+      service,
+      claimed.datasourceId ?? DEFAULT_DATASOURCE_ID,
+    );
+
+    await scheduleFDAJobs({
+      fdaId,
+      query: claimed.query,
+      service,
+      servicePath,
+      timeColumn: claimed.timeColumn,
+      refreshPolicy: claimed.refreshPolicy,
+      objStgConf: claimed.objStgConf,
+      datasource,
+    });
+  } catch (err) {
+    await releaseOnDemandRefresh({
+      service,
+      fdaId,
+      servicePath,
+      status: claimed.status,
+    });
+    throw err;
+  }
+
+  logger.info(
+    { fdaId, service, servicePath },
+    'On-demand materialization requested',
+  );
+  return true;
 }
 
 export async function getStoredFDA(service, fdaId, servicePath) {
