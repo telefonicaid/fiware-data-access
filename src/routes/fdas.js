@@ -132,6 +132,25 @@ router.get('/:visibility/fdas', async (req, res) => {
  *                   params:
  *                     refreshInterval: 1 hour
  *                 cached: true
+ *             onDemand:
+ *               summary: Cached FDA fetched only when queried, expiring after maxAge
+ *               value:
+ *                 id: fda_alarms_on_demand
+ *                 query: SELECT * FROM public.alarms
+ *                 refreshPolicy:
+ *                   type: onDemand
+ *                   params:
+ *                     maxAge: 15 minutes
+ *             lazy:
+ *               summary: Cached FDA with interval refresh that starts on the first query
+ *               value:
+ *                 id: fda_alarms_lazy
+ *                 query: SELECT * FROM public.alarms
+ *                 refreshPolicy:
+ *                   type: interval
+ *                   params:
+ *                     refreshInterval: 1 hour
+ *                 lazy: true
  *             onlyFresh:
  *               summary: Only-fresh FDA (no parquet snapshot, no DAs)
  *               value:
@@ -623,7 +642,7 @@ router.put('/:visibility/fdas/:fdaId', async (req, res) => {
  *     summary: Delete FDA
  *     description: >
  *       Deletes the FDA. Deleting an FDA cascades to delete all DAs belonging to it. Returns `409` while the FDA
- *       is being processed (status other than `completed` or `failed`).
+ *       is being processed (status other than `completed`, `failed` or `idle`).
  *     parameters:
  *       - $ref: '#/components/parameters/VisibilityPath'
  *       - $ref: '#/components/parameters/FdaIdPath'

@@ -63,16 +63,19 @@ Variables related to the environment of the application:
 
 Variables that define which components of the application are executed by this instance:
 
-| Variable                            | Optional | Type    | Description                                                                                                                                                          |
-| ----------------------------------- | -------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `FDA_ROLE_APISERVER`                | ✓        | boolean | If `true`, the instance runs the API server to handle HTTP requests. Default `true`.                                                                                 |
-| `FDA_ROLE_FETCHER`                  | ✓        | boolean | If `true`, the instance runs the fetcher responsible for regenerating and updating FDAs. Default `true`.                                                             |
-| `FDA_ROLE_SYNCQUERIES`              | ✓        | boolean | If `true`, the API instance accepts creation of fresh queries, `GET /{visibility}/fdas/{fdaId}/data` and executes FDAs directly against PostgreSQL. Default `false`. |
-| `FDA_MAX_CONCURRENT_FRESH_QUERIES`  | ✓        | number  | Maximum number of concurrent direct fresh FDA queries accepted by the API instance. Additional requests return `429 TooManyFreshQueries`. Default `5`.               |
-| `FDA_CREATE_DEFAULT_DATA_ACCESS`    | ✓        | boolean | If `true`, FDA creation also creates a built-in `defaultDataAccess` DA unless the request overrides it. Default `true`.                                              |
-| `FDA_FETCHER_HEARTBEAT_INTERVAL_MS` | ✓        | number  | Interval in milliseconds between Fetcher heartbeat logs. Default `60000`. Set to `0` to disable the heartbeat.                                                       |
-| `FDA_MAX_CONCURRENT_REFRESH_JOBS`   | ✓        | number  | Maximum number of concurrent refresh jobs done by fetcher. Memory consuption is incresed when concurrent refresh jobs grows. Default `1`.                            |
-| `FDA_ACCESS_FLUSH_INTERVAL_MS`      | ✓        | integer | Interval in milliseconds between MongoDB flushes of buffered FDA/DA access counters. Default `10000`; valid range is `1` to `2147483647`.                            |
+| Variable                            | Optional | Type    | Description                                                                                                                                                                 |
+| ----------------------------------- | -------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FDA_ROLE_APISERVER`                | ✓        | boolean | If `true`, the instance runs the API server to handle HTTP requests. Default `true`.                                                                                        |
+| `FDA_ROLE_FETCHER`                  | ✓        | boolean | If `true`, the instance runs the fetcher responsible for regenerating and updating FDAs. Default `true`.                                                                    |
+| `FDA_ROLE_SYNCQUERIES`              | ✓        | boolean | If `true`, the API instance accepts creation of fresh queries, `GET /{visibility}/fdas/{fdaId}/data` and executes FDAs directly against PostgreSQL. Default `false`.        |
+| `FDA_MAX_CONCURRENT_FRESH_QUERIES`  | ✓        | number  | Maximum number of concurrent direct fresh FDA queries accepted by the API instance. Additional requests return `429 TooManyFreshQueries`. Default `5`.                      |
+| `FDA_CREATE_DEFAULT_DATA_ACCESS`    | ✓        | boolean | If `true`, FDA creation also creates a built-in `defaultDataAccess` DA unless the request overrides it. Default `true`.                                                     |
+| `FDA_FETCHER_HEARTBEAT_INTERVAL_MS` | ✓        | number  | Interval in milliseconds between Fetcher heartbeat logs. Default `60000`. Set to `0` to disable the heartbeat.                                                              |
+| `FDA_MAX_CONCURRENT_REFRESH_JOBS`   | ✓        | number  | Maximum number of concurrent refresh jobs done by fetcher. Memory consuption is incresed when concurrent refresh jobs grows. Default `1`.                                   |
+| `FDA_ACCESS_FLUSH_INTERVAL_MS`      | ✓        | integer | Interval in milliseconds between MongoDB flushes of buffered FDA/DA access counters. Default `10000`; valid range is `1` to `2147483647`.                                   |
+| `FDA_ON_DEMAND_WAIT_TIMEOUT_MS`     | ✓        | integer | How long a query to a lazy or `onDemand` FDA waits for its fetch before returning `409 FDAUnavailable`. Default `30000`. See [Lazy FDAs](/doc/AdvancedTopics/lazy_fdas.md). |
+| `FDA_ON_DEMAND_POLL_INTERVAL_MS`    | ✓        | integer | How often, in milliseconds, a waiting query checks the FDA in MongoDB. Default `500`.                                                                                       |
+| `FDA_ON_DEMAND_RETRY_BACKOFF_MS`    | ✓        | integer | Time after a failed on-demand fetch during which queries return `503 FDAMaterializationFailed` without retrying. Default `60000`.                                           |
 
 > Note: By default, an instance runs both roles (API server and Fetcher). You can disable one to separate
 > responsibilities.
@@ -200,6 +203,9 @@ FDA_MAX_CONCURRENT_FRESH_QUERIES=5
 FDA_CREATE_DEFAULT_DATA_ACCESS=true
 FDA_FETCHER_HEARTBEAT_INTERVAL_MS=60000
 FDA_ACCESS_FLUSH_INTERVAL_MS=10000
+FDA_ON_DEMAND_WAIT_TIMEOUT_MS=30000
+FDA_ON_DEMAND_POLL_INTERVAL_MS=500
+FDA_ON_DEMAND_RETRY_BACKOFF_MS=60000
 
 # POSTGRESQL POOL
 FDA_PG_POOL_MAX=10

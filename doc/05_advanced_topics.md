@@ -85,14 +85,16 @@ clients and reflect its asynchronous processing state.
 
 ### Status & Progress
 
-| Status         | Progress | Description                                      |
-| -------------- | -------- | ------------------------------------------------ |
-| `fetching`     | 0–20     | Data is being retrieved from the source.         |
-| `transforming` | 20–60    | Data is being transformed (e.g., CSV → Parquet). |
-| `uploading`    | 60–80    | Data is being uploaded to object storage.        |
-| `completed`    | 100      | Processing finished successfully.                |
-| `failed`       | 0        | Processing failed at any step.                   |
-| `deleting`     | —        | The FDA is being deleted; refreshes are skipped. |
+| Status         | Progress | Description                                                  |
+| -------------- | -------- | ------------------------------------------------------------ |
+| `idle`         | 0        | Lazy FDA not fetched yet; the first query fetches it.        |
+| `pending`      | 0        | A query asked for an on-demand fetch, waiting for a fetcher. |
+| `fetching`     | 0–20     | Data is being retrieved from the source.                     |
+| `transforming` | 20–60    | Data is being transformed (e.g., CSV → Parquet).             |
+| `uploading`    | 60–80    | Data is being uploaded to object storage.                    |
+| `completed`    | 100      | Processing finished successfully.                            |
+| `failed`       | 0        | Processing failed at any step.                               |
+| `deleting`     | —        | The FDA is being deleted; refreshes are skipped.             |
 
 ### Last Execution
 
@@ -102,13 +104,15 @@ completed. The execution time for each cycle can be estimated as `lastFetch - in
 ### Flow
 
 -   On `POST /{visibility}/fdas` or `PUT /{visibility}/fdas/:fdaId`, FDA starts **fetching** (progress 0). If a
-    `refreshPolicy` is defined, subsequent refreshes are scheduled via the job system (agenda).
+    `refreshPolicy` is defined, subsequent refreshes are scheduled via the job system (agenda). A lazy or `onDemand` FDA
+    is created `idle` instead and goes through `pending` when a query asks for its data (see
+    [Lazy FDAs](#lazy-fdas-and-the-ondemand-refresh-policy)).
 -   `transforming` → `uploading` as processing steps complete.
 -   On success → `completed` (progress 100).
 -   On error → `failed` (progress 0).
--   On `DELETE /{visibility}/fdas/:fdaId`, the FDA moves to `deleting` only if it is `completed` or `failed`; otherwise
-    the request is rejected with `409 FDAProcessing`. Refresh jobs that start while an FDA is `deleting` (or after it
-    has been removed) are skipped without touching object storage.
+-   On `DELETE /{visibility}/fdas/:fdaId`, the FDA moves to `deleting` only if it is `completed`, `failed` or `idle`;
+    otherwise the request is rejected with `409 FDAProcessing`. Refresh jobs that start while an FDA is `deleting` (or
+    after it has been removed) are skipped without touching object storage.
 
 ---
 
@@ -141,6 +145,14 @@ jobs by rebuilding the FDA end to end at a lower frequency (for example, weekly 
 
 👉 Full documentation available at:
 [`Sliding windows and partitioned files`](/doc/AdvancedTopics/sliding_windows_and_partitioning.md)
+
+### Lazy FDAs and the onDemand refresh policy
+
+A cached FDA can be created `lazy`, so that nothing is fetched or scheduled until its first query, or with the
+`onDemand` refresh policy, a cache with an expiration time (`maxAge`) that is only refreshed when a query finds it
+expired. Queries that find no data wait for a single shared fetch, up to `FDA_ON_DEMAND_WAIT_TIMEOUT_MS`.
+
+👉 Full documentation available at: [`Lazy FDAs`](/doc/AdvancedTopics/lazy_fdas.md)
 
 ### Multi-instance coverage
 

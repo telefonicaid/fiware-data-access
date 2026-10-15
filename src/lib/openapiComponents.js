@@ -282,12 +282,21 @@
  *           example: fda_alarms
  *         status:
  *           type: string
+ *           enum: [pending, idle]
+ *           description: '`idle` when the FDA is lazy and will be fetched on its first query.'
  *           example: pending
  *
  *     RefreshPolicyParams:
  *       type: object
  *       description: Parameters for the refresh policy. Not used when `type` is `none`, mandatory otherwise.
  *       properties:
+ *         maxAge:
+ *           type: string
+ *           description: >
+ *             Only for type `onDemand`, and mandatory there. Human interval (e.g. "15 minutes") after which the
+ *             data is considered expired. An expired FDA is fetched again only when a query arrives, and that
+ *             query waits for the new data.
+ *           example: 15 minutes
  *         refreshInterval:
  *           type: string
  *           description: >
@@ -324,7 +333,10 @@
  *       properties:
  *         type:
  *           type: string
- *           enum: [none, interval, window]
+ *           enum: [none, interval, window, onDemand]
+ *           description: >
+ *             `onDemand` never refreshes on a schedule: the FDA is fetched on its first query and again on the
+ *             first query after `params.maxAge`. It is always `lazy`.
  *         params:
  *           $ref: '#/components/schemas/RefreshPolicyParams'
  *
@@ -476,6 +488,13 @@
  *           description: >
  *             Controls synchronous validation during creation. `unchecked` skips validation and initial
  *             `defaultDataAccess` generation, useful for heavy queries.
+ *         lazy:
+ *           type: boolean
+ *           default: false
+ *           description: >
+ *             If `true`, the FDA is stored `idle`: its data is not fetched and no refresh is scheduled until its
+ *             first query, which waits for the fetch. From then on it follows its refresh policy. Only for
+ *             cached FDAs; not supported yet with the `window` refresh policy. Always `true` for `onDemand`.
  *
  *     FdaUploadRequest:
  *       type: object
@@ -547,7 +566,12 @@
  *           additionalProperties: true
  *         status:
  *           type: string
- *           enum: [fetching, transforming, uploading, completed, failed, deleting]
+ *           enum: [idle, pending, fetching, transforming, uploading, completed, failed, deleting]
+ *           description: >
+ *             `idle`: lazy FDA not fetched yet. `pending`: a fetch requested by a query is waiting for a fetcher.
+ *         lazy:
+ *           type: boolean
+ *           description: Present and `true` when the FDA was created lazy.
  *         progress:
  *           type: number
  *           description: Execution progress percentage (0-100).
