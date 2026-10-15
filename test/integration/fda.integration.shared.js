@@ -58,6 +58,7 @@ import { registerMongoSlidingWindowsIntegrationTests } from './suites/mongoSlidi
 import { registerComplexCasesIntegrationTests } from './suites/complexCases.integration.tests.js';
 import { registerUploadFdasIntegrationTests } from './suites/uploadFdas.integration.tests.js';
 import { registerStorageCleanupIntegrationTests } from './suites/storageCleanup.integration.tests.js';
+import { registerStorageQuotaIntegrationTests } from './suites/storageQuota.integration.tests.js';
 import { registerFdaAccoutingIntegrationTests } from './suites/fdaAccounting.integration.tests.js';
 import {
   httpReq,
@@ -641,6 +642,16 @@ export function runFDAIntegrationSuite({ mode, label }) {
     });
 
     registerStorageCleanupIntegrationTests({
+      getBaseUrl: () => baseUrl,
+      getMinioUrl: () => minioUrl,
+      getPgHost: () => pgHost,
+      getPgPort: () => pgPort,
+      service,
+      visibility,
+      httpReq,
+    });
+
+    registerStorageQuotaIntegrationTests({
       getBaseUrl: () => baseUrl,
       getMinioUrl: () => minioUrl,
       getPgHost: () => pgHost,

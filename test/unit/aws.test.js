@@ -184,6 +184,23 @@ describe('aws utils', () => {
     });
   });
 
+  test('moveObject reports a MinIO bucket quota failure as StorageQuotaExceeded', async () => {
+    const { moveObject } = await loadAwsModule();
+
+    currentS3Client.send.mockRejectedValueOnce(
+      Object.assign(new Error('Bucket quota exceeded'), {
+        Code: 'XMinioAdminBucketQuotaExceeded',
+      }),
+    );
+
+    await expect(
+      moveObject(currentS3Client, 'bucket-a', 'bucket-a/file-a', 'file-b'),
+    ).rejects.toMatchObject({
+      status: 507,
+      type: 'StorageQuotaExceeded',
+    });
+  });
+
   test('listObjects wraps aws listing objects errors with FDAError', async () => {
     const { listObjects } = await loadAwsModule();
 

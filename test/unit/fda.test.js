@@ -3883,6 +3883,150 @@ describe('processFDAAsync', () => {
     );
   });
 
+  test('marks FDA as failed with StorageQuotaExceeded and removes staging objects when the bucket quota is exceeded', async () => {
+    pgMocks.uploadTable.mockRejectedValue(
+      Object.assign(new Error('Bucket quota exceeded'), {
+        Code: 'XMinioAdminBucketQuotaExceeded',
+      }),
+    );
+    awsMocks.listObjects.mockResolvedValue([
+      'tmp/servicepath/fda2.parquet/data_0.parquet',
+    ]);
+
+    await expect(
+      processFDAAsync('fda2', 'SELECT 2', 'svc', '/servicepath'),
+    ).rejects.toMatchObject({ status: 507, type: 'StorageQuotaExceeded' });
+
+    expect(mongoMocks.updateFDAStatus).toHaveBeenCalledWith({
+      service: 'svc',
+      fdaId: 'fda2',
+      servicePath: '/servicepath',
+      status: 'failed',
+      progress: 0,
+      error: expect.stringContaining('Storage quota exceeded for bucket "svc"'),
+    });
+    expect(awsMocks.dropFile).toHaveBeenCalledWith(
+      {},
+      'svc',
+      'servicepath/fda2.csv',
+    );
+    expect(awsMocks.dropFile).toHaveBeenCalledWith(
+      {},
+      'svc',
+      'tmp/servicepath/fda2.parquet',
+    );
+    expect(awsMocks.dropFile).toHaveBeenCalledWith(
+      {},
+      'svc',
+      'tmp/servicepath/fda2.parquet/data_0.parquet',
+    );
+  });
+
+  test('keeps the original error when cleaning the objects of a failed fetch also fails', async () => {
+    pgMocks.uploadTable.mockRejectedValue(new Error('upload failed'));
+    awsMocks.dropFile.mockRejectedValue(new Error('cleanup exploded'));
+
+    await expect(
+      processFDAAsync('fda2', 'SELECT 2', 'svc', '/servicepath'),
+    ).rejects.toThrow('upload failed');
+
+    expect(mongoMocks.updateFDAStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'failed', error: 'upload failed' }),
+    );
+  });
+
+  test('publishes a non partitioned parquet from tmp only after it was fully written', async () => {
+    await processFDAAsync('fda1', 'SELECT 1', 'svc', '/servicepath');
+
+    expect(dbMocks.toParquet).toHaveBeenCalledWith(
+      {},
+      'svc/servicepath/fda1.csv',
+      'svc/tmp/servicepath/fda1.parquet',
+      undefined,
+      undefined,
+      undefined,
+    );
+    expect(awsMocks.moveObject).toHaveBeenCalledWith(
+      {},
+      'svc',
+      'svc/tmp/servicepath/fda1.parquet',
+      'servicepath/fda1.parquet',
+    );
+    expect(awsMocks.dropFile).toHaveBeenCalledWith(
+      {},
+      'svc',
+      'tmp/servicepath/fda1.parquet',
+    );
+  });
+
+  test('reports StorageQuotaExceeded and removes the staging objects when the quota is hit while publishing partitions', async () => {
+    awsMocks.listObjects.mockImplementation((client, bucket, prefix) =>
+      Promise.resolve(
+        prefix.startsWith('tmp/')
+          ? [
+              'tmp/servicepath/fda1.parquet/year=2026/month=1/day=1/data_0.parquet',
+              'tmp/servicepath/fda1.parquet/year=2026/month=1/day=2/data_0.parquet',
+            ]
+          : [],
+      ),
+    );
+    awsMocks.moveObject
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(
+        new FDAError(
+          507,
+          'StorageQuotaExceeded',
+          'Storage quota exceeded for bucket "svc".',
+        ),
+      );
+
+    await expect(
+      processFDAAsync(
+        'fda1',
+        'SELECT 1',
+        'svc',
+        '/servicepath',
+        'observed_at',
+        undefined,
+        { partition: 'day' },
+      ),
+    ).rejects.toMatchObject({ status: 507, type: 'StorageQuotaExceeded' });
+
+    expect(mongoMocks.updateFDAStatus).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'failed',
+        error: expect.stringContaining('Storage quota exceeded'),
+      }),
+    );
+    expect(awsMocks.dropFile).toHaveBeenCalledWith(
+      {},
+      'svc',
+      'tmp/servicepath/fda1.parquet/year=2026/month=1/day=2/data_0.parquet',
+    );
+    expect(awsMocks.dropFile).toHaveBeenCalledWith(
+      {},
+      'svc',
+      'servicepath/fda1.csv',
+    );
+  });
+
+  test('does not touch the published parquet when writing the new one fails', async () => {
+    dbMocks.toParquet.mockRejectedValueOnce(
+      new FDAError(507, 'StorageQuotaExceeded', 'quota'),
+    );
+
+    await expect(
+      processFDAAsync('fda1', 'SELECT 1', 'svc', '/servicepath'),
+    ).rejects.toMatchObject({ status: 507 });
+
+    expect(awsMocks.moveObject).not.toHaveBeenCalled();
+    expect(awsMocks.dropFile).not.toHaveBeenCalledWith(
+      {},
+      'svc',
+      'servicepath/fda1.parquet',
+    );
+  });
+
   test('uploads Mongo datasource rows as CSV before parquet conversion', async () => {
     mongoMocks.retrieveDatasource.mockResolvedValue({
       datasourceId: 'mongo-ds',
@@ -3993,7 +4137,7 @@ describe('processFDAAsync', () => {
     expect(dbMocks.toParquet).toHaveBeenCalledWith(
       {},
       'svc/servicepath/fda_mongo_cached.csv',
-      'svc/servicepath/fda_mongo_cached.parquet',
+      'svc/tmp/servicepath/fda_mongo_cached.parquet',
       undefined,
       undefined,
       undefined,
