@@ -295,7 +295,8 @@
  *           description: >
  *             Only for type `onDemand`, and mandatory there. Human interval (e.g. "15 minutes") after which the
  *             data is considered expired. An expired FDA is fetched again only when a query arrives, and that
- *             query waits for the new data.
+ *             query waits for the new data. With `objStgConf.partition`, that refresh only fetches the data from
+ *             the start of the partition of the last successful fetch.
  *           example: 15 minutes
  *         refreshInterval:
  *           type: string
@@ -322,6 +323,8 @@
  *             Temporal interval of data kept in storage (e.g. "3 days", "6 weeks", "1 month", "2 years"; a unit
  *             without a number counts as amount 1). Also affects the first fetch and manual regeneration. If
  *             omitted, all data is kept forever (no clean partition is done).
+ *             With type `onDemand` it requires `objStgConf.partition`; data older than the window is never fetched
+ *             and is cleaned after each refresh.
  *           example: 1 month
  *       example:
  *         refreshInterval: 1 hour
@@ -494,7 +497,7 @@
  *           description: >
  *             If `true`, the FDA is stored `idle`: its data is not fetched and no refresh is scheduled until its
  *             first query, which waits for the fetch. From then on it follows its refresh policy. Only for
- *             cached FDAs; not supported yet with the `window` refresh policy. Always `true` for `onDemand`.
+ *             cached FDAs. Always `true` for `onDemand`.
  *
  *     FdaUploadRequest:
  *       type: object
@@ -583,6 +586,12 @@
  *           type: string
  *           format: date-time
  *           description: Timestamp of the last completed fetch.
+ *         lastFetchStartedAt:
+ *           type: string
+ *           format: date-time
+ *           description: >
+ *             Start of the last completed fetch. Incremental `onDemand` refreshes fetch from the start of its
+ *             partition.
  *         refreshPolicy:
  *           $ref: '#/components/schemas/RefreshPolicy'
  *         schema:

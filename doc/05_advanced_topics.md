@@ -150,7 +150,8 @@ jobs by rebuilding the FDA end to end at a lower frequency (for example, weekly 
 
 A cached FDA can be created `lazy`, so that nothing is fetched or scheduled until its first query, or with the
 `onDemand` refresh policy, a cache with an expiration time (`maxAge`) that is only refreshed when a query finds it
-expired. Queries that find no data wait for a single shared fetch, up to `FDA_ON_DEMAND_WAIT_TIMEOUT_MS`.
+expired. Queries that find no data wait for a single shared fetch, up to `FDA_ON_DEMAND_WAIT_TIMEOUT_MS`. With
+partitioning, `onDemand` refreshes are incremental and can keep a sliding window (`windowSize`).
 
 👉 Full documentation available at: [`Lazy FDAs`](/doc/AdvancedTopics/lazy_fdas.md)
 

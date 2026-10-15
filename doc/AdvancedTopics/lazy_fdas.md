@@ -13,14 +13,15 @@ Two options avoid that cost:
     query and, after `maxAge`, on the next query that arrives. Nothing is refreshed while nobody queries it. An
     `onDemand` FDA is always lazy.
 
-|                              | `lazy` + `none`     | `lazy` + `interval`                | `onDemand`                            |
-| ---------------------------- | ------------------- | ---------------------------------- | ------------------------------------- |
-| First fetch                  | First query         | First query                        | First query                           |
-| Later refreshes              | Only manual (`PUT`) | Every `refreshInterval`, from then | First query after `maxAge`, or manual |
-| Scheduled jobs               | None                | Created on the first query         | None                                  |
-| Maximum age of the data read | Unbounded           | About `refreshInterval`            | `maxAge`                              |
+|                              | `lazy` + `none`     | `lazy` + `interval`/`window`    | `onDemand`                            |
+| ---------------------------- | ------------------- | ------------------------------- | ------------------------------------- |
+| First fetch                  | First query         | First query                     | First query                           |
+| Later refreshes              | Only manual (`PUT`) | Their recurring jobs, from then | First query after `maxAge`, or manual |
+| Scheduled jobs               | None                | Created on the first query      | None                                  |
+| Maximum age of the data read | Unbounded           | About `refreshInterval`         | `maxAge`                              |
 
-`lazy` is not supported yet with the `window` refresh policy.
+A lazy `window` FDA computes its first window when the first query arrives, so it covers the whole `windowSize` up to
+that moment, and creates its recurring refresh, clean-partition and consistency jobs then.
 
 ## Creation
 
@@ -33,8 +34,9 @@ Two options avoid that cost:
 ```
 
 `maxAge` uses the same human interval format as `refreshInterval` (`30 seconds`, `15 minutes`, `1 hour`, `2 days`...).
-`onDemand` accepts no other parameter. `lazy: false` together with `onDemand`, and `lazy` or `onDemand` on an only-fresh
-FDA (`cached: false`), are rejected with `400 InvalidParam`.
+`onDemand` also accepts `windowSize` (see [Incremental refresh](#incremental-refresh)) and no other parameter.
+`lazy: false` together with `onDemand`, and `lazy` or `onDemand` on an only-fresh FDA (`cached: false`), are rejected
+with `400 InvalidParam`.
 
 The query is validated as for any other FDA, and the response is `202` with `"status": "idle"`. The FDA stays `idle` and
 no job is scheduled. In `strict` mode the FDA still gets its empty, typed Parquet file and its `defaultDataAccess`,
@@ -62,6 +64,36 @@ for a full fetch. Waiting does not hold a DuckDB connection.
 
 The fetch itself runs in an instance with the fetcher role, like any other refresh. If no fetcher is running, queries
 wait until the timeout.
+
+## Incremental refresh
+
+Without partitioning, every `onDemand` refresh fetches the whole query. With `objStgConf.partition` (which requires
+`timeColumn`) the refresh is incremental, the way a `window` refresh is:
+
+```json
+{
+    "id": "alarms",
+    "query": "SELECT id, severity, observed_at FROM public.alarms",
+    "timeColumn": "observed_at",
+    "objStgConf": { "partition": "day" },
+    "refreshPolicy": { "type": "onDemand", "params": { "maxAge": "15 minutes", "windowSize": "1 month" } }
+}
+```
+
+-   The first fetch asks for the whole query, or for the last `windowSize` if it is set.
+-   Each later refresh asks only for the rows with `timeColumn` from the **start of the partition where the last
+    successful fetch began** up to now. That start is stored in the read-only field `lastFetchStartedAt`. Starting at a
+    partition boundary matters because each partition written by a refresh replaces the stored one entirely, so a
+    partition must never be fetched half.
+-   With `windowSize`, the refresh never asks for data older than the window, and the partitions that fall out of it are
+    removed right after the refresh (there is no recurring clean-partition job).
+-   It does not matter how long the FDA has gone without queries: the refresh covers everything since the last fetch.
+
+As with `window`, rows that change in partitions older than the last fetch are not picked up by an incremental refresh.
+A manual refresh (`PUT /{visibility}/fdas/{fdaId}`) rebuilds the whole FDA (its whole window, with `windowSize`).
+
+For MongoDB `aggregation` queries the same rule as for `window` applies: `timeColumn` must be a raw field of the
+collection holding BSON `Date` values, because the time condition is injected as the first `$match` stage.
 
 ## Failures
 
