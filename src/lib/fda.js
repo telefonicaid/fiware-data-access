@@ -1089,14 +1089,6 @@ function resolveLazy(lazy, refreshPolicy, cached) {
     );
   }
 
-  if (lazy && refreshPolicy?.type === 'window') {
-    throw new FDAError(
-      400,
-      'InvalidParam',
-      'lazy is not supported yet for window refresh policy.',
-    );
-  }
-
   return onDemand || lazy === true;
 }
 
@@ -1191,15 +1183,24 @@ async function prepareCachedFDA({
 }
 
 function resolveRefreshQueries(datasource, refreshPolicy, query, timeColumn) {
+  const windowQueryFn =
+    datasource.type === 'mongodb' ? getMongoWindowQuery : getWindowQuery;
+
+  if (refreshPolicy?.type === 'onDemand') {
+    const firstQuery = windowQueryFn(
+      query,
+      timeColumn,
+      refreshPolicy.params?.windowSize,
+    );
+    return { firstQuery, recurringQuery: firstQuery };
+  }
+
   if (refreshPolicy?.type !== 'window') {
     return {
       firstQuery: query,
       recurringQuery: query,
     };
   }
-
-  const windowQueryFn =
-    datasource.type === 'mongodb' ? getMongoWindowQuery : getWindowQuery;
 
   return {
     firstQuery: windowQueryFn(
@@ -1232,7 +1233,7 @@ function getMongoWindowQuery(query, timeColumn, startDate) {
 }
 
 function validateOnDemandOptions(refreshPolicy, objStgConf, timeColumn) {
-  const { maxAge, ...unsupported } = refreshPolicy.params || {};
+  const { maxAge, windowSize, ...unsupported } = refreshPolicy.params || {};
 
   if (!maxAge) {
     throw new FDAError(
@@ -1271,6 +1272,22 @@ function validateOnDemandOptions(refreshPolicy, objStgConf, timeColumn) {
       400,
       'InvalidParam',
       `Invalid partition type "${objStgConf.partition}".`,
+    );
+  }
+
+  if (windowSize && !objStgConf?.partition) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      'windowSize requires objStgConf.partition.',
+    );
+  }
+
+  if (windowSize && !getWindowDate(processFetchSize(windowSize).unit)) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Invalid windowSize "${windowSize}".`,
     );
   }
 }
@@ -1522,7 +1539,7 @@ export async function updateFDA(service, fdaId, visibility, servicePath) {
   const effectiveServicePath = previous.servicePath ?? normalizedServicePath;
 
   let firstQuery = previous.query;
-  if (previous.refreshPolicy?.type === 'window') {
+  if (previous.refreshPolicy?.params?.windowSize) {
     const windowQueryFn =
       datasource.type === 'mongodb' ? getMongoWindowQuery : getWindowQuery;
     firstQuery = windowQueryFn(
@@ -2575,16 +2592,20 @@ async function requestOnDemandRefresh(
       claimed.datasourceId ?? DEFAULT_DATASOURCE_ID,
     );
 
-    await scheduleFDAJobs({
-      fdaId,
-      query: claimed.query,
-      service,
-      servicePath,
-      timeColumn: claimed.timeColumn,
-      refreshPolicy: claimed.refreshPolicy,
-      objStgConf: claimed.objStgConf,
-      datasource,
-    });
+    if (isIncrementalOnDemandRefresh(claimed)) {
+      await enqueueIncrementalOnDemandRefresh(claimed, datasource);
+    } else {
+      await scheduleFDAJobs({
+        fdaId,
+        query: claimed.query,
+        service,
+        servicePath,
+        timeColumn: claimed.timeColumn,
+        refreshPolicy: claimed.refreshPolicy,
+        objStgConf: claimed.objStgConf,
+        datasource,
+      });
+    }
   } catch (err) {
     await releaseOnDemandRefresh({
       service,
@@ -2600,6 +2621,92 @@ async function requestOnDemandRefresh(
     'On-demand materialization requested',
   );
   return true;
+}
+
+function isIncrementalOnDemandRefresh(fda) {
+  return (
+    fda.refreshPolicy?.type === 'onDemand' &&
+    Boolean(fda.objStgConf?.partition) &&
+    Boolean(fda.lastFetch)
+  );
+}
+
+async function enqueueIncrementalOnDemandRefresh(fda, datasource) {
+  const { fdaId, service, servicePath, timeColumn, refreshPolicy, objStgConf } =
+    fda;
+  const agenda = getAgenda();
+
+  await agenda.now('refresh-fda', {
+    fdaId,
+    query: buildIncrementalOnDemandQuery(fda, datasource),
+    service,
+    servicePath,
+    timeColumn,
+    refreshPolicy,
+    objStgConf,
+    datasourceId: datasource.datasourceId ?? DEFAULT_DATASOURCE_ID,
+  });
+
+  if (refreshPolicy.params?.windowSize) {
+    await agenda.now('clean-partition', {
+      fdaId,
+      service,
+      servicePath,
+      windowSize: refreshPolicy.params.windowSize,
+      objStgConf,
+    });
+  }
+}
+
+function buildIncrementalOnDemandQuery(fda, datasource) {
+  const { query, timeColumn, refreshPolicy, objStgConf } = fda;
+  let start = getPartitionStart(
+    new Date(fda.lastFetchStartedAt ?? fda.lastFetch),
+    objStgConf.partition,
+  );
+
+  if (refreshPolicy.params?.windowSize) {
+    const windowStart = new Date(
+      getPreviousWindowStartDate(refreshPolicy.params.windowSize),
+    );
+    if (windowStart > start) {
+      start = windowStart;
+    }
+  }
+
+  const updateQueryFn =
+    datasource.type === 'mongodb'
+      ? getUpdateMongoWindowQuery
+      : getUpdateWindowQuery;
+
+  return updateQueryFn(query, timeColumn, start.toISOString());
+}
+
+export function getPartitionStart(date, partition) {
+  const year = date.getUTCFullYear();
+
+  switch (partition) {
+    case 'day':
+      return new Date(Date.UTC(year, date.getUTCMonth(), date.getUTCDate()));
+    case 'week': {
+      const daysSinceMonday = (date.getUTCDay() + 6) % 7;
+      const monday = new Date(
+        Date.UTC(year, date.getUTCMonth(), date.getUTCDate() - daysSinceMonday),
+      );
+      const yearStart = new Date(Date.UTC(year, 0, 1));
+      return monday < yearStart ? yearStart : monday;
+    }
+    case 'month':
+      return new Date(Date.UTC(year, date.getUTCMonth(), 1));
+    case 'year':
+      return new Date(Date.UTC(year, 0, 1));
+    default:
+      throw new FDAError(
+        400,
+        'PartitionError',
+        `Invalid partition type: ${partition}.`,
+      );
+  }
 }
 
 export async function getStoredFDA(service, fdaId, servicePath) {

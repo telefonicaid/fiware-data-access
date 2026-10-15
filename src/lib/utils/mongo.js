@@ -637,6 +637,7 @@ export async function updateFDAStatus({
           status,
           progress,
           lastFetch: new Date(),
+          lastFetchStartedAt: '$initFetch',
           lastRefresh: { $literal: lastRefresh },
           access: {
             $mergeObjects: [
