@@ -124,7 +124,7 @@ function resetModuleMocks() {
   jobsMocks.initAgenda.mockReset().mockResolvedValue(undefined);
 
   fdaMocks.getFDAs.mockReset().mockResolvedValue([]);
-  fdaMocks.fetchFDA.mockReset().mockResolvedValue(undefined);
+  fdaMocks.fetchFDA.mockReset().mockResolvedValue({ status: 'pending' });
   fdaMocks.uploadFDA
     .mockReset()
     .mockResolvedValue({ id: 'upload-fda-id', status: 'pending' });
@@ -468,6 +468,44 @@ describe('index routes - validation and middleware branches', () => {
       true,
       undefined,
       'unchecked',
+      undefined,
+    );
+  });
+
+  test('forwards lazy in POST /:visibility/fdas and returns the idle status', async () => {
+    fdaMocks.fetchFDA.mockResolvedValueOnce({ status: 'idle' });
+
+    const res = await request(app)
+      .post('/public/fdas')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .send({
+        id: 'fda_lazy',
+        query: 'SELECT 1',
+        refreshPolicy: {
+          type: 'interval',
+          params: { refreshInterval: '1 hour' },
+        },
+        lazy: true,
+      })
+      .expect(202);
+
+    expect(res.body).toEqual({ id: 'fda_lazy', status: 'idle' });
+    expect(fdaMocks.fetchFDA).toHaveBeenCalledWith(
+      'fda_lazy',
+      'SELECT 1',
+      'svc',
+      'public',
+      '/servicepath',
+      undefined,
+      { type: 'interval', params: { refreshInterval: '1 hour' } },
+      undefined,
+      {},
+      true,
+      true,
+      undefined,
+      'strict',
+      true,
     );
   });
 
@@ -695,6 +733,7 @@ describe('index routes - validation and middleware branches', () => {
       true,
       undefined,
       'strict',
+      undefined,
     );
     expect(fdaMocks.updateFDA).toHaveBeenCalledWith(
       'svc',

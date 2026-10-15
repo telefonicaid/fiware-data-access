@@ -508,10 +508,89 @@ describe('mongo utils', () => {
         service: 'svc',
         fdaId: 'fdaA',
         servicePath: '/sp',
-        status: { $in: ['completed', 'failed', 'deleting'] },
+        status: { $in: ['completed', 'failed', 'idle', 'deleting'] },
       },
       { $set: { status: 'deleting' } },
       { returnDocument: 'before' },
+    );
+  });
+
+  test('claimOnDemandRefresh claims idle or stale FDAs outside the retry backoff', async () => {
+    const { claimOnDemandRefresh, collectionMock } = await loadMongoModule();
+    const staleBefore = new Date('2026-10-15T10:00:00Z');
+    const retryBefore = new Date('2026-10-15T09:59:00Z');
+    collectionMock.findOneAndUpdate.mockResolvedValueOnce({ status: 'idle' });
+
+    const claimed = await claimOnDemandRefresh({
+      service: 'svc',
+      fdaId: 'fdaA',
+      servicePath: '/sp',
+      staleBefore,
+      retryBefore,
+    });
+
+    expect(claimed).toEqual({ status: 'idle' });
+    expect(collectionMock.findOneAndUpdate).toHaveBeenCalledWith(
+      {
+        service: 'svc',
+        fdaId: 'fdaA',
+        servicePath: '/sp',
+        status: {
+          $nin: [
+            'pending',
+            'fetching',
+            'transforming',
+            'uploading',
+            'deleting',
+          ],
+        },
+        $and: [
+          { $or: [{ lastFetch: null }, { lastFetch: { $lt: staleBefore } }] },
+          {
+            $or: [
+              { status: { $ne: 'failed' } },
+              { initFetch: null },
+              { initFetch: { $lt: retryBefore } },
+            ],
+          },
+        ],
+      },
+      { $set: { status: 'pending', progress: 0 } },
+      { returnDocument: 'before' },
+    );
+  });
+
+  test('claimOnDemandRefresh only claims never fetched FDAs when they do not expire', async () => {
+    const { claimOnDemandRefresh, collectionMock } = await loadMongoModule();
+    collectionMock.findOneAndUpdate.mockResolvedValueOnce(null);
+
+    await expect(
+      claimOnDemandRefresh({
+        service: 'svc',
+        fdaId: 'fdaA',
+        servicePath: '/sp',
+        staleBefore: null,
+        retryBefore: new Date(),
+      }),
+    ).resolves.toBeNull();
+
+    const [filter] = collectionMock.findOneAndUpdate.mock.calls[0];
+    expect(filter.$and[0]).toEqual({ $or: [{ lastFetch: null }] });
+  });
+
+  test('releaseOnDemandRefresh restores the status of a pending claim', async () => {
+    const { releaseOnDemandRefresh, collectionMock } = await loadMongoModule();
+
+    await releaseOnDemandRefresh({
+      service: 'svc',
+      fdaId: 'fdaA',
+      servicePath: '/sp',
+      status: 'idle',
+    });
+
+    expect(collectionMock.updateOne).toHaveBeenCalledWith(
+      { service: 'svc', fdaId: 'fdaA', servicePath: '/sp', status: 'pending' },
+      { $set: { status: 'idle' } },
     );
   });
 
