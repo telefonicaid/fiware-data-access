@@ -22,7 +22,7 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
-import { DAY_MS, WEEK_MS, RANGE_MARGIN_MS } from './constants.js';
+import { DAY_MS, WEEK_MS, RANGE_MARGIN_MS } from '../constants.js';
 
 function isUnset(value) {
   return value === undefined || value === null || value === '';
