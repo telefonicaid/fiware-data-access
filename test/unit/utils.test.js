@@ -38,17 +38,24 @@ describe('download policy', () => {
     expect(getDownloadMetadata({})).toEqual({});
   });
 
-  test('normalizes days and hours into an absolute BSON date', () => {
-    expect(
-      normalizeDownloadPolicy(
-        { maxDownloads: 5, validityPeriod: 'P7DT2H' },
-        now,
-      ),
-    ).toEqual({
-      maxDownloads: 5,
-      expirationDate: new Date('2026-10-21T14:00:00Z'),
-    });
-  });
+  test.each([
+    ['3 days', 3 * 86400000],
+    ['6 weeks', 42 * 86400000],
+    ['1 month', 30 * 86400000],
+    ['2 hours', 2 * 3600000],
+    ['day', 86400000],
+    ['  1   WEEK  ', 7 * 86400000],
+  ])(
+    'normalizes human-readable validity period %s',
+    (validityPeriod, durationMs) => {
+      expect(
+        normalizeDownloadPolicy({ maxDownloads: 5, validityPeriod }, now),
+      ).toEqual({
+        maxDownloads: 5,
+        expirationDate: new Date(now.getTime() + durationMs),
+      });
+    },
+  );
 
   test.each([
     { maxDownloads: 0 },
@@ -56,14 +63,17 @@ describe('download policy', () => {
     { maxDownloads: 1.5 },
     { maxDownloads: '5' },
     { maxDownloads: null },
-    { validityPeriod: 'P0D' },
-    { validityPeriod: 'P1M' },
+    { validityPeriod: '0 days' },
+    { validityPeriod: '1 fortnight' },
+    { validityPeriod: '1 month 2 days' },
+    { validityPeriod: '10 lightyears' },
+    { validityPeriod: '9007199254740992 years' },
     { validityPeriod: 'P' },
     { validityPeriod: null },
     { expirationDate: '2026-10-14T12:00:00Z' },
     { expirationDate: '2026-11-01T12:00:00' },
     { expirationDate: '2027-02-30T12:00:00Z' },
-    { expirationDate: '2026-11-01T12:00:00Z', validityPeriod: 'P7D' },
+    { expirationDate: '2026-11-01T12:00:00Z', validityPeriod: '7 days' },
   ])('rejects invalid restrictions: %j', (policy) => {
     expect(() => normalizeDownloadPolicy(policy, now)).toThrow();
   });

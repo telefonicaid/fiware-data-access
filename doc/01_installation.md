@@ -473,7 +473,7 @@ curl -i -X POST http://localhost:8080/public/fdas \
     "id": "fda_alarms_limited",
     "query": "SELECT * FROM public.alarms",
     "maxDownloads": 5,
-    "validityPeriod": "P7D"
+    "validityPeriod": "7 days"
   }'
 ```
 

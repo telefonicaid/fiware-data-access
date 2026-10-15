@@ -274,7 +274,7 @@ describe('FDA download restrictions', () => {
       downloadPolicy: { maxDownloads: 5 },
       downloadsUsed: 0,
     };
-    mongoMocks.retrieveFDA.mockImplementation(async () => fda);
+    mongoMocks.retrieveFDA.mockImplementation(() => fda);
     mongoMocks.retrieveDA.mockResolvedValue({ query: 'SELECT id', params: [] });
     mongoMocks.retrieveDatasource.mockResolvedValue({
       type: 'postgres',
@@ -290,7 +290,7 @@ describe('FDA download restrictions', () => {
     dbMocks.runPreparedStatementStream.mockResolvedValue({
       stream: {
         columnNames: () => ['id'],
-        fetchChunk: async () => ({ rowCount: 0 }),
+        fetchChunk: () => ({ rowCount: 0 }),
       },
       close: jest.fn(),
     });
@@ -2764,7 +2764,7 @@ describe('uploadFDA', () => {
       visibility: 'public',
       servicePath: '/public',
       maxDownloads: 5,
-      validityPeriod: 'P7D',
+      validityPeriod: '7 days',
     });
     const policy = mongoMocks.createFDAMongo.mock.calls[0][13];
     expect(policy.maxDownloads).toBe(5);

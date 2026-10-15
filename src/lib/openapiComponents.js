@@ -444,9 +444,9 @@
  *           description: Future ISO 8601 timestamp with timezone. Mutually exclusive with validityPeriod.
  *         validityPeriod:
  *           type: string
- *           pattern: '^P(?:(\d+)D)?(?:T(\d+)H)?$'
- *           description: Positive duration in whole days and hours, starting at creation. Mutually exclusive with expirationDate.
- *           example: P7D
+ *           pattern: '^(?:(\d+)\s+)?(second|minute|hour|day|week|month|year)s?$'
+ *           description: Positive duration in seconds, minutes, hours, days, weeks, 30-day months or 365-day years, starting at creation. Mutually exclusive with expirationDate.
+ *           example: 7 days
  *         id:
  *           type: string
  *           pattern: '^[a-zA-Z0-9_-]+$'
@@ -508,7 +508,8 @@
  *           description: Future timestamp with timezone. Mutually exclusive with validityPeriod.
  *         validityPeriod:
  *           type: string
- *           description: Positive duration in whole days and hours from creation, for example P7D or P1DT12H. Mutually exclusive with expirationDate.
+ *           pattern: '^(?:(\d+)\s+)?(second|minute|hour|day|week|month|year)s?$'
+ *           description: Positive human-readable duration from creation, for example 7 days, 6 weeks or 1 month. Months are 30 days and years are 365 days. Mutually exclusive with expirationDate.
  *         id:
  *           type: string
  *           description: >

@@ -450,12 +450,12 @@ describe('index routes - validation and middleware branches', () => {
         id: 'limited',
         query: 'SELECT 1',
         maxDownloads: 5,
-        validityPeriod: 'P7D',
+        validityPeriod: '7 days',
       })
       .expect(202);
     expect(fdaMocks.fetchFDA.mock.calls[0][13]).toEqual({
       maxDownloads: 5,
-      validityPeriod: 'P7D',
+      validityPeriod: '7 days',
       expirationDate: undefined,
     });
   });
@@ -1892,7 +1892,7 @@ describe('index upload route', () => {
       .field('objStgConf', '{"partition":"day"}')
       .field('defaultDataAccess', 'false')
       .field('maxDownloads', '5')
-      .field('validityPeriod', 'P7D')
+      .field('validityPeriod', '7 days')
       .attach('file', Buffer.from('id,value\n1,10\n'), 'data.csv')
       .expect(202);
 
@@ -1909,7 +1909,7 @@ describe('index upload route', () => {
         defaultDataAccessEnabled: false,
         originalname: 'data.csv',
         maxDownloads: 5,
-        validityPeriod: 'P7D',
+        validityPeriod: '7 days',
       }),
     );
 
@@ -1932,8 +1932,8 @@ describe('index upload route', () => {
     {
       maxDownloads: '5',
       expirationDate: '',
-      validityPeriod: 'P7D',
-      expected: { maxDownloads: 5, validityPeriod: 'P7D' },
+      validityPeriod: '7 days',
+      expected: { maxDownloads: 5, validityPeriod: '7 days' },
     },
     {
       maxDownloads: '',

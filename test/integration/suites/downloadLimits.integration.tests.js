@@ -77,7 +77,7 @@ export function registerDownloadLimitsIntegrationTests({
           id: limitedFdaId,
           query: 'SELECT id, name, age FROM public.users ORDER BY id',
           maxDownloads: 3,
-          validityPeriod: 'P1D',
+          validityPeriod: '1 day',
         },
       });
 

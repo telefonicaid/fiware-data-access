@@ -1,8 +1,8 @@
-// Copyright 2025 Telefónica Soluciones de Informática y Comunicaciones de España, S.A.U.
+// Copyright 2025 TelefÃ³nica Soluciones de InformÃ¡tica y Comunicaciones de EspaÃ±a, S.A.U.
 // PROJECT: fiware-data-access
 //
-// This software and / or computer program has been developed by Telefónica Soluciones
-// de Informática y Comunicaciones de España, S.A.U (hereinafter TSOL) and is protected
+// This software and / or computer program has been developed by TelefÃ³nica Soluciones
+// de InformÃ¡tica y Comunicaciones de EspaÃ±a, S.A.U (hereinafter TSOL) and is protected
 // as copyright by the applicable legislation on intellectual property.
 //
 // It belongs to TSOL, and / or its licensors, the exclusive rights of reproduction,
@@ -58,20 +58,38 @@ function parseValidityPeriod(validityPeriod, now) {
   if (validityPeriod === undefined) {
     return undefined;
   }
-  const duration =
+  const match =
     typeof validityPeriod === 'string' &&
-    /^P(?:(\d+)D)?(?:T(\d+)H)?$/.exec(validityPeriod);
-  const durationMs =
-    duration &&
-    (Number(duration[1] ?? 0) * 24 + Number(duration[2] ?? 0)) * 3600000;
+    /^(?:(\d+)\s+)?(second|minute|hour|day|week|month|year)s?$/i.exec(
+      validityPeriod.trim(),
+    );
+  const unitsInMs = {
+    second: 1000,
+    minute: 60 * 1000,
+    hour: 60 * 60 * 1000,
+    day: 24 * 60 * 60 * 1000,
+    week: 7 * 24 * 60 * 60 * 1000,
+    month: 30 * 24 * 60 * 60 * 1000,
+    year: 365 * 24 * 60 * 60 * 1000,
+  };
+  const amount = match ? Number(match[1] ?? 1) : 0;
+  const durationMs = match && amount * unitsInMs[match[2].toLowerCase()];
   if (!Number.isSafeInteger(durationMs) || durationMs <= 0) {
     throw new FDAError(
       400,
       'InvalidDownloadPolicy',
-      'validityPeriod must be a positive ISO 8601 duration in days and hours, for example P7D or P1DT12H',
+      'validityPeriod must be a positive duration such as 3 days, 6 weeks, or 1 month',
     );
   }
-  return new Date(now.getTime() + durationMs);
+  const expirationDate = new Date(now.getTime() + durationMs);
+  if (!Number.isFinite(expirationDate.getTime())) {
+    throw new FDAError(
+      400,
+      'InvalidDownloadPolicy',
+      'validityPeriod exceeds the supported date range',
+    );
+  }
+  return expirationDate;
 }
 
 export function normalizeDownloadPolicy(
