@@ -1120,7 +1120,7 @@ async function prepareCachedFDA({
   sourceSchema,
 }) {
   try {
-    await createParquet(
+    await createParquet({
       service,
       fdaId,
       query,
@@ -1129,7 +1129,7 @@ async function prepareCachedFDA({
       timeColumn,
       objStgConf,
       sourceSchema,
-    );
+    });
   } catch (err) {
     await rollbackFDAProvisioning(service, fdaId, servicePath);
     throw err;
@@ -1189,53 +1189,8 @@ function getMongoWindowQuery(query, timeColumn, startDate) {
   return getUpdateMongoWindowQuery(query, timeColumn, prevWindowStartDate);
 }
 
-function validateScheduledOptions(refreshPolicy, objStgConf, timeColumn) {
-  if (!refreshPolicy) {
-    return;
-  }
-
-  if (!VALID_REFRESH_POLICY_TYPES.includes(refreshPolicy.type)) {
-    throw new FDAError(
-      400,
-      'InvalidParam',
-      `Invalid refresh policy type "${refreshPolicy.type}".`,
-    );
-  }
-
-  if (refreshPolicy.type === 'none') {
-    return;
-  }
-
-  if (
-    (refreshPolicy?.type === 'window' || objStgConf?.partition) &&
-    !timeColumn
-  ) {
-    throw new FDAError(
-      400,
-      'InvalidParam',
-      'timeColumn is required when using window refresh policy or partitioning.',
-    );
-  }
-
-  const { refreshInterval, fetchSize } = refreshPolicy.params || {};
-  const consistencyRefreshInterval =
-    refreshPolicy.params?.consistencyRefreshInterval;
-  if (!refreshInterval) {
-    throw new FDAError(
-      400,
-      'InvalidParam',
-      `Missing required refresh policy parameter: refreshInterval.`,
-    );
-  }
-
-  if (convertRefreshIntervalToMs(refreshInterval) === null) {
-    throw new FDAError(
-      400,
-      'InvalidParam',
-      `Invalid refresh interval "${refreshInterval}".`,
-    );
-  }
-
+function validateRefreshWindowOptions(refreshPolicy, objStgConf) {
+  const { fetchSize } = refreshPolicy.params || {};
   if (refreshPolicy.type === 'window' && !fetchSize) {
     throw new FDAError(
       400,
@@ -1277,18 +1232,11 @@ function validateScheduledOptions(refreshPolicy, objStgConf, timeColumn) {
       );
     }
   }
+}
 
-  if (
-    objStgConf?.partition &&
-    !PARTITION_TYPES.includes(objStgConf.partition)
-  ) {
-    throw new FDAError(
-      400,
-      'InvalidParam',
-      `Invalid partition type "${objStgConf.partition}".`,
-    );
-  }
-
+function validateConsistencyRefreshInterval(refreshPolicy) {
+  const { refreshInterval, consistencyRefreshInterval } =
+    refreshPolicy.params || {};
   if (consistencyRefreshInterval) {
     if (refreshPolicy.type !== 'window') {
       throw new FDAError(
@@ -1323,6 +1271,67 @@ function validateScheduledOptions(refreshPolicy, objStgConf, timeColumn) {
       );
     }
   }
+}
+
+function validateScheduledOptions(refreshPolicy, objStgConf, timeColumn) {
+  if (!refreshPolicy) {
+    return;
+  }
+
+  if (!VALID_REFRESH_POLICY_TYPES.includes(refreshPolicy.type)) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Invalid refresh policy type "${refreshPolicy.type}".`,
+    );
+  }
+
+  if (refreshPolicy.type === 'none') {
+    return;
+  }
+
+  if (
+    (refreshPolicy?.type === 'window' || objStgConf?.partition) &&
+    !timeColumn
+  ) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      'timeColumn is required when using window refresh policy or partitioning.',
+    );
+  }
+
+  const { refreshInterval, fetchSize } = refreshPolicy.params || {};
+  if (!refreshInterval) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Missing required refresh policy parameter: refreshInterval.`,
+    );
+  }
+
+  if (convertRefreshIntervalToMs(refreshInterval) === null) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Invalid refresh interval "${refreshInterval}".`,
+    );
+  }
+
+  validateRefreshWindowOptions(refreshPolicy, objStgConf);
+
+  if (
+    objStgConf?.partition &&
+    !PARTITION_TYPES.includes(objStgConf.partition)
+  ) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Invalid partition type "${objStgConf.partition}".`,
+    );
+  }
+
+  validateConsistencyRefreshInterval(refreshPolicy);
 
   // RefreshInterval must be smaller or equal than partition size
   if (!refreshIntervalPartitionCheck(refreshInterval, objStgConf?.partition)) {
@@ -2412,7 +2421,7 @@ async function getAccessibleFDA(service, fdaId, visibility, servicePath) {
   return fda;
 }
 
-async function createParquet(
+async function createParquet({
   service,
   fdaId,
   query,
@@ -2421,7 +2430,7 @@ async function createParquet(
   timeColumn,
   objStgConf,
   sourceSchema,
-) {
+}) {
   const s3Client = getS3Client(
     `${config.objstg.protocol}://${config.objstg.endpoint}`,
     config.objstg.usr,
