@@ -27,6 +27,7 @@ import { FDAError } from '../../src/lib/fdaError.js';
 
 const retrieveDAMock = jest.fn();
 const retrieveFDAMock = jest.fn();
+const claimFDADownloadMock = jest.fn();
 const duckCreateMock = jest.fn();
 const listObjectsMock = jest.fn();
 const loggerMock = {
@@ -75,6 +76,7 @@ async function loadDbModule({ retrieveDAResult, duckContext } = {}) {
     },
   );
   retrieveFDAMock.mockReset().mockResolvedValue({});
+  claimFDADownloadMock.mockReset().mockResolvedValue(undefined);
   duckCreateMock.mockReset();
   listObjectsMock.mockReset().mockResolvedValue([]);
   loggerMock.debug.mockReset();
@@ -86,6 +88,7 @@ async function loadDbModule({ retrieveDAResult, duckContext } = {}) {
   await jest.unstable_mockModule('../../src/lib/utils/mongo.js', () => ({
     retrieveDA: retrieveDAMock,
     retrieveFDA: retrieveFDAMock,
+    claimFDADownload: claimFDADownloadMock,
   }));
 
   await jest.unstable_mockModule('../../src/lib/utils/aws.js', () => ({
@@ -179,6 +182,102 @@ describe('db utils', () => {
     expect(runtimeConn.prepare).not.toHaveBeenCalled();
   });
 
+  test.each([false, true])(
+    'cached query claims once before execution (streaming=%s)',
+    async (streaming) => {
+      const { runPreparedStatement, runtimeConn } = await loadDbModule();
+      const fda = { downloadPolicy: { maxDownloads: 5 } };
+      retrieveFDAMock.mockResolvedValue(fda);
+      const stmt = {
+        bind: jest.fn().mockResolvedValue(undefined),
+        run: jest.fn().mockResolvedValue({
+          getRowObjectsJson: () => [],
+          columnNames: () => [],
+          columnTypes: () => [],
+        }),
+        stream: jest.fn().mockResolvedValue('stream-ref'),
+        close: jest.fn().mockResolvedValue(undefined),
+      };
+      runtimeConn.prepare.mockImplementation(() => {
+        expect(claimFDADownloadMock).toHaveBeenCalledTimes(1);
+        return Promise.resolve(stmt);
+      });
+
+      const result = await runPreparedStatement(
+        runtimeConn,
+        'svc',
+        'fdaA',
+        'daA',
+        { id: 7 },
+        '/sp',
+        streaming,
+      );
+
+      expect(claimFDADownloadMock).toHaveBeenCalledWith(fda);
+      expect(retrieveDAMock).toHaveBeenCalledTimes(1);
+      expect(retrieveFDAMock).toHaveBeenCalledTimes(1);
+      if (streaming) {
+        await result.close();
+      }
+    },
+  );
+
+  test.each([false, true])(
+    'cached query does not execute when the quota is exhausted (streaming=%s)',
+    async (streaming) => {
+      const { runPreparedStatement, runtimeConn } = await loadDbModule();
+      const { FDAError: RuntimeFDAError } = await import(
+        '../../src/lib/fdaError.js'
+      );
+      retrieveFDAMock.mockResolvedValue({
+        downloadPolicy: { maxDownloads: 5 },
+      });
+      claimFDADownloadMock.mockRejectedValue(
+        new RuntimeFDAError(410, 'DownloadLimitReached', 'exhausted'),
+      );
+
+      await expect(
+        runPreparedStatement(
+          runtimeConn,
+          'svc',
+          'fdaA',
+          'daA',
+          { id: 7 },
+          '/sp',
+          streaming,
+        ),
+      ).rejects.toMatchObject({ status: 410, type: 'DownloadLimitReached' });
+
+      expect(runtimeConn.prepare).not.toHaveBeenCalled();
+      expect(recordAccessMock).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each([false, true])(
+    'invalid cached query parameters do not consume quota (streaming=%s)',
+    async (streaming) => {
+      const { runPreparedStatement, runtimeConn } = await loadDbModule();
+      retrieveFDAMock.mockResolvedValue({
+        downloadPolicy: { maxDownloads: 5 },
+      });
+
+      await expect(
+        runPreparedStatement(
+          runtimeConn,
+          'svc',
+          'fdaA',
+          'daA',
+          { id: 'not-a-number' },
+          '/sp',
+          streaming,
+        ),
+      ).rejects.toMatchObject({ status: 400, type: 'InvalidQueryParam' });
+
+      expect(claimFDADownloadMock).not.toHaveBeenCalled();
+      expect(runtimeConn.prepare).not.toHaveBeenCalled();
+    },
+  );
+
   test('runPreparedStatementStream returns close callback that closes statement', async () => {
     const { runPreparedStatementStream, runtimeConn } = await loadDbModule({
       retrieveDAResult: {
@@ -204,6 +303,7 @@ describe('db utils', () => {
     );
 
     expect(result.stream).toBe('stream-ref');
+    expect(claimFDADownloadMock).not.toHaveBeenCalled();
     expect(recordAccessMock).toHaveBeenCalledWith({
       service: 'svc',
       servicePath: '/sp',

@@ -78,6 +78,17 @@ export const VALID_WINDOW_FETCH_SIZES = [
   'year',
 ];
 
+// Fixed-length duration units
+export const DURATION_UNITS_MS = Object.freeze({
+  second: 1000,
+  minute: 60 * 1000,
+  hour: 60 * 60 * 1000,
+  day: 24 * 60 * 60 * 1000,
+  week: 7 * 24 * 60 * 60 * 1000,
+  month: 30 * 24 * 60 * 60 * 1000,
+  year: 365 * 24 * 60 * 60 * 1000,
+});
+
 // Storage partitions
 export const PARTITION_TYPES = ['day', 'week', 'month', 'year', 'none'];
 

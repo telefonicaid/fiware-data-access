@@ -22,7 +22,7 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
-import { retrieveDA, retrieveFDA } from './mongo.js';
+import { retrieveDA, retrieveFDA, claimFDADownload } from './mongo.js';
 import { FDAError, storageQuotaErrorFor } from '../fdaError.js';
 import { recordAccess } from '../accessTracker.js';
 import { getBasicLogger } from './logger.js';
@@ -367,12 +367,8 @@ export async function runPreparedStatement(
     );
   }
 
-  const {
-    objStgConf,
-    servicePath: storedServicePath,
-    schema,
-    lastFetch,
-  } = await retrieveFDA(service, fdaId, servicePath);
+  const fda = await retrieveFDA(service, fdaId, servicePath);
+  const { objStgConf, servicePath: storedServicePath, schema, lastFetch } = fda;
   const fdaServicePath = storedServicePath ?? servicePath;
 
   let stmt;
@@ -380,6 +376,9 @@ export async function runPreparedStatement(
   try {
     validateDAParamBindings(da.query, da.params || []);
     const resolvedParams = applyParams(paramValues || {}, da.params);
+    if (fda.downloadPolicy) {
+      await claimFDADownload(fda);
+    }
     const boundParams = normalizeParamsForDuckDB(resolvedParams);
     const fallbackQuery = buildStoredSchemaQuery(schema, da.query);
     const files = await listPrunedPartitionFiles(
@@ -414,7 +413,7 @@ export async function runPreparedStatement(
     stmt = prepared.stmt;
     recordAccess({
       service,
-      servicePath: storedServicePath ?? servicePath,
+      servicePath: fdaServicePath,
       fdaId,
       daId,
       lastFetch,
