@@ -23,6 +23,7 @@
 // criminal actions it may exercise to protect its rights.
 
 import { FDAError } from '../fdaError.js';
+import { DURATION_UNITS_MS } from '../constants.js';
 
 function parseExpirationDate(expirationDate) {
   if (expirationDate === undefined) {
@@ -63,17 +64,9 @@ function parseValidityPeriod(validityPeriod, now) {
     /^(?:(\d+)\s+)?(second|minute|hour|day|week|month|year)s?$/i.exec(
       validityPeriod.trim(),
     );
-  const unitsInMs = {
-    second: 1000,
-    minute: 60 * 1000,
-    hour: 60 * 60 * 1000,
-    day: 24 * 60 * 60 * 1000,
-    week: 7 * 24 * 60 * 60 * 1000,
-    month: 30 * 24 * 60 * 60 * 1000,
-    year: 365 * 24 * 60 * 60 * 1000,
-  };
   const amount = match ? Number(match[1] ?? 1) : 0;
-  const durationMs = match && amount * unitsInMs[match[2].toLowerCase()];
+  const durationMs =
+    match && amount * DURATION_UNITS_MS[match[2].toLowerCase()];
   if (!Number.isSafeInteger(durationMs) || durationMs <= 0) {
     throw new FDAError(
       400,

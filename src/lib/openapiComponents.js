@@ -445,7 +445,7 @@
  *         validityPeriod:
  *           type: string
  *           pattern: '^(?:(\d+)\s+)?(second|minute|hour|day|week|month|year)s?$'
- *           description: Positive duration in seconds, minutes, hours, days, weeks, 30-day months or 365-day years, starting at creation. Mutually exclusive with expirationDate.
+ *           description: Positive duration in seconds, minutes, hours, days, weeks, 30-day months or 365-day years (fixed lengths as in refreshInterval, not calendar months/years as in fetchSize/windowSize), starting at creation. Mutually exclusive with expirationDate.
  *           example: 7 days
  *         id:
  *           type: string
@@ -509,7 +509,7 @@
  *         validityPeriod:
  *           type: string
  *           pattern: '^(?:(\d+)\s+)?(second|minute|hour|day|week|month|year)s?$'
- *           description: Positive human-readable duration from creation, for example 7 days, 6 weeks or 1 month. Months are 30 days and years are 365 days. Mutually exclusive with expirationDate.
+ *           description: Positive human-readable duration from creation, for example 7 days, 6 weeks or 1 month. Months are fixed 30 days and years fixed 365 days, not calendar months/years. Mutually exclusive with expirationDate.
  *         id:
  *           type: string
  *           description: >

@@ -29,7 +29,7 @@ import { CronExpressionParser } from 'cron-parser';
 
 import { FDAError } from '../fdaError.js';
 import { getBasicLogger } from './logger.js';
-import { VALID_VISIBILITIES_SET } from '../constants.js';
+import { VALID_VISIBILITIES_SET, DURATION_UNITS_MS } from '../constants.js';
 import { getDownloadMetadata } from './downloadPolicy.js';
 const logger = getBasicLogger();
 
@@ -305,16 +305,7 @@ export function convertRefreshIntervalToMs(interval) {
   if (match) {
     const [, quantity, unit] = match;
     const num = parseInt(quantity, 10);
-    const unitMs = {
-      second: 1000,
-      minute: 60 * 1000,
-      hour: 60 * 60 * 1000,
-      day: 24 * 60 * 60 * 1000,
-      week: 7 * 24 * 60 * 60 * 1000,
-      month: 30 * 24 * 60 * 60 * 1000,
-      year: 365 * 24 * 60 * 60 * 1000,
-    };
-    return num * (unitMs[unit] || 0);
+    return num * (DURATION_UNITS_MS[unit] || 0);
   }
 
   // Cron intervals

@@ -21,10 +21,12 @@ FDA creation accepts optional `maxDownloads`, `expirationDate` and `validityPeri
 
 `maxDownloads` must be a positive safe integer. Omit it for unlimited downloads. Supply either a future `expirationDate`
 (an ISO 8601 timestamp with seconds and timezone, such as `2027-01-21T12:00:00Z`) or a `validityPeriod`, never both.
-Durations use the same amount-and-unit format as fetch sizes, for example `3 days`, `6 weeks`, `1 month` or `12 hours`,
-and must be positive. A unit without an amount means one unit. Months are 30 days and years are 365 days. Invalid
-policies return `400 InvalidDownloadPolicy` before provisioning begins. The same fields are accepted on
-`POST /{visibility}/fdas/upload` as multipart form fields; empty strings in these multipart fields are ignored. See the
+Durations use an amount-and-unit format, for example `3 days`, `6 weeks`, `1 month` or `12 hours`, and must be positive.
+A unit without an amount means one unit. Units have fixed lengths, the same ones used for `refreshInterval`: months are
+30 days and years are 365 days. They are not calendar months or years, unlike `fetchSize` and `windowSize`; for example,
+`1 month` requested on `2026-01-31T10:00:00Z` expires on `2026-03-02T10:00:00Z`. Invalid policies return
+`400 InvalidDownloadPolicy` before provisioning begins. The same fields are accepted on `POST /{visibility}/fdas/upload`
+as multipart form fields; empty strings in these multipart fields are ignored. See the
 [API reference](03_api.md#fda-payload-datamodel) for the payload datamodel.
 
 The validity period starts when creation is requested, not when the first fetch completes. It is stored as an absolute
