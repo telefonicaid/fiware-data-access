@@ -129,3 +129,8 @@ export const MAX_KEYS_PER_REQUEST = 1000;
 // Pattern to detect storage quota errors from MinIO S3 server responses
 export const STORAGE_QUOTA_PATTERN =
   /XMinioAdminBucketQuotaExceeded|bucket quota exceeded/i;
+
+// Time constants for partition pruning
+export const DAY_MS = 24 * 60 * 60 * 1000;
+export const WEEK_MS = 7 * DAY_MS;
+export const RANGE_MARGIN_MS = DAY_MS;

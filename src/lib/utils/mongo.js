@@ -1006,6 +1006,7 @@ export async function storeDA(
   description,
   query,
   params,
+  timeRange,
 ) {
   logger.debug(
     { fdaId, daId, description, querySize: query.length },
@@ -1013,12 +1014,16 @@ export async function storeDA(
   );
   const collection = await getCollection();
   try {
+    const da = { description, query, params };
+    if (timeRange) {
+      da.timeRange = timeRange;
+    }
     await collection.updateOne({ service, fdaId, servicePath }, [
       {
         $set: {
           [`das.${daId}`]: {
             $mergeObjects: [
-              { $literal: { description, query, params } },
+              { $literal: da },
               {
                 access: {
                   $ifNull: [
@@ -1109,6 +1114,7 @@ export async function retrieveDAs(service, fdaId, servicePath) {
                   description: '$$q.v.description',
                   query: '$$q.v.query',
                   params: '$$q.v.params',
+                  timeRange: '$$q.v.timeRange',
                 },
               },
             },
@@ -1153,6 +1159,7 @@ export async function updateDA(
   description,
   query,
   params,
+  timeRange,
 ) {
   logger.debug(
     { fdaId, daId, description, querySize: query?.length },
@@ -1176,11 +1183,22 @@ export async function updateDA(
       setFields[`das.${daId}.params`] = params;
     }
 
-    if (Object.keys(setFields).length === 0) {
+    const update = {};
+    if (timeRange === null) {
+      update.$unset = { [`das.${daId}.timeRange`]: '' };
+    } else if (timeRange !== undefined) {
+      setFields[`das.${daId}.timeRange`] = timeRange;
+    }
+
+    if (Object.keys(setFields).length > 0) {
+      update.$set = setFields;
+    }
+
+    if (Object.keys(update).length === 0) {
       return; // nothing to update
     }
 
-    await collection.updateOne(filter, { $set: setFields });
+    await collection.updateOne(filter, update);
   } catch (e) {
     throw new FDAError(
       500,

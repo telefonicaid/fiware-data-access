@@ -33,6 +33,7 @@ import {
   toParquet,
   copyQueryToParquet,
   checkParams,
+  checkTimeRange,
   validateDAParamBindings,
   resolveDAParams,
   validateDAQuery,
@@ -939,6 +940,7 @@ export async function createDA(
   params,
   visibility,
   servicePath,
+  timeRange,
 ) {
   const conn = await getDBConnection();
 
@@ -964,6 +966,7 @@ export async function createDA(
     }
 
     const normalizedParams = checkParams(params);
+    const normalizedTimeRange = checkTimeRange(timeRange, normalizedParams);
     validateDAParamBindings(userQuery, normalizedParams || []);
     if (shouldValidateDACompatibility(fda)) {
       await validateDAQuery(conn, service, fdaId, userQuery, servicePath);
@@ -976,6 +979,7 @@ export async function createDA(
       description,
       userQuery,
       normalizedParams,
+      normalizedTimeRange,
     );
   } finally {
     await releaseDBConnection(conn);
@@ -2065,6 +2069,7 @@ export async function putDA(
   params,
   visibility,
   servicePath,
+  timeRange,
 ) {
   const conn = await getDBConnection();
 
@@ -2080,6 +2085,7 @@ export async function putDA(
     }
 
     const normalizedParams = checkParams(params);
+    const normalizedTimeRange = checkTimeRange(timeRange, normalizedParams);
     validateDAParamBindings(userQuery, normalizedParams || []);
     if (shouldValidateDACompatibility(fda)) {
       await validateDAQuery(conn, service, fdaId, userQuery, servicePath);
@@ -2092,6 +2098,7 @@ export async function putDA(
       description,
       userQuery,
       normalizedParams,
+      normalizedTimeRange ?? null,
     );
   } finally {
     await releaseDBConnection(conn);
@@ -2686,10 +2693,15 @@ async function buildDefaultDataAccessDefinition(
   const whereClause =
     filters.length > 0 ? ` WHERE ${filters.join(' AND ')}` : '';
 
-  return {
+  const definition = {
     query: `SELECT *, COUNT(*) OVER() as __total${whereClause} LIMIT CAST($pageSize AS BIGINT) OFFSET CAST($pageStart AS BIGINT)`,
     params,
   };
+  if (resolvedTimeColumn) {
+    definition.timeRange = { start: 'start', finish: 'finish' };
+  }
+
+  return definition;
 }
 
 function normalizeDefaultDASchemaFields(schemaOverride) {
@@ -3072,6 +3084,7 @@ async function createDefaultDAIfNeeded({
       defaultDA.params,
       normalizedVisibility,
       normalizedServicePath,
+      defaultDA.timeRange,
     );
   } catch (err) {
     await rollbackFDAProvisioning(service, fdaId, normalizedServicePath);
@@ -3287,6 +3300,7 @@ export async function processUploadFDAJob({
         daDefinition.params,
         visibility,
         servicePath,
+        daDefinition.timeRange,
       );
     }
 

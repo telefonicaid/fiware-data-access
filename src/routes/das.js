@@ -130,8 +130,14 @@ router.post('/:visibility/fdas/:fdaId/das', async (req, res) => {
   const servicePath = req.get('Fiware-ServicePath');
   const { visibility, fdaId } = req.params;
   const body = req.body ?? {};
-  validateAllowedFieldsBody(body, ['id', 'query', 'description', 'params']);
-  const { id, description, query, params } = body;
+  validateAllowedFieldsBody(body, [
+    'id',
+    'query',
+    'description',
+    'params',
+    'timeRange',
+  ]);
+  const { id, description, query, params, timeRange } = body;
 
   if (!fdaId || !id || !query || !service || !servicePath || !visibility) {
     return res.status(400).json({
@@ -151,6 +157,7 @@ router.post('/:visibility/fdas/:fdaId/das', async (req, res) => {
     params,
     visibility,
     servicePath,
+    timeRange,
   );
   return res.sendStatus(204);
 });
@@ -245,8 +252,13 @@ router.put('/:visibility/fdas/:fdaId/das/:daId', async (req, res) => {
   const servicePath = req.get('Fiware-ServicePath');
   const { visibility, fdaId, daId } = req.params;
   const body = req.body ?? {};
-  validateAllowedFieldsBody(body, ['query', 'description', 'params']);
-  const { description, query, params } = body;
+  validateAllowedFieldsBody(body, [
+    'query',
+    'description',
+    'params',
+    'timeRange',
+  ]);
+  const { description, query, params, timeRange } = body;
 
   if (!service || !fdaId || !daId || !query || !servicePath || !visibility) {
     return res.status(400).json({
@@ -264,6 +276,7 @@ router.put('/:visibility/fdas/:fdaId/das/:daId', async (req, res) => {
     params,
     visibility,
     servicePath,
+    timeRange,
   );
 
   return res.sendStatus(204);
