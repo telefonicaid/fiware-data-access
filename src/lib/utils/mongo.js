@@ -1029,6 +1029,7 @@ export async function retrieveDAs(service, fdaId, servicePath) {
                   description: '$$q.v.description',
                   query: '$$q.v.query',
                   params: '$$q.v.params',
+                  timeRange: '$$q.v.timeRange',
                 },
               },
             },
