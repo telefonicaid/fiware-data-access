@@ -76,11 +76,15 @@ export function resolveTimeRange(timeRange, params = {}) {
 
 function getWeekInterval(year, week) {
   const firstDayOfYear = Date.UTC(year, 0, 1);
+  const firstDayOfNextYear = Date.UTC(year + 1, 0, 1);
   const dayOfWeek = new Date(firstDayOfYear).getUTCDay();
   const firstMonday = firstDayOfYear + ((8 - dayOfWeek) % 7) * DAY_MS;
   const start = firstMonday + (week - 1) * WEEK_MS;
 
-  return { start: new Date(start), end: new Date(start + WEEK_MS) };
+  return {
+    start: new Date(Math.max(start, firstDayOfYear)),
+    end: new Date(Math.min(start + WEEK_MS, firstDayOfNextYear)),
+  };
 }
 
 export function getPartitionInterval(key) {

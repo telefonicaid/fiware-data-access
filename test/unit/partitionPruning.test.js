@@ -120,8 +120,16 @@ describe('partitionPruning', () => {
           'sp/fda.parquet/year=2025/week=2025-00/data_0.parquet',
         ),
       ).toEqual({
-        start: new Date('2024-12-30T00:00:00Z'),
+        start: new Date('2025-01-01T00:00:00Z'),
         end: new Date('2025-01-06T00:00:00Z'),
+      });
+      expect(
+        getPartitionInterval(
+          'sp/fda.parquet/year=2025/week=2025-52/data_0.parquet',
+        ),
+      ).toEqual({
+        start: new Date('2025-12-29T00:00:00Z'),
+        end: new Date('2026-01-01T00:00:00Z'),
       });
       expect(
         getPartitionInterval(

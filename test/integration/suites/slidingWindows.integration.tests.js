@@ -2098,9 +2098,39 @@ export function registerSlidingWindowsIntegrationTests({
             await readIds(baseUrl, daId, { from: '2025-02-02T00:00:00Z' }),
           ).toEqual([4, 5, 6]);
 
+          const listed = await httpReq({
+            method: 'GET',
+            url: `${baseUrl}/${visibility}/fdas/${fdaId}/das`,
+            headers: {
+              'Fiware-Service': service,
+              'Fiware-ServicePath': servicePath,
+            },
+          });
+          expect(listed.status).toBe(200);
+          const listedById = Object.fromEntries(
+            listed.json.map((da) => [da.id, da]),
+          );
+          expect(listedById[daId].timeRange).toEqual({ start: 'from' });
+          expect(listedById.defaultDataAccess.timeRange).toEqual({
+            start: 'start',
+            finish: 'finish',
+          });
+
           const updated = await sendDa(baseUrl, 'PUT', daId, body);
           expect(updated.status).toBe(204);
           expect((await getDa(baseUrl, daId)).timeRange).toBeUndefined();
+
+          const listedAfterUpdate = await httpReq({
+            method: 'GET',
+            url: `${baseUrl}/${visibility}/fdas/${fdaId}/das`,
+            headers: {
+              'Fiware-Service': service,
+              'Fiware-ServicePath': servicePath,
+            },
+          });
+          expect(
+            listedAfterUpdate.json.find((da) => da.id === daId),
+          ).not.toHaveProperty('timeRange');
           expect(
             await readIds(baseUrl, daId, { from: '2025-02-02T00:00:00Z' }),
           ).toEqual([4, 5, 6]);
