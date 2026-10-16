@@ -1641,6 +1641,10 @@ requested range, instead of every partition of the FDA. `timeRange` does not fil
 still compare `timeColumn` with those params. It has no effect in non-partitioned FDAs. See
 [Partition pruning](/doc/AdvancedTopics/sliding_windows_and_partitioning.md#partition-pruning) for details.
 
+On update (`PUT`), `timeRange` must be sent again if it is still wanted: a `PUT` without it removes the stored one.
+Since `query` is always replaced on update, keeping a previous `timeRange` could leave it pointing to params that the
+new query no longer uses as bounds of `timeColumn`, and the DA would silently return fewer rows.
+
 Example:
 
 ```json
