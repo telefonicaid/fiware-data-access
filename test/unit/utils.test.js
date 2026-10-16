@@ -25,6 +25,95 @@
 import { beforeEach, describe, expect, jest, test } from '@jest/globals';
 import xlsx from 'xlsx';
 import { ObjectId } from 'mongodb';
+import {
+  normalizeDownloadPolicy,
+  getDownloadMetadata,
+} from '../../src/lib/utils/downloadPolicy.js';
+
+describe('download policy', () => {
+  const now = new Date('2026-10-14T12:00:00Z');
+
+  test('leaves existing FDAs unrestricted', () => {
+    expect(normalizeDownloadPolicy({}, now)).toBeUndefined();
+    expect(getDownloadMetadata({})).toEqual({});
+  });
+
+  test.each([
+    ['3 days', 3 * 86400000],
+    ['6 weeks', 42 * 86400000],
+    ['1 month', 30 * 86400000],
+    ['2 hours', 2 * 3600000],
+    ['day', 86400000],
+    ['  1   WEEK  ', 7 * 86400000],
+  ])(
+    'normalizes human-readable validity period %s',
+    (validityPeriod, durationMs) => {
+      expect(
+        normalizeDownloadPolicy({ maxDownloads: 5, validityPeriod }, now),
+      ).toEqual({
+        maxDownloads: 5,
+        expirationDate: new Date(now.getTime() + durationMs),
+      });
+    },
+  );
+
+  test.each([
+    { maxDownloads: 0 },
+    { maxDownloads: -1 },
+    { maxDownloads: 1.5 },
+    { maxDownloads: '5' },
+    { maxDownloads: null },
+    { validityPeriod: '0 days' },
+    { validityPeriod: '1 fortnight' },
+    { validityPeriod: '1 month 2 days' },
+    { validityPeriod: '10 lightyears' },
+    { validityPeriod: '9007199254740992 years' },
+    { validityPeriod: 'P' },
+    { validityPeriod: null },
+    { expirationDate: '2026-10-14T12:00:00Z' },
+    { expirationDate: '2026-11-01T12:00:00' },
+    { expirationDate: '2027-02-30T12:00:00Z' },
+    { expirationDate: '2026-11-01T12:00:00Z', validityPeriod: '7 days' },
+  ])('rejects invalid restrictions: %j', (policy) => {
+    expect(() => normalizeDownloadPolicy(policy, now)).toThrow();
+  });
+
+  test('reports expiration at the exact boundary and prioritizes it over exhaustion', () => {
+    expect(
+      getDownloadMetadata(
+        {
+          downloadPolicy: { maxDownloads: 5, expirationDate: now },
+          downloadsUsed: 5,
+        },
+        now,
+      ),
+    ).toMatchObject({
+      remainingDownloads: 0,
+      downloadStatus: 'expired',
+    });
+  });
+
+  test('reports available, exhausted and unlimited quotas', () => {
+    expect(
+      getDownloadMetadata(
+        { downloadPolicy: { maxDownloads: 5 }, downloadsUsed: 2 },
+        now,
+      ),
+    ).toMatchObject({ remainingDownloads: 3, downloadStatus: 'available' });
+    expect(
+      getDownloadMetadata(
+        { downloadPolicy: { maxDownloads: 5 }, downloadsUsed: 5 },
+        now,
+      ).downloadStatus,
+    ).toBe('exhausted');
+    expect(
+      getDownloadMetadata(
+        { downloadPolicy: { expirationDate: new Date('2026-11-01') } },
+        now,
+      ).remainingDownloads,
+    ).toBeNull();
+  });
+});
 
 const loggerMock = {
   debug: jest.fn(),

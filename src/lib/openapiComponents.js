@@ -432,6 +432,21 @@
  *       additionalProperties: false
  *       required: [id, query]
  *       properties:
+ *         maxDownloads:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 9007199254740991
+ *           description: Optional lifetime quota shared by all data endpoints, DAs and formats. Admitted requests consume quota even if interrupted or execution fails.
+ *           example: 5
+ *         expirationDate:
+ *           type: string
+ *           format: date-time
+ *           description: Future ISO 8601 timestamp with timezone. Mutually exclusive with validityPeriod.
+ *         validityPeriod:
+ *           type: string
+ *           pattern: '^(?:(\d+)\s+)?(second|minute|hour|day|week|month|year)s?$'
+ *           description: Positive duration in seconds, minutes, hours, days, weeks, 30-day months or 365-day years (fixed lengths as in refreshInterval, not calendar months/years as in fetchSize/windowSize), starting at creation. Mutually exclusive with expirationDate.
+ *           example: 7 days
  *         id:
  *           type: string
  *           pattern: '^[a-zA-Z0-9_-]+$'
@@ -482,6 +497,19 @@
  *       description: Multipart form fields accepted by `POST /{visibility}/fdas/upload`.
  *       required: [id, file]
  *       properties:
+ *         maxDownloads:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 9007199254740991
+ *           description: Lifetime download quota, supplied as a multipart form field.
+ *         expirationDate:
+ *           type: string
+ *           format: date-time
+ *           description: Future timestamp with timezone. Mutually exclusive with validityPeriod.
+ *         validityPeriod:
+ *           type: string
+ *           pattern: '^(?:(\d+)\s+)?(second|minute|hour|day|week|month|year)s?$'
+ *           description: Positive human-readable duration from creation, for example 7 days, 6 weeks or 1 month. Months are fixed 30 days and years fixed 365 days, not calendar months/years. Mutually exclusive with expirationDate.
  *         id:
  *           type: string
  *           description: >
@@ -520,6 +548,30 @@
  *       type: object
  *       description: Fields common to both FDA response representations (list item and single-FDA detail).
  *       properties:
+ *         maxDownloads:
+ *           type: integer
+ *           nullable: true
+ *           readOnly: true
+ *           description: Lifetime quota; null means unlimited. Download metadata is present only on restricted FDAs.
+ *         downloadsUsed:
+ *           type: integer
+ *           readOnly: true
+ *           description: Atomically admitted download requests; independent of buffered access statistics and never reset on refresh.
+ *         remainingDownloads:
+ *           type: integer
+ *           nullable: true
+ *           readOnly: true
+ *           description: Remaining admissions, or null when unlimited. Informational; the download reservation is authoritative.
+ *         expirationDate:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *           readOnly: true
+ *         downloadStatus:
+ *           type: string
+ *           enum: [available, expired, exhausted]
+ *           readOnly: true
+ *           description: Policy status, independent of fetch readiness. Does not remove access to management metadata.
  *         createdAt:
  *           type: string
  *           format: date-time
