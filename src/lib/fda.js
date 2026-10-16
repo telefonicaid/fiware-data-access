@@ -83,6 +83,7 @@ import {
   runMongoQuery,
   validateMongoQuery,
   assertAllowedMongoAggregationStage,
+  updateFDA,
 } from './utils/mongo.js';
 import { getMongoDeclaredColumns } from './utils/mongoQuery.js';
 import {
@@ -1412,8 +1413,29 @@ function validateUploadOptions(timeColumn, objStgConf) {
   }
 }
 
-export async function updateFDA(service, fdaId, visibility, servicePath) {
+export async function putFDA(
+  service,
+  fdaId,
+  visibility,
+  servicePath,
+  query,
+  description,
+  timeColumn,
+  datasourceId,
+  validationMode,
+) {
   const normalizedServicePath = normalizeServicePath(servicePath);
+  updateFDA(
+    service,
+    fdaId,
+    servicePath,
+    query,
+    description,
+    timeColumn,
+    datasourceId,
+    validationMode,
+  );
+
   const fda =
     visibility !== undefined
       ? await getAccessibleFDA(service, fdaId, visibility, servicePath)

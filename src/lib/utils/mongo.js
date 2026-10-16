@@ -1145,6 +1145,60 @@ export async function retrieveDA(service, fdaId, daId, servicePath) {
   }
 }
 
+export async function updateFDA(
+  service,
+  fdaId,
+  servicePath,
+  query,
+  description,
+  timeColumn,
+  datasourceId,
+  validationMode,
+) {
+  logger.debug(
+    { fdaId, description, timeColumn, querySize: query?.length },
+    '[DEBUG]: updateFDA',
+  );
+  const collection = await getCollection();
+
+  try {
+    const filter = { service, fdaId, servicePath };
+    const setFields = {};
+
+    if (query !== undefined) {
+      setFields.query = query;
+    }
+
+    if (description !== undefined) {
+      setFields.description = description;
+    }
+
+    if (timeColumn !== undefined) {
+      setFields.timeColumn = timeColumn;
+    }
+
+    if (datasourceId !== undefined) {
+      setFields.datasourceId = datasourceId;
+    }
+
+    if (validationMode !== undefined) {
+      setFields.validationMode = validationMode;
+    }
+
+    if (Object.keys(setFields).length === 0) {
+      return;
+    }
+
+    await collection.updateOne(filter, { $set: setFields });
+  } catch (e) {
+    throw new FDAError(
+      500,
+      'MongoDBServerError',
+      `Error updating FDA ${fdaId} of service ${service}: ${e}`,
+    );
+  }
+}
+
 export async function updateDA(
   service,
   fdaId,

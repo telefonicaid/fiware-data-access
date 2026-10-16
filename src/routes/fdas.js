@@ -28,7 +28,7 @@ import {
   getFDAs,
   fetchFDA,
   getFDA,
-  updateFDA,
+  putFDA,
   deleteFDA,
   uploadFDA,
 } from '../lib/fda.js';
@@ -601,6 +601,19 @@ router.put('/:visibility/fdas/:fdaId', async (req, res) => {
   const service = req.get('Fiware-Service');
   const servicePath = req.get('Fiware-ServicePath');
   const { visibility, fdaId } = req.params;
+  const body = req.body ?? {};
+  validateAllowedFieldsBody(body, [
+    'query',
+    'description',
+    //'refreshPolicy',
+    'timeColumn',
+    //'objStgConf',
+    //'cached',
+    'datasourceId',
+    'validationMode',
+  ]);
+
+  const { query, description, timeColumn, datasourceId, validationMode } = body;
 
   if (!service || !fdaId || !servicePath || !visibility) {
     return res.status(400).json({
@@ -609,14 +622,17 @@ router.put('/:visibility/fdas/:fdaId', async (req, res) => {
     });
   }
 
-  if (req.body && Object.keys(req.body).length > 0) {
-    return res.status(400).json({
-      error: 'BadRequest',
-      description: 'PUT /fdas does not accept a request body',
-    });
-  }
-
-  await updateFDA(service, fdaId, visibility, servicePath);
+  await putFDA(
+    service,
+    fdaId,
+    visibility,
+    servicePath,
+    query,
+    description,
+    timeColumn,
+    datasourceId,
+    validationMode,
+  );
 
   return res.status(202).json({
     id: fdaId,
