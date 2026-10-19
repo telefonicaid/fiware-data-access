@@ -39,19 +39,24 @@ refresh job runs.
 
 ### Recurring refresh and consistency refresh overlap
 
-The recurring refresh and the consistency refresh are independent jobs, so their schedules can coincide (for example, an
-hourly refresh and a consistency refresh every 24 hours both fire at midnight). To avoid processing the same data twice:
+The recurring refresh and the consistency refresh are independent jobs, so their schedules can coincide. This is
+expected, not necessarily a configuration error: for example, an hourly refresh and a consistency refresh every 24 hours
+both fire at midnight. A refresh that takes longer than its interval can also still be running when another refresh
+becomes due. This is most likely with long source queries or when `consistencyRefreshInterval` is a multiple of
+`refreshInterval`.
 
--   If the consistency refresh of an FDA is running when its recurring refresh is due, the recurring refresh is
-    **skipped**: the consistency refresh already rebuilds everything the recurring one would fetch.
--   The consistency refresh has a higher scheduling priority, so when both are due at the same instant (typical with
-    cron expressions) it is the one that starts first.
+The consistency refresh has a higher scheduling priority, so when both jobs are waiting at the same instant it is
+scheduled first. Priority does not interrupt a refresh that has already started, however.
 
-This matters most for long refreshes, and when `consistencyRefreshInterval` is a multiple of `refreshInterval` (e.g.
-every hour vs. every 24 hours), because then the schedules coincide regularly.
+To prevent concurrent work on the same FDA, refresh processing acquires a renewable, MongoDB-backed lease scoped to the
+service, service path and FDA ID. This is atomic across application instances. If another refresh already holds the
+lease, the new refresh is skipped; a different FDA can still refresh independently. Expired leases can be acquired by a
+later refresh after a process failure, and an active lease prevents deletion of the FDA.
 
-The check is only made when the recurring refresh starts. A recurring refresh that is already running is not
-interrupted, and a recurring refresh that starts right after the consistency refresh has finished is not skipped.
+The skipped job is not retried immediately; it will be attempted at its next scheduled interval. In particular, if a
+consistency refresh becomes due while a recurring refresh is already running, the consistency refresh can be skipped and
+delayed historical rows may remain unrecovered until its next run. Account for refresh duration and required recovery
+latency when choosing intervals.
 
 ### Bootstrap snapshot and object storage
 
