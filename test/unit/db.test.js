@@ -1579,5 +1579,70 @@ describe('db utils', () => {
         'DuckDB memory snapshot after failed upload',
       );
     });
+
+    test('copyQueryToParquet dumps every DuckDB memory tag at info before the COPY', async () => {
+      const { copyQueryToParquet } = await loadDbModule();
+      const conn = { run: jest.fn().mockResolvedValue(undefined) };
+      mockMemoryQueries(conn, {
+        rows: [
+          {
+            tag: 'EXTENSION',
+            memory_usage_bytes: 100n,
+            temporary_storage_bytes: 0n,
+          },
+          {
+            tag: 'COLUMN_DATA',
+            memory_usage_bytes: 300n,
+            temporary_storage_bytes: 50n,
+          },
+        ],
+      });
+
+      await copyQueryToParquet(
+        conn,
+        'SELECT 1',
+        'test-bucket/target',
+        'ts',
+        'none',
+        false,
+      );
+
+      expect(loggerMock.info).toHaveBeenCalledWith(
+        {
+          resultPath: 'test-bucket/target',
+          duckdbLimitBytes: Math.round(953.6 * 1024 ** 2),
+          duckdbUsedBytes: 400,
+          duckdbTempBytes: 50,
+          duckdbTags: 'COLUMN_DATA=300, EXTENSION=100',
+        },
+        'DuckDB memory before Parquet export',
+      );
+      expect(
+        Math.max(...conn.runAndReadAll.mock.invocationCallOrder),
+      ).toBeLessThan(conn.run.mock.invocationCallOrder[0]);
+    });
+
+    test('copyQueryToParquet still runs the COPY when the memory dump fails', async () => {
+      const { copyQueryToParquet } = await loadDbModule();
+      const conn = {
+        run: jest.fn().mockResolvedValue(undefined),
+        runAndReadAll: jest.fn().mockRejectedValue(new Error('boom')),
+      };
+
+      await copyQueryToParquet(
+        conn,
+        'SELECT 1',
+        'test-bucket/target',
+        'ts',
+        'none',
+        false,
+      );
+
+      expect(conn.run).toHaveBeenCalledTimes(1);
+      expect(loggerMock.debug).toHaveBeenCalledWith(
+        expect.objectContaining({ err: expect.any(Error) }),
+        'Could not dump DuckDB memory',
+      );
+    });
   });
 });

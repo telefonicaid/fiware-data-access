@@ -4124,6 +4124,28 @@ describe('processFDAAsync', () => {
     );
   });
 
+  test('logs at info when cleaning the temporary files of a failed fetch', async () => {
+    pgMocks.uploadTable.mockRejectedValue(new Error('upload failed'));
+    awsMocks.listObjects.mockResolvedValue([]);
+    const requestLogger = {
+      info: jest.fn(),
+      warn: jest.fn(),
+      error: jest.fn(),
+      debug: jest.fn(),
+    };
+
+    await expect(
+      runWithLogger(requestLogger, () =>
+        processFDAAsync('fda2', 'SELECT 2', 'svc', '/servicepath'),
+      ),
+    ).rejects.toThrow();
+
+    expect(requestLogger.info).toHaveBeenCalledWith(
+      { bucket: 'svc', tmpPath: 'tmp/servicepath/fda2.parquet' },
+      'Cleaning temporary files in S3',
+    );
+  });
+
   test('keeps the original error when cleaning the objects of a failed fetch also fails', async () => {
     pgMocks.uploadTable.mockRejectedValue(new Error('upload failed'));
     awsMocks.dropFile.mockRejectedValue(new Error('cleanup exploded'));

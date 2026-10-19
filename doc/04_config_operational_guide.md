@@ -569,7 +569,22 @@ Example:
 time=2026-08-11T08:36:01.785Z | lvl=INFO | corr=n/a | trans=n/a | op=n/a | ver=1.2.0-next | comp=Fda | srv=n/a | subsrv=n/a | duckdbLimitBytes=1000341504 | duckdbUsedBytes=881819648 | duckdbTempBytes=0 | duckdbTopTags=COLUMN_DATA=712834048, ALLOCATOR=168985600 | msg=[Fetcher] Heartbeat: alive
 ```
 
-### DuckDB memory on failures
+The heartbeat is enabled when the configured interval is greater than `0`. Set it to `0` (or a negative value) to
+disable the heartbeat.
+
+The default interval is `60000` milliseconds (1 minute).
+
+### DuckDB memory around Parquet exports
+
+Every Parquet export (`COPY ... TO PARQUET`, the step where Out of Memory errors happen during fetches and uploads) is
+preceded by an `INFO` dump of `duckdb_memory()`, with `resultPath`, `duckdbLimitBytes`, `duckdbUsedBytes`,
+`duckdbTempBytes` and `duckdbTags` (every allocation tag in use, largest first):
+
+```
+... | lvl=INFO | corr=job-6ad5d270a53d8538999dc81b | ... | op=refresh-fda | ... | resultPath=sc_vlci/tmp/fdas/fdaTraficoEstados.parquet | duckdbLimitBytes=1932735283 | duckdbUsedBytes=402653184 | duckdbTempBytes=0 | duckdbTags=EXTENSION=268435456, COLUMN_DATA=134217728 | msg=DuckDB memory before Parquet export
+```
+
+It shows how much memory DuckDB already held when the export started, which the error message does not report.
 
 When a DuckDB step of a CSV or Postgres fetch fails, the job logs a `WARN` line with the same DuckDB fields, under the
 same `corr=job-...` as the failed job, just before the `Job failed` error. Use it to compare the failure against the
@@ -584,12 +599,12 @@ limit:
     `ALLOCATOR` for allocator overhead).
 
 The snapshot is taken after the failing operation has released its memory, so it shows the state at failure time, not
-the peak. The peak is the figure in the DuckDB error message itself, for example `(881.8 MiB/953.6 MiB used)`.
+the peak. The peak is the figure in the DuckDB error message itself, for example `(881.8 MiB/953.6 MiB used)`. Read
+together, the dump before the export and the error message give the memory held before the export and the peak it
+reached.
 
-The heartbeat is enabled when the configured interval is greater than `0`. Set it to `0` (or a negative value) to
-disable the heartbeat.
-
-The default interval is `60000` milliseconds (1 minute).
+When the temporary Parquet files of an FDA are removed, after a failed fetch or when the FDA is deleted, an `INFO` line
+`Cleaning temporary files in S3` with `bucket` and `tmpPath` is logged.
 
 ### Observability and Deployment Considerations
 

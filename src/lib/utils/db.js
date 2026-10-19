@@ -151,21 +151,24 @@ async function readDuckDBMemory(conn) {
   };
 }
 
+function formatDuckDBTags(byTag, limit = Infinity) {
+  return Object.entries(byTag)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([tag, bytes]) => `${tag}=${bytes}`)
+    .join(', ');
+}
+
 export function formatDuckDBMemory(snapshot) {
   if (!snapshot) {
     return {};
   }
-  const topTags = Object.entries(snapshot.byTag)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, DUCKDB_TOP_TAGS)
-    .map(([tag, bytes]) => `${tag}=${bytes}`)
-    .join(', ');
 
   return {
     duckdbLimitBytes: snapshot.limitBytes,
     duckdbUsedBytes: snapshot.usedBytes,
     duckdbTempBytes: snapshot.tempBytes,
-    duckdbTopTags: topTags,
+    duckdbTopTags: formatDuckDBTags(snapshot.byTag, DUCKDB_TOP_TAGS),
   };
 }
 
@@ -212,6 +215,24 @@ export async function logDuckDBMemoryFailure(conn, message) {
     logger.warn(formatDuckDBMemory(snapshot), message);
   } catch (error) {
     logger.debug({ err: error }, 'Could not read DuckDB memory after failure');
+  }
+}
+
+export async function logDuckDBMemoryDump(conn, message, fields = {}) {
+  try {
+    const snapshot = await readDuckDBMemory(conn);
+    logger.info(
+      {
+        ...fields,
+        duckdbLimitBytes: snapshot.limitBytes,
+        duckdbUsedBytes: snapshot.usedBytes,
+        duckdbTempBytes: snapshot.tempBytes,
+        duckdbTags: formatDuckDBTags(snapshot.byTag),
+      },
+      message,
+    );
+  } catch (error) {
+    logger.debug({ err: error }, 'Could not dump DuckDB memory');
   }
 }
 
@@ -1035,6 +1056,10 @@ export async function copyQueryToParquet(
 
   const { cols, partitionBy } = getPartitionConf(partitionType, timeColumn);
   const compressionString = compression ? `, COMPRESSION ZSTD` : '';
+
+  await logDuckDBMemoryDump(conn, 'DuckDB memory before Parquet export', {
+    resultPath,
+  });
 
   try {
     return await conn.run(
