@@ -92,6 +92,37 @@ fdaId/
 
 Each partition contains only the data corresponding to its time slice, stored in MinIO.
 
+### Partition pruning
+
+A DA usually filters by `timeColumn`, not by the partition columns (`year`, `month`, `day`, `week`), so by itself the
+query engine cannot tell which partitions a request needs and opens all of them. The cost of a query then grows with the
+number of partitions of the FDA, whatever the range requested.
+
+To avoid it, a DA can declare which of its params bound `timeColumn` using [`timeRange`](../03_api.md#time-range). The
+`defaultDataAccess` of an FDA with `timeColumn` declares it for its `start` and `finish` params. When such a DA is
+queried on a partitioned FDA and at least one of those params has a value:
+
+1. The partitions of the FDA are listed in object storage.
+2. Only the files of the partitions overlapping the requested range are read. The range is widened by one day on each
+   side, to cover time zone differences between the received values and the partition a row was stored in.
+3. The DA query runs unchanged on those files, so its own `timeColumn` filter still gives the exact bounds.
+
+This works for every partition type, for ranges spanning several months or years and for open-ended ranges (only `start`
+or only `finish`). If no partition overlaps the range, the result is empty.
+
+Things to keep in mind:
+
+-   `timeRange` does not filter rows. A DA that declares it must also filter `timeColumn` with those params in its
+    `query`. If it declares params that the query does not use as bounds of `timeColumn`, rows are silently left out.
+-   The values must be readable as a date (for example ISO 8601, `2025-06-01T00:00:00Z`). If one is not, the query reads
+    every partition.
+-   A request that sends neither bound reads every partition.
+-   Columns are combined by name only across the partitions that are read (see
+    [Source schema changes](#source-schema-changes)). In an `unchecked` FDA, a DA that references a column existing only
+    in partitions outside the requested range fails instead of returning `NULL` for it.
+-   A custom DA without `timeRange` can still filter directly on the partition columns with literal values, e.g.
+    `WHERE year = 2025 AND month = 6`.
+
 ---
 
 ## Interaction & Design Considerations

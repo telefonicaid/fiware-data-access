@@ -1570,12 +1570,13 @@ None
 
 A DA is represented by a JSON object with the following fields:
 
-| Parameter     | Optional | Type   | Description                                                                                            |
-| ------------- | -------- | ------ | ------------------------------------------------------------------------------------------------------ |
-| `id`          | (\*)     | string | DA identifier, unique within the associated FDA.                                                       |
-| `description` | ✓        | string | A free text used by the client to describe the DA. If omitted, no description is stored.               |
-| `query`       |          | string | Query string, without **FROM**, clause to run over the FDA when invoking the DA                        |
-| `params`      | ✓        | array  | Array of [param objects](#params) to control param values. If omitted, the DA has no query parameters. |
+| Parameter     | Optional | Type   | Description                                                                                                                              |
+| ------------- | -------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`          | (\*)     | string | DA identifier, unique within the associated FDA.                                                                                         |
+| `description` | ✓        | string | A free text used by the client to describe the DA. If omitted, no description is stored.                                                 |
+| `query`       |          | string | Query string, without **FROM**, clause to run over the FDA when invoking the DA                                                          |
+| `params`      | ✓        | array  | Array of [param objects](#params) to control param values. If omitted, the DA has no query parameters.                                   |
+| `timeRange`   | ✓        | object | [Time range object](#time-range) naming the params that bound the FDA `timeColumn`. If omitted, queries read every partition of the FDA. |
 
 (\*) The `id` field is mandatory when creating a DA (`POST`) and must not be included when updating a DA (`PUT`).
 
@@ -1637,6 +1638,41 @@ Example array:
         "range": [10, 14]
     }
 ]
+```
+
+#### Time range
+
+The optional `timeRange` object tells which params of the DA hold the bounds of the FDA `timeColumn` in the query:
+
+| Parameter | Optional | Type   | Description                                               |
+| --------- | -------- | ------ | --------------------------------------------------------- |
+| `start`   | ✓        | string | Name of the param with the lower bound of the time range. |
+| `finish`  | ✓        | string | Name of the param with the upper bound of the time range. |
+
+At least one of them is required, and each one must be the name of a param declared in `params`; otherwise the request
+fails with `400 InvalidParam`.
+
+When the FDA is partitioned, the values received in these params are used to read only the partitions that overlap the
+requested range, instead of every partition of the FDA. `timeRange` does not filter rows by itself: the `query` must
+still compare `timeColumn` with those params. It has no effect in non-partitioned FDAs. See
+[Partition pruning](/doc/AdvancedTopics/sliding_windows_and_partitioning.md#partition-pruning) for details.
+
+On update (`PUT`), `timeRange` must be sent again if it is still wanted: a `PUT` without it removes the stored one.
+Since `query` is always replaced on update, keeping a previous `timeRange` could leave it pointing to params that the
+new query no longer uses as bounds of `timeColumn`, and the DA would silently return fewer rows.
+
+Example:
+
+```json
+{
+    "id": "da_alarms_by_date",
+    "query": "SELECT * WHERE ($from IS NULL OR timeinstant >= CAST($from AS TIMESTAMP)) AND ($to IS NULL OR timeinstant < CAST($to AS TIMESTAMP))",
+    "params": [
+        { "name": "from", "default": null },
+        { "name": "to", "default": null }
+    ],
+    "timeRange": { "start": "from", "finish": "to" }
+}
 ```
 
 ### DAs operations

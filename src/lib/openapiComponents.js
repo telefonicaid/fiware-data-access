@@ -714,6 +714,26 @@
  *           description: Controls param values. If omitted, the DA has no query parameters.
  *           items:
  *             $ref: '#/components/schemas/Param'
+ *         timeRange:
+ *           $ref: '#/components/schemas/DaTimeRange'
+ *
+ *     DaTimeRange:
+ *       type: object
+ *       additionalProperties: false
+ *       minProperties: 1
+ *       description: >
+ *         Names of the DA params that bound the FDA `timeColumn` in the query. When the FDA is partitioned, the
+ *         values received in these params are used to read only the partitions overlapping the requested range.
+ *         The query must still filter `timeColumn` with them. Ignored in non-partitioned FDAs.
+ *       properties:
+ *         start:
+ *           type: string
+ *           description: Name of the param holding the lower bound of the range.
+ *           example: start
+ *         finish:
+ *           type: string
+ *           description: Name of the param holding the upper bound of the range.
+ *           example: finish
  *
  *     DaCreateRequest:
  *       type: object
@@ -732,6 +752,8 @@
  *           type: array
  *           items:
  *             $ref: '#/components/schemas/Param'
+ *         timeRange:
+ *           $ref: '#/components/schemas/DaTimeRange'
  *
  *     DaUpdateRequest:
  *       type: object
@@ -747,6 +769,8 @@
  *           type: array
  *           items:
  *             $ref: '#/components/schemas/Param'
+ *         timeRange:
+ *           $ref: '#/components/schemas/DaTimeRange'
  *
  *     PostgresDatasourceConfig:
  *       type: object
