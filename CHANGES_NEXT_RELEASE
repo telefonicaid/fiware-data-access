@@ -3,7 +3,7 @@
 - Add: a fetch that exceeds the MinIO bucket quota now ends `failed` with an explicit `StorageQuotaExceeded` error (HTTP 507), and the quota is documented for operators (#325)
 - Upgrade: PostGIS image from `postgis/postgis:15-3.3` to `postgis/postgis:16-3.4` (docker-compose and integration tests). Existing `docker/postgis-data` volumes created with PostgreSQL 15 must be recreated or migrated (#334)
 - Upgrade: MinIO client image in docker-compose replaced from `minio/mc` to `pgsty/mc` (#302)
-- Fix: recurring FDA refresh consistency check to use the Agenda 6 API, restoring detection of active consistency refreshes and preventing agenda.jobs is not a function warnings (#346)
+- Fix: recurring FDA refresh consistency check to use the Agenda 6 API, restoring detection of active consistency refreshes and preventing agenda.jobs is not a function warnings (introduced in 1.7.0 version) (#346)
 - Fix: a failed fetch removes its staging CSV, and non partitioned FDAs publish through `tmp/`, so a failed refresh keeps the last good data (#325)
 - Fix: a failed PostgreSQL upload no longer returns its half-closed connection to the pool, which could hang the next fetch (#325)
 - Add: optional `timeRange` field in DAs (declared by default in `defaultDataAccess`) so queries by time range on partitioned FDAs read only the partitions overlapping the range instead of all of them (#328)
