@@ -947,6 +947,21 @@
  *                   type: integer
  *                 heapUsedBytes:
  *                   type: integer
+ *         duckdb:
+ *           type: object
+ *           description: Present only when the DuckDB instance has been initialised.
+ *           properties:
+ *             memoryLimitBytes:
+ *               type: integer
+ *               nullable: true
+ *             memoryUsedBytes:
+ *               type: integer
+ *             tempStorageBytes:
+ *               type: integer
+ *             memoryUsageByTagBytes:
+ *               type: object
+ *               additionalProperties:
+ *                 type: integer
  *         roles:
  *           type: object
  *           properties:

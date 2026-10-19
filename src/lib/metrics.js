@@ -25,6 +25,7 @@
 import { config } from './fdaConfig.js';
 import { getOperationalCollectionsSnapshot } from './utils/mongo.js';
 import { summarizeUsage } from './utils/usage.js';
+import { getDuckDBMemorySnapshot } from './utils/db.js';
 
 const SERVICE_VERSION = process.env.npm_package_version || 'unknown';
 const PROCESS_START_TIME_SECONDS = Math.floor(Date.now() / 1000);
@@ -262,7 +263,10 @@ export function onRequestFinish(req, res, startMs) {
 
 export async function buildHealthPayload() {
   const memory = process.memoryUsage();
-  const mongoData = await getMongoSnapshot();
+  const [mongoData, duckdbSnapshot] = await Promise.all([
+    getMongoSnapshot(),
+    getDuckDBMemorySnapshot(),
+  ]);
   const mongoSnapshot = mongoData.snapshot;
 
   return {
@@ -278,6 +282,14 @@ export async function buildHealthPayload() {
         heapUsedBytes: memory.heapUsed,
       },
     },
+    ...(duckdbSnapshot && {
+      duckdb: {
+        memoryLimitBytes: duckdbSnapshot.limitBytes,
+        memoryUsedBytes: duckdbSnapshot.usedBytes,
+        tempStorageBytes: duckdbSnapshot.tempBytes,
+        memoryUsageByTagBytes: duckdbSnapshot.byTag,
+      },
+    }),
     roles: {
       apiServer: Boolean(config.roles.apiServer),
       fetcher: Boolean(config.roles.fetcher),
@@ -754,11 +766,57 @@ function appendProcessMemoryMetrics(lines, memory) {
   );
 }
 
+function appendDuckDBMetrics(lines, snapshot) {
+  if (!snapshot) {
+    return;
+  }
+
+  if (snapshot.limitBytes !== null) {
+    appendScalarMetric(
+      lines,
+      'fda_duckdb_memory_limit_bytes',
+      'DuckDB memory_limit in bytes.',
+      'gauge',
+      snapshot.limitBytes,
+    );
+  }
+
+  appendScalarMetric(
+    lines,
+    'fda_duckdb_memory_used_bytes',
+    'Memory currently used by DuckDB in bytes.',
+    'gauge',
+    snapshot.usedBytes,
+  );
+
+  appendScalarMetric(
+    lines,
+    'fda_duckdb_temp_storage_bytes',
+    'Bytes DuckDB holds in its temporary directory.',
+    'gauge',
+    snapshot.tempBytes,
+  );
+
+  appendMappedMetric(
+    lines,
+    'fda_duckdb_memory_usage_bytes',
+    'Memory used by DuckDB in bytes, per allocation tag.',
+    'gauge',
+    Object.entries(snapshot.byTag).map(([tag, bytes]) => ({
+      labels: { tag },
+      value: bytes,
+    })),
+  );
+}
+
 export async function buildMetricsText() {
   const lines = [];
   const memory = process.memoryUsage();
 
-  const mongoData = await getMongoSnapshot();
+  const [mongoData, duckdbSnapshot] = await Promise.all([
+    getMongoSnapshot(),
+    getDuckDBMemorySnapshot(),
+  ]);
 
   appendRuntimeMetrics(lines);
   appendHttpMetrics(lines);
@@ -771,6 +829,7 @@ export async function buildMetricsText() {
   }
 
   appendProcessMemoryMetrics(lines, memory);
+  appendDuckDBMetrics(lines, duckdbSnapshot);
 
   lines.push('# EOF');
 
