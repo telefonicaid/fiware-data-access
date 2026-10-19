@@ -630,3 +630,18 @@ Therefore, the current evidence indicates that the production OOM is caused by t
 
 The important consequence for the FDA configuration is that the DuckDB memory limit must leave enough headroom for these
 non-spillable extension allocations in addition to the memory required by the query itself.
+
+# Observability of DuckDB memory
+
+The Fetcher heartbeat, the `WARN` log emitted when a fetch fails in a DuckDB step, `GET /health` and `GET /metrics`
+report the DuckDB memory state of the process. Use them to decide the memory limit before changing it:
+
+-   `fda_duckdb_memory_limit_bytes` and `fda_duckdb_memory_used_bytes` show the effective `memory_limit` and current
+    usage. Sustained usage close to the limit means the limit is the bottleneck.
+-   `fda_duckdb_memory_usage_bytes{tag=...}` shows which allocation tags hold the memory. `EXTENSION` memory is not
+    spillable (see above), so a large value there means the limit must leave room for `httpfs`.
+-   `fda_duckdb_temp_storage_bytes` shows bytes spilled to `FDA_DUCKDB_TEMP_DIR`. A non-zero value means DuckDB is
+    working out of core.
+
+The failure log reports the state after the failing operation has released its memory. The peak is the figure in the
+DuckDB error message, for example `(881.8 MiB/953.6 MiB used)`.

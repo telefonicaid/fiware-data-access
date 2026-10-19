@@ -262,6 +262,15 @@ Health endpoint with liveness and runtime summary.
             "heapUsedBytes": 41261368
         }
     },
+    "duckdb": {
+        "memoryLimitBytes": 1000341504,
+        "memoryUsedBytes": 881819648,
+        "tempStorageBytes": 0,
+        "memoryUsageByTagBytes": {
+            "COLUMN_DATA": 712834048,
+            "ALLOCATOR": 168985600
+        }
+    },
     "roles": {
         "apiServer": true,
         "fetcher": true,
@@ -418,6 +427,19 @@ fda_process_heap_total_bytes 44888064
 # HELP fda_process_heap_used_bytes Used V8 heap size in bytes.
 # TYPE fda_process_heap_used_bytes gauge
 fda_process_heap_used_bytes 41662472
+# HELP fda_duckdb_memory_limit_bytes DuckDB memory_limit in bytes.
+# TYPE fda_duckdb_memory_limit_bytes gauge
+fda_duckdb_memory_limit_bytes 1000341504
+# HELP fda_duckdb_memory_used_bytes Memory currently used by DuckDB in bytes.
+# TYPE fda_duckdb_memory_used_bytes gauge
+fda_duckdb_memory_used_bytes 881819648
+# HELP fda_duckdb_temp_storage_bytes Bytes DuckDB holds in its temporary directory.
+# TYPE fda_duckdb_temp_storage_bytes gauge
+fda_duckdb_temp_storage_bytes 0
+# HELP fda_duckdb_memory_usage_bytes Memory used by DuckDB in bytes, per allocation tag.
+# TYPE fda_duckdb_memory_usage_bytes gauge
+fda_duckdb_memory_usage_bytes{tag="COLUMN_DATA"} 712834048
+fda_duckdb_memory_usage_bytes{tag="ALLOCATOR"} 168985600
 # EOF
 ```
 
@@ -451,6 +473,10 @@ The following table summarizes the main metrics exposed by `GET /metrics`, their
 | `fda_process_resident_memory_bytes`         | gauge   | none                                                                                     | RSS memory usage in bytes.                                        | sustained growth / threshold                |
 | `fda_process_heap_total_bytes`              | gauge   | none                                                                                     | Total V8 heap allocation.                                         | no alert by itself                          |
 | `fda_process_heap_used_bytes`               | gauge   | none                                                                                     | Used V8 heap memory.                                              | sustained growth / threshold                |
+| `fda_duckdb_memory_limit_bytes`             | gauge   | none                                                                                     | DuckDB `memory_limit` in bytes. Absent until DuckDB is in use.    | no alert; compare with container limit      |
+| `fda_duckdb_memory_used_bytes`              | gauge   | none                                                                                     | Memory currently used by DuckDB.                                  | `used / limit` close to `1` for N scrapes   |
+| `fda_duckdb_temp_storage_bytes`             | gauge   | none                                                                                     | Bytes DuckDB has spilled to its temporary directory.              | sustained non-zero values                   |
+| `fda_duckdb_memory_usage_bytes`             | gauge   | `tag`                                                                                    | DuckDB memory per allocation tag (`COLUMN_DATA`, `ALLOCATOR`...). | identify which operator consumes memory     |
 
 ---
 
@@ -532,11 +558,33 @@ If a job fails, the log will include `err` with detailed context.
 The Fetcher periodically logs a heartbeat message to indicate that it is alive. The interval can be configured using
 `FDA_FETCHER_HEARTBEAT_INTERVAL_MS`.
 
+Each heartbeat is logged at `INFO` and includes the DuckDB memory state when DuckDB has been initialised in the process:
+`duckdbLimitBytes` (the effective `memory_limit`), `duckdbUsedBytes`, `duckdbTempBytes` (bytes spilled to the temporary
+directory) and `duckdbTopTags` (the five allocation tags using the most memory). When DuckDB is not initialised yet, the
+heartbeat carries no DuckDB fields.
+
 Example:
 
 ```
-time=2026-08-11T08:36:01.785Z | lvl=DEBUG | corr=n/a | trans=n/a | op=n/a | ver=1.2.0-next | comp=Fda | srv=n/a | subsrv=n/a | msg=[Fetcher] Heartbeat: alive
+time=2026-08-11T08:36:01.785Z | lvl=INFO | corr=n/a | trans=n/a | op=n/a | ver=1.2.0-next | comp=Fda | srv=n/a | subsrv=n/a | duckdbLimitBytes=1000341504 | duckdbUsedBytes=881819648 | duckdbTempBytes=0 | duckdbTopTags=COLUMN_DATA=712834048, ALLOCATOR=168985600 | msg=[Fetcher] Heartbeat: alive
 ```
+
+### DuckDB memory on failures
+
+When a DuckDB step of a CSV or Postgres fetch fails, the job logs a `WARN` line with the same DuckDB fields, under the
+same `corr=job-...` as the failed job, just before the `Job failed` error. Use it to compare the failure against the
+limit:
+
+-   If `duckdbUsedBytes` is close to `duckdbLimitBytes`, the job hit `FDA_DUCKDB_MEMORY_LIMIT`. Raise that limit only if
+    the container has memory headroom above it (see the DuckDB memory management notes), or lower
+    `FDA_DUCKDB_MAX_THREADS` / `FDA_UPLOAD_QUEUE_SIZE` to reduce the peak.
+-   If `duckdbTempBytes` is non-zero, DuckDB was spilling to disk when the job failed; check `FDA_DUCKDB_MAX_TEMP_SIZE`
+    and the free space in `FDA_DUCKDB_TEMP_DIR`.
+-   `duckdbTopTags` shows which operator holds the memory (for example `COLUMN_DATA` for data held in operators, or
+    `ALLOCATOR` for allocator overhead).
+
+The snapshot is taken after the failing operation has released its memory, so it shows the state at failure time, not
+the peak. The peak is the figure in the DuckDB error message itself, for example `(881.8 MiB/953.6 MiB used)`.
 
 The heartbeat is enabled when the configured interval is greater than `0`. Set it to `0` (or a negative value) to
 disable the heartbeat.
