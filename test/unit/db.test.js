@@ -33,6 +33,7 @@ const listObjectsMock = jest.fn();
 const loggerMock = {
   debug: jest.fn(),
   info: jest.fn(),
+  warn: jest.fn(),
 };
 
 function createDuckContext({ withDisconnect = true } = {}) {
@@ -1440,6 +1441,143 @@ describe('db utils', () => {
           expect.objectContaining({ status: 400, type: 'InvalidParam' }),
         );
       }
+    });
+  });
+
+  describe('DuckDB memory snapshot', () => {
+    function mockMemoryQueries(conn, { limit = '953.6 MiB', rows = [] } = {}) {
+      conn.runAndReadAll = jest.fn(async (sql) => ({
+        getRowObjects: () =>
+          sql.includes('current_setting') ? [{ limit_value: limit }] : rows,
+      }));
+    }
+
+    test('getDuckDBMemorySnapshot returns null without creating the instance', async () => {
+      const { getDuckDBMemorySnapshot } = await loadDbModule();
+
+      await expect(getDuckDBMemorySnapshot()).resolves.toBeNull();
+      expect(duckCreateMock).not.toHaveBeenCalled();
+    });
+
+    test('getDuckDBMemorySnapshot maps limit, usage and temp storage once DuckDB is ready', async () => {
+      const context = createDuckContext();
+      const { getDBConnection, releaseDBConnection, getDuckDBMemorySnapshot } =
+        await loadDbModule({ duckContext: context });
+
+      mockMemoryQueries(context.runtimeConn, {
+        rows: [
+          {
+            tag: 'COLUMN_DATA',
+            memory_usage_bytes: 1000n,
+            temporary_storage_bytes: 0n,
+          },
+          {
+            tag: 'EXTENSION',
+            memory_usage_bytes: 0n,
+            temporary_storage_bytes: 0n,
+          },
+          {
+            tag: 'ALLOCATOR',
+            memory_usage_bytes: 500n,
+            temporary_storage_bytes: 200n,
+          },
+        ],
+      });
+
+      const conn = await getDBConnection();
+      await releaseDBConnection(conn);
+
+      await expect(getDuckDBMemorySnapshot()).resolves.toEqual({
+        limitBytes: Math.round(953.6 * 1024 ** 2),
+        usedBytes: 1500,
+        tempBytes: 200,
+        byTag: { COLUMN_DATA: 1000, ALLOCATOR: 500 },
+      });
+    });
+
+    test('getDuckDBMemorySnapshot serves repeated calls from the TTL cache', async () => {
+      const context = createDuckContext();
+      const { getDBConnection, releaseDBConnection, getDuckDBMemorySnapshot } =
+        await loadDbModule({ duckContext: context });
+
+      mockMemoryQueries(context.runtimeConn, { rows: [] });
+      const conn = await getDBConnection();
+      await releaseDBConnection(conn);
+
+      await getDuckDBMemorySnapshot();
+      const queriesAfterFirstCall =
+        context.runtimeConn.runAndReadAll.mock.calls.length;
+      await getDuckDBMemorySnapshot();
+
+      expect(context.runtimeConn.runAndReadAll.mock.calls.length).toBe(
+        queriesAfterFirstCall,
+      );
+    });
+
+    test('getDuckDBMemorySnapshot returns null when the memory query fails', async () => {
+      const context = createDuckContext();
+      const { getDBConnection, releaseDBConnection, getDuckDBMemorySnapshot } =
+        await loadDbModule({ duckContext: context });
+
+      context.runtimeConn.runAndReadAll = jest
+        .fn()
+        .mockRejectedValue(new Error('boom'));
+      const conn = await getDBConnection();
+      await releaseDBConnection(conn);
+
+      await expect(getDuckDBMemorySnapshot()).resolves.toBeNull();
+    });
+
+    test('formatDuckDBMemory flattens the snapshot and keeps the five largest tags', async () => {
+      const { formatDuckDBMemory } = await loadDbModule();
+
+      expect(formatDuckDBMemory(null)).toEqual({});
+      expect(
+        formatDuckDBMemory({
+          limitBytes: 10,
+          usedBytes: 9,
+          tempBytes: 3,
+          byTag: { A: 1, B: 2, C: 3, D: 4, E: 5, F: 6 },
+        }),
+      ).toEqual({
+        duckdbLimitBytes: 10,
+        duckdbUsedBytes: 9,
+        duckdbTempBytes: 3,
+        duckdbTopTags: 'F=6, E=5, D=4, C=3, B=2',
+      });
+    });
+
+    test('logDuckDBMemoryFailure logs the flat snapshot as a warning', async () => {
+      const context = createDuckContext();
+      const { getDBConnection, logDuckDBMemoryFailure } = await loadDbModule({
+        duckContext: context,
+      });
+
+      mockMemoryQueries(context.runtimeConn, {
+        rows: [
+          {
+            tag: 'COLUMN_DATA',
+            memory_usage_bytes: 42n,
+            temporary_storage_bytes: 0n,
+          },
+        ],
+      });
+      const conn = await getDBConnection();
+
+      await logDuckDBMemoryFailure(
+        conn,
+        'DuckDB memory snapshot after failed upload',
+      );
+
+      expect(loggerMock.warn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          duckdbLimitBytes: Math.round(953.6 * 1024 ** 2),
+          duckdbUsedBytes: 42,
+          duckdbTempBytes: 0,
+          duckdbTopTags: 'COLUMN_DATA=42',
+        }),
+        'DuckDB memory snapshot after failed upload',
+      );
     });
   });
 });

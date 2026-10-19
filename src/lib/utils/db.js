@@ -40,6 +40,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 let instancePromise = null;
+let instanceReady = false;
+let memorySnapshot = null;
+let memorySnapshotRequest = null;
+
+const DUCKDB_MEMORY_SNAPSHOT_TTL_MS = 5000;
+const DUCKDB_TOP_TAGS = 5;
 
 const logger = getBasicLogger();
 
@@ -100,6 +106,112 @@ async function logDuckDBConfig(conn) {
       },
       'DuckDB setting',
     );
+  }
+}
+
+function parseDuckDBSize(value) {
+  const match = /^([\d.]+)\s*([KMGT]?)(?:I?B|BYTES)?$/i.exec(
+    String(value ?? '').trim(),
+  );
+  if (!match) {
+    return null;
+  }
+  const exponent = 'BKMGT'.indexOf(match[2].toUpperCase() || 'B');
+  return Math.round(Number(match[1]) * 1024 ** exponent);
+}
+
+async function readDuckDBMemory(conn) {
+  const limitReader = await conn.runAndReadAll(
+    `SELECT current_setting('memory_limit') AS limit_value`,
+  );
+  const [limitRow] = limitReader.getRowObjects();
+
+  const memoryReader = await conn.runAndReadAll(`
+    SELECT tag, memory_usage_bytes, temporary_storage_bytes
+    FROM duckdb_memory()
+  `);
+
+  let usedBytes = 0;
+  let tempBytes = 0;
+  const byTag = {};
+  for (const row of memoryReader.getRowObjects()) {
+    const used = Number(row.memory_usage_bytes ?? 0);
+    usedBytes += used;
+    tempBytes += Number(row.temporary_storage_bytes ?? 0);
+    if (used > 0) {
+      byTag[row.tag] = used;
+    }
+  }
+
+  return {
+    limitBytes: parseDuckDBSize(limitRow?.limit_value),
+    usedBytes,
+    tempBytes,
+    byTag,
+  };
+}
+
+export function formatDuckDBMemory(snapshot) {
+  if (!snapshot) {
+    return {};
+  }
+  const topTags = Object.entries(snapshot.byTag)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, DUCKDB_TOP_TAGS)
+    .map(([tag, bytes]) => `${tag}=${bytes}`)
+    .join(', ');
+
+  return {
+    duckdbLimitBytes: snapshot.limitBytes,
+    duckdbUsedBytes: snapshot.usedBytes,
+    duckdbTempBytes: snapshot.tempBytes,
+    duckdbTopTags: topTags,
+  };
+}
+
+export function getDuckDBMemorySnapshot() {
+  if (!instanceReady) {
+    return Promise.resolve(null);
+  }
+
+  if (memorySnapshotRequest) {
+    return memorySnapshotRequest;
+  }
+
+  const cacheIsFresh =
+    memorySnapshot &&
+    Date.now() - memorySnapshot.atMs < DUCKDB_MEMORY_SNAPSHOT_TTL_MS;
+  if (cacheIsFresh) {
+    return Promise.resolve(memorySnapshot.value);
+  }
+
+  memorySnapshotRequest = (async () => {
+    const conn = await getDBConnection();
+    try {
+      const value = await readDuckDBMemory(conn);
+      memorySnapshot = { atMs: Date.now(), value };
+      return value;
+    } finally {
+      await releaseDBConnection(conn);
+    }
+  })()
+    .catch((error) => {
+      logger.debug({ err: error }, 'Could not read DuckDB memory snapshot');
+      return null;
+    })
+    .finally(() => {
+      memorySnapshotRequest = null;
+    });
+
+  return memorySnapshotRequest;
+}
+
+export async function logDuckDBMemoryFailure(conn, message) {
+  try {
+    const snapshot = await readDuckDBMemory(conn);
+    logger.warn(formatDuckDBMemory(snapshot), message);
+  } catch (error) {
+    logger.debug({ err: error }, 'Could not read DuckDB memory after failure');
   }
 }
 
@@ -172,6 +284,7 @@ async function createDuckDBInstance() {
     await configConn.disconnect();
   }
   logger.debug('DuckDB initialized with HTTPFS');
+  instanceReady = true;
   return dbInstance;
 }
 
