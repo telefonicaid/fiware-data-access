@@ -1622,6 +1622,27 @@ describe('db utils', () => {
       ).toBeLessThan(conn.run.mock.invocationCallOrder[0]);
     });
 
+    test.each([
+      ['61.0 MiB', 61 * 1024 ** 2],
+      ['1.5GB', 1.5e9],
+      ['512 bytes', 512],
+      ['unknown', null],
+    ])(
+      'the memory limit %s is reported as %p bytes',
+      async (limit, expected) => {
+        const { copyQueryToParquet } = await loadDbModule();
+        const conn = { run: jest.fn().mockResolvedValue(undefined) };
+        mockMemoryQueries(conn, { limit, rows: [] });
+
+        await copyQueryToParquet(conn, 'SELECT 1', 'b/t', 'ts', 'none', false);
+
+        expect(loggerMock.info).toHaveBeenCalledWith(
+          expect.objectContaining({ duckdbLimitBytes: expected }),
+          'DuckDB memory before Parquet export',
+        );
+      },
+    );
+
     test('copyQueryToParquet still runs the COPY when the memory dump fails', async () => {
       const { copyQueryToParquet } = await loadDbModule();
       const conn = {

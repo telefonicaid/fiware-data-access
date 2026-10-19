@@ -110,14 +110,15 @@ async function logDuckDBConfig(conn) {
 }
 
 function parseDuckDBSize(value) {
-  const match = /^([\d.]+)\s*([KMGT]?)(?:I?B|BYTES)?$/i.exec(
+  const match = /^([\d.]+)\s*(?:([KMGT])(i?)B|B|bytes)?$/i.exec(
     String(value ?? '').trim(),
   );
   if (!match) {
     return null;
   }
-  const exponent = 'BKMGT'.indexOf(match[2].toUpperCase() || 'B');
-  return Math.round(Number(match[1]) * 1024 ** exponent);
+  const exponent = match[2] ? 'KMGT'.indexOf(match[2].toUpperCase()) + 1 : 0;
+  const base = match[3] ? 1024 : 1000;
+  return Math.round(Number(match[1]) * base ** exponent);
 }
 
 async function readDuckDBMemory(conn) {
