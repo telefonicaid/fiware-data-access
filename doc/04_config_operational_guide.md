@@ -576,32 +576,38 @@ The default interval is `60000` milliseconds (1 minute).
 
 ### DuckDB memory around Parquet exports
 
-Every Parquet export (`COPY ... TO PARQUET`, the step where Out of Memory errors happen during fetches and uploads) is
-preceded by an `INFO` dump of `duckdb_memory()`, with `resultPath`, `duckdbLimitBytes`, `duckdbUsedBytes`,
-`duckdbTempBytes` and `duckdbTags` (every allocation tag in use, largest first):
+Out of Memory errors happen in the Parquet export (`COPY ... TO PARQUET`) of fetches and uploads. DuckDB only holds
+memory while that export runs and releases it as soon as it ends or fails, so the export logs its own memory figures:
+
+-   Before the export, an `INFO` dump of `duckdb_memory()`: `msg=DuckDB memory before Parquet export` with `resultPath`,
+    `duckdbLimitBytes`, `duckdbUsedBytes`, `duckdbTempBytes` and `duckdbTags` (every allocation tag in use, largest
+    first). It is usually close to `0`; a higher value means another export was running at the same time.
+-   While the export runs, `duckdb_memory()` is sampled every 250 ms from a separate connection. When it ends, the
+    highest sample is logged with `duckdbSamples`, `duckdbFailedSamples`, `duckdbLimitBytes`, `duckdbPeakUsedBytes`,
+    `duckdbPeakTempBytes` and `duckdbPeakTags`: at `INFO` as `msg=DuckDB memory peak during Parquet export` when it
+    succeeds, and at `WARN` as `msg=DuckDB memory peak during failed Parquet export` when it fails, just before the
+    `Job failed` error and under the same `corr=job-...`.
+
+Example of a refresh that fails with a 256 MB limit (3 million rows partitioned by day):
 
 ```
-... | lvl=INFO | corr=job-6ad5d270a53d8538999dc81b | ... | op=refresh-fda | ... | resultPath=sc_vlci/tmp/fdas/fdaTraficoEstados.parquet | duckdbLimitBytes=1932735283 | duckdbUsedBytes=402653184 | duckdbTempBytes=0 | duckdbTags=EXTENSION=268435456, COLUMN_DATA=134217728 | msg=DuckDB memory before Parquet export
+... | lvl=WARN | corr=job-6ad62f836e78b23f45af0754 | ... | op=refresh-fda | ... | resultPath=trantor/tmp/public/mem_demo.parquet | duckdbSamples=7 | duckdbFailedSamples=0 | duckdbLimitBytes=255957402 | duckdbPeakUsedBytes=252164170 | duckdbPeakTempBytes=30015488 | duckdbPeakTags=EXTENSION=160432128, COLUMN_DATA=57409536, CSV_READER=32002048, ALLOCATOR=2320384 | msg=DuckDB memory peak during failed Parquet export
 ```
 
-It shows how much memory DuckDB already held when the export started, which the error message does not report.
+How to read it:
 
-When a DuckDB step of a CSV or Postgres fetch fails, the job logs a `WARN` line with the same DuckDB fields, under the
-same `corr=job-...` as the failed job, just before the `Job failed` error. Use it to compare the failure against the
-limit:
-
--   If `duckdbUsedBytes` is close to `duckdbLimitBytes`, the job hit `FDA_DUCKDB_MEMORY_LIMIT`. Raise that limit only if
-    the container has memory headroom above it (see the DuckDB memory management notes), or lower
-    `FDA_DUCKDB_MAX_THREADS` / `FDA_UPLOAD_QUEUE_SIZE` to reduce the peak.
--   If `duckdbTempBytes` is non-zero, DuckDB was spilling to disk when the job failed; check `FDA_DUCKDB_MAX_TEMP_SIZE`
-    and the free space in `FDA_DUCKDB_TEMP_DIR`.
--   `duckdbTopTags` shows which operator holds the memory (for example `COLUMN_DATA` for data held in operators, or
-    `ALLOCATOR` for allocator overhead).
-
-The snapshot is taken after the failing operation has released its memory, so it shows the state at failure time, not
-the peak. The peak is the figure in the DuckDB error message itself, for example `(881.8 MiB/953.6 MiB used)`. Read
-together, the dump before the export and the error message give the memory held before the export and the peak it
-reached.
+-   `duckdbPeakUsedBytes` close to `duckdbLimitBytes` means the export hit `FDA_DUCKDB_MEMORY_LIMIT`. Successful exports
+    log their peak too, which tells how much headroom the current limit leaves.
+-   `EXTENSION` is the memory of the `httpfs` S3 uploads. It cannot be spilled to disk and grows with the number of
+    partitions written at the same time. With the same 3 million rows, the export partitioned by day still failed with a
+    1 GB limit, with about 800 MB of `EXTENSION`, while the unpartitioned export completed with a 256 MB limit and 160
+    MB of `EXTENSION`. When it dominates, raising the limit helps little; a coarser partition (or a smaller window per
+    refresh) does.
+-   A non-zero `duckdbFailedSamples` means DuckDB had no memory left even for the sampling query: it was at the limit.
+-   A non-zero `duckdbPeakTempBytes` means DuckDB spilled to disk; check `FDA_DUCKDB_MAX_TEMP_SIZE` and the free space
+    in `FDA_DUCKDB_TEMP_DIR`.
+-   Sampling may miss the exact peak of a very short allocation. The DuckDB error message reports the usage at the
+    moment of the failure, for example `(204.0 MiB/244.1 MiB used)`.
 
 When the temporary Parquet files of an FDA are removed, after a failed fetch or when the FDA is deleted, an `INFO` line
 `Cleaning temporary files in S3` with `bucket` and `tmpPath` is logged.

@@ -1528,56 +1528,36 @@ describe('db utils', () => {
       await expect(getDuckDBMemorySnapshot()).resolves.toBeNull();
     });
 
-    test('formatDuckDBMemory flattens the snapshot and keeps the five largest tags', async () => {
+    test('formatDuckDBMemory flattens the snapshot as text and keeps the five largest tags', async () => {
       const { formatDuckDBMemory } = await loadDbModule();
 
       expect(formatDuckDBMemory(null)).toEqual({});
       expect(
         formatDuckDBMemory({
           limitBytes: 10,
-          usedBytes: 9,
+          usedBytes: 0,
           tempBytes: 3,
           byTag: { A: 1, B: 2, C: 3, D: 4, E: 5, F: 6 },
         }),
       ).toEqual({
-        duckdbLimitBytes: 10,
-        duckdbUsedBytes: 9,
-        duckdbTempBytes: 3,
+        duckdbLimitBytes: '10',
+        duckdbUsedBytes: '0',
+        duckdbTempBytes: '3',
         duckdbTopTags: 'F=6, E=5, D=4, C=3, B=2',
       });
-    });
-
-    test('logDuckDBMemoryFailure logs the flat snapshot as a warning', async () => {
-      const context = createDuckContext();
-      const { getDBConnection, logDuckDBMemoryFailure } = await loadDbModule({
-        duckContext: context,
-      });
-
-      mockMemoryQueries(context.runtimeConn, {
-        rows: [
-          {
-            tag: 'COLUMN_DATA',
-            memory_usage_bytes: 42n,
-            temporary_storage_bytes: 0n,
-          },
-        ],
-      });
-      const conn = await getDBConnection();
-
-      await logDuckDBMemoryFailure(
-        conn,
-        'DuckDB memory snapshot after failed upload',
-      );
-
-      expect(loggerMock.warn).toHaveBeenCalledWith(
-        expect.objectContaining({
-          duckdbLimitBytes: Math.round(953.6 * 1024 ** 2),
-          duckdbUsedBytes: 42,
-          duckdbTempBytes: 0,
-          duckdbTopTags: 'COLUMN_DATA=42',
+      expect(
+        formatDuckDBMemory({
+          limitBytes: null,
+          usedBytes: 0,
+          tempBytes: 0,
+          byTag: {},
         }),
-        'DuckDB memory snapshot after failed upload',
-      );
+      ).toEqual({
+        duckdbLimitBytes: undefined,
+        duckdbUsedBytes: '0',
+        duckdbTempBytes: '0',
+        duckdbTopTags: 'none',
+      });
     });
 
     test('copyQueryToParquet dumps every DuckDB memory tag at info before the COPY', async () => {
@@ -1607,12 +1587,13 @@ describe('db utils', () => {
         false,
       );
 
+      expect(loggerMock.info).toHaveBeenCalledTimes(1);
       expect(loggerMock.info).toHaveBeenCalledWith(
         {
           resultPath: 'test-bucket/target',
-          duckdbLimitBytes: Math.round(953.6 * 1024 ** 2),
-          duckdbUsedBytes: 400,
-          duckdbTempBytes: 50,
+          duckdbLimitBytes: String(Math.round(953.6 * 1024 ** 2)),
+          duckdbUsedBytes: '400',
+          duckdbTempBytes: '50',
           duckdbTags: 'COLUMN_DATA=300, EXTENSION=100',
         },
         'DuckDB memory before Parquet export',
@@ -1623,10 +1604,10 @@ describe('db utils', () => {
     });
 
     test.each([
-      ['61.0 MiB', 61 * 1024 ** 2],
-      ['1.5GB', 1.5e9],
-      ['512 bytes', 512],
-      ['unknown', null],
+      ['61.0 MiB', '63963136'],
+      ['1.5GB', '1500000000'],
+      ['512 bytes', '512'],
+      ['unknown', undefined],
     ])(
       'the memory limit %s is reported as %p bytes',
       async (limit, expected) => {
@@ -1637,7 +1618,10 @@ describe('db utils', () => {
         await copyQueryToParquet(conn, 'SELECT 1', 'b/t', 'ts', 'none', false);
 
         expect(loggerMock.info).toHaveBeenCalledWith(
-          expect.objectContaining({ duckdbLimitBytes: expected }),
+          expect.objectContaining({
+            duckdbLimitBytes: expected,
+            duckdbTags: 'none',
+          }),
           'DuckDB memory before Parquet export',
         );
       },
@@ -1664,6 +1648,108 @@ describe('db utils', () => {
         expect.objectContaining({ err: expect.any(Error) }),
         'Could not dump DuckDB memory',
       );
+    });
+
+    describe('memory peak during the COPY', () => {
+      async function loadWithSampledUsage(usage) {
+        const context = createDuckContext();
+        const mod = await loadDbModule({ duckContext: context });
+        context.runtimeConn.runAndReadAll = jest.fn(async (sql) => {
+          if (sql.includes('current_setting')) {
+            return { getRowObjects: () => [{ limit_value: '1.0 KiB' }] };
+          }
+          const next = usage.shift() ?? 0n;
+          if (next instanceof Error) {
+            throw next;
+          }
+          return {
+            getRowObjects: () => [
+              {
+                tag: 'EXTENSION',
+                memory_usage_bytes: next,
+                temporary_storage_bytes: 10n,
+              },
+            ],
+          };
+        });
+        const pooled = await mod.getDBConnection();
+        await mod.releaseDBConnection(pooled);
+        return mod;
+      }
+
+      test('logs at info the highest usage sampled during a successful COPY', async () => {
+        const { copyQueryToParquet } = await loadWithSampledUsage([
+          100n,
+          900n,
+          400n,
+        ]);
+        const conn = {
+          run: jest.fn(
+            () => new Promise((resolve) => setTimeout(resolve, 700)),
+          ),
+        };
+
+        await copyQueryToParquet(conn, 'SELECT 1', 'b/t', 'ts', 'none', false);
+
+        expect(loggerMock.info).toHaveBeenCalledWith(
+          {
+            resultPath: 'b/t',
+            duckdbSamples: expect.any(String),
+            duckdbFailedSamples: '0',
+            duckdbLimitBytes: '1024',
+            duckdbPeakUsedBytes: '900',
+            duckdbPeakTempBytes: '10',
+            duckdbPeakTags: 'EXTENSION=900',
+          },
+          'DuckDB memory peak during Parquet export',
+        );
+      });
+
+      test('keeps sampling after a sample fails and reports the failed samples', async () => {
+        const { copyQueryToParquet } = await loadWithSampledUsage([
+          new Error('Out of Memory Error: failed to allocate data'),
+          600n,
+        ]);
+        const conn = {
+          run: jest.fn(
+            () => new Promise((resolve) => setTimeout(resolve, 450)),
+          ),
+        };
+
+        await copyQueryToParquet(conn, 'SELECT 1', 'b/t', 'ts', 'none', false);
+
+        expect(loggerMock.info).toHaveBeenCalledWith(
+          expect.objectContaining({
+            duckdbFailedSamples: '1',
+            duckdbPeakUsedBytes: '600',
+          }),
+          'DuckDB memory peak during Parquet export',
+        );
+      });
+
+      test('logs the peak as a warning and rethrows when the COPY fails', async () => {
+        const { copyQueryToParquet } = await loadWithSampledUsage([700n]);
+        const oom = new Error('Out of Memory Error: could not allocate block');
+        const conn = {
+          run: jest.fn(
+            () =>
+              new Promise((_, reject) => setTimeout(() => reject(oom), 300)),
+          ),
+        };
+
+        await expect(
+          copyQueryToParquet(conn, 'SELECT 1', 'b/t', 'ts', 'none', false),
+        ).rejects.toBe(oom);
+
+        expect(loggerMock.warn).toHaveBeenCalledWith(
+          expect.objectContaining({
+            resultPath: 'b/t',
+            duckdbPeakUsedBytes: '700',
+            duckdbPeakTags: 'EXTENSION=700',
+          }),
+          'DuckDB memory peak during failed Parquet export',
+        );
+      });
     });
   });
 });

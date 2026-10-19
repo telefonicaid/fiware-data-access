@@ -633,15 +633,14 @@ non-spillable extension allocations in addition to the memory required by the qu
 
 # Observability of DuckDB memory
 
-The Fetcher heartbeat, the `WARN` log emitted when a fetch fails in a DuckDB step, `GET /health` and `GET /metrics`
-report the DuckDB memory state of the process. Use them to decide the memory limit before changing it:
+Every Parquet export logs the DuckDB memory before it starts and the peak sampled while it runs, at `INFO` when it
+succeeds and at `WARN` when it fails (see the operational guide). The Fetcher heartbeat, `GET /health` and
+`GET /metrics` report the DuckDB memory state of the process between exports. Use them to decide the memory limit before
+changing it:
 
+-   The peak logs show which allocation tags were holding memory when an export failed. A large `EXTENSION` value is the
+    non-spillable `httpfs` memory described above, so the limit must leave room for it.
 -   `fda_duckdb_memory_limit_bytes` and `fda_duckdb_memory_used_bytes` show the effective `memory_limit` and current
-    usage. Sustained usage close to the limit means the limit is the bottleneck.
--   `fda_duckdb_memory_usage_bytes{tag=...}` shows which allocation tags hold the memory. `EXTENSION` memory is not
-    spillable (see above), so a large value there means the limit must leave room for `httpfs`.
--   `fda_duckdb_temp_storage_bytes` shows bytes spilled to `FDA_DUCKDB_TEMP_DIR`. A non-zero value means DuckDB is
-    working out of core.
-
-The failure log reports the state after the failing operation has released its memory. The peak is the figure in the
-DuckDB error message, for example `(881.8 MiB/953.6 MiB used)`.
+    usage. Outside exports the usage is usually `0`, because DuckDB releases memory when an export ends.
+-   `fda_duckdb_memory_usage_bytes{tag=...}` and `fda_duckdb_temp_storage_bytes` give the same breakdown and the bytes
+    spilled to `FDA_DUCKDB_TEMP_DIR` at scrape time.

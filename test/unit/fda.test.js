@@ -115,7 +115,6 @@ await jest.unstable_mockModule('../../src/lib/utils/db.js', () => ({
   runPreparedStatementStream: dbMocks.runPreparedStatementStream,
   getDBConnection: dbMocks.getDBConnection,
   releaseDBConnection: dbMocks.releaseDBConnection,
-  logDuckDBMemoryFailure: jest.fn().mockResolvedValue(undefined),
   toParquet: dbMocks.toParquet,
   copyQueryToParquet: dbMocks.copyQueryToParquet,
   checkParams: dbMocks.checkParams,

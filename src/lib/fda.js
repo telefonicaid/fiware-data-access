@@ -30,7 +30,6 @@ import {
   runPreparedStatementStream,
   getDBConnection,
   releaseDBConnection,
-  logDuckDBMemoryFailure,
   toParquet,
   copyQueryToParquet,
   checkParams,
@@ -2335,10 +2334,6 @@ async function uploadTableToObjStg(
     if (e instanceof FDAError) {
       throw e;
     }
-    await logDuckDBMemoryFailure(
-      conn,
-      'DuckDB memory snapshot after failed upload',
-    );
     throw (
       storageQuotaErrorFor(e, bucket) ??
       new FDAError(500, 'UploadError', e.message)
