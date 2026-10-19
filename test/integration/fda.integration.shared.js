@@ -52,6 +52,7 @@ import { registerFreshQueriesIntegrationTests } from './suites/freshQueries.inte
 import { registerQueryStyleDataIntegrationTests } from './suites/queryStyleData.integration.tests.js';
 import { registerVisibilityConstraintsIntegrationTests } from './suites/visibilityConstraints.integration.tests.js';
 import { registerCdaCompatibilityIntegrationTests } from './suites/cdaCompatibility.integration.tests.js';
+import { registerDownloadLimitsIntegrationTests } from './suites/downloadLimits.integration.tests.js';
 import { registerFdaLifecycleIntegrationTests } from './suites/fdaLifecycle.integration.tests.js';
 import { registerMongoFdasIntegrationTests } from './suites/mongoFdas.integration.tests.js';
 import { registerMongoSlidingWindowsIntegrationTests } from './suites/mongoSlidingWindows.integration.tests.js';
@@ -578,6 +579,20 @@ export function runFDAIntegrationSuite({ mode, label }) {
       waitUntilFDACompleted,
       fdaId,
       daId,
+      getPgHost: () => pgHost,
+      getPgPort: () => pgPort,
+    });
+
+    registerDownloadLimitsIntegrationTests({
+      getBaseUrl: () => baseUrl,
+      service,
+      servicePath,
+      visibility,
+      httpReq,
+      httpFormReq,
+      waitUntilFDACompleted,
+      buildDaDataUrl,
+      buildFdaDataUrl,
       getPgHost: () => pgHost,
       getPgPort: () => pgPort,
     });

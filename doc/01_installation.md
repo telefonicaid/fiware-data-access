@@ -461,6 +461,31 @@ Content-Type: application/json; charset=utf-8
 
 If the response is `202`, the FDA was accepted and it will be created.
 
+For an optional restricted-download example, create a separate FDA with a maximum of five downloads and seven days of
+validity from the creation request:
+
+```bash
+curl -i -X POST http://localhost:8080/public/fdas \
+  -H "Content-Type: application/json" \
+  -H "Fiware-Service: trantor" \
+  -H "Fiware-ServicePath: /public" \
+  -d '{
+    "id": "fda_alarms_limited",
+    "query": "SELECT * FROM public.alarms",
+    "maxDownloads": 5,
+    "validityPeriod": "7 days"
+  }'
+```
+
+Once its first fetch completes, its default DA can be queried at
+`/public/fdas/fda_alarms_limited/das/defaultDataAccess/data?service=trantor&servicePath=%2Fpublic&outputType=csv` when
+automatic default DA creation is enabled. Each admitted request consumes one download. New requests return `410` after
+the quota is exhausted or the FDA expires. To use a fixed expiry instead, replace `validityPeriod` with a future
+`expirationDate`, such as `2027-01-21T12:00:00Z`; do not supply both fields. See
+[Public links with download restrictions](05_advanced_topics.md#public-links-with-download-restrictions) for quota
+semantics and gateway configuration before exposing the URL publicly. The remaining steps use the unrestricted
+`fda_alarms` created above.
+
 ### 6. Verify the FDA was created
 
 List FDAs again to confirm:
@@ -603,6 +628,23 @@ Content-Type: application/json; charset=utf-8
   }
 ]
 ```
+
+If you also created the optional `fda_alarms_limited` FDA, the list contains a second entry with the same structure plus
+its download restriction metadata:
+
+```json
+{
+    "id": "fda_alarms_limited",
+    "maxDownloads": 5,
+    "expirationDate": "2026-07-22T13:13:32.120Z",
+    "downloadsUsed": 0,
+    "remainingDownloads": 5,
+    "downloadStatus": "available"
+}
+```
+
+`downloadsUsed` and `remainingDownloads` change with each admitted download. `downloadStatus` becomes `exhausted` once
+`remainingDownloads` reaches `0`, or `expired` after `expirationDate`.
 
 > **Note**: to execute queries against an FDA, it will be necesary to has `"status": "completed"`.
 

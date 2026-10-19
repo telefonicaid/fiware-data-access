@@ -71,6 +71,7 @@ import {
   updateFDAStorage,
   claimFDAForFetch,
   claimFDAForDeletion,
+  claimFDADownload,
   createDatasource,
   retrieveDatasources,
   retrieveDatasource,
@@ -109,6 +110,7 @@ import {
 } from './utils/fdaScope.js';
 import { config } from './fdaConfig.js';
 import { FDAError, storageQuotaErrorFor } from './fdaError.js';
+import { normalizeDownloadPolicy } from './utils/downloadPolicy.js';
 
 import { getBasicLogger } from './utils/logger.js';
 import {
@@ -452,6 +454,7 @@ export async function executeFDAQuery({
       fdaId,
     );
 
+    await claimFDADownload(fda);
     if (datasource.type === 'mongodb') {
       const rows = await runMongoQuery(datasource.config, fda.query);
       return normalizeForSerialization(rows);
@@ -681,6 +684,7 @@ async function createFreshRowSource({
       fda.datasourceId ?? DEFAULT_DATASOURCE_ID,
     );
 
+    await claimFDADownload(fda);
     cursorReader = await createPgCursorReader(
       pgCredentials,
       text,
@@ -728,6 +732,7 @@ async function createFreshFDARowSource({
       fdaId,
     );
 
+    await claimFDADownload(fda);
     cursorReader =
       datasource.type === 'mongodb'
         ? await createMongoCursorReader(datasource.config, fda.query)
@@ -773,6 +778,7 @@ async function executeFreshQuery({ service, visibility, servicePath, params }) {
       service,
       fda.datasourceId ?? DEFAULT_DATASOURCE_ID,
     );
+    await claimFDADownload(fda);
     const rows = await runPgQuery(pgCredentials, text, values);
     return normalizeForSerialization(rows);
   } catch (e) {
@@ -990,7 +996,9 @@ export async function fetchFDA(
   cached = true,
   datasourceId = DEFAULT_DATASOURCE_ID,
   validationMode = FDA_VALIDATION_MODE_STRICT,
+  downloadOptions = {},
 ) {
+  const downloadPolicy = normalizeDownloadPolicy(downloadOptions);
   const normalizedVisibility = normalizeVisibility(visibility);
   const normalizedServicePath = normalizeServicePath(servicePath);
   const datasource = await getDatasourceForService(service, datasourceId);
@@ -1024,6 +1032,7 @@ export async function fetchFDA(
     datasourceId,
     validationMode,
     persistedSchema,
+    downloadPolicy,
   );
 
   if (cached && validationMode === FDA_VALIDATION_MODE_STRICT) {
@@ -2339,6 +2348,7 @@ async function ensureFDAReadyForQuery(service, fdaId, visibility, servicePath) {
       `FDA ${fdaId} is not queryable yet because the first fetch has not completed`,
     );
   }
+  return fda;
 }
 
 export async function getStoredFDA(service, fdaId, servicePath) {
@@ -3086,7 +3096,15 @@ export async function uploadFDA({
   objStgConf = {},
   cached = true,
   defaultDataAccessEnabled = config.defaultDataAccess?.enabled ?? true,
+  maxDownloads,
+  expirationDate,
+  validityPeriod,
 }) {
+  const downloadPolicy = normalizeDownloadPolicy({
+    maxDownloads,
+    expirationDate,
+    validityPeriod,
+  });
   const normalizedVisibility = normalizeVisibility(visibility);
   const normalizedServicePath = normalizeServicePath(servicePath);
 
@@ -3108,6 +3126,8 @@ export async function uploadFDA({
     cached,
     null,
     FDA_VALIDATION_MODE_STRICT,
+    null,
+    downloadPolicy,
   );
 
   logger.debug({ fdaId }, 'FDA record created');
