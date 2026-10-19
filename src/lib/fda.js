@@ -1727,6 +1727,7 @@ async function measureFDAStorageSafely(service, fdaId, servicePath) {
 }
 
 async function cleanTmpFolder(s3Client, bucket, tmpPath) {
+  logger.info({ bucket, tmpPath }, 'Cleaning temporary files in S3');
   // We need to clean tmp folder in failed attempts to avoid accumulation of temp files in S3
   await dropFile(s3Client, bucket, tmpPath);
   const remnantTempFiles = await listObjects(s3Client, bucket, `${tmpPath}/`);
