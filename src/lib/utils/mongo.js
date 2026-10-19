@@ -40,6 +40,7 @@ const logger = getBasicLogger();
 let isConnected = false;
 const MONGO_CONNECTION_TIMEOUT_MS = 5000;
 const DEFAULT_MONGO_CURSOR_CHUNK_SIZE = 1000;
+const FDA_FETCH_LOCK_LEASE_MS = 2 * 60 * 1000;
 
 async function getDb() {
   if (!isConnected) {
@@ -776,12 +777,77 @@ export async function updateFDASchema(service, fdaId, servicePath, schema) {
   );
 }
 
-export async function claimFDAForFetch({ service, fdaId, servicePath }) {
+export async function claimFDAForFetch({
+  service,
+  fdaId,
+  servicePath,
+  owner,
+  leaseMs = FDA_FETCH_LOCK_LEASE_MS,
+}) {
   const collection = await getCollection();
+  const now = new Date();
 
   const result = await collection.updateOne(
-    { service, fdaId, servicePath, status: { $ne: 'deleting' } },
-    { $set: { status: 'fetching', progress: 10, initFetch: new Date() } },
+    {
+      service,
+      fdaId,
+      servicePath,
+      status: { $ne: 'deleting' },
+      $or: [
+        { refreshLock: { $exists: false } },
+        { 'refreshLock.expiresAt': { $lte: now } },
+      ],
+    },
+    {
+      $set: {
+        status: 'fetching',
+        progress: 10,
+        initFetch: now,
+        refreshLock: { owner, expiresAt: new Date(now.getTime() + leaseMs) },
+      },
+    },
+  );
+
+  return result.matchedCount > 0;
+}
+
+export async function renewFDAFetchLock({
+  service,
+  fdaId,
+  servicePath,
+  owner,
+  leaseMs = FDA_FETCH_LOCK_LEASE_MS,
+}) {
+  const collection = await getCollection();
+  const now = new Date();
+  const result = await collection.updateOne(
+    {
+      service,
+      fdaId,
+      servicePath,
+      'refreshLock.owner': owner,
+      'refreshLock.expiresAt': { $gt: now },
+    },
+    {
+      $set: {
+        'refreshLock.expiresAt': new Date(now.getTime() + leaseMs),
+      },
+    },
+  );
+
+  return result.matchedCount > 0;
+}
+
+export async function releaseFDAFetchLock({
+  service,
+  fdaId,
+  servicePath,
+  owner,
+}) {
+  const collection = await getCollection();
+  const result = await collection.updateOne(
+    { service, fdaId, servicePath, 'refreshLock.owner': owner },
+    { $unset: { refreshLock: '' } },
   );
 
   return result.matchedCount > 0;
@@ -798,13 +864,23 @@ export async function updateFDAStorage(service, fdaId, servicePath, storage) {
 
 export async function claimFDAForDeletion(service, fdaId, servicePath) {
   const collection = await getCollection();
+  const now = new Date();
 
   return collection.findOneAndUpdate(
     {
       service,
       fdaId,
       servicePath,
-      status: { $in: ['completed', 'failed', 'deleting'] },
+      $or: [
+        { status: { $in: ['completed', 'failed', 'deleting'] } },
+        {
+          status: 'fetching',
+          $or: [
+            { refreshLock: { $exists: false } },
+            { 'refreshLock.expiresAt': { $lte: now } },
+          ],
+        },
+      ],
     },
     { $set: { status: 'deleting' } },
     { returnDocument: 'before' },

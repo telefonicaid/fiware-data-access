@@ -87,6 +87,8 @@ const mongoMocks = {
   updateFDASchema: jest.fn(),
   updateFDAStorage: jest.fn(),
   claimFDAForFetch: jest.fn(),
+  renewFDAFetchLock: jest.fn(),
+  releaseFDAFetchLock: jest.fn(),
   claimFDAForDeletion: jest.fn(),
   claimFDADownload: jest.fn(),
   createDatasource: jest.fn(),
@@ -162,6 +164,8 @@ await jest.unstable_mockModule('../../src/lib/utils/mongo.js', () => ({
   updateFDASchema: mongoMocks.updateFDASchema,
   updateFDAStorage: mongoMocks.updateFDAStorage,
   claimFDAForFetch: mongoMocks.claimFDAForFetch,
+  renewFDAFetchLock: mongoMocks.renewFDAFetchLock,
+  releaseFDAFetchLock: mongoMocks.releaseFDAFetchLock,
   claimFDAForDeletion: mongoMocks.claimFDAForDeletion,
   claimFDADownload: mongoMocks.claimFDADownload,
   createDatasource: mongoMocks.createDatasource,
@@ -3593,6 +3597,13 @@ describe('processFDAAsync', () => {
       service: 'svc',
       fdaId: 'fda1',
       servicePath: '/servicepath',
+      owner: expect.any(String),
+    });
+    expect(mongoMocks.releaseFDAFetchLock).toHaveBeenCalledWith({
+      service: 'svc',
+      fdaId: 'fda1',
+      servicePath: '/servicepath',
+      owner: expect.any(String),
     });
 
     expect(mongoMocks.updateFDAStatus).toHaveBeenNthCalledWith(1, {
@@ -4067,6 +4078,12 @@ describe('processFDAAsync', () => {
       progress: 0,
       error: 'upload failed',
     });
+    expect(mongoMocks.releaseFDAFetchLock).toHaveBeenCalledWith({
+      service: 'svc',
+      fdaId: 'fda2',
+      servicePath: '/servicepath',
+      owner: expect.any(String),
+    });
     expect(awsMocks.getS3Client).toHaveBeenCalled();
     expect(awsMocks.dropFile).toHaveBeenCalledWith(
       {},
@@ -4515,7 +4532,7 @@ describe('deleteFDA', () => {
       visibility: 'private',
       servicePath: '/servicepath',
     });
-    awsMocks.listObjects.mockImplementation(async (_client, _bucket, prefix) =>
+    awsMocks.listObjects.mockImplementation((_client, _bucket, prefix) =>
       prefix.startsWith('tmp/')
         ? ['tmp/servicepath/fdaA.parquet/year=2024/data_0.parquet']
         : ['servicepath/fdaA.parquet/year=2024/data_0.parquet'],

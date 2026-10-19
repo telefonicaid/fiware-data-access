@@ -23,6 +23,7 @@
 // criminal actions it may exercise to protect its rights.
 
 import { PassThrough, Transform } from 'node:stream';
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import { getAgenda } from './jobs.js';
 import {
@@ -70,6 +71,8 @@ import {
   updateFDASchema,
   updateFDAStorage,
   claimFDAForFetch,
+  renewFDAFetchLock,
+  releaseFDAFetchLock,
   claimFDAForDeletion,
   claimFDADownload,
   createDatasource,
@@ -1590,15 +1593,43 @@ export async function processFDAAsync(
   const startedAt = Date.now();
   const storagePath = getFDAStoragePath(fdaId, servicePath);
   const bucketName = getBucketNameFromService(service);
+  const lockOwner = randomUUID();
+  const lockScope = { service, fdaId, servicePath, owner: lockOwner };
 
-  const claimed = await claimFDAForFetch({ service, fdaId, servicePath });
+  const claimed = await claimFDAForFetch(lockScope);
   if (!claimed) {
     logger.info(
       { fdaId, service, servicePath },
-      'Skipping refresh: FDA no longer exists or is being deleted',
+      'Skipping refresh: FDA is already being refreshed, no longer exists, or is being deleted',
     );
     return;
   }
+
+  let renewingLock = false;
+  const lockRenewalTimer = setInterval(async () => {
+    if (renewingLock) {
+      return;
+    }
+
+    renewingLock = true;
+    try {
+      const renewed = await renewFDAFetchLock(lockScope);
+      if (!renewed) {
+        logger.warn(
+          { fdaId, service, servicePath },
+          'FDA refresh lock was lost while refreshing',
+        );
+      }
+    } catch (error) {
+      logger.warn(
+        { err: error, fdaId, service, servicePath },
+        'Could not renew FDA refresh lock',
+      );
+    } finally {
+      renewingLock = false;
+    }
+  }, 30 * 1000);
+  lockRenewalTimer.unref();
 
   try {
     const schemaChange = await detectSourceSchemaChange(
@@ -1657,6 +1688,16 @@ export async function processFDAAsync(
     });
     await cleanFailedFetchObjects(bucketName, storagePath);
     throw err;
+  } finally {
+    clearInterval(lockRenewalTimer);
+    try {
+      await releaseFDAFetchLock(lockScope);
+    } catch (error) {
+      logger.warn(
+        { err: error, fdaId, service, servicePath },
+        'Could not release FDA refresh lock; it will expire automatically',
+      );
+    }
   }
 }
 

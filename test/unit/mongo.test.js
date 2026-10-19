@@ -527,6 +527,7 @@ describe('mongo utils', () => {
       service: 'svc',
       fdaId: 'fdaA',
       servicePath: '/sp',
+      owner: 'owner-1',
     });
 
     expect(claimed).toBe(true);
@@ -536,13 +537,21 @@ describe('mongo utils', () => {
         fdaId: 'fdaA',
         servicePath: '/sp',
         status: { $ne: 'deleting' },
+        $or: [
+          { refreshLock: { $exists: false } },
+          { 'refreshLock.expiresAt': { $lte: expect.any(Date) } },
+        ],
       },
       {
-        $set: {
+        $set: expect.objectContaining({
           status: 'fetching',
           progress: 10,
           initFetch: expect.any(Date),
-        },
+          refreshLock: {
+            owner: 'owner-1',
+            expiresAt: expect.any(Date),
+          },
+        }),
       },
     );
   });
@@ -554,6 +563,57 @@ describe('mongo utils', () => {
     await expect(
       claimFDAForFetch({ service: 'svc', fdaId: 'fdaA', servicePath: '/sp' }),
     ).resolves.toBe(false);
+  });
+
+  test('renewFDAFetchLock extends only the current owner lease', async () => {
+    const { renewFDAFetchLock, collectionMock } = await loadMongoModule();
+    collectionMock.updateOne.mockResolvedValueOnce({ matchedCount: 1 });
+
+    await expect(
+      renewFDAFetchLock({
+        service: 'svc',
+        fdaId: 'fdaA',
+        servicePath: '/sp',
+        owner: 'owner-1',
+      }),
+    ).resolves.toBe(true);
+
+    expect(collectionMock.updateOne).toHaveBeenCalledWith(
+      {
+        service: 'svc',
+        fdaId: 'fdaA',
+        servicePath: '/sp',
+        'refreshLock.owner': 'owner-1',
+        'refreshLock.expiresAt': { $gt: expect.any(Date) },
+      },
+      {
+        $set: { 'refreshLock.expiresAt': expect.any(Date) },
+      },
+    );
+  });
+
+  test('releaseFDAFetchLock only releases the current owner lease', async () => {
+    const { releaseFDAFetchLock, collectionMock } = await loadMongoModule();
+    collectionMock.updateOne.mockResolvedValueOnce({ matchedCount: 0 });
+
+    await expect(
+      releaseFDAFetchLock({
+        service: 'svc',
+        fdaId: 'fdaA',
+        servicePath: '/sp',
+        owner: 'owner-1',
+      }),
+    ).resolves.toBe(false);
+
+    expect(collectionMock.updateOne).toHaveBeenCalledWith(
+      {
+        service: 'svc',
+        fdaId: 'fdaA',
+        servicePath: '/sp',
+        'refreshLock.owner': 'owner-1',
+      },
+      { $unset: { refreshLock: '' } },
+    );
   });
 
   test('claimFDAForDeletion only claims FDAs that are not being fetched', async () => {
@@ -570,7 +630,16 @@ describe('mongo utils', () => {
         service: 'svc',
         fdaId: 'fdaA',
         servicePath: '/sp',
-        status: { $in: ['completed', 'failed', 'deleting'] },
+        $or: [
+          { status: { $in: ['completed', 'failed', 'deleting'] } },
+          {
+            status: 'fetching',
+            $or: [
+              { refreshLock: { $exists: false } },
+              { 'refreshLock.expiresAt': { $lte: expect.any(Date) } },
+            ],
+          },
+        ],
       },
       { $set: { status: 'deleting' } },
       { returnDocument: 'before' },
