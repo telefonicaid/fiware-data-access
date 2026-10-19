@@ -108,7 +108,12 @@ export const EXECUTION_MODES = Object.freeze({
   SEPARATED: 'separated',
 });
 
-export function runFDAIntegrationSuite({ mode, label }) {
+export function runFDAIntegrationSuite({
+  mode,
+  label,
+  memoryLimit = process.env.FDA_DUCKDB_MEMORY_LIMIT ?? '1GB',
+  expectWindowOom = false,
+}) {
   describe(`FDA API - integration (${label})`, () => {
     let minio;
     let mongo;
@@ -344,7 +349,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
         FDA_MAX_CONCURRENT_FRESH_QUERIES: '1',
         FDA_DUCKDB_DIR: duckdbDir,
         FDA_DUCKDB_TEMP_DIR: `${duckdbDir}/temp`,
-        FDA_DUCKDB_MEMORY_LIMIT: process.env.FDA_DUCKDB_MEMORY_LIMIT ?? '1GB',
+        FDA_DUCKDB_MEMORY_LIMIT: memoryLimit,
         FDA_DUCKDB_MAX_THREADS: process.env.FDA_DUCKDB_MAX_THREADS ?? '1',
         FDA_DUCKDB_PRESERVE_INSERTION_ORDER:
           process.env.FDA_DUCKDB_PRESERVE_INSERTION_ORDER ?? 'false',
@@ -538,6 +543,8 @@ export function runFDAIntegrationSuite({ mode, label }) {
       getMongoUri: () => mongoUri,
       rows: performanceTableRows,
       timeout: maxTimeoutMs,
+      memoryLimit,
+      expectWindowOom,
     });
 
     registerFdaQueryPerformanceTests({

@@ -12,6 +12,8 @@ export function registerWindowMemoryPerformanceTests({
   getMongoUri,
   rows,
   timeout,
+  memoryLimit,
+  expectWindowOom = false,
 }) {
   test.each(['month', 'day'])(
     'Window memory: traffic aliases, month window, %s partitions',
@@ -65,7 +67,7 @@ export function registerWindowMemoryPerformanceTests({
           partition,
           sourceRows: rows,
           ...expected.rows[0],
-          memoryLimit: process.env.FDA_DUCKDB_MEMORY_LIMIT ?? '1GB',
+          memoryLimit,
         });
         const created = await httpReq({
           method: 'POST',
@@ -106,6 +108,12 @@ export function registerWindowMemoryPerformanceTests({
           });
         };
 
+        if (partition === 'day' && expectWindowOom) {
+          await expect(assertCompleted()).rejects.toThrow(
+            /FDA .* failed: Out of Memory Error:/,
+          );
+          return;
+        }
         await assertCompleted();
 
         const da = await httpReq({
