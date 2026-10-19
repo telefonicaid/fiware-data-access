@@ -15,9 +15,20 @@ export function registerWindowMemoryPerformanceTests({
   memoryLimit,
   expectWindowOom = false,
 }) {
-  test.each(['month', 'day'])(
-    'Window memory: traffic aliases, month window, %s partitions',
-    async (partition) => {
+  test.each([
+    {
+      partition: 'month',
+      outcome: 'monthly control completes successfully',
+    },
+    {
+      partition: 'day',
+      outcome: expectWindowOom
+        ? 'creation fails with expected Out of Memory Error'
+        : 'creation and two daily refreshes complete successfully',
+    },
+  ])(
+    'Window memory: $partition partitions, $outcome',
+    async ({ partition }) => {
       const suffix = `${partition}_${Date.now()}`;
       const fdaId = `traffic_memory_${suffix}`;
       const table = `traffic_memory_${suffix}`;
