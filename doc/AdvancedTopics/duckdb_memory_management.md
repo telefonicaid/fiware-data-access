@@ -595,6 +595,89 @@ The FDA creation then completed successfully.
 
 ---
 
+# Automated window-memory regression scenarios
+
+The performance suite includes `Window memory:` scenarios in
+[`fdaWindowMemory.performance.tests.js`](../../test/performance/suites/fdaWindowMemory.performance.tests.js). They use
+real PostgreSQL, MinIO and MongoDB containers and run FDA as child processes, with both combined and separated roles.
+
+The daily scenario follows the traffic FDA configuration:
+
+-   Private visibility and `Fiware-ServicePath: /fdas`.
+-   `cached: true`, with explicit source-column aliases including `fechahora AS fecha_medicion`.
+-   A monthly initial window, daily partitions and daily incremental fetches.
+-   The daily cron expression `0 16 * * *`.
+-   Two forced recurring refreshes after creation. Each changes the recent source rows and checks both the total cached
+    row count and the updated values, so merely reaching a terminal job state is not sufficient.
+
+The fixture spreads rows across 32 days, ensuring that the initial window writes at least 28 populated daily partitions
+and excludes older rows. Each description contains 256 characters derived from distinct MD5 values, avoiding the
+unrealistically small Parquet files produced by repeated constant strings. This is a synthetic stress workload, not a
+claim about the actual size or compressibility of production traffic descriptions.
+
+A monthly-partition control uses the same fixture and initial window. Its `fetchSize` is also `month`, because the API
+requires fetch size and partition size to match. The control verifies creation and cached contents; the daily scenario
+additionally verifies recurring refreshes.
+
+The number of source rows is controlled by `PERFORMANCE_TABLE_ROWS`. The performance harness defaults explicitly to
+`1GB`, one DuckDB thread and `preserve_insertion_order=false`, while allowing overrides through the corresponding
+`FDA_DUCKDB_*` environment variables. It also uses a unique, interpolated temporary directory per process.
+
+## Running the scenarios
+
+Node.js 24+, installed project dependencies and a working Docker runtime are required. Run the scenarios alone to avoid
+confusing their memory consumption with concurrent load tests:
+
+```bash
+PERFORMANCE_TABLE_ROWS=100000 FDA_DUCKDB_MEMORY_LIMIT=1GB \
+  npm run test:performance -- --testNamePattern='Window memory:'
+```
+
+To exercise the combined-role runtime under greater memory pressure:
+
+```bash
+PERFORMANCE_TABLE_ROWS=3000000 FDA_DUCKDB_MEMORY_LIMIT=2GB \
+  npm run test:performance -- --testNamePattern='combined roles.*Window memory:'
+```
+
+Repeat with `FDA_DUCKDB_MEMORY_LIMIT=0.5GB` or `1GB` to compare the same workload at lower limits. Use
+`separated roles.*Window memory:` to select the separated runtime. For production comparisons, explicitly set
+`FDA_DUCKDB_MAX_THREADS` and `FDA_DUCKDB_PRESERVE_INSERTION_ORDER` to the deployed values.
+
+The tests require successful completion: an OOM is a **test failure**, not an accepted outcome. The performance poller
+reports the FDA's error immediately instead of waiting for a timeout or treating advanced progress as success. Fixture
+row counts, populated dates and the configured memory limit are logged before creation.
+
+## Reproduction observed on 2026-10-19
+
+On the current `1.7.0-next` code, using one thread and insertion-order preservation disabled:
+
+| Source rows | DuckDB limit | Runtime                | Monthly control | Daily partitions                  |
+| ----------- | ------------ | ---------------------- | --------------- | --------------------------------- |
+| 100,000     | 1 GB         | Combined and separated | Passed          | Creation and two refreshes passed |
+| 1,000,000   | 0.5 GB       | Combined               | Passed          | Creation and two refreshes passed |
+| 1,000,000   | 1 GB         | Combined               | Passed          | Creation and two refreshes passed |
+| 3,000,000   | 0.5 GB       | Combined               | Passed          | OOM during initial creation       |
+| 3,000,000   | 1 GB         | Combined               | Passed          | OOM during initial creation       |
+| 3,000,000   | 2 GB         | Combined               | Passed          | OOM during initial creation       |
+
+The failing daily scenarios reported, respectively:
+
+```text
+Out of Memory Error: failed to allocate data of size 20.2 MiB (461.6 MiB/476.8 MiB used)
+Out of Memory Error: could not allocate block of size 76.5 MiB (908.6 MiB/953.6 MiB used)
+Out of Memory Error: failed to allocate data of size 32.0 MiB (1.8 GiB/1.8 GiB used)
+```
+
+The 3-million-row fixture placed 2,812,500 rows inside the monthly window, across 30 populated dates. This reproduces a
+memory-limit failure for daily partitioned writes while the monthly control completes, including the production-like
+effective 1.8 GiB limit. The 1 GB run also reproduces the 76.5 MiB allocation size. It does not establish that these
+allocations have the same memory tag as the production allocation. These scenarios do not sample `duckdb_memory()` or
+impose a total FDA-process container memory limit; the child processes run on the host, so increase workload sizes
+cautiously on shared machines. The performance suite remains separate from the unit/integration CI jobs.
+
+---
+
 # Conclusions
 
 The investigation leads to the following conclusions:

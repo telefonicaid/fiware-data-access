@@ -36,6 +36,7 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { registerFdaCreationPerformanceTests } from './suites/fdaCreation.performance.tests.js';
 import { registerLargeFdaPerformanceTests } from './suites/fdaLargeCreation.performance.tests.js';
+import { registerWindowMemoryPerformanceTests } from './suites/fdaWindowMemory.performance.tests.js';
 import { registerFdaLoadPerformanceTests } from './suites/fdaLoad.performance.tests.js';
 import { registerFdaQueryPerformanceTests } from './suites/fdaQuery.performance.tests.js';
 import {
@@ -342,7 +343,11 @@ export function runFDAIntegrationSuite({ mode, label }) {
         FDA_MONGO_URI: mongoUri,
         FDA_MAX_CONCURRENT_FRESH_QUERIES: '1',
         FDA_DUCKDB_DIR: duckdbDir,
-        FDA_DUCKDB_TEMP_DIR: '${duckdbDir}/temp',
+        FDA_DUCKDB_TEMP_DIR: `${duckdbDir}/temp`,
+        FDA_DUCKDB_MEMORY_LIMIT: process.env.FDA_DUCKDB_MEMORY_LIMIT ?? '1GB',
+        FDA_DUCKDB_MAX_THREADS: process.env.FDA_DUCKDB_MAX_THREADS ?? '1',
+        FDA_DUCKDB_PRESERVE_INSERTION_ORDER:
+          process.env.FDA_DUCKDB_PRESERVE_INSERTION_ORDER ?? 'false',
         ...overrides,
       };
     }
@@ -523,6 +528,16 @@ export function runFDAIntegrationSuite({ mode, label }) {
       httpReq,
       waitUntilFDACompleted,
       maxWaitMs: () => maxTimeoutMs,
+    });
+
+    registerWindowMemoryPerformanceTests({
+      getBaseUrl: () => baseUrl,
+      service,
+      getPgHost: () => pgHost,
+      getPgPort: () => pgPort,
+      getMongoUri: () => mongoUri,
+      rows: performanceTableRows,
+      timeout: maxTimeoutMs,
     });
 
     registerFdaQueryPerformanceTests({

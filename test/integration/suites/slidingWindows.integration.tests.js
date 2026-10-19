@@ -474,7 +474,7 @@ export function registerSlidingWindowsIntegrationTests({
         body: {
           id: fdaId,
           query:
-            'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+            "SELECT id, name, age, NOW() - INTERVAL '1 hour' AS timeinstant, authorized FROM public.users ORDER BY id",
           description: 'daily sliding window partition test',
           refreshPolicy: {
             type: 'window',
@@ -493,7 +493,15 @@ export function registerSlidingWindowsIntegrationTests({
       });
 
       expect(createRes.status).toBe(202);
-      await waitUntilFDACompleted({ baseUrl, service, fdaId });
+      const completed = await waitUntilFDACompleted({
+        baseUrl,
+        service,
+        fdaId,
+      });
+      expect(completed.status).toBe('completed');
+      const data = await readDa(baseUrl, fdaId, 'defaultDataAccess');
+      expect(data.status).toBe(200);
+      expect(data.json).toHaveLength(3);
     });
 
     test('POST /fdas accepts refresh intervals smaller than partition size', async () => {
