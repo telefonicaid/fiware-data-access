@@ -588,17 +588,16 @@ router.put('/:visibility/fdas/:fdaId', async (req, res) => {
   const { visibility, fdaId } = req.params;
   const body = req.body ?? {};
   validateAllowedFieldsBody(body, [
-    'query',
     'description',
     //'refreshPolicy',
     'timeColumn',
     //'objStgConf',
     //'cached',
-    'datasourceId',
+    //'datasourceId',
     'validationMode',
   ]);
 
-  const { query, description, timeColumn, datasourceId, validationMode } = body;
+  const { description, timeColumn, validationMode } = body;
 
   if (!service || !fdaId || !servicePath || !visibility) {
     return res.status(400).json({
@@ -612,10 +611,8 @@ router.put('/:visibility/fdas/:fdaId', async (req, res) => {
     fdaId,
     visibility,
     servicePath,
-    query,
     description,
     timeColumn,
-    datasourceId,
     validationMode,
   );
 

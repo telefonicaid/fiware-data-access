@@ -117,6 +117,7 @@ import {
   SUPPORTED_DATASOURCE_TYPES,
   FDA_VALIDATION_MODE_STRICT,
   FDA_VALIDATION_MODE_UNCHECKED,
+  VALIDATION_MODES,
   VALID_REFRESH_POLICY_TYPES,
   VALID_WINDOW_FETCH_SIZES,
   PARTITION_TYPES,
@@ -1409,21 +1410,26 @@ export async function putFDA(
   fdaId,
   visibility,
   servicePath,
-  query,
   description,
   timeColumn,
-  datasourceId,
   validationMode,
 ) {
   const normalizedServicePath = normalizeServicePath(servicePath);
-  updateFDA(
+
+  await validateFDAUpdate(
     service,
     fdaId,
     servicePath,
-    query,
     description,
     timeColumn,
-    datasourceId,
+    validationMode,
+  );
+  await updateFDA(
+    service,
+    fdaId,
+    servicePath,
+    description,
+    timeColumn,
     validationMode,
   );
 
@@ -1476,6 +1482,85 @@ export async function putFDA(
       windowSize: previous.refreshPolicy.params.windowSize,
       objStgConf: previous.objStgConf,
     });
+  }
+}
+
+async function validateFDAUpdate(
+  service,
+  fdaId,
+  servicePath,
+  description,
+  timeColumn,
+  validationMode,
+) {
+  try {
+    const normalizedServicePath = normalizeServicePath(servicePath);
+    const currentFDA = await getStoredFDA(
+      service,
+      fdaId,
+      normalizedServicePath,
+    );
+
+    // We get the effective values for the fields that are being updated
+    const effectiveTimeColumn =
+      timeColumn !== undefined ? timeColumn : currentFDA.timeColumn;
+    const effectiveValidationMode =
+      validationMode !== undefined
+        ? validationMode ?? FDA_VALIDATION_MODE_STRICT
+        : currentFDA.validationMode ?? FDA_VALIDATION_MODE_STRICT;
+
+    if (
+      description !== undefined &&
+      description !== null &&
+      typeof description !== 'string'
+    ) {
+      throw new FDAError(400, 'InvalidParam', 'description must be a string.');
+    }
+
+    if (
+      effectiveTimeColumn !== undefined &&
+      effectiveTimeColumn !== null &&
+      (typeof effectiveTimeColumn !== 'string' ||
+        effectiveTimeColumn.length === 0 ||
+        !TIME_COLUMN_NAME_PATTERN.test(effectiveTimeColumn))
+    ) {
+      throw new FDAError(
+        400,
+        'InvalidParam',
+        `Invalid time column name "${effectiveTimeColumn}".`,
+      );
+    }
+
+    if (!VALIDATION_MODES.includes(effectiveValidationMode)) {
+      throw new FDAError(
+        400,
+        'InvalidParam',
+        `Invalid validation mode "${effectiveValidationMode}".`,
+      );
+    }
+
+    const datasource = await resolveDatasource(
+      service,
+      currentFDA.datasourceId,
+    );
+
+    if (datasource.type === 'mongodb') {
+      validateMongoFDAContract(currentFDA.query, effectiveTimeColumn);
+    }
+
+    await validateAndGetSourceSchema(
+      datasource,
+      effectiveValidationMode,
+      currentFDA.query,
+      effectiveTimeColumn,
+      currentFDA.cached ?? true,
+    );
+  } catch (err) {
+    throw new FDAError(
+      400,
+      'InvalidUpdateBody',
+      `Error updating FDA with new values: ${err.message}`,
+    );
   }
 }
 

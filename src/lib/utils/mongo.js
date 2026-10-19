@@ -1064,25 +1064,16 @@ export async function updateFDA(
   service,
   fdaId,
   servicePath,
-  query,
   description,
   timeColumn,
-  datasourceId,
   validationMode,
 ) {
-  logger.debug(
-    { fdaId, description, timeColumn, querySize: query?.length },
-    '[DEBUG]: updateFDA',
-  );
+  logger.debug({ fdaId, description, timeColumn }, '[DEBUG]: updateFDA');
   const collection = await getCollection();
 
   try {
     const filter = { service, fdaId, servicePath };
     const setFields = {};
-
-    if (query !== undefined) {
-      setFields.query = query;
-    }
 
     if (description !== undefined) {
       setFields.description = description;
@@ -1090,10 +1081,6 @@ export async function updateFDA(
 
     if (timeColumn !== undefined) {
       setFields.timeColumn = timeColumn;
-    }
-
-    if (datasourceId !== undefined) {
-      setFields.datasourceId = datasourceId;
     }
 
     if (validationMode !== undefined) {
