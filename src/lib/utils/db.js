@@ -255,7 +255,7 @@ function startDuckDBMemorySampler() {
     });
 
   const loop = (async () => {
-    if (!instanceReady || !(intervalMs > 0)) {
+    if (!instanceReady || intervalMs <= 0) {
       return;
     }
     const conn = await getDBConnection();
