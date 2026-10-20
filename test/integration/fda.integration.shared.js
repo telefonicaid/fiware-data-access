@@ -591,6 +591,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       fdaIdSleep,
       httpReq,
       waitUntilFDACompleted,
+      buildDaDataUrl,
       getMongoUri: () => mongoUri,
     });
 

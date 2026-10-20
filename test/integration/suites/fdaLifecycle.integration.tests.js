@@ -35,6 +35,7 @@ export function registerFdaLifecycleIntegrationTests({
   fdaIdSleep,
   httpReq,
   waitUntilFDACompleted,
+  buildDaDataUrl,
   getMongoUri,
 }) {
   describe('FDA lifecycle', () => {
@@ -115,6 +116,113 @@ export function registerFdaLifecycleIntegrationTests({
       expect(Number.isNaN(afterLastFetchMs)).toBe(false);
       expect(afterLastFetchMs).toBeGreaterThanOrEqual(afterInitFetchMs);
       expect(afterInitFetchMs).toBeGreaterThanOrEqual(beforeLastFetchMs);
+    });
+
+    test('PUT /fdas/:fdaId with a body updates the FDA, its jobs and its storage', async () => {
+      const baseUrl = getBaseUrl();
+      const updateFdaId = 'fda_put_update';
+      const fdaUrl = `${baseUrl}/${visibility}/fdas/${updateFdaId}`;
+      const headers = { 'Fiware-Service': service };
+      const client = new MongoClient(getMongoUri());
+      await client.connect();
+      const agendaJobs = client.db().collection('agendaJobs');
+      const countRows = async () => {
+        const res = await httpReq({
+          method: 'GET',
+          url: buildDaDataUrl(
+            baseUrl,
+            servicePath,
+            updateFdaId,
+            'defaultDataAccess',
+            { pageSize: 1000 },
+          ),
+          headers,
+        });
+        expect(res.status).toBe(200);
+        return res.json.length;
+      };
+
+      try {
+        const createRes = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers,
+          body: {
+            id: updateFdaId,
+            query: 'SELECT id, name, timeinstant FROM public.users',
+            timeColumn: 'timeinstant',
+          },
+        });
+        expect(createRes.status).toBe(202);
+        await waitUntilFDACompleted({ baseUrl, service, fdaId: updateFdaId });
+        const rowsBefore = await countRows();
+        expect(rowsBefore).toBeGreaterThan(0);
+
+        const rejected = await httpReq({
+          method: 'PUT',
+          url: fdaUrl,
+          headers,
+          body: { query: 'SELECT id FROM public.users' },
+        });
+        expect(rejected.status).toBe(400);
+
+        const refreshPolicy = {
+          type: 'interval',
+          params: { refreshInterval: '1 hour' },
+        };
+        const updateRes = await httpReq({
+          method: 'PUT',
+          url: fdaUrl,
+          headers,
+          body: {
+            description: 'updated',
+            refreshPolicy,
+            objStgConf: { partition: 'month' },
+          },
+        });
+        if (updateRes.status >= 400) {
+          console.error(
+            'PUT /fdas/:fdaId with body failed:',
+            updateRes.status,
+            updateRes.json ?? updateRes.text,
+          );
+        }
+        expect(updateRes.status).toBe(202);
+
+        const updated = await waitUntilFDACompleted({
+          baseUrl,
+          service,
+          fdaId: updateFdaId,
+        });
+        expect(updated.description).toBe('updated');
+        expect(updated.refreshPolicy).toEqual(refreshPolicy);
+        expect(updated.objStgConf).toEqual({ partition: 'month' });
+        expect(await countRows()).toBe(rowsBefore);
+
+        const recurringJob = await agendaJobs.findOne({
+          name: 'refresh-fda-recurring',
+          'data.fdaId': updateFdaId,
+        });
+        expect(recurringJob.data.objStgConf).toEqual({ partition: 'month' });
+
+        const disableRes = await httpReq({
+          method: 'PUT',
+          url: fdaUrl,
+          headers,
+          body: { refreshPolicy: { type: 'none' } },
+        });
+        expect(disableRes.status).toBe(202);
+        await waitUntilFDACompleted({ baseUrl, service, fdaId: updateFdaId });
+        expect(
+          await agendaJobs.countDocuments({
+            name: 'refresh-fda-recurring',
+            'data.fdaId': updateFdaId,
+          }),
+        ).toBe(0);
+      } finally {
+        await httpReq({ method: 'DELETE', url: fdaUrl, headers });
+        await client.close();
+      }
     });
 
     test('PUT /fdas/:fdaId triggers AlreadyFetching if concurrent after creation', async () => {
