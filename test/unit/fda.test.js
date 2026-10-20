@@ -2220,6 +2220,92 @@ describe('fetchFDA', () => {
 
     expect(agenda.create).not.toHaveBeenCalled();
   });
+
+  test.each([
+    [
+      'missing refreshInterval',
+      { type: 'interval', params: {} },
+      undefined,
+      'Missing required refresh policy parameter: refreshInterval.',
+    ],
+    [
+      'invalid refreshInterval',
+      { type: 'interval', params: { refreshInterval: 'invalid' } },
+      undefined,
+      'Invalid refresh interval "invalid".',
+    ],
+    [
+      'missing window fetchSize',
+      { type: 'window', params: { refreshInterval: '1 hour' } },
+      undefined,
+      'Missing required refresh policy parameter: fetchSize.',
+    ],
+    [
+      'invalid window fetchSize',
+      {
+        type: 'window',
+        params: { refreshInterval: '1 hour', fetchSize: 'invalid' },
+      },
+      undefined,
+      'Invalid fetchSize "invalid".',
+    ],
+    [
+      'windowSize without partition',
+      {
+        type: 'window',
+        params: {
+          refreshInterval: '1 hour',
+          fetchSize: 'day',
+          windowSize: 'day',
+        },
+      },
+      undefined,
+      'windowSize requires objStgConf.partition.',
+    ],
+    [
+      'invalid consistencyRefreshInterval',
+      {
+        type: 'window',
+        params: {
+          refreshInterval: '1 day',
+          consistencyRefreshInterval: 'invalid',
+          fetchSize: 'day',
+        },
+      },
+      undefined,
+      'Invalid consistency refresh interval "invalid".',
+    ],
+    [
+      'invalid partition',
+      { type: 'interval', params: { refreshInterval: '1 hour' } },
+      { partition: 'invalid' },
+      'Invalid partition type "invalid".',
+    ],
+  ])(
+    'rejects scheduled options with %s',
+    async (_description, refreshPolicy, objStgConf, message) => {
+      await expect(
+        fetchFDA(
+          'fda1',
+          'SELECT 1',
+          'svc',
+          'public',
+          '/servicepath',
+          'desc',
+          refreshPolicy,
+          'timeinstant',
+          objStgConf,
+        ),
+      ).rejects.toMatchObject({
+        status: 400,
+        type: 'InvalidParam',
+        message,
+      });
+
+      expect(agenda.create).not.toHaveBeenCalled();
+    },
+  );
+
   test('rolls back FDA provisioning and rethrows when parquet creation fails', async () => {
     const uploadError = new Error('S3 unreachable');
     pgMocks.uploadTable.mockRejectedValue(uploadError);
