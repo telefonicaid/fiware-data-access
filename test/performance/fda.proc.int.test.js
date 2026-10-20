@@ -27,12 +27,17 @@ import {
   runFDAIntegrationSuite,
 } from './fda.integration.shared.js';
 
-runFDAIntegrationSuite({
-  mode: EXECUTION_MODES.COMBINED,
-  label: 'combined roles',
-});
-
-runFDAIntegrationSuite({
-  mode: EXECUTION_MODES.SEPARATED,
-  label: 'separated roles',
-});
+for (const mode of [EXECUTION_MODES.COMBINED, EXECUTION_MODES.SEPARATED]) {
+  if (process.env.FDA_MEMORY_MATRIX === 'true') {
+    for (const memoryLimit of ['2GB', '3GB']) {
+      runFDAIntegrationSuite({
+        mode,
+        label: `${mode} roles, DuckDB ${memoryLimit}`,
+        memoryLimit,
+        expectWindowOom: memoryLimit === '2GB',
+      });
+    }
+  } else {
+    runFDAIntegrationSuite({ mode, label: `${mode} roles` });
+  }
+}

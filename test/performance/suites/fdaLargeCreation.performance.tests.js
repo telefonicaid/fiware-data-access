@@ -139,13 +139,14 @@ export function registerLargeFdaPerformanceTests({
 
         performance.mark(`${markPrefix}-upload-start`);
 
-        await waitUntilFDACompleted({
+        const completed = await waitUntilFDACompleted({
           baseUrl,
           service,
           fdaId,
           visibility,
           timeout: maxWaitMs(),
         });
+        expect(completed).toMatchObject({ status: 'completed' });
 
         performance.mark(`${markPrefix}-end`);
 
@@ -278,13 +279,14 @@ export function registerLargeFdaPerformanceTests({
           httpReq,
         });
         performance.mark(`${markPrefix}-upload-start`);
-        await waitUntilFDACompleted({
+        const completed = await waitUntilFDACompleted({
           baseUrl,
           service,
           fdaId,
           visibility,
           timeout: maxWaitMs(),
         });
+        expect(completed).toMatchObject({ status: 'completed' });
         performance.mark(`${markPrefix}-end`);
         const creationMeasureName = `Window FDA creation - ${fdaId}`;
         const fetchMeasureName = `Window FDA fetch - ${fdaId}`;
