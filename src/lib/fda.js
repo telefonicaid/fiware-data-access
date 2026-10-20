@@ -2055,6 +2055,14 @@ export async function deleteFDA(service, fdaId, visibility, servicePath) {
     );
   }
 
+  await dropFDAStorage(service, fdaId, targetServicePath);
+
+  await removeFDA(service, fdaId, targetServicePath);
+
+  await cancelFDARecurringJobs(service, fdaId, targetServicePath);
+}
+
+async function dropFDAStorage(service, fdaId, servicePath) {
   const bucketName = getBucketNameFromService(service);
   const s3Client = await getS3Client(
     `${config.objstg.protocol}://${config.objstg.endpoint}`,
@@ -2062,7 +2070,7 @@ export async function deleteFDA(service, fdaId, visibility, servicePath) {
     config.objstg.pass,
   );
   // This way we remove FDAs independently of if theyre partitioned or not
-  const storagePath = getFDAStoragePath(fdaId, targetServicePath);
+  const storagePath = getFDAStoragePath(fdaId, servicePath);
   const allObjPaths = await listObjects(s3Client, bucketName, storagePath);
   // Filter strictly to objects belonging to this FDA only, preventing
   // accidental deletion of sibling FDAs whose IDs share a common prefix
@@ -2073,34 +2081,19 @@ export async function deleteFDA(service, fdaId, visibility, servicePath) {
   );
   await dropFiles(s3Client, bucketName, objPaths);
   await cleanTmpFolder(s3Client, bucketName, `tmp/${storagePath}.parquet`);
+}
 
-  await removeFDA(service, fdaId, targetServicePath);
-
+async function cancelFDARecurringJobs(service, fdaId, servicePath) {
   const agenda = getAgenda();
-  await agenda.cancel(
-    buildFDAJobCancelFilter(
-      'refresh-fda-recurring',
-      service,
-      fdaId,
-      targetServicePath,
-    ),
-  );
-  await agenda.cancel(
-    buildFDAJobCancelFilter(
-      'consistency-refresh-fda-recurring',
-      service,
-      fdaId,
-      targetServicePath,
-    ),
-  );
-  await agenda.cancel(
-    buildFDAJobCancelFilter(
-      'clean-partition-recurring',
-      service,
-      fdaId,
-      targetServicePath,
-    ),
-  );
+  for (const jobName of [
+    'refresh-fda-recurring',
+    'consistency-refresh-fda-recurring',
+    'clean-partition-recurring',
+  ]) {
+    await agenda.cancel(
+      buildFDAJobCancelFilter(jobName, service, fdaId, servicePath),
+    );
+  }
 }
 
 export async function getDAs(service, fdaId, visibility, servicePath) {
@@ -2990,22 +2983,21 @@ const getPath = (bucket, path, extension) => {
   return `${cleanBucket}/${cleanPath}${extension}`;
 };
 
-async function scheduleFDAJobs({
-  fdaId,
-  query, // Query original (sin filtrar)
-  service,
-  servicePath,
-  timeColumn,
-  refreshPolicy,
-  objStgConf,
-  datasource,
-}) {
-  const { refreshInterval, windowSize, consistencyRefreshInterval } =
-    refreshPolicy.params || {};
+async function scheduleFDAJobs(jobConf) {
+  const {
+    fdaId,
+    query, // Query original (sin filtrar)
+    service,
+    servicePath,
+    timeColumn,
+    refreshPolicy,
+    objStgConf,
+    datasource,
+  } = jobConf;
 
   const agenda = getAgenda();
 
-  const { firstQuery, recurringQuery } = resolveRefreshQueries(
+  const { firstQuery } = resolveRefreshQueries(
     datasource,
     refreshPolicy,
     query,
@@ -3023,6 +3015,31 @@ async function scheduleFDAJobs({
     objStgConf,
     datasourceId: datasource.datasourceId ?? DEFAULT_DATASOURCE_ID,
   });
+
+  await scheduleRecurringFDAJobs(jobConf);
+}
+
+async function scheduleRecurringFDAJobs({
+  fdaId,
+  query,
+  service,
+  servicePath,
+  timeColumn,
+  refreshPolicy,
+  objStgConf,
+  datasource,
+}) {
+  const { refreshInterval, windowSize, consistencyRefreshInterval } =
+    refreshPolicy?.params || {};
+
+  const agenda = getAgenda();
+
+  const { firstQuery, recurringQuery } = resolveRefreshQueries(
+    datasource,
+    refreshPolicy,
+    query,
+    timeColumn,
+  );
 
   if (refreshPolicy?.type === 'interval' || refreshPolicy?.type === 'window') {
     // 1. Recurring fetch job (incremental fetches)
