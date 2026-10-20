@@ -34,7 +34,6 @@ import {
   runWithLogger,
 } from './lib/utils/logger.js';
 import { config } from './lib/fdaConfig.js';
-import { formatDuckDBMemory, getDuckDBMemorySnapshot } from './lib/utils/db.js';
 import { v4 as uuidv4 } from 'uuid';
 
 const logger = getBasicLogger();
@@ -231,6 +230,9 @@ export async function startFetcher() {
   let heartbeatTimer;
   if (config.fetcher.heartbeatIntervalMs > 0) {
     heartbeatTimer = setInterval(async () => {
+      const { formatDuckDBMemory, getDuckDBMemorySnapshot } = await import(
+        './lib/utils/db.js'
+      );
       const snapshot = await getDuckDBMemorySnapshot();
       logger.info(formatDuckDBMemory(snapshot), '[Fetcher] Heartbeat: alive');
     }, config.fetcher.heartbeatIntervalMs);
