@@ -581,6 +581,47 @@ describe('mongo utils', () => {
     });
   });
 
+  test('regenerateFDA applies the updated fields in the same claim', async () => {
+    const { regenerateFDA, collectionMock } = await loadMongoModule();
+
+    collectionMock.findOneAndUpdate.mockResolvedValueOnce({
+      fdaId: 'fdaA',
+      status: 'completed',
+      objStgConf: {},
+    });
+
+    const result = await regenerateFDA(
+      'svc',
+      'fdaA',
+      '/sp',
+      { objStgConf: { partition: 'month' } },
+      ['lastFetch'],
+    );
+
+    expect(collectionMock.findOneAndUpdate).toHaveBeenCalledWith(
+      {
+        service: 'svc',
+        fdaId: 'fdaA',
+        servicePath: '/sp',
+        status: { $in: ['completed', 'failed'] },
+      },
+      {
+        $set: {
+          objStgConf: { partition: 'month' },
+          status: 'fetching',
+          progress: 0,
+        },
+        $unset: { lastFetch: '' },
+      },
+      { returnDocument: 'before' },
+    );
+    expect(result).toEqual({
+      fdaId: 'fdaA',
+      status: 'completed',
+      objStgConf: { partition: 'month' },
+    });
+  });
+
   test('regenerateFDA throws InvalidState for non-regenerable statuses', async () => {
     const { regenerateFDA, collectionMock } = await loadMongoModule();
 

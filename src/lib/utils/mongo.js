@@ -865,8 +865,26 @@ export async function aggregateFDAUsage(service) {
   }
 }
 
-export async function regenerateFDA(service, fdaId, servicePath) {
+export async function regenerateFDA(
+  service,
+  fdaId,
+  servicePath,
+  setFields = {},
+  unsetFields = [],
+) {
   const collection = await getCollection();
+
+  // Claim the FDA and apply the PUT body changes in the same atomic update
+  const update = {
+    $set: {
+      ...setFields,
+      status: 'fetching',
+      progress: 0,
+    },
+  };
+  if (unsetFields.length > 0) {
+    update.$unset = Object.fromEntries(unsetFields.map((field) => [field, '']));
+  }
 
   const previous = await collection.findOneAndUpdate(
     {
@@ -875,12 +893,7 @@ export async function regenerateFDA(service, fdaId, servicePath) {
       servicePath,
       status: { $in: ['completed', 'failed'] },
     },
-    {
-      $set: {
-        status: 'fetching',
-        progress: 0,
-      },
-    },
+    update,
     { returnDocument: 'before' },
   );
 
@@ -910,7 +923,7 @@ export async function regenerateFDA(service, fdaId, servicePath) {
     );
   }
 
-  return previous;
+  return { ...previous, ...setFields };
 }
 
 export async function storeDA(
