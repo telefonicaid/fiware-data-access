@@ -1543,7 +1543,7 @@ describe('db utils', () => {
         duckdbLimitBytes: '10',
         duckdbUsedBytes: '0',
         duckdbTempBytes: '3',
-        duckdbTopTags: 'F=6, E=5, D=4, C=3, B=2',
+        duckdbTopTags: '[F=6, E=5, D=4, C=3, B=2]',
       });
       expect(
         formatDuckDBMemory({
@@ -1556,7 +1556,7 @@ describe('db utils', () => {
         duckdbLimitBytes: undefined,
         duckdbUsedBytes: '0',
         duckdbTempBytes: '0',
-        duckdbTopTags: 'none',
+        duckdbTopTags: '[]',
       });
     });
 
@@ -1594,7 +1594,7 @@ describe('db utils', () => {
           duckdbLimitBytes: String(Math.round(953.6 * 1024 ** 2)),
           duckdbUsedBytes: '400',
           duckdbTempBytes: '50',
-          duckdbTags: 'COLUMN_DATA=300, EXTENSION=100',
+          duckdbTags: '[COLUMN_DATA=300, EXTENSION=100]',
         },
         'DuckDB memory before Parquet export',
       );
@@ -1620,7 +1620,7 @@ describe('db utils', () => {
         expect(loggerMock.info).toHaveBeenCalledWith(
           expect.objectContaining({
             duckdbLimitBytes: expected,
-            duckdbTags: 'none',
+            duckdbTags: '[]',
           }),
           'DuckDB memory before Parquet export',
         );
@@ -1699,7 +1699,7 @@ describe('db utils', () => {
             duckdbLimitBytes: '1024',
             duckdbPeakUsedBytes: '900',
             duckdbPeakTempBytes: '10',
-            duckdbPeakTags: 'EXTENSION=900',
+            duckdbPeakTags: '[EXTENSION=900]',
           },
           'DuckDB memory peak during Parquet export',
         );
@@ -1745,7 +1745,7 @@ describe('db utils', () => {
           expect.objectContaining({
             resultPath: 'b/t',
             duckdbPeakUsedBytes: '700',
-            duckdbPeakTags: 'EXTENSION=700',
+            duckdbPeakTags: '[EXTENSION=700]',
           }),
           'DuckDB memory peak during failed Parquet export',
         );

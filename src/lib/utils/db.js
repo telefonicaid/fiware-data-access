@@ -159,7 +159,7 @@ function formatDuckDBTags(byTag, limit = Infinity) {
     .slice(0, limit)
     .map(([tag, bytes]) => `${tag}=${bytes}`)
     .join(', ');
-  return tags || 'none';
+  return `[${tags}]`;
 }
 
 function toLogValue(value) {

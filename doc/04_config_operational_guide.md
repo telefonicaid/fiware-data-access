@@ -566,7 +566,7 @@ heartbeat carries no DuckDB fields.
 Example:
 
 ```
-time=2026-08-11T08:36:01.785Z | lvl=INFO | corr=n/a | trans=n/a | op=n/a | ver=1.2.0-next | comp=Fda | srv=n/a | subsrv=n/a | duckdbLimitBytes=1000341504 | duckdbUsedBytes=881819648 | duckdbTempBytes=0 | duckdbTopTags=COLUMN_DATA=712834048, ALLOCATOR=168985600 | msg=[Fetcher] Heartbeat: alive
+time=2026-08-11T08:36:01.785Z | lvl=INFO | corr=n/a | trans=n/a | op=n/a | ver=1.2.0-next | comp=Fda | srv=n/a | subsrv=n/a | duckdbLimitBytes=1000341504 | duckdbUsedBytes=881819648 | duckdbTempBytes=0 | duckdbTopTags=[COLUMN_DATA=712834048, ALLOCATOR=168985600] | msg=[Fetcher] Heartbeat: alive
 ```
 
 The heartbeat is enabled when the configured interval is greater than `0`. Set it to `0` (or a negative value) to
@@ -581,7 +581,8 @@ memory while that export runs and releases it as soon as it ends or fails, so th
 
 -   Before the export, an `INFO` dump of `duckdb_memory()`: `msg=DuckDB memory before Parquet export` with `resultPath`,
     `duckdbLimitBytes`, `duckdbUsedBytes`, `duckdbTempBytes` and `duckdbTags` (every allocation tag in use, largest
-    first). It is usually close to `0`; a higher value means another export was running at the same time.
+    first, as `[TAG=bytes, ...]`). It is usually close to `0`; a higher value means another export was running at the
+    same time.
 -   While the export runs, `duckdb_memory()` is sampled every 250 ms from a separate connection. When it ends, the
     highest sample is logged with `duckdbSamples`, `duckdbFailedSamples`, `duckdbLimitBytes`, `duckdbPeakUsedBytes`,
     `duckdbPeakTempBytes` and `duckdbPeakTags`: at `INFO` as `msg=DuckDB memory peak during Parquet export` when it
@@ -591,7 +592,7 @@ memory while that export runs and releases it as soon as it ends or fails, so th
 Example of a refresh that fails with a 256 MB limit (3 million rows partitioned by day):
 
 ```
-... | lvl=WARN | corr=job-6ad62f836e78b23f45af0754 | ... | op=refresh-fda | ... | resultPath=trantor/tmp/public/mem_demo.parquet | duckdbSamples=7 | duckdbFailedSamples=0 | duckdbLimitBytes=255957402 | duckdbPeakUsedBytes=252164170 | duckdbPeakTempBytes=30015488 | duckdbPeakTags=EXTENSION=160432128, COLUMN_DATA=57409536, CSV_READER=32002048, ALLOCATOR=2320384 | msg=DuckDB memory peak during failed Parquet export
+... | lvl=WARN | corr=job-6ad62f836e78b23f45af0754 | ... | op=refresh-fda | ... | resultPath=trantor/tmp/public/mem_demo.parquet | duckdbSamples=7 | duckdbFailedSamples=0 | duckdbLimitBytes=255957402 | duckdbPeakUsedBytes=252164170 | duckdbPeakTempBytes=30015488 | duckdbPeakTags=[EXTENSION=160432128, COLUMN_DATA=57409536, CSV_READER=32002048, ALLOCATOR=2320384] | msg=DuckDB memory peak during failed Parquet export
 ```
 
 How to read it:
