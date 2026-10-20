@@ -134,3 +134,9 @@ export const STORAGE_QUOTA_PATTERN =
 export const DAY_MS = 24 * 60 * 60 * 1000;
 export const WEEK_MS = 7 * DAY_MS;
 export const RANGE_MARGIN_MS = DAY_MS;
+
+// DuckDB memory observability
+export const DUCKDB_MEMORY_SNAPSHOT_TTL_MS = 5000;
+export const DUCKDB_MEMORY_TOP_TAGS = 5;
+export const DEFAULT_DUCKDB_MEMORY_SAMPLE_INTERVAL_MS = 250;
+export const DUCKDB_SIZE_PATTERN = /^([\d.]+)\s*(?:([KMGT])(i?)B|B|bytes)?$/i;

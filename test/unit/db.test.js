@@ -67,7 +67,11 @@ function createDuckContext({ withDisconnect = true } = {}) {
 
 const recordAccessMock = jest.fn();
 
-async function loadDbModule({ retrieveDAResult, duckContext } = {}) {
+async function loadDbModule({
+  retrieveDAResult,
+  duckContext,
+  duckdbConfig,
+} = {}) {
   jest.resetModules();
 
   retrieveDAMock.mockReset().mockResolvedValue(
@@ -115,6 +119,7 @@ async function loadDbModule({ retrieveDAResult, duckContext } = {}) {
         pass: 'p',
         maxPoolSize: 2,
       },
+      duckdb: duckdbConfig,
     },
   }));
 
@@ -1446,9 +1451,18 @@ describe('db utils', () => {
 
   describe('DuckDB memory snapshot', () => {
     function mockMemoryQueries(conn, { limit = '953.6 MiB', rows = [] } = {}) {
-      conn.runAndReadAll = jest.fn(async (sql) => ({
+      const tagRows = rows.length
+        ? rows
+        : [
+            {
+              tag: 'BASE_TABLE',
+              memory_usage_bytes: 0n,
+              temporary_storage_bytes: 0n,
+            },
+          ];
+      conn.runAndReadAll = jest.fn(async () => ({
         getRowObjects: () =>
-          sql.includes('current_setting') ? [{ limit_value: limit }] : rows,
+          tagRows.map((row) => ({ ...row, limit_value: limit })),
       }));
     }
 
@@ -1651,13 +1665,10 @@ describe('db utils', () => {
     });
 
     describe('memory peak during the COPY', () => {
-      async function loadWithSampledUsage(usage) {
+      async function loadWithSampledUsage(usage, duckdbConfig) {
         const context = createDuckContext();
-        const mod = await loadDbModule({ duckContext: context });
-        context.runtimeConn.runAndReadAll = jest.fn(async (sql) => {
-          if (sql.includes('current_setting')) {
-            return { getRowObjects: () => [{ limit_value: '1.0 KiB' }] };
-          }
+        const mod = await loadDbModule({ duckContext: context, duckdbConfig });
+        context.runtimeConn.runAndReadAll = jest.fn(async () => {
           const next = usage.shift() ?? 0n;
           if (next instanceof Error) {
             throw next;
@@ -1668,6 +1679,7 @@ describe('db utils', () => {
                 tag: 'EXTENSION',
                 memory_usage_bytes: next,
                 temporary_storage_bytes: 10n,
+                limit_value: '1.0 KiB',
               },
             ],
           };
@@ -1723,6 +1735,24 @@ describe('db utils', () => {
             duckdbFailedSamples: '1',
             duckdbPeakUsedBytes: '600',
           }),
+          'DuckDB memory peak during Parquet export',
+        );
+      });
+
+      test('does not sample when FDA_DUCKDB_MEMORY_SAMPLE_INTERVAL_MS is 0', async () => {
+        const { copyQueryToParquet } = await loadWithSampledUsage([900n], {
+          memorySampleIntervalMs: 0,
+        });
+        const conn = {
+          run: jest.fn(
+            () => new Promise((resolve) => setTimeout(resolve, 300)),
+          ),
+        };
+
+        await copyQueryToParquet(conn, 'SELECT 1', 'b/t', 'ts', 'none', false);
+
+        expect(loggerMock.info).not.toHaveBeenCalledWith(
+          expect.anything(),
           'DuckDB memory peak during Parquet export',
         );
       });

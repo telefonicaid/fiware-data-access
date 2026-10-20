@@ -32,6 +32,10 @@ import {
   NO_PARQUET_FILES_MATCH_ERROR,
   UNKNOWN_COLUMN_TYPE,
   JSON_INTEGER_COLUMN_TYPES,
+  DUCKDB_MEMORY_SNAPSHOT_TTL_MS,
+  DUCKDB_MEMORY_TOP_TAGS,
+  DEFAULT_DUCKDB_MEMORY_SAMPLE_INTERVAL_MS,
+  DUCKDB_SIZE_PATTERN,
 } from '../constants.js';
 import { convertRefreshIntervalToMs, toJsonInteger } from './utils.js';
 import { getS3Client, listObjects } from './aws.js';
@@ -43,10 +47,6 @@ let instancePromise = null;
 let instanceReady = false;
 let memorySnapshot = null;
 let memorySnapshotRequest = null;
-
-const DUCKDB_MEMORY_SNAPSHOT_TTL_MS = 5000;
-const DUCKDB_TOP_TAGS = 5;
-const DUCKDB_MEMORY_SAMPLE_INTERVAL_MS = 250;
 
 const logger = getBasicLogger();
 
@@ -111,9 +111,7 @@ async function logDuckDBConfig(conn) {
 }
 
 function parseDuckDBSize(value) {
-  const match = /^([\d.]+)\s*(?:([KMGT])(i?)B|B|bytes)?$/i.exec(
-    String(value ?? '').trim(),
-  );
+  const match = DUCKDB_SIZE_PATTERN.exec(String(value ?? '').trim());
   if (!match) {
     return null;
   }
@@ -123,20 +121,17 @@ function parseDuckDBSize(value) {
 }
 
 async function readDuckDBMemory(conn) {
-  const limitReader = await conn.runAndReadAll(
-    `SELECT current_setting('memory_limit') AS limit_value`,
-  );
-  const [limitRow] = limitReader.getRowObjects();
-
-  const memoryReader = await conn.runAndReadAll(`
-    SELECT tag, memory_usage_bytes, temporary_storage_bytes
+  const reader = await conn.runAndReadAll(`
+    SELECT tag, memory_usage_bytes, temporary_storage_bytes,
+      current_setting('memory_limit') AS limit_value
     FROM duckdb_memory()
   `);
+  const rows = reader.getRowObjects();
 
   let usedBytes = 0;
   let tempBytes = 0;
   const byTag = {};
-  for (const row of memoryReader.getRowObjects()) {
+  for (const row of rows) {
     const used = Number(row.memory_usage_bytes ?? 0);
     usedBytes += used;
     tempBytes += Number(row.temporary_storage_bytes ?? 0);
@@ -146,7 +141,7 @@ async function readDuckDBMemory(conn) {
   }
 
   return {
-    limitBytes: parseDuckDBSize(limitRow?.limit_value),
+    limitBytes: parseDuckDBSize(rows[0]?.limit_value),
     usedBytes,
     tempBytes,
     byTag,
@@ -175,7 +170,7 @@ export function formatDuckDBMemory(snapshot) {
     duckdbLimitBytes: toLogValue(snapshot.limitBytes),
     duckdbUsedBytes: toLogValue(snapshot.usedBytes),
     duckdbTempBytes: toLogValue(snapshot.tempBytes),
-    duckdbTopTags: formatDuckDBTags(snapshot.byTag, DUCKDB_TOP_TAGS),
+    duckdbTopTags: formatDuckDBTags(snapshot.byTag, DUCKDB_MEMORY_TOP_TAGS),
   };
 }
 
@@ -235,6 +230,10 @@ async function logDuckDBMemoryDump(conn, message, fields = {}) {
 }
 
 function startDuckDBMemorySampler() {
+  const intervalMs = Number(
+    config.duckdb?.memorySampleIntervalMs ??
+      DEFAULT_DUCKDB_MEMORY_SAMPLE_INTERVAL_MS,
+  );
   const peak = {
     samples: 0,
     failedSamples: 0,
@@ -248,7 +247,7 @@ function startDuckDBMemorySampler() {
 
   const pause = () =>
     new Promise((resolve) => {
-      const timer = setTimeout(resolve, DUCKDB_MEMORY_SAMPLE_INTERVAL_MS);
+      const timer = setTimeout(resolve, intervalMs);
       wake = () => {
         clearTimeout(timer);
         resolve();
@@ -256,7 +255,7 @@ function startDuckDBMemorySampler() {
     });
 
   const loop = (async () => {
-    if (!instanceReady) {
+    if (!instanceReady || !(intervalMs > 0)) {
       return;
     }
     const conn = await getDBConnection();

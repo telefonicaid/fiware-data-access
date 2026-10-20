@@ -63,16 +63,16 @@ Variables related to the environment of the application:
 
 Variables that define which components of the application are executed by this instance:
 
-| Variable                            | Optional | Type    | Description                                                                                                                                                          |
-| ----------------------------------- | -------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `FDA_ROLE_APISERVER`                | ✓        | boolean | If `true`, the instance runs the API server to handle HTTP requests. Default `true`.                                                                                 |
-| `FDA_ROLE_FETCHER`                  | ✓        | boolean | If `true`, the instance runs the fetcher responsible for regenerating and updating FDAs. Default `true`.                                                             |
-| `FDA_ROLE_SYNCQUERIES`              | ✓        | boolean | If `true`, the API instance accepts creation of fresh queries, `GET /{visibility}/fdas/{fdaId}/data` and executes FDAs directly against PostgreSQL. Default `false`. |
-| `FDA_MAX_CONCURRENT_FRESH_QUERIES`  | ✓        | number  | Maximum number of concurrent direct fresh FDA queries accepted by the API instance. Additional requests return `429 TooManyFreshQueries`. Default `5`.               |
-| `FDA_CREATE_DEFAULT_DATA_ACCESS`    | ✓        | boolean | If `true`, FDA creation also creates a built-in `defaultDataAccess` DA unless the request overrides it. Default `true`.                                              |
-| `FDA_FETCHER_HEARTBEAT_INTERVAL_MS` | ✓        | number  | Interval in milliseconds between Fetcher heartbeat logs. Default `60000`. Set to `0` to disable the heartbeat.                                                       |
-| `FDA_MAX_CONCURRENT_REFRESH_JOBS`   | ✓        | number  | Maximum number of concurrent refresh jobs done by fetcher. Memory consuption is incresed when concurrent refresh jobs grows. Default `1`.                            |
-| `FDA_ACCESS_FLUSH_INTERVAL_MS`      | ✓        | integer | Interval in milliseconds between MongoDB flushes of buffered FDA/DA access counters. Default `10000`; valid range is `1` to `2147483647`.                            |
+| Variable                            | Optional | Type    | Description                                                                                                                                                                     |
+| ----------------------------------- | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FDA_ROLE_APISERVER`                | ✓        | boolean | If `true`, the instance runs the API server to handle HTTP requests. Default `true`.                                                                                            |
+| `FDA_ROLE_FETCHER`                  | ✓        | boolean | If `true`, the instance runs the fetcher responsible for regenerating and updating FDAs. Default `true`.                                                                        |
+| `FDA_ROLE_SYNCQUERIES`              | ✓        | boolean | If `true`, the API instance accepts creation of fresh queries, `GET /{visibility}/fdas/{fdaId}/data` and executes FDAs directly against PostgreSQL. Default `false`.            |
+| `FDA_MAX_CONCURRENT_FRESH_QUERIES`  | ✓        | number  | Maximum number of concurrent direct fresh FDA queries accepted by the API instance. Additional requests return `429 TooManyFreshQueries`. Default `5`.                          |
+| `FDA_CREATE_DEFAULT_DATA_ACCESS`    | ✓        | boolean | If `true`, FDA creation also creates a built-in `defaultDataAccess` DA unless the request overrides it. Default `true`.                                                         |
+| `FDA_FETCHER_HEARTBEAT_INTERVAL_MS` | ✓        | number  | Interval in milliseconds between Fetcher heartbeat logs. Each heartbeat is logged at `INFO` with the DuckDB memory state. Default `60000`. Set to `0` to disable the heartbeat. |
+| `FDA_MAX_CONCURRENT_REFRESH_JOBS`   | ✓        | number  | Maximum number of concurrent refresh jobs done by fetcher. Memory consuption is incresed when concurrent refresh jobs grows. Default `1`.                                       |
+| `FDA_ACCESS_FLUSH_INTERVAL_MS`      | ✓        | integer | Interval in milliseconds between MongoDB flushes of buffered FDA/DA access counters. Default `10000`; valid range is `1` to `2147483647`.                                       |
 
 > Note: By default, an instance runs both roles (API server and Fetcher). You can disable one to separate
 > responsibilities.
@@ -142,14 +142,15 @@ Variabes related to the object bucket-based storage system:
 
 Configuration variables for DuckDB runtime and temporary storage:
 
-| Variable                              | Optional | Type    | Description                                                                                                                                                                                                                                 |
-| ------------------------------------- | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `FDA_DUCKDB_DIR`                      | ✓        | string  | Directory used to store the DuckDB database file. Default `/tmp/duckdb`.                                                                                                                                                                    |
-| `FDA_DUCKDB_MEMORY_LIMIT`             | ✓        | string  | DuckDB `memory_limit` configuration (e.g., `1.0GB`). Default `1.0GB`.                                                                                                                                                                       |
-| `FDA_DUCKDB_TEMP_DIR`                 | ✓        | string  | Directory used by DuckDB for temporary files. Default `/tmp/duckdb/temp`.                                                                                                                                                                   |
-| `FDA_DUCKDB_MAX_TEMP_SIZE`            | ✓        | string  | Maximum size allowed for DuckDB temp directory (e.g., `10GB`). Default `10GB`.                                                                                                                                                              |
-| `FDA_DUCKDB_MAX_THREADS`              | ✓        | number  | Maximum number of threads DuckDB can use to execute queries in parallel. Lower values reduce memory consumption and resource contention, while higher values may improve performance for complex analytical queries. Default `2`.           |
-| `FDA_DUCKDB_PRESERVE_INSERTION_ORDER` | ✓        | boolean | Controls whether DuckDB preserves the original row insertion order during query execution. Setting it to `false` can reduce memory usage and improve performance for analytical workloads where row order is not important. Default `true`. |
+| Variable                               | Optional | Type    | Description                                                                                                                                                                                                                                 |
+| -------------------------------------- | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FDA_DUCKDB_DIR`                       | ✓        | string  | Directory used to store the DuckDB database file. Default `/tmp/duckdb`.                                                                                                                                                                    |
+| `FDA_DUCKDB_MEMORY_LIMIT`              | ✓        | string  | DuckDB `memory_limit` configuration (e.g., `1.0GB`). Default `1.0GB`.                                                                                                                                                                       |
+| `FDA_DUCKDB_TEMP_DIR`                  | ✓        | string  | Directory used by DuckDB for temporary files. Default `/tmp/duckdb/temp`.                                                                                                                                                                   |
+| `FDA_DUCKDB_MAX_TEMP_SIZE`             | ✓        | string  | Maximum size allowed for DuckDB temp directory (e.g., `10GB`). Default `10GB`.                                                                                                                                                              |
+| `FDA_DUCKDB_MAX_THREADS`               | ✓        | number  | Maximum number of threads DuckDB can use to execute queries in parallel. Lower values reduce memory consumption and resource contention, while higher values may improve performance for complex analytical queries. Default `2`.           |
+| `FDA_DUCKDB_PRESERVE_INSERTION_ORDER`  | ✓        | boolean | Controls whether DuckDB preserves the original row insertion order during query execution. Setting it to `false` can reduce memory usage and improve performance for analytical workloads where row order is not important. Default `true`. |
+| `FDA_DUCKDB_MEMORY_SAMPLE_INTERVAL_MS` | ✓        | number  | Interval in milliseconds at which `duckdb_memory()` is sampled while a Parquet export runs, to log its memory peak. Lower values catch shorter peaks at the cost of more queries. Set to `0` to disable the peak logs. Default `250`.       |
 
 ### MongoDB
 
@@ -583,11 +584,12 @@ memory while that export runs and releases it as soon as it ends or fails, so th
     `duckdbLimitBytes`, `duckdbUsedBytes`, `duckdbTempBytes` and `duckdbTags` (every allocation tag in use, largest
     first, as `[TAG=bytes, ...]`). It is usually close to `0`; a higher value means another export was running at the
     same time.
--   While the export runs, `duckdb_memory()` is sampled every 250 ms from a separate connection. When it ends, the
-    highest sample is logged with `duckdbSamples`, `duckdbFailedSamples`, `duckdbLimitBytes`, `duckdbPeakUsedBytes`,
-    `duckdbPeakTempBytes` and `duckdbPeakTags`: at `INFO` as `msg=DuckDB memory peak during Parquet export` when it
-    succeeds, and at `WARN` as `msg=DuckDB memory peak during failed Parquet export` when it fails, just before the
-    `Job failed` error and under the same `corr=job-...`.
+-   While the export runs, `duckdb_memory()` is sampled from a separate connection every
+    `FDA_DUCKDB_MEMORY_SAMPLE_INTERVAL_MS` (default 250 ms, `0` disables it). When it ends, the highest sample is logged
+    with `duckdbSamples`, `duckdbFailedSamples`, `duckdbLimitBytes`, `duckdbPeakUsedBytes`, `duckdbPeakTempBytes` and
+    `duckdbPeakTags`: at `INFO` as `msg=DuckDB memory peak during Parquet export` when it succeeds, and at `WARN` as
+    `msg=DuckDB memory peak during failed Parquet export` when it fails, just before the `Job failed` error and under
+    the same `corr=job-...`.
 
 Example of a refresh that fails with a 256 MB limit (3 million rows partitioned by day):
 
