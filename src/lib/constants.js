@@ -78,6 +78,17 @@ export const VALID_WINDOW_FETCH_SIZES = [
   'year',
 ];
 
+// Fixed-length duration units
+export const DURATION_UNITS_MS = Object.freeze({
+  second: 1000,
+  minute: 60 * 1000,
+  hour: 60 * 60 * 1000,
+  day: 24 * 60 * 60 * 1000,
+  week: 7 * 24 * 60 * 60 * 1000,
+  month: 30 * 24 * 60 * 60 * 1000,
+  year: 365 * 24 * 60 * 60 * 1000,
+});
+
 // Storage partitions
 export const PARTITION_TYPES = ['day', 'week', 'month', 'year', 'none'];
 
@@ -118,3 +129,14 @@ export const MAX_KEYS_PER_REQUEST = 1000;
 // Pattern to detect storage quota errors from MinIO S3 server responses
 export const STORAGE_QUOTA_PATTERN =
   /XMinioAdminBucketQuotaExceeded|bucket quota exceeded/i;
+
+// Time constants for partition pruning
+export const DAY_MS = 24 * 60 * 60 * 1000;
+export const WEEK_MS = 7 * DAY_MS;
+export const RANGE_MARGIN_MS = DAY_MS;
+
+// DuckDB memory observability
+export const DUCKDB_MEMORY_SNAPSHOT_TTL_MS = 5000;
+export const DUCKDB_MEMORY_TOP_TAGS = 5;
+export const DEFAULT_DUCKDB_MEMORY_SAMPLE_INTERVAL_MS = 250;
+export const DUCKDB_SIZE_PATTERN = /^([\d.]+)\s*(?:([KMGT])(i?)B|B|bytes)?$/i;

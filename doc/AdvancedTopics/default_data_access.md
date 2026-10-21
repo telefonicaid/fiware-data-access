@@ -123,6 +123,15 @@ Current generated predicate shape:
 ($finish IS NULL OR CAST(timeColumn AS TIMESTAMP) <= CAST($finish AS TIMESTAMP))
 ```
 
+The generated DA also declares these two params as its [time range](../03_api.md#time-range):
+
+```json
+"timeRange": { "start": "start", "finish": "finish" }
+```
+
+So, in a partitioned FDA, a request with `start` and/or `finish` reads only the partitions overlapping that range (see
+[Partition pruning](./sliding_windows_and_partitioning.md#partition-pruning)).
+
 Important note about temporal columns:
 
 -   If an FDA includes a temporal column that is not declared as timeColumn, that column is treated as a regular

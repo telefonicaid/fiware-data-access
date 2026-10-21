@@ -158,4 +158,112 @@ describe('Accounting persistence', () => {
       ),
     ).toMatchObject({ bytes: 10, queries: 5 });
   });
+
+  test('admits only one of twenty concurrent downloads with one remaining slot', async () => {
+    const fda = {
+      ...scope,
+      fdaId: 'limited',
+      visibility: 'public',
+      downloadPolicy: { maxDownloads: 5 },
+      downloadsUsed: 4,
+    };
+    await client.db().collection('fdas').insertOne(fda);
+    const results = await Promise.allSettled(
+      Array.from({ length: 20 }, () => mongo.claimFDADownload(fda)),
+    );
+    expect(
+      results.filter((result) => result.status === 'fulfilled'),
+    ).toHaveLength(1);
+    const rejected = results.filter((result) => result.status === 'rejected');
+    expect(rejected).toHaveLength(19);
+    for (const result of rejected) {
+      expect(result.reason).toMatchObject({
+        status: 410,
+        type: 'DownloadLimitReached',
+      });
+    }
+    const stored = await client
+      .db()
+      .collection('fdas')
+      .findOne({ ...scope, fdaId: 'limited' });
+    expect(stored.downloadsUsed).toBe(5);
+    await mongo.updateFDAStatus({
+      ...scope,
+      fdaId: 'limited',
+      status: 'completed',
+      progress: 100,
+    });
+    await expect(mongo.claimFDADownload(fda)).rejects.toMatchObject({
+      type: 'DownloadLimitReached',
+    });
+    expect(
+      (
+        await client
+          .db()
+          .collection('fdas')
+          .findOne({ ...scope, fdaId: 'limited' })
+      ).downloadPolicy,
+    ).toEqual(fda.downloadPolicy);
+  });
+
+  test('enforces database-time expiration even with unlimited downloads', async () => {
+    const fda = {
+      ...scope,
+      fdaId: 'expired',
+      visibility: 'public',
+      downloadPolicy: { expirationDate: new Date(0) },
+      downloadsUsed: 0,
+    };
+    await client.db().collection('fdas').insertOne(fda);
+    await expect(mongo.claimFDADownload(fda)).rejects.toMatchObject({
+      status: 410,
+      type: 'FDAExpired',
+    });
+    expect(
+      (
+        await client
+          .db()
+          .collection('fdas')
+          .findOne({ ...scope, fdaId: 'expired' })
+      ).downloadsUsed,
+    ).toBe(0);
+  });
+
+  test('keeps identical FDA identifiers in different tenants isolated', async () => {
+    const collection = client.db().collection('fdas');
+    const fda = {
+      ...scope,
+      fdaId: 'isolated',
+      visibility: 'public',
+      downloadPolicy: { maxDownloads: 1 },
+      downloadsUsed: 0,
+    };
+    await collection.insertMany([
+      fda,
+      { ...fda, servicePath: '/b' },
+      { ...fda, service: 'another' },
+    ]);
+    await mongo.claimFDADownload(fda);
+    expect(
+      (await collection.findOne({ ...scope, fdaId: 'isolated' })).downloadsUsed,
+    ).toBe(1);
+    expect(
+      (
+        await collection.findOne({
+          service: scope.service,
+          servicePath: '/b',
+          fdaId: 'isolated',
+        })
+      ).downloadsUsed,
+    ).toBe(0);
+    expect(
+      (
+        await collection.findOne({
+          service: 'another',
+          servicePath: scope.servicePath,
+          fdaId: 'isolated',
+        })
+      ).downloadsUsed,
+    ).toBe(0);
+  });
 });

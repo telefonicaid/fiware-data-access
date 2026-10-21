@@ -40,6 +40,7 @@ function getCdaRequestParams(req) {
 }
 
 async function handleCdaDoQuery(req, res) {
+  res.setHeader('Cache-Control', 'no-store');
   const requestParams = getCdaRequestParams(req);
   const { path, dataAccessId } = requestParams;
 
@@ -117,6 +118,12 @@ async function handleCdaDoQuery(req, res) {
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
+ *       '410':
+ *         description: '`FDAExpired` or `DownloadLimitReached`.'
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.post('/plugin/cda/api/doQuery', handleCdaDoQuery);
 
@@ -147,6 +154,12 @@ router.post('/plugin/cda/api/doQuery', handleCdaDoQuery);
  *         $ref: '#/components/responses/BadRequest'
  *       '404':
  *         description: '`FDANotFound` or `DaNotFound`.'
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '410':
+ *         description: '`FDAExpired` or `DownloadLimitReached`.'
  *         content:
  *           application/json:
  *             schema:

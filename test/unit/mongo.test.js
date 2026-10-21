@@ -98,6 +98,62 @@ describe('mongo utils', () => {
     jest.clearAllMocks();
   });
 
+  test('reserves downloads with an atomic scoped increment and database-time checks', async () => {
+    const { claimFDADownload, collectionMock } = await loadMongoModule();
+    const fda = {
+      service: 'svc',
+      servicePath: '/a',
+      fdaId: 'fda1',
+      visibility: 'public',
+      downloadPolicy: { maxDownloads: 5 },
+    };
+    await claimFDADownload(fda);
+    const [filter, update, options] =
+      collectionMock.findOneAndUpdate.mock.calls[0];
+    expect(filter).toMatchObject({
+      service: 'svc',
+      servicePath: '/a',
+      fdaId: 'fda1',
+      visibility: 'public',
+    });
+    expect(filter.$expr.$and).toHaveLength(2);
+    expect(JSON.stringify(filter.$expr)).toContain('$$NOW');
+    expect(JSON.stringify(filter.$expr)).toContain('$downloadsUsed');
+    expect(update).toEqual({ $inc: { downloadsUsed: 1 } });
+    expect(options).toEqual({ returnDocument: 'after' });
+  });
+
+  test('does not write for unrestricted legacy FDAs', async () => {
+    const { claimFDADownload, collectionMock } = await loadMongoModule();
+    await claimFDADownload({});
+    expect(collectionMock.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    [true, 'FDAExpired'],
+    [false, 'DownloadLimitReached'],
+  ])('denies a failed reservation (expired=%s)', async (expired, type) => {
+    const { claimFDADownload, collectionMock } = await loadMongoModule();
+    collectionMock.findOneAndUpdate.mockResolvedValue(null);
+    collectionMock.aggregate.mockReturnValue({
+      toArray: jest.fn().mockResolvedValue([{ expired }]),
+    });
+    await expect(
+      claimFDADownload({ downloadPolicy: { maxDownloads: 1 } }),
+    ).rejects.toMatchObject({ status: 410, type });
+  });
+
+  test('fails closed when the reservation cannot be persisted', async () => {
+    const { claimFDADownload, collectionMock } = await loadMongoModule();
+    collectionMock.findOneAndUpdate.mockRejectedValue(new Error('offline'));
+    await expect(
+      claimFDADownload({ downloadPolicy: { maxDownloads: 1 } }),
+    ).rejects.toMatchObject({
+      status: 503,
+      type: 'DownloadAuthorizationUnavailable',
+    });
+  });
+
   test('persists each FDA and its DA counters atomically with an idempotent sequence', async () => {
     const { recordFDAAccesses, collectionMock } = await loadMongoModule();
     const lastFetch = new Date('2026-10-01T00:00:00Z');
@@ -270,12 +326,18 @@ describe('mongo utils', () => {
       'default',
       'strict',
       [{ name: 'id', type: 'INTEGER' }],
+      { maxDownloads: 5, expirationDate: new Date('2027-01-01T00:00:00Z') },
     );
 
     expect(collectionMock.insertOne).toHaveBeenCalledWith(
       expect.objectContaining({
         validationMode: 'strict',
         schema: [{ name: 'id', type: 'INTEGER' }],
+        downloadsUsed: 0,
+        downloadPolicy: {
+          maxDownloads: 5,
+          expirationDate: new Date('2027-01-01T00:00:00Z'),
+        },
       }),
     );
   });
@@ -696,6 +758,60 @@ describe('mongo utils', () => {
     );
 
     expect(collectionMock.updateOne).not.toHaveBeenCalled();
+  });
+
+  test('storeDA persists timeRange only when provided', async () => {
+    const { storeDA, collectionMock } = await loadMongoModule();
+
+    await storeDA('svc', 'fdaA', '/sp', 'daA', 'desc', 'SELECT 1', [], {
+      start: 'start',
+    });
+    await storeDA('svc', 'fdaA', '/sp', 'daB', 'desc', 'SELECT 1', []);
+
+    const literalOf = (call, daId) =>
+      call[1][0].$set[`das.${daId}`].$mergeObjects[0].$literal;
+
+    expect(literalOf(collectionMock.updateOne.mock.calls[0], 'daA')).toEqual({
+      description: 'desc',
+      query: 'SELECT 1',
+      params: [],
+      timeRange: { start: 'start' },
+    });
+    expect(literalOf(collectionMock.updateOne.mock.calls[1], 'daB')).toEqual({
+      description: 'desc',
+      query: 'SELECT 1',
+      params: [],
+    });
+  });
+
+  test('updateDA sets or removes timeRange', async () => {
+    const { updateDA, collectionMock } = await loadMongoModule();
+
+    await updateDA('svc', 'fdaA', '/sp', 'daA', undefined, 'SELECT 1', [], {
+      finish: 'finish',
+    });
+    await updateDA(
+      'svc',
+      'fdaA',
+      '/sp',
+      'daA',
+      undefined,
+      'SELECT 1',
+      [],
+      null,
+    );
+
+    expect(collectionMock.updateOne.mock.calls[0][1]).toEqual({
+      $set: {
+        'das.daA.query': 'SELECT 1',
+        'das.daA.params': [],
+        'das.daA.timeRange': { finish: 'finish' },
+      },
+    });
+    expect(collectionMock.updateOne.mock.calls[1][1]).toEqual({
+      $unset: { 'das.daA.timeRange': '' },
+      $set: { 'das.daA.query': 'SELECT 1', 'das.daA.params': [] },
+    });
   });
 
   test('updateDA wraps update errors', async () => {
