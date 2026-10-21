@@ -26,6 +26,7 @@ import Ajv from 'ajv';
 import dotenv from 'dotenv';
 import clone from 'lodash/clone.js';
 import { getBasicLogger } from './utils/logger.js';
+import { DEFAULT_DUCKDB_MEMORY_SAMPLE_INTERVAL_MS } from './constants.js';
 
 dotenv.config();
 const ajvSchema = new Ajv({ useDefaults: true, coerceTypes: true });
@@ -109,6 +110,10 @@ const envVarsSchema = {
     FDA_DUCKDB_PRESERVE_INSERTION_ORDER: {
       type: 'boolean',
       default: true,
+    },
+    FDA_DUCKDB_MEMORY_SAMPLE_INTERVAL_MS: {
+      type: 'number',
+      default: DEFAULT_DUCKDB_MEMORY_SAMPLE_INTERVAL_MS,
     },
     FDA_MAX_CONCURRENT_REFRESH_JOBS: {
       type: 'number',
@@ -226,6 +231,7 @@ export const config = {
     maxTempSize: envVars.FDA_DUCKDB_MAX_TEMP_SIZE,
     maxThreads: envVars.FDA_DUCKDB_MAX_THREADS,
     preserveInsertionOrder: envVars.FDA_DUCKDB_PRESERVE_INSERTION_ORDER,
+    memorySampleIntervalMs: envVars.FDA_DUCKDB_MEMORY_SAMPLE_INTERVAL_MS,
   },
   mongo: {
     uri: envVars.FDA_MONGO_URI,

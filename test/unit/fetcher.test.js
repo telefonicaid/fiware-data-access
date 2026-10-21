@@ -22,7 +22,7 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
-import { describe, expect, jest, test } from '@jest/globals';
+import { afterEach, describe, expect, jest, test } from '@jest/globals';
 
 const agendaMock = {
   define: jest.fn(),
@@ -45,6 +45,10 @@ const childLoggerMock = {
 };
 const runWithLoggerMock = jest.fn(async (logger, fn) => fn());
 const cleanPartitionMock = jest.fn();
+const getDuckDBMemorySnapshotMock = jest.fn().mockResolvedValue(null);
+const formatDuckDBMemoryMock = jest.fn((snapshot) =>
+  snapshot ? { duckdbUsedBytes: snapshot.usedBytes } : {},
+);
 
 async function loadFetcherModule() {
   jest.resetModules();
@@ -81,6 +85,11 @@ async function loadFetcherModule() {
     runWithLogger: runWithLoggerMock,
   }));
 
+  await jest.unstable_mockModule('../../src/lib/utils/db.js', () => ({
+    getDuckDBMemorySnapshot: getDuckDBMemorySnapshotMock,
+    formatDuckDBMemory: formatDuckDBMemoryMock,
+  }));
+
   return import('../../src/fetcher.js');
 }
 
@@ -95,6 +104,47 @@ describe('fetcher', () => {
 
     return call[1];
   }
+
+  describe('heartbeat', () => {
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    test('logs DuckDB memory at info level on every interval', async () => {
+      const { startFetcher } = await loadFetcherModule();
+      const { config } = await import('../../src/lib/fdaConfig.js');
+      getDuckDBMemorySnapshotMock.mockResolvedValue({
+        usedBytes: 512,
+        limitBytes: 1024,
+        tempBytes: 0,
+        byTag: {},
+      });
+
+      jest.useFakeTimers();
+      await startFetcher();
+      await jest.advanceTimersByTimeAsync(config.fetcher.heartbeatIntervalMs);
+
+      expect(loggerMock.info).toHaveBeenCalledWith(
+        { duckdbUsedBytes: 512 },
+        '[Fetcher] Heartbeat: alive',
+      );
+    });
+
+    test('still logs the heartbeat when DuckDB is not initialised', async () => {
+      const { startFetcher } = await loadFetcherModule();
+      const { config } = await import('../../src/lib/fdaConfig.js');
+      getDuckDBMemorySnapshotMock.mockResolvedValue(null);
+
+      jest.useFakeTimers();
+      await startFetcher();
+      await jest.advanceTimersByTimeAsync(config.fetcher.heartbeatIntervalMs);
+
+      expect(loggerMock.info).toHaveBeenCalledWith(
+        {},
+        '[Fetcher] Heartbeat: alive',
+      );
+    });
+  });
 
   test('startFetcher registers refresh job and starts agenda', async () => {
     const { startFetcher } = await loadFetcherModule();

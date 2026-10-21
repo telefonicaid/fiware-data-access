@@ -335,6 +335,10 @@ async function loadIndexModule({
       mongoMocks.getOperationalCollectionsSnapshot,
   }));
 
+  await jest.unstable_mockModule('../../src/lib/utils/db.js', () => ({
+    getDuckDBMemorySnapshot: jest.fn().mockResolvedValue(null),
+  }));
+
   await jest.unstable_mockModule('../../src/lib/utils/aws.js', () => ({
     destroyS3Client: awsMocks.destroyS3Client,
   }));
