@@ -69,7 +69,20 @@ export const VALID_VISIBILITIES = ['public', 'private'];
 export const VALID_VISIBILITIES_SET = new Set(VALID_VISIBILITIES);
 
 // Refresh policy / fresh window fetch sizes
-export const VALID_REFRESH_POLICY_TYPES = ['none', 'interval', 'window'];
+export const VALID_REFRESH_POLICY_TYPES = [
+  'none',
+  'interval',
+  'window',
+  'onDemand',
+];
+
+export const FDA_REFRESH_IN_PROGRESS_STATUSES = [
+  'pending',
+  'fetching',
+  'transforming',
+  'uploading',
+];
+
 export const VALID_WINDOW_FETCH_SIZES = [
   'hour',
   'day',

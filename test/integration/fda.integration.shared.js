@@ -61,6 +61,7 @@ import { registerUploadFdasIntegrationTests } from './suites/uploadFdas.integrat
 import { registerStorageCleanupIntegrationTests } from './suites/storageCleanup.integration.tests.js';
 import { registerStorageQuotaIntegrationTests } from './suites/storageQuota.integration.tests.js';
 import { registerFdaAccoutingIntegrationTests } from './suites/fdaAccounting.integration.tests.js';
+import { registerLazyFdasIntegrationTests } from './suites/lazyFdas.integration.tests.js';
 import {
   httpReq,
   httpFormReq,
@@ -77,6 +78,8 @@ import {
 const { Client } = pg;
 
 jest.setTimeout(240_000);
+
+const ON_DEMAND_WAIT_TIMEOUT_MS = 8000;
 
 export const EXECUTION_MODES = Object.freeze({
   COMBINED: 'combined',
@@ -290,6 +293,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
         FDA_DUCKDB_DIR: duckdbDir,
         FDA_DUCKDB_TEMP_DIR: '${duckdbDir}/temp',
         FDA_MAX_CONCURRENT_REFRESH_JOBS: '1',
+        FDA_ON_DEMAND_WAIT_TIMEOUT_MS: String(ON_DEMAND_WAIT_TIMEOUT_MS),
         ...overrides,
       };
     }
@@ -674,6 +678,17 @@ export function runFDAIntegrationSuite({ mode, label }) {
       service,
       visibility,
       httpReq,
+    });
+
+    registerLazyFdasIntegrationTests({
+      getBaseUrl: () => baseUrl,
+      getMongoUri: () => mongoUri,
+      getPgHost: () => pgHost,
+      getPgPort: () => pgPort,
+      service,
+      visibility,
+      httpReq,
+      onDemandWaitTimeoutMs: ON_DEMAND_WAIT_TIMEOUT_MS,
     });
   });
 }

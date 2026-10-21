@@ -54,6 +54,12 @@ const router = express.Router();
  *       execution is blocked until the FDA's first successful fetch completes (`409 FDAUnavailable`); after
  *       that, execution is allowed even while a later regeneration is in progress (the last available snapshot
  *       is used).
+
+
+ *       For `lazy` FDAs and FDAs with an `onDemand` refresh policy, a query that finds no data (or, for
+ *       `onDemand`, data older than `maxAge`) triggers the fetch and waits for it up to
+ *       `FDA_ON_DEMAND_WAIT_TIMEOUT_MS`. Concurrent queries share a single fetch. If the wait times out the
+ *       query returns `409 FDAUnavailable`; if the fetch fails it returns `503 FDAMaterializationFailed`.
  *
  *
  *       Supports two mutually exclusive request styles, selected by which parameters are present: **header-style**
@@ -92,7 +98,15 @@ const router = express.Router();
  *       '406':
  *         $ref: '#/components/responses/NotAcceptable'
  *       '409':
- *         description: '`FDAUnavailable` (first fetch not completed) or `RequestStyleConflict` (mixed request styles).'
+ *         description: >
+ *           `FDAUnavailable` (first fetch not completed, or on-demand fetch still running after the wait timeout)
+ *           or `RequestStyleConflict` (mixed request styles).
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '503':
+ *         description: '`FDAMaterializationFailed`: the on-demand fetch of a lazy or `onDemand` FDA failed.'
  *         content:
  *           application/json:
  *             schema:

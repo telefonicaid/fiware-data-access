@@ -30,6 +30,7 @@ import {
   DEFAULT_DATASOURCE_ID,
   ALLOWED_MONGO_AGGREGATION_STAGES,
   NESTED_SUBPIPELINE_MONGO_STAGES,
+  FDA_REFRESH_IN_PROGRESS_STATUSES,
 } from '../constants.js';
 import { getMongoDeclaredColumns } from './mongoQuery.js';
 import { USAGE_SUM_FIELDS } from './usage.js';
@@ -562,10 +563,11 @@ export async function createFDAMongo(
   validationMode = 'strict',
   schema = null,
   downloadPolicy = null,
+  lazy = false,
 ) {
   logger.debug({ fdaId, description }, '[DEBUG]: createFDA');
   const fdasCollection = await getCollection();
-  const initialStatus = cached ? 'fetching' : 'completed';
+  const initialStatus = resolveInitialStatus(cached, lazy);
   const initialProgress = cached ? 0 : 100;
   const createdAt = new Date();
   try {
@@ -592,6 +594,7 @@ export async function createFDAMongo(
       validationMode,
       ...(schema && { schema }),
       ...(downloadPolicy && { downloadPolicy, downloadsUsed: 0 }),
+      ...(lazy && { lazy }),
     });
   } catch (e) {
     if (e.code === 11000) {
@@ -608,6 +611,14 @@ export async function createFDAMongo(
       );
     }
   }
+}
+
+function resolveInitialStatus(cached, lazy) {
+  if (!cached) {
+    return 'completed';
+  }
+
+  return lazy ? 'idle' : 'fetching';
 }
 
 export async function claimFDADownload(fda) {
@@ -711,6 +722,7 @@ export async function updateFDAStatus({
           status,
           progress,
           lastFetch: new Date(),
+          lastFetchStartedAt: '$initFetch',
           lastRefresh: { $literal: lastRefresh },
           access: {
             $mergeObjects: [
@@ -787,6 +799,56 @@ export async function claimFDAForFetch({ service, fdaId, servicePath }) {
   return result.matchedCount > 0;
 }
 
+export async function claimOnDemandRefresh({
+  service,
+  fdaId,
+  servicePath,
+  staleBefore,
+  retryBefore,
+}) {
+  const collection = await getCollection();
+
+  return collection.findOneAndUpdate(
+    {
+      service,
+      fdaId,
+      servicePath,
+      status: { $nin: [...FDA_REFRESH_IN_PROGRESS_STATUSES, 'deleting'] },
+      $and: [
+        {
+          $or: [
+            { lastFetch: null },
+            ...(staleBefore ? [{ lastFetch: { $lt: staleBefore } }] : []),
+          ],
+        },
+        {
+          $or: [
+            { status: { $ne: 'failed' } },
+            { initFetch: null },
+            { initFetch: { $lt: retryBefore } },
+          ],
+        },
+      ],
+    },
+    { $set: { status: 'pending', progress: 0 } },
+    { returnDocument: 'before' },
+  );
+}
+
+export async function releaseOnDemandRefresh({
+  service,
+  fdaId,
+  servicePath,
+  status,
+}) {
+  const collection = await getCollection();
+
+  await collection.updateOne(
+    { service, fdaId, servicePath, status: 'pending' },
+    { $set: { status } },
+  );
+}
+
 export async function updateFDAStorage(service, fdaId, servicePath, storage) {
   const collection = await getCollection();
 
@@ -804,7 +866,7 @@ export async function claimFDAForDeletion(service, fdaId, servicePath) {
       service,
       fdaId,
       servicePath,
-      status: { $in: ['completed', 'failed', 'deleting'] },
+      status: { $in: ['completed', 'failed', 'idle', 'deleting'] },
     },
     { $set: { status: 'deleting' } },
     { returnDocument: 'before' },
