@@ -562,6 +562,7 @@ export async function createFDAMongo(
   datasourceId = DEFAULT_DATASOURCE_ID,
   validationMode = 'strict',
   schema = null,
+  downloadPolicy = null,
   lazy = false,
 ) {
   logger.debug({ fdaId, description }, '[DEBUG]: createFDA');
@@ -592,6 +593,7 @@ export async function createFDAMongo(
       datasourceId,
       validationMode,
       ...(schema && { schema }),
+      ...(downloadPolicy && { downloadPolicy, downloadsUsed: 0 }),
       ...(lazy && { lazy }),
     });
   } catch (e) {
@@ -617,6 +619,89 @@ function resolveInitialStatus(cached, lazy) {
   }
 
   return lazy ? 'idle' : 'fetching';
+}
+
+export async function claimFDADownload(fda) {
+  if (!fda.downloadPolicy) {
+    return;
+  }
+  const collection = await getCollection();
+  const scope = {
+    service: fda.service,
+    servicePath: fda.servicePath ?? '/',
+    fdaId: fda.fdaId,
+    visibility: fda.visibility,
+    ...(fda._id && { _id: fda._id }),
+  };
+  const expirationDate = { $ifNull: ['$downloadPolicy.expirationDate', null] };
+  const maxDownloads = { $ifNull: ['$downloadPolicy.maxDownloads', null] };
+  try {
+    const claimed = await collection.findOneAndUpdate(
+      {
+        ...scope,
+        $expr: {
+          $and: [
+            {
+              $or: [
+                { $eq: [expirationDate, null] },
+                { $gt: [expirationDate, '$$NOW'] },
+              ],
+            },
+            {
+              $or: [
+                { $eq: [maxDownloads, null] },
+                { $lt: [{ $ifNull: ['$downloadsUsed', 0] }, maxDownloads] },
+              ],
+            },
+          ],
+        },
+      },
+      { $inc: { downloadsUsed: 1 } },
+      { returnDocument: 'after' },
+    );
+    if (claimed) {
+      return;
+    }
+    const [current] = await collection
+      .aggregate([
+        { $match: scope },
+        {
+          $project: {
+            expired: {
+              $and: [
+                { $ne: [expirationDate, null] },
+                { $lte: [expirationDate, '$$NOW'] },
+              ],
+            },
+          },
+        },
+      ])
+      .toArray();
+    if (!current) {
+      throw new FDAError(404, 'FDANotFound', 'FDA no longer exists');
+    }
+    if (current.expired) {
+      throw new FDAError(
+        410,
+        'FDAExpired',
+        'The FDA download validity period has expired',
+      );
+    }
+    throw new FDAError(
+      410,
+      'DownloadLimitReached',
+      'The FDA download limit has been reached',
+    );
+  } catch (error) {
+    if (error instanceof FDAError) {
+      throw error;
+    }
+    throw new FDAError(
+      503,
+      'DownloadAuthorizationUnavailable',
+      'Cannot reserve an FDA download',
+    );
+  }
 }
 
 export async function updateFDAStatus({
@@ -983,6 +1068,7 @@ export async function storeDA(
   description,
   query,
   params,
+  timeRange,
 ) {
   logger.debug(
     { fdaId, daId, description, querySize: query.length },
@@ -990,12 +1076,16 @@ export async function storeDA(
   );
   const collection = await getCollection();
   try {
+    const da = { description, query, params };
+    if (timeRange) {
+      da.timeRange = timeRange;
+    }
     await collection.updateOne({ service, fdaId, servicePath }, [
       {
         $set: {
           [`das.${daId}`]: {
             $mergeObjects: [
-              { $literal: { description, query, params } },
+              { $literal: da },
               {
                 access: {
                   $ifNull: [
@@ -1086,6 +1176,7 @@ export async function retrieveDAs(service, fdaId, servicePath) {
                   description: '$$q.v.description',
                   query: '$$q.v.query',
                   params: '$$q.v.params',
+                  timeRange: '$$q.v.timeRange',
                 },
               },
             },
@@ -1130,6 +1221,7 @@ export async function updateDA(
   description,
   query,
   params,
+  timeRange,
 ) {
   logger.debug(
     { fdaId, daId, description, querySize: query?.length },
@@ -1153,11 +1245,22 @@ export async function updateDA(
       setFields[`das.${daId}.params`] = params;
     }
 
-    if (Object.keys(setFields).length === 0) {
+    const update = {};
+    if (timeRange === null) {
+      update.$unset = { [`das.${daId}.timeRange`]: '' };
+    } else if (timeRange !== undefined) {
+      setFields[`das.${daId}.timeRange`] = timeRange;
+    }
+
+    if (Object.keys(setFields).length > 0) {
+      update.$set = setFields;
+    }
+
+    if (Object.keys(update).length === 0) {
       return; // nothing to update
     }
 
-    await collection.updateOne(filter, { $set: setFields });
+    await collection.updateOne(filter, update);
   } catch (e) {
     throw new FDAError(
       500,

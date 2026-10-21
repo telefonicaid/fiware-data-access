@@ -26,7 +26,7 @@ import { describe, expect, jest, test } from '@jest/globals';
 
 const agendaMock = {
   define: jest.fn(),
-  jobs: jest.fn().mockResolvedValue([]),
+  queryJobs: jest.fn().mockResolvedValue({ jobs: [], total: 0 }),
   start: jest.fn().mockResolvedValue(undefined),
 };
 
@@ -51,8 +51,8 @@ async function loadFetcherModule() {
 
   agendaMock.define.mockClear();
   agendaMock.start.mockClear();
-  agendaMock.jobs.mockReset();
-  agendaMock.jobs.mockResolvedValue([]);
+  agendaMock.queryJobs.mockReset();
+  agendaMock.queryJobs.mockResolvedValue({ jobs: [], total: 0 });
   getAgendaMock.mockClear();
   processFDAAsyncMock.mockClear();
   processUploadFDAJobMock.mockClear();
@@ -181,21 +181,28 @@ describe('fetcher', () => {
 
     test('recurring refresh is skipped while the consistency refresh is locked', async () => {
       const { startFetcher } = await loadFetcherModule();
-      agendaMock.jobs.mockResolvedValue([{ attrs: {} }]);
+      agendaMock.queryJobs.mockResolvedValue({
+        jobs: [{ lockedAt: new Date(), state: 'running' }],
+        total: 1,
+      });
       await startFetcher();
 
       await getHandler('refresh-fda-recurring')(
         buildJob('refresh-fda-recurring'),
       );
 
-      expect(agendaMock.jobs).toHaveBeenCalledWith({
+      expect(agendaMock.queryJobs).toHaveBeenCalledWith({
         name: 'consistency-refresh-fda-recurring',
-        'data.service': 'svcA',
-        'data.fdaId': 'fdaA',
-        'data.servicePath': '/public',
-        lockedAt: { $ne: null },
+        data: {
+          service: 'svcA',
+          fdaId: 'fdaA',
+          servicePath: '/public',
+        },
+        state: 'running',
+        limit: 1,
       });
       expect(processFDAAsyncMock).not.toHaveBeenCalled();
+      expect(childLoggerMock.warn).not.toHaveBeenCalled();
     });
 
     test('recurring refresh runs when no consistency refresh is locked', async () => {
@@ -207,11 +214,13 @@ describe('fetcher', () => {
       );
 
       expect(processFDAAsyncMock).toHaveBeenCalledTimes(1);
+      expect(childLoggerMock.warn).not.toHaveBeenCalled();
     });
 
     test('recurring refresh runs if the consistency check fails', async () => {
       const { startFetcher } = await loadFetcherModule();
-      agendaMock.jobs.mockRejectedValue(new Error('mongo down'));
+      const error = new Error('mongo down');
+      agendaMock.queryJobs.mockRejectedValue(error);
       await startFetcher();
 
       await getHandler('refresh-fda-recurring')(
@@ -219,18 +228,21 @@ describe('fetcher', () => {
       );
 
       expect(processFDAAsyncMock).toHaveBeenCalledTimes(1);
+      expect(childLoggerMock.warn).toHaveBeenCalledWith(
+        { err: error, fdaId: 'fdaA' },
+        'Could not check consistency refresh status, continuing with recurring refresh',
+      );
     });
 
     test('consistency refresh is never skipped', async () => {
       const { startFetcher } = await loadFetcherModule();
-      agendaMock.jobs.mockResolvedValue([{ attrs: {} }]);
       await startFetcher();
 
       await getHandler('consistency-refresh-fda-recurring')(
         buildJob('consistency-refresh-fda-recurring'),
       );
 
-      expect(agendaMock.jobs).not.toHaveBeenCalled();
+      expect(agendaMock.queryJobs).not.toHaveBeenCalled();
       expect(processFDAAsyncMock).toHaveBeenCalledTimes(1);
     });
   });

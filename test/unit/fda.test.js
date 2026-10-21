@@ -44,6 +44,7 @@ const dbMocks = {
   toParquet: jest.fn(),
   copyQueryToParquet: jest.fn(),
   checkParams: jest.fn(),
+  checkTimeRange: jest.fn((timeRange) => timeRange ?? undefined),
   validateDAParamBindings: jest.fn(),
   resolveDAParams: jest.fn(),
   validateDAQuery: jest.fn(),
@@ -88,6 +89,7 @@ const mongoMocks = {
   updateFDAStorage: jest.fn(),
   claimFDAForFetch: jest.fn(),
   claimFDAForDeletion: jest.fn(),
+  claimFDADownload: jest.fn(),
   claimOnDemandRefresh: jest.fn(),
   releaseOnDemandRefresh: jest.fn(),
   createDatasource: jest.fn(),
@@ -118,6 +120,7 @@ await jest.unstable_mockModule('../../src/lib/utils/db.js', () => ({
   toParquet: dbMocks.toParquet,
   copyQueryToParquet: dbMocks.copyQueryToParquet,
   checkParams: dbMocks.checkParams,
+  checkTimeRange: dbMocks.checkTimeRange,
   validateDAParamBindings: dbMocks.validateDAParamBindings,
   resolveDAParams: dbMocks.resolveDAParams,
   validateDAQuery: dbMocks.validateDAQuery,
@@ -164,6 +167,7 @@ await jest.unstable_mockModule('../../src/lib/utils/mongo.js', () => ({
   updateFDAStorage: mongoMocks.updateFDAStorage,
   claimFDAForFetch: mongoMocks.claimFDAForFetch,
   claimFDAForDeletion: mongoMocks.claimFDAForDeletion,
+  claimFDADownload: mongoMocks.claimFDADownload,
   claimOnDemandRefresh: mongoMocks.claimOnDemandRefresh,
   releaseOnDemandRefresh: mongoMocks.releaseOnDemandRefresh,
   createDatasource: mongoMocks.createDatasource,
@@ -258,6 +262,160 @@ async function loadFdaModule() {
   const mod = await import('../../src/lib/fda.js');
   return mod;
 }
+
+describe('FDA download restrictions', () => {
+  const variants = [
+    ['fresh DA JSON', executeQuery, true, false],
+    ['fresh DA stream', executeQueryStream, true, false],
+    ['fresh FDA JSON', executeFDAQuery, false, true],
+    ['fresh FDA stream', executeFDAQueryStream, false, true],
+  ];
+  let fda;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mongoMocks.claimFDADownload.mockReset().mockResolvedValue(undefined);
+    dbMocks.resolveDAParams.mockReset().mockImplementation((params) => params);
+    fda = {
+      service: 'svc',
+      servicePath: '/servicepath',
+      fdaId: 'limited',
+      visibility: 'public',
+      query: 'SELECT 1 AS id',
+      lastFetch: new Date(),
+      downloadPolicy: { maxDownloads: 5 },
+      downloadsUsed: 0,
+    };
+    mongoMocks.retrieveFDA.mockImplementation(() => fda);
+    mongoMocks.retrieveDA.mockResolvedValue({ query: 'SELECT id', params: [] });
+    mongoMocks.retrieveDatasource.mockResolvedValue({
+      type: 'postgres',
+      config: {},
+    });
+    dbMocks.getDBConnection.mockResolvedValue({});
+    dbMocks.runPreparedStatement.mockResolvedValue([{ id: 1 }]);
+    pgMocks.runPgQuery.mockResolvedValue([{ id: 1 }]);
+    pgMocks.createPgCursorReader.mockResolvedValue({
+      readNextChunk: jest.fn().mockResolvedValue([]),
+      close: jest.fn(),
+    });
+    dbMocks.runPreparedStatementStream.mockResolvedValue({
+      stream: {
+        columnNames: () => ['id'],
+        fetchChunk: () => ({ rowCount: 0 }),
+      },
+      close: jest.fn(),
+    });
+  });
+
+  afterEach(() => {
+    mongoMocks.claimFDADownload.mockReset();
+    dbMocks.resolveDAParams.mockReset();
+  });
+
+  function queryArgs(fresh) {
+    return {
+      service: 'svc',
+      visibility: 'public',
+      servicePath: '/servicepath',
+      fdaId: 'limited',
+      params: { fdaId: 'limited', daId: 'da1' },
+      fresh,
+      ...createReqRes(),
+    };
+  }
+
+  test.each(variants)(
+    '%s reserves exactly once',
+    async (name, execute, fresh, direct) => {
+      fda.cached = !direct;
+      await execute(queryArgs(fresh));
+      expect(mongoMocks.claimFDADownload).toHaveBeenCalledTimes(1);
+      expect(mongoMocks.claimFDADownload).toHaveBeenCalledWith(fda);
+    },
+  );
+
+  test.each(variants)(
+    '%s rejects before executing when the quota is exhausted',
+    async (name, execute, fresh, direct) => {
+      fda.cached = !direct;
+      mongoMocks.claimFDADownload.mockRejectedValue(
+        new FDAError(410, 'DownloadLimitReached', 'exhausted'),
+      );
+      const args = queryArgs(fresh);
+      await expect(execute(args)).rejects.toMatchObject({
+        status: 410,
+        type: 'DownloadLimitReached',
+      });
+      expect(dbMocks.runPreparedStatement).not.toHaveBeenCalled();
+      expect(dbMocks.runPreparedStatementStream).not.toHaveBeenCalled();
+      expect(pgMocks.runPgQuery).not.toHaveBeenCalled();
+      expect(pgMocks.createPgCursorReader).not.toHaveBeenCalled();
+      expect(args.res.write).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each([
+    ['cached JSON', executeQuery, 'runPreparedStatement'],
+    ['cached stream', executeQueryStream, 'runPreparedStatementStream'],
+  ])(
+    '%s delegates restrictions without duplicate reads',
+    async (name, execute, method) => {
+      await execute(queryArgs(false));
+
+      expect(dbMocks[method]).toHaveBeenCalledTimes(1);
+      expect(mongoMocks.retrieveFDA).toHaveBeenCalledTimes(1);
+      expect(mongoMocks.retrieveDA).not.toHaveBeenCalled();
+      expect(dbMocks.resolveDAParams).not.toHaveBeenCalled();
+      expect(mongoMocks.claimFDADownload).not.toHaveBeenCalled();
+    },
+  );
+
+  test('invalid fresh DA parameters do not reserve a download', async () => {
+    dbMocks.resolveDAParams.mockImplementation(() => {
+      throw new FDAError(400, 'InvalidParam', 'invalid');
+    });
+    await expect(executeQuery(queryArgs(true))).rejects.toMatchObject({
+      status: 400,
+    });
+    expect(mongoMocks.claimFDADownload).not.toHaveBeenCalled();
+  });
+
+  test('metadata remains readable after exhaustion without consuming quota', async () => {
+    fda.downloadsUsed = 5;
+    const metadata = await getFDA('svc', 'limited', 'public', '/servicepath');
+    expect(metadata).toMatchObject({
+      maxDownloads: 5,
+      downloadsUsed: 5,
+      remainingDownloads: 0,
+      downloadStatus: 'exhausted',
+    });
+    expect(metadata.downloadPolicy).toBeUndefined();
+    expect(mongoMocks.claimFDADownload).not.toHaveBeenCalled();
+  });
+
+  test('creation rejects an invalid policy before provisioning data', async () => {
+    await expect(
+      fetchFDA(
+        'limited',
+        'SELECT 1',
+        'svc',
+        'public',
+        '/servicepath',
+        '',
+        {},
+        undefined,
+        {},
+        true,
+        true,
+        'default',
+        'strict',
+        { maxDownloads: 0 },
+      ),
+    ).rejects.toMatchObject({ status: 400, type: 'InvalidDownloadPolicy' });
+    expect(mongoMocks.createFDAMongo).not.toHaveBeenCalled();
+  });
+});
 
 describe('fda fresh query execution', () => {
   beforeEach(() => {
@@ -1187,6 +1345,7 @@ describe('fetchFDA', () => {
       'default',
       'strict',
       null,
+      undefined,
       false,
     );
     expect(pgMocks.uploadTable).toHaveBeenCalledWith(
@@ -1344,6 +1503,7 @@ describe('fetchFDA', () => {
         { name: 'pageSize', default: '9223372036854775807' },
         { name: 'pageStart', default: 0 },
       ],
+      { start: 'start', finish: 'finish' },
     );
   });
 
@@ -1404,6 +1564,7 @@ describe('fetchFDA', () => {
         { name: 'pageSize', default: '9223372036854775807' },
         { name: 'pageStart', default: 0 },
       ],
+      { start: 'start', finish: 'finish' },
     );
   });
 
@@ -1542,6 +1703,7 @@ describe('fetchFDA', () => {
       'mongo-ds',
       'unchecked',
       null,
+      undefined,
       false,
     );
     expect(mongoMocks.validateMongoQuery).not.toHaveBeenCalled();
@@ -1673,6 +1835,7 @@ describe('fetchFDA', () => {
         { name: 'label', type: null },
         { name: 'observedAt', type: null },
       ],
+      undefined,
       false,
     );
 
@@ -1814,6 +1977,7 @@ describe('fetchFDA', () => {
         { name: 'pageSize', default: '9223372036854775807' },
         { name: 'pageStart', default: 0 },
       ],
+      undefined,
     );
   });
 
@@ -1869,6 +2033,7 @@ describe('fetchFDA', () => {
         { name: 'pageSize', default: '9223372036854775807' },
         { name: 'pageStart', default: 0 },
       ],
+      { start: 'start', finish: 'finish' },
     );
   });
 
@@ -1922,6 +2087,7 @@ describe('fetchFDA', () => {
         { name: 'pageSize', default: '9223372036854775807' },
         { name: 'pageStart', default: 0 },
       ],
+      undefined,
     );
   });
 
@@ -1970,6 +2136,7 @@ describe('fetchFDA', () => {
         { name: 'pageSize', default: '9223372036854775807' },
         { name: 'pageStart', default: 0 },
       ],
+      undefined,
     );
   });
 
@@ -2027,6 +2194,7 @@ describe('fetchFDA', () => {
         { name: 'pageSize', default: '9223372036854775807' },
         { name: 'pageStart', default: 0 },
       ],
+      undefined,
     );
   });
 
@@ -2607,6 +2775,37 @@ describe('uploadFDA', () => {
     agenda.now.mockResolvedValue(undefined);
   });
 
+  test('normalizes upload validity before persisting and scheduling', async () => {
+    const before = Date.now();
+    await uploadFDA({
+      fdaId: 'limited-upload',
+      tempFilePath: '/tmp/upload.csv',
+      service: 'svc',
+      visibility: 'public',
+      servicePath: '/public',
+      maxDownloads: 5,
+      validityPeriod: '7 days',
+    });
+    const policy = mongoMocks.createFDAMongo.mock.calls[0][13];
+    expect(policy.maxDownloads).toBe(5);
+    expect(policy.expirationDate).toBeInstanceOf(Date);
+    expect(policy.expirationDate.getTime()).toBeGreaterThanOrEqual(
+      before + 7 * 86400000,
+    );
+    expect(policy.expirationDate.getTime()).toBeLessThanOrEqual(
+      Date.now() + 7 * 86400000,
+    );
+    expect(agenda.now).toHaveBeenCalledTimes(1);
+  });
+
+  test('rejects an invalid upload policy before inserting or scheduling', async () => {
+    await expect(
+      uploadFDA({ fdaId: 'limited-upload', maxDownloads: 0 }),
+    ).rejects.toMatchObject({ status: 400, type: 'InvalidDownloadPolicy' });
+    expect(mongoMocks.createFDAMongo).not.toHaveBeenCalled();
+    expect(agenda.now).not.toHaveBeenCalled();
+  });
+
   test('creates upload FDA in mongo and enqueues upload-fda agenda job', async () => {
     const response = await uploadFDA({
       fdaId: 'fda-upload',
@@ -2636,6 +2835,8 @@ describe('uploadFDA', () => {
       true,
       null,
       'strict',
+      null,
+      undefined,
     );
     expect(agenda.now).toHaveBeenCalledWith(
       'upload-fda',
@@ -4596,6 +4797,7 @@ describe('DA access and update helpers', () => {
       'desc',
       'SELECT id',
       [{ name: 'id' }],
+      null,
     );
     expect(dbMocks.releaseDBConnection).toHaveBeenCalledWith({});
   });
@@ -4618,6 +4820,7 @@ describe('DA access and update helpers', () => {
       'desc',
       'SELECT id',
       normalizedParams,
+      null,
     );
   });
 
@@ -4660,6 +4863,7 @@ describe('DA access and update helpers', () => {
       'desc',
       'SELECT id',
       [{ name: 'id' }],
+      undefined,
     );
   });
 
@@ -4691,6 +4895,7 @@ describe('DA access and update helpers', () => {
       'desc',
       'SELECT id',
       [{ name: 'id' }],
+      null,
     );
   });
 });
@@ -6257,6 +6462,7 @@ describe('lazy and onDemand FDAs', () => {
       cached,
       'default',
       'strict',
+      {},
       lazy,
     );
   }
@@ -6268,7 +6474,7 @@ describe('lazy and onDemand FDAs', () => {
     );
 
     expect(result).toEqual({ status: 'idle' });
-    expect(mongoMocks.createFDAMongo.mock.calls[0][13]).toBe(true);
+    expect(mongoMocks.createFDAMongo.mock.calls[0][14]).toBe(true);
     expect(agenda.now).not.toHaveBeenCalled();
     expect(agenda.create).not.toHaveBeenCalled();
   });
@@ -6277,7 +6483,7 @@ describe('lazy and onDemand FDAs', () => {
     const result = await createFDA(onDemandPolicy);
 
     expect(result).toEqual({ status: 'idle' });
-    expect(mongoMocks.createFDAMongo.mock.calls[0][13]).toBe(true);
+    expect(mongoMocks.createFDAMongo.mock.calls[0][14]).toBe(true);
     expect(agenda.now).not.toHaveBeenCalled();
   });
 
@@ -6285,7 +6491,7 @@ describe('lazy and onDemand FDAs', () => {
     const result = await createFDA({ type: 'none' });
 
     expect(result).toEqual({ status: 'pending' });
-    expect(mongoMocks.createFDAMongo.mock.calls[0][13]).toBe(false);
+    expect(mongoMocks.createFDAMongo.mock.calls[0][14]).toBe(false);
     expect(agenda.now).toHaveBeenCalledWith(
       'refresh-fda',
       expect.objectContaining({ fdaId: 'fdaLazy' }),
@@ -6578,6 +6784,7 @@ describe('lazy and onDemand FDAs', () => {
       true,
       'default',
       'strict',
+      {},
       true,
     );
 

@@ -27,7 +27,9 @@ import { FDAError } from '../../src/lib/fdaError.js';
 
 const retrieveDAMock = jest.fn();
 const retrieveFDAMock = jest.fn();
+const claimFDADownloadMock = jest.fn();
 const duckCreateMock = jest.fn();
+const listObjectsMock = jest.fn();
 const loggerMock = {
   debug: jest.fn(),
   info: jest.fn(),
@@ -74,7 +76,9 @@ async function loadDbModule({ retrieveDAResult, duckContext } = {}) {
     },
   );
   retrieveFDAMock.mockReset().mockResolvedValue({});
+  claimFDADownloadMock.mockReset().mockResolvedValue(undefined);
   duckCreateMock.mockReset();
+  listObjectsMock.mockReset().mockResolvedValue([]);
   loggerMock.debug.mockReset();
   loggerMock.info.mockReset();
 
@@ -84,6 +88,12 @@ async function loadDbModule({ retrieveDAResult, duckContext } = {}) {
   await jest.unstable_mockModule('../../src/lib/utils/mongo.js', () => ({
     retrieveDA: retrieveDAMock,
     retrieveFDA: retrieveFDAMock,
+    claimFDADownload: claimFDADownloadMock,
+  }));
+
+  await jest.unstable_mockModule('../../src/lib/utils/aws.js', () => ({
+    getS3Client: () => ({}),
+    listObjects: listObjectsMock,
   }));
 
   await jest.unstable_mockModule('../../src/lib/accessTracker.js', () => ({
@@ -172,6 +182,102 @@ describe('db utils', () => {
     expect(runtimeConn.prepare).not.toHaveBeenCalled();
   });
 
+  test.each([false, true])(
+    'cached query claims once before execution (streaming=%s)',
+    async (streaming) => {
+      const { runPreparedStatement, runtimeConn } = await loadDbModule();
+      const fda = { downloadPolicy: { maxDownloads: 5 } };
+      retrieveFDAMock.mockResolvedValue(fda);
+      const stmt = {
+        bind: jest.fn().mockResolvedValue(undefined),
+        run: jest.fn().mockResolvedValue({
+          getRowObjectsJson: () => [],
+          columnNames: () => [],
+          columnTypes: () => [],
+        }),
+        stream: jest.fn().mockResolvedValue('stream-ref'),
+        close: jest.fn().mockResolvedValue(undefined),
+      };
+      runtimeConn.prepare.mockImplementation(() => {
+        expect(claimFDADownloadMock).toHaveBeenCalledTimes(1);
+        return Promise.resolve(stmt);
+      });
+
+      const result = await runPreparedStatement(
+        runtimeConn,
+        'svc',
+        'fdaA',
+        'daA',
+        { id: 7 },
+        '/sp',
+        streaming,
+      );
+
+      expect(claimFDADownloadMock).toHaveBeenCalledWith(fda);
+      expect(retrieveDAMock).toHaveBeenCalledTimes(1);
+      expect(retrieveFDAMock).toHaveBeenCalledTimes(1);
+      if (streaming) {
+        await result.close();
+      }
+    },
+  );
+
+  test.each([false, true])(
+    'cached query does not execute when the quota is exhausted (streaming=%s)',
+    async (streaming) => {
+      const { runPreparedStatement, runtimeConn } = await loadDbModule();
+      const { FDAError: RuntimeFDAError } = await import(
+        '../../src/lib/fdaError.js'
+      );
+      retrieveFDAMock.mockResolvedValue({
+        downloadPolicy: { maxDownloads: 5 },
+      });
+      claimFDADownloadMock.mockRejectedValue(
+        new RuntimeFDAError(410, 'DownloadLimitReached', 'exhausted'),
+      );
+
+      await expect(
+        runPreparedStatement(
+          runtimeConn,
+          'svc',
+          'fdaA',
+          'daA',
+          { id: 7 },
+          '/sp',
+          streaming,
+        ),
+      ).rejects.toMatchObject({ status: 410, type: 'DownloadLimitReached' });
+
+      expect(runtimeConn.prepare).not.toHaveBeenCalled();
+      expect(recordAccessMock).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each([false, true])(
+    'invalid cached query parameters do not consume quota (streaming=%s)',
+    async (streaming) => {
+      const { runPreparedStatement, runtimeConn } = await loadDbModule();
+      retrieveFDAMock.mockResolvedValue({
+        downloadPolicy: { maxDownloads: 5 },
+      });
+
+      await expect(
+        runPreparedStatement(
+          runtimeConn,
+          'svc',
+          'fdaA',
+          'daA',
+          { id: 'not-a-number' },
+          '/sp',
+          streaming,
+        ),
+      ).rejects.toMatchObject({ status: 400, type: 'InvalidQueryParam' });
+
+      expect(claimFDADownloadMock).not.toHaveBeenCalled();
+      expect(runtimeConn.prepare).not.toHaveBeenCalled();
+    },
+  );
+
   test('runPreparedStatementStream returns close callback that closes statement', async () => {
     const { runPreparedStatementStream, runtimeConn } = await loadDbModule({
       retrieveDAResult: {
@@ -197,6 +303,7 @@ describe('db utils', () => {
     );
 
     expect(result.stream).toBe('stream-ref');
+    expect(claimFDADownloadMock).not.toHaveBeenCalled();
     expect(recordAccessMock).toHaveBeenCalledWith({
       service: 'svc',
       servicePath: '/sp',
@@ -1186,6 +1293,153 @@ describe('db utils', () => {
       expect(refreshIntervalPartitionCheck('not an interval', 'day')).toBe(
         false,
       );
+    });
+  });
+
+  describe('partition pruning', () => {
+    const prunedDA = {
+      query: 'SELECT id WHERE ts >= $start AND ts <= $finish',
+      params: [
+        { name: 'start', default: null },
+        { name: 'finish', default: null },
+      ],
+      timeRange: { start: 'start', finish: 'finish' },
+    };
+    const keys = [
+      'sp/fdaA.parquet/year=2025/month=5/day=20/data_0.parquet',
+      'sp/fdaA.parquet/year=2025/month=6/day=1/data_0.parquet',
+      'sp/fdaA.parquet/year=2025/month=6/day=2/data_0.parquet',
+      'sp/fdaA.parquet/year=2025/month=7/day=15/data_0.parquet',
+    ];
+
+    function createStmt() {
+      return {
+        bind: jest.fn().mockResolvedValue(undefined),
+        run: jest.fn().mockResolvedValue({
+          getRowObjectsJson: async () => [],
+          columnNames: () => [],
+          columnTypes: () => [],
+        }),
+        close: jest.fn().mockResolvedValue(undefined),
+      };
+    }
+
+    async function runWith({ da = prunedDA, fda, params }) {
+      const { runPreparedStatement, runtimeConn } = await loadDbModule({
+        retrieveDAResult: da,
+      });
+      retrieveFDAMock.mockReset().mockResolvedValue(fda);
+      listObjectsMock.mockResolvedValue(keys);
+      runtimeConn.prepare.mockResolvedValue(createStmt());
+
+      await runPreparedStatement(
+        runtimeConn,
+        'svc',
+        'fdaA',
+        'daA',
+        params,
+        '/sp',
+      );
+
+      return runtimeConn.prepare.mock.calls[0][0];
+    }
+
+    test('reads only the partitions overlapping the requested range', async () => {
+      const query = await runWith({
+        fda: { objStgConf: { partition: 'day' }, servicePath: '/sp' },
+        params: {
+          start: '2025-06-01T00:00:00Z',
+          finish: '2025-06-02T00:00:00Z',
+        },
+      });
+
+      expect(listObjectsMock).toHaveBeenCalledWith(
+        {},
+        'svc',
+        'sp/fdaA.parquet/',
+      );
+      expect(query).toBe(
+        "FROM read_parquet(['s3://svc/sp/fdaA.parquet/year=2025/month=6/day=1/data_0.parquet', " +
+          "'s3://svc/sp/fdaA.parquet/year=2025/month=6/day=2/data_0.parquet'], " +
+          'hive_partitioning = true, union_by_name = true) ' +
+          'SELECT id WHERE ts >= $start AND ts <= $finish',
+      );
+    });
+
+    test('uses the stored schema when no partition overlaps the range', async () => {
+      const query = await runWith({
+        fda: {
+          objStgConf: { partition: 'day' },
+          servicePath: '/sp',
+          schema: [{ name: 'id', type: 'INTEGER' }],
+        },
+        params: { start: '2030-01-01T00:00:00Z' },
+      });
+
+      expect(query).toBe(
+        'FROM (SELECT CAST(NULL AS INTEGER) AS "id" LIMIT 0) AS fda_schema ' +
+          'SELECT id WHERE ts >= $start AND ts <= $finish',
+      );
+    });
+
+    test('reads every partition when the range is not provided', async () => {
+      const query = await runWith({
+        fda: { objStgConf: { partition: 'day' }, servicePath: '/sp' },
+        params: {},
+      });
+
+      expect(listObjectsMock).not.toHaveBeenCalled();
+      expect(query).toContain(
+        "read_parquet('s3://svc/sp/fdaA.parquet/**/*.parquet', union_by_name = true)",
+      );
+    });
+
+    test('reads every partition when the DA declares no timeRange', async () => {
+      const query = await runWith({
+        da: { query: prunedDA.query, params: prunedDA.params },
+        fda: { objStgConf: { partition: 'day' }, servicePath: '/sp' },
+        params: { start: '2025-06-01T00:00:00Z' },
+      });
+
+      expect(listObjectsMock).not.toHaveBeenCalled();
+      expect(query).toContain('**/*.parquet');
+    });
+
+    test('ignores timeRange in non-partitioned FDAs', async () => {
+      const query = await runWith({
+        fda: { servicePath: '/sp' },
+        params: { start: '2025-06-01T00:00:00Z' },
+      });
+
+      expect(listObjectsMock).not.toHaveBeenCalled();
+      expect(query).toContain("read_parquet('s3://svc/sp/fdaA.parquet')");
+    });
+
+    test('checkTimeRange validates the declared params', async () => {
+      const { checkTimeRange } = await loadDbModule();
+      const params = [{ name: 'from' }, { name: 'to' }];
+
+      expect(checkTimeRange(undefined, params)).toBeUndefined();
+      expect(checkTimeRange({ start: 'from', finish: 'to' }, params)).toEqual({
+        start: 'from',
+        finish: 'to',
+      });
+      expect(checkTimeRange({ finish: 'to' }, params)).toEqual({
+        finish: 'to',
+      });
+
+      for (const invalid of [
+        'from',
+        [],
+        {},
+        { begin: 'from' },
+        { start: 'missing' },
+        { start: 1 },
+      ]) {
+        expect(() => checkTimeRange(invalid, params)).toThrow(
+          expect.objectContaining({ status: 400, type: 'InvalidParam' }),
+        );
+      }
     });
   });
 });

@@ -1,10 +1,124 @@
 # Advanced Topics
 
+## Table of Contents
+
+-   [Introduction](#introduction)
+-   [Public links with download restrictions](#public-links-with-download-restrictions)
+    -   [Sharing and gateway configuration](#sharing-and-gateway-configuration)
+    -   [Quota and expiration semantics](#quota-and-expiration-semantics)
+    -   [Download metadata](#download-metadata)
+-   [Object Bucket-Based Storage System](#object-bucket-based-storage-system)
+    -   [Bucket name convention](#bucket-name-convention)
+    -   [File name convention](#file-name-convention)
+    -   [Data origin](#data-origin)
+    -   [Default Data Access](#default-data-access)
+    -   [Storage quotas](#storage-quotas)
+-   [FDA Execution Lifecycle](#fda-execution-lifecycle)
+    -   [Status & Progress](#status--progress)
+    -   [Last Execution](#last-execution)
+    -   [Flow](#flow)
+-   [Asynchronous Processing & Job System](#asynchronous-processing--job-system)
+    -   [Sliding windows and partitioning](#sliding-windows-and-partitioning)
+    -   [Multi-instance coverage](#multi-instance-coverage)
+-   [Uploading Tabular Data](#uploading-tabular-data)
+    -   [File Format Support](#file-format-support)
+    -   [Conversion Process](#conversion-process)
+    -   [Handling Large Files](#handling-large-files)
+    -   [Automatic DA Creation](#automatic-da-creation)
+-   [DuckDB memory management](AdvancedTopics/duckdb_memory_management.md)
+    -   [Automated window-memory regression scenarios](AdvancedTopics/duckdb_memory_management.md#automated-window-memory-regression-scenarios)
+-   [SQL Pattern Matching in DA Queries](#sql-pattern-matching-in-da-queries)
+-   [Numeric Precision](#numeric-precision)
+    -   [Integers beyond 2^53 on the client side](#integers-beyond-253-on-the-client-side)
+    -   [DA params](#da-params)
+    -   [Cached FDAs over PostgreSQL and `NUMERIC`](#cached-fdas-over-postgresql-and-numeric)
+-   [Pentaho CDA Compatibility Layer](#pentaho-cda-compatibility-layer)
+    -   [Endpoint](#endpoint)
+    -   [Purpose](#purpose)
+    -   [Architectural Principle](#architectural-principle)
+    -   [Pagination Behavior](#pagination-behavior)
+    -   [Limitations](#limitations)
+-   [Time Column Behavior](#time-column-behavior)
+    -   [Requirements](#requirements)
+    -   [Validation Modes](#validation-modes)
+        -   [Strict Mode (default)](#strict-mode-default)
+        -   [Unchecked Mode](#unchecked-mode)
+    -   [Column Name Matching](#column-name-matching)
+        -   [Valid Examples](#valid-examples)
+    -   [Error Messages](#error-messages)
+-   [🧭 Navigation](#-navigation)
+
 ## Introduction
 
 The `FDA` app interacts and communicates with various systems. To keep that communication tidy we have multiple
 documentation files describing the different structures and functionalities involved. This file documents the advanced
 topics and FDA internals that don't fit in the other documents.
+
+## Public links with download restrictions
+
+FDA creation accepts optional `maxDownloads`, `expirationDate` and `validityPeriod` fields:
+
+```json
+{
+    "id": "audit",
+    "query": "SELECT * FROM public.events",
+    "maxDownloads": 5,
+    "validityPeriod": "7 days"
+}
+```
+
+`maxDownloads` must be a positive safe integer. Omit it for unlimited downloads. Supply either a future `expirationDate`
+(an ISO 8601 timestamp with seconds and timezone, such as `2027-01-21T12:00:00Z`) or a `validityPeriod`, never both.
+Durations use an amount-and-unit format, for example `3 days`, `6 weeks`, `1 month` or `12 hours`, and must be positive.
+A unit without an amount means one unit. Units have fixed lengths, the same ones used for `refreshInterval`: months are
+30 days and years are 365 days. They are not calendar months or years, unlike `fetchSize` and `windowSize`; for example,
+`1 month` requested on `2026-01-31T10:00:00Z` expires on `2026-03-02T10:00:00Z`. Invalid policies return
+`400 InvalidDownloadPolicy` before provisioning begins. The same fields are accepted on `POST /{visibility}/fdas/upload`
+as multipart form fields; empty strings in these multipart fields are ignored. See the
+[API reference](03_api.md#fda-payload-datamodel) for the payload datamodel.
+
+The validity period starts when creation is requested, not when the first fetch completes. It is stored as an absolute
+expiration date. Existing FDAs and new FDAs without restrictions retain their previous behavior. Policies are also
+enforced if configured on a private FDA; they do not change its visibility or authorization.
+
+### Sharing and gateway configuration
+
+A cached FDA can be shared using its DA URL, for example:
+
+```text
+/public/fdas/audit/das/defaultDataAccess/data?service=trantor&servicePath=%2Fpublic&outputType=csv
+```
+
+Only-fresh FDAs use `/public/fdas/audit/data` with the same context query parameters. No authentication headers are
+required by FDA itself. In deployments with a gateway, explicitly allow anonymous access only to the intended public
+data routes. Keep creation, updates, deletion, listing, datasources and FDA/DA metadata protected: metadata can contain
+query definitions and storage configuration. Do not expose private routes, or enable anonymous CDA compatibility routes
+without validating their resolved visibility and tenant. Public links are not secret or signed tokens, and FDA
+identifiers are not an authorization mechanism.
+
+### Quota and expiration semantics
+
+Each admitted data request consumes one download, including empty results, individual pagination requests and client
+retries. The quota is shared by all DAs, formats, cached/fresh query paths and CDA compatibility access for the FDA.
+Invalid request parameters, missing DAs and unavailable snapshots do not consume quota. Once reserved, a download is not
+refunded if execution fails or the connection is interrupted. Reservations are atomic in MongoDB, so multiple API
+instances cannot exceed the configured quota. If MongoDB is unavailable, the request fails without delivering data.
+Download responses carry `Cache-Control: no-store`; configure proxies and CDNs to respect it, disable cache overrides
+and purge any previously cached public responses.
+
+At or after expiration, new downloads return `410 FDAExpired`. Exhausted quotas return `410 DownloadLimitReached`.
+Expiration takes precedence when both conditions hold. Already admitted streams can finish. Neither condition deletes
+the FDA or its objects, cancels scheduled refreshes, or prevents authorized metadata and management access. Refreshes do
+not reset the quota or extend the expiration date.
+
+### Download metadata
+
+FDA detail and list responses expose `maxDownloads`, `downloadsUsed`, `remainingDownloads`, `expirationDate` and
+`downloadStatus` (`available`, `expired` or `exhausted`) when a policy is configured. `null` means unlimited downloads
+or no expiration, respectively. The policy status is independent of snapshot readiness. Remaining downloads are
+informational, not a reservation; another client may consume them before the next request. These fields are read-only
+and are not the buffered `access.count` statistics. Expiration enforcement uses MongoDB's clock; the informational
+metadata status uses the API clock, so keep host clocks synchronized.
 
 ## Object Bucket-Based Storage System
 

@@ -868,6 +868,9 @@ A FDA is represented by a JSON object with the following fields:
 | `cached`                                                 | ✓        | boolean                 | If `false`, the FDA is created as only-fresh: no parquet snapshot is maintained, no DAs are allowed, and the FDA is queried through `GET /{visibility}/fdas/{fdaId}/data`. Default `true`.                                                                                                                                      |
 | `datasourceId`                                           | ✓        | string                  | Datasource id used to resolve DB credentials for this FDA. If omitted, FDA uses `default`.                                                                                                                                                                                                                                      |
 | `validationMode`                                         | ✓        | string                  | Controls synchronous validation during creation. Allowed values: `strict` and `unchecked`. Default `strict`.                                                                                                                                                                                                                    |
+| `maxDownloads`                                           | ✓        | integer                 | Optional positive safe integer limiting downloads across the FDA. Omit for unlimited downloads.                                                                                                                                                                                                                                 |
+| `expirationDate`                                         | ✓        | string                  | Optional future ISO 8601 timestamp with seconds and timezone, e.g. `2027-01-21T12:00:00Z`. Mutually exclusive with `validityPeriod`.                                                                                                                                                                                            |
+| `validityPeriod`                                         | ✓        | string                  | Optional positive human-readable duration, e.g. `3 days`, `6 weeks` or `1 month`, measured from the creation request. Units have fixed lengths: months are 30 days and years are 365 days, as in `refreshInterval`, not calendar months/years as in `fetchSize`/`windowSize`. Mutually exclusive with `expirationDate`.         |
 | `lazy`                                                   | ✓        | boolean                 | If `true`, the FDA is created `idle`: nothing is fetched and no refresh is scheduled until its first query, which waits for the fetch. Only for cached FDAs. Always `true` with the `onDemand` refresh policy. See [Lazy FDAs](AdvancedTopics/lazy_fdas.md). Default `false`.                                                   |
 
 For MongoDB datasources, `query` is an object with the following keys:
@@ -1074,6 +1077,16 @@ _**Example Response:**_
 #### Create FDA `POST /{visibility}/fdas`
 
 Creates a new FDA
+
+##### Public links with download restrictions
+
+Creation accepts optional `maxDownloads` and either `expirationDate` or `validityPeriod`, as described in the
+[FDA payload datamodel](#fda-payload-datamodel). The same fields are accepted as multipart fields on upload. Invalid
+policies return `400 InvalidDownloadPolicy`; expired or exhausted policies reject new downloads with `410 FDAExpired` or
+`410 DownloadLimitReached`. Restrictions apply to the whole FDA, including private FDAs, and do not replace
+authorization. See
+[Public links with download restrictions](05_advanced_topics.md#public-links-with-download-restrictions) for examples,
+quota semantics, metadata and deployment guidance.
 
 _**Request path parameters**_
 
@@ -1298,6 +1311,9 @@ _**Request payload (multipart form fields)**_
 | `timeColumn`        | ✓        | string         | Time column name. Presence and type are validated asynchronously during processing; the API accepts the value on upload.                                                                                              |
 | `objStgConf`        | ✓        | JSON string    | Object storage options (`partition`, `compression`).                                                                                                                                                                  |
 | `defaultDataAccess` | ✓        | boolean/string | Overrides default DA auto-creation for this upload.                                                                                                                                                                   |
+| `maxDownloads`      | ✓        | integer/string | Positive safe integer download limit; omitted or empty means unlimited.                                                                                                                                               |
+| `expirationDate`    | ✓        | string         | Future ISO 8601 timestamp with seconds and timezone. Mutually exclusive with `validityPeriod`; empty is ignored.                                                                                                      |
+| `validityPeriod`    | ✓        | string         | Positive human-readable duration, e.g. `7 days`, `6 weeks` or `1 month`. Months are fixed 30 days and years fixed 365 days (not calendar). Mutually exclusive with `expirationDate`; empty is ignored.                |
 
 Upload-based FDAs do not use a datasource or query. Their `datasourceId` and `query` metadata fields are stored as
 `null`.
@@ -1568,12 +1584,13 @@ None
 
 A DA is represented by a JSON object with the following fields:
 
-| Parameter     | Optional | Type   | Description                                                                                            |
-| ------------- | -------- | ------ | ------------------------------------------------------------------------------------------------------ |
-| `id`          | (\*)     | string | DA identifier, unique within the associated FDA.                                                       |
-| `description` | ✓        | string | A free text used by the client to describe the DA. If omitted, no description is stored.               |
-| `query`       |          | string | Query string, without **FROM**, clause to run over the FDA when invoking the DA                        |
-| `params`      | ✓        | array  | Array of [param objects](#params) to control param values. If omitted, the DA has no query parameters. |
+| Parameter     | Optional | Type   | Description                                                                                                                              |
+| ------------- | -------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`          | (\*)     | string | DA identifier, unique within the associated FDA.                                                                                         |
+| `description` | ✓        | string | A free text used by the client to describe the DA. If omitted, no description is stored.                                                 |
+| `query`       |          | string | Query string, without **FROM**, clause to run over the FDA when invoking the DA                                                          |
+| `params`      | ✓        | array  | Array of [param objects](#params) to control param values. If omitted, the DA has no query parameters.                                   |
+| `timeRange`   | ✓        | object | [Time range object](#time-range) naming the params that bound the FDA `timeColumn`. If omitted, queries read every partition of the FDA. |
 
 (\*) The `id` field is mandatory when creating a DA (`POST`) and must not be included when updating a DA (`PUT`).
 
@@ -1635,6 +1652,41 @@ Example array:
         "range": [10, 14]
     }
 ]
+```
+
+#### Time range
+
+The optional `timeRange` object tells which params of the DA hold the bounds of the FDA `timeColumn` in the query:
+
+| Parameter | Optional | Type   | Description                                               |
+| --------- | -------- | ------ | --------------------------------------------------------- |
+| `start`   | ✓        | string | Name of the param with the lower bound of the time range. |
+| `finish`  | ✓        | string | Name of the param with the upper bound of the time range. |
+
+At least one of them is required, and each one must be the name of a param declared in `params`; otherwise the request
+fails with `400 InvalidParam`.
+
+When the FDA is partitioned, the values received in these params are used to read only the partitions that overlap the
+requested range, instead of every partition of the FDA. `timeRange` does not filter rows by itself: the `query` must
+still compare `timeColumn` with those params. It has no effect in non-partitioned FDAs. See
+[Partition pruning](/doc/AdvancedTopics/sliding_windows_and_partitioning.md#partition-pruning) for details.
+
+On update (`PUT`), `timeRange` must be sent again if it is still wanted: a `PUT` without it removes the stored one.
+Since `query` is always replaced on update, keeping a previous `timeRange` could leave it pointing to params that the
+new query no longer uses as bounds of `timeColumn`, and the DA would silently return fewer rows.
+
+Example:
+
+```json
+{
+    "id": "da_alarms_by_date",
+    "query": "SELECT * WHERE ($from IS NULL OR timeinstant >= CAST($from AS TIMESTAMP)) AND ($to IS NULL OR timeinstant < CAST($to AS TIMESTAMP))",
+    "params": [
+        { "name": "from", "default": null },
+        { "name": "to", "default": null }
+    ],
+    "timeRange": { "start": "from", "finish": "to" }
+}
 ```
 
 ### DAs operations

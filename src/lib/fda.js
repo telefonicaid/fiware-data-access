@@ -33,6 +33,7 @@ import {
   toParquet,
   copyQueryToParquet,
   checkParams,
+  checkTimeRange,
   validateDAParamBindings,
   resolveDAParams,
   validateDAQuery,
@@ -71,6 +72,7 @@ import {
   updateFDAStorage,
   claimFDAForFetch,
   claimFDAForDeletion,
+  claimFDADownload,
   claimOnDemandRefresh,
   releaseOnDemandRefresh,
   createDatasource,
@@ -111,6 +113,7 @@ import {
 } from './utils/fdaScope.js';
 import { config } from './fdaConfig.js';
 import { FDAError, storageQuotaErrorFor } from './fdaError.js';
+import { normalizeDownloadPolicy } from './utils/downloadPolicy.js';
 
 import { getBasicLogger } from './utils/logger.js';
 import {
@@ -455,6 +458,7 @@ export async function executeFDAQuery({
       fdaId,
     );
 
+    await claimFDADownload(fda);
     if (datasource.type === 'mongodb') {
       const rows = await runMongoQuery(datasource.config, fda.query);
       return normalizeForSerialization(rows);
@@ -684,6 +688,7 @@ async function createFreshRowSource({
       fda.datasourceId ?? DEFAULT_DATASOURCE_ID,
     );
 
+    await claimFDADownload(fda);
     cursorReader = await createPgCursorReader(
       pgCredentials,
       text,
@@ -731,6 +736,7 @@ async function createFreshFDARowSource({
       fdaId,
     );
 
+    await claimFDADownload(fda);
     cursorReader =
       datasource.type === 'mongodb'
         ? await createMongoCursorReader(datasource.config, fda.query)
@@ -776,6 +782,7 @@ async function executeFreshQuery({ service, visibility, servicePath, params }) {
       service,
       fda.datasourceId ?? DEFAULT_DATASOURCE_ID,
     );
+    await claimFDADownload(fda);
     const rows = await runPgQuery(pgCredentials, text, values);
     return normalizeForSerialization(rows);
   } catch (e) {
@@ -936,6 +943,7 @@ export async function createDA(
   params,
   visibility,
   servicePath,
+  timeRange,
 ) {
   const conn = await getDBConnection();
 
@@ -961,6 +969,7 @@ export async function createDA(
     }
 
     const normalizedParams = checkParams(params);
+    const normalizedTimeRange = checkTimeRange(timeRange, normalizedParams);
     validateDAParamBindings(userQuery, normalizedParams || []);
     if (shouldValidateDACompatibility(fda)) {
       await validateDAQuery(conn, service, fdaId, userQuery, servicePath);
@@ -973,6 +982,7 @@ export async function createDA(
       description,
       userQuery,
       normalizedParams,
+      normalizedTimeRange,
     );
   } finally {
     await releaseDBConnection(conn);
@@ -993,8 +1003,10 @@ export async function fetchFDA(
   cached = true,
   datasourceId = DEFAULT_DATASOURCE_ID,
   validationMode = FDA_VALIDATION_MODE_STRICT,
+  downloadOptions = {},
   lazy,
 ) {
+  const downloadPolicy = normalizeDownloadPolicy(downloadOptions);
   const normalizedVisibility = normalizeVisibility(visibility);
   const normalizedServicePath = normalizeServicePath(servicePath);
   const datasource = await getDatasourceForService(service, datasourceId);
@@ -1029,6 +1041,7 @@ export async function fetchFDA(
     datasourceId,
     validationMode,
     persistedSchema,
+    downloadPolicy,
     lazyEnabled,
   );
 
@@ -2181,6 +2194,7 @@ export async function putDA(
   params,
   visibility,
   servicePath,
+  timeRange,
 ) {
   const conn = await getDBConnection();
 
@@ -2196,6 +2210,7 @@ export async function putDA(
     }
 
     const normalizedParams = checkParams(params);
+    const normalizedTimeRange = checkTimeRange(timeRange, normalizedParams);
     validateDAParamBindings(userQuery, normalizedParams || []);
     if (shouldValidateDACompatibility(fda)) {
       await validateDAQuery(conn, service, fdaId, userQuery, servicePath);
@@ -2208,6 +2223,7 @@ export async function putDA(
       description,
       userQuery,
       normalizedParams,
+      normalizedTimeRange ?? null,
     );
   } finally {
     await releaseDBConnection(conn);
@@ -2457,8 +2473,7 @@ async function ensureFDAReadyForQuery(service, fdaId, visibility, servicePath) {
   assertFDAIsCached(fda, fdaId);
 
   if (isMaterializedOnDemand(fda)) {
-    await waitForOnDemandData(fda);
-    return;
+    return waitForOnDemandData(fda);
   }
 
   // Queries are blocked only before the first successful fetch.
@@ -2469,6 +2484,7 @@ async function ensureFDAReadyForQuery(service, fdaId, visibility, servicePath) {
       `FDA ${fdaId} is not queryable yet because the first fetch has not completed`,
     );
   }
+  return fda;
 }
 
 function isMaterializedOnDemand(fda) {
@@ -2502,7 +2518,7 @@ async function waitForOnDemandData(fda) {
 
   for (;;) {
     if (hasFreshData(current)) {
-      return;
+      return current;
     }
 
     if (current.status === 'deleting') {
@@ -2516,7 +2532,7 @@ async function waitForOnDemandData(fda) {
       current = await retrieveExistingFDA(service, fdaId, servicePath);
 
       if (hasFreshData(current)) {
-        return;
+        return current;
       }
 
       if (current.status === 'failed') {
@@ -3044,10 +3060,15 @@ async function buildDefaultDataAccessDefinition(
   const whereClause =
     filters.length > 0 ? ` WHERE ${filters.join(' AND ')}` : '';
 
-  return {
+  const definition = {
     query: `SELECT *, COUNT(*) OVER() as __total${whereClause} LIMIT CAST($pageSize AS BIGINT) OFFSET CAST($pageStart AS BIGINT)`,
     params,
   };
+  if (resolvedTimeColumn) {
+    definition.timeRange = { start: 'start', finish: 'finish' };
+  }
+
+  return definition;
 }
 
 function normalizeDefaultDASchemaFields(schemaOverride) {
@@ -3430,6 +3451,7 @@ async function createDefaultDAIfNeeded({
       defaultDA.params,
       normalizedVisibility,
       normalizedServicePath,
+      defaultDA.timeRange,
     );
   } catch (err) {
     await rollbackFDAProvisioning(service, fdaId, normalizedServicePath);
@@ -3454,7 +3476,15 @@ export async function uploadFDA({
   objStgConf = {},
   cached = true,
   defaultDataAccessEnabled = config.defaultDataAccess?.enabled ?? true,
+  maxDownloads,
+  expirationDate,
+  validityPeriod,
 }) {
+  const downloadPolicy = normalizeDownloadPolicy({
+    maxDownloads,
+    expirationDate,
+    validityPeriod,
+  });
   const normalizedVisibility = normalizeVisibility(visibility);
   const normalizedServicePath = normalizeServicePath(servicePath);
 
@@ -3476,6 +3506,8 @@ export async function uploadFDA({
     cached,
     null,
     FDA_VALIDATION_MODE_STRICT,
+    null,
+    downloadPolicy,
   );
 
   logger.debug({ fdaId }, 'FDA record created');
@@ -3635,6 +3667,7 @@ export async function processUploadFDAJob({
         daDefinition.params,
         visibility,
         servicePath,
+        daDefinition.timeRange,
       );
     }
 
