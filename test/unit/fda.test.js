@@ -7002,4 +7002,100 @@ describe('lazy and onDemand FDAs', () => {
       expected,
     );
   });
+
+  test('getPartitionStart rejects an unknown partition type', () => {
+    expect(() => getPartitionStart(new Date(), 'decade')).toThrow(
+      expect.objectContaining({ status: 400, type: 'PartitionError' }),
+    );
+  });
+
+  test.each([
+    [
+      'onDemand has no params',
+      { type: 'onDemand' },
+      'observed_at',
+      { partition: 'day' },
+      'Missing required refresh policy parameter: maxAge.',
+    ],
+    [
+      'a partitioned onDemand FDA has no timeColumn',
+      onDemandPolicy,
+      undefined,
+      { partition: 'day' },
+      'timeColumn is required when using partitioning.',
+    ],
+    [
+      'a partitioned onDemand FDA has an invalid partition type',
+      onDemandPolicy,
+      'observed_at',
+      { partition: 'decade' },
+      'Invalid partition type "decade".',
+    ],
+    [
+      'a partitioned onDemand FDA has an invalid windowSize',
+      { type: 'onDemand', params: { maxAge: '1 hour', windowSize: '3 ages' } },
+      'observed_at',
+      { partition: 'day' },
+      'Invalid windowSize "3 ages".',
+    ],
+  ])(
+    'rejects the FDA when %s',
+    async (_name, refreshPolicy, timeColumn, objStgConf, message) => {
+      await expect(
+        fetchFDA(
+          'fdaLazy',
+          'SELECT id, observed_at FROM users',
+          'svc',
+          'public',
+          '/servicepath',
+          'desc',
+          refreshPolicy,
+          timeColumn,
+          objStgConf,
+          false,
+          true,
+          'default',
+          'strict',
+        ),
+      ).rejects.toMatchObject({ status: 400, type: 'InvalidParam', message });
+      expect(mongoMocks.createFDAMongo).not.toHaveBeenCalled();
+    },
+  );
+
+  test('returns 409 when the FDA is being deleted while waiting for its data', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue(storedFDA({ status: 'deleting' }));
+
+    await expect(queryLazyFDA()).rejects.toMatchObject({
+      status: 409,
+      type: 'FDAUnavailable',
+    });
+    expect(mongoMocks.claimOnDemandRefresh).not.toHaveBeenCalled();
+  });
+
+  test('a query that loses the claim to a finished refresh answers with the new data', async () => {
+    const expired = storedFDA({
+      status: 'completed',
+      lastFetch: new Date(Date.now() - 16 * 60 * 1000),
+    });
+    mongoMocks.retrieveFDA
+      .mockResolvedValueOnce(expired)
+      .mockResolvedValueOnce({ ...expired, lastFetch: new Date() });
+    mongoMocks.claimOnDemandRefresh.mockResolvedValueOnce(null);
+
+    await expect(queryLazyFDA()).resolves.toEqual([{ id: 1 }]);
+    expect(agenda.now).not.toHaveBeenCalled();
+  });
+
+  test('reports an unknown error when a failed materialization has no error message', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue(
+      storedFDA({ status: 'failed', initFetch: new Date() }),
+    );
+    mongoMocks.claimOnDemandRefresh.mockResolvedValueOnce(null);
+
+    await expect(queryLazyFDA()).rejects.toMatchObject({
+      status: 503,
+      type: 'FDAMaterializationFailed',
+      message: expect.stringContaining('unknown error'),
+    });
+  });
 });
