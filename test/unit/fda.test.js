@@ -4421,6 +4421,7 @@ describe('deleteFDA', () => {
     agenda.cancel.mockResolvedValue(undefined);
     awsMocks.getS3Client.mockReturnValue({});
     awsMocks.dropFile.mockResolvedValue(undefined);
+    awsMocks.listObjectsWithSize.mockResolvedValue([]);
     mongoMocks.removeFDA.mockResolvedValue(undefined);
     mongoMocks.claimFDAForDeletion.mockResolvedValue({ status: 'completed' });
   });
@@ -4432,13 +4433,32 @@ describe('deleteFDA', () => {
       visibility: 'private',
       servicePath: '/servicepath',
     });
-    awsMocks.listObjects.mockResolvedValue(['servicepath/fdaA.parquet']);
+    awsMocks.listObjectsWithSize.mockResolvedValue([
+      { key: 'servicepath/fdaA.parquet', size: 1024 },
+    ]);
+    const requestLogger = {
+      info: jest.fn(),
+      warn: jest.fn(),
+      error: jest.fn(),
+      debug: jest.fn(),
+    };
 
-    await deleteFDA('svc', 'fdaA', 'private', '/servicepath');
+    await runWithLogger(requestLogger, () =>
+      deleteFDA('svc', 'fdaA', 'private', '/servicepath'),
+    );
 
     expect(awsMocks.dropFiles).toHaveBeenCalledWith({}, 'svc', [
       'servicepath/fdaA.parquet',
     ]);
+    expect(requestLogger.info).toHaveBeenCalledWith(
+      {
+        service: 'svc',
+        fdaId: 'fdaA',
+        deletedFiles: 1,
+        deletedBytes: 1024,
+      },
+      'FDA storage objects deleted',
+    );
     expect(mongoMocks.removeFDA).toHaveBeenCalledWith(
       'svc',
       'fdaA',
@@ -4478,11 +4498,13 @@ describe('deleteFDA', () => {
       visibility: 'private',
       servicePath: '/servicepath',
     });
-    awsMocks.listObjects.mockResolvedValue(['servicepath/fdaA.parquet']);
+    awsMocks.listObjectsWithSize.mockResolvedValue([
+      { key: 'servicepath/fdaA.parquet', size: 0 },
+    ]);
 
     await deleteFDA('service_name', 'fdaA', 'private', '/servicepath');
 
-    expect(awsMocks.listObjects).toHaveBeenCalledWith(
+    expect(awsMocks.listObjectsWithSize).toHaveBeenCalledWith(
       {},
       'service-name',
       'servicepath/fdaA',
@@ -4499,13 +4521,13 @@ describe('deleteFDA', () => {
       visibility: 'private',
       servicePath: '/test',
     });
-    // listObjects returns objects for both fda_test and fda_test_1 because S3
+    // listObjectsWithSize returns objects for both fda_test and fda_test_1 because S3
     // prefix listing matches any key starting with "test/fda_test"
-    awsMocks.listObjects.mockResolvedValue([
-      'test/fda_test.parquet',
-      'test/fda_test_1.parquet',
-      'test/fda_test/year=2024/data.parquet',
-      'test/fda_test_1/year=2024/data.parquet',
+    awsMocks.listObjectsWithSize.mockResolvedValue([
+      { key: 'test/fda_test.parquet', size: 100 },
+      { key: 'test/fda_test_1.parquet', size: 500 },
+      { key: 'test/fda_test/year=2024/data.parquet', size: 200 },
+      { key: 'test/fda_test_1/year=2024/data.parquet', size: 700 },
     ]);
 
     await deleteFDA('svc', 'fda_test', 'private', '/test');
@@ -4551,7 +4573,7 @@ describe('deleteFDA', () => {
       visibility: 'private',
       servicePath: '/servicepath',
     });
-    awsMocks.listObjects.mockResolvedValue([]);
+    awsMocks.listObjectsWithSize.mockResolvedValue([]);
 
     await deleteFDA('svc', 'fdaA', 'private', '/servicepath');
 
