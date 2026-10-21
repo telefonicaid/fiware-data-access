@@ -19,6 +19,7 @@
     -   [Flow](#flow)
 -   [Asynchronous Processing & Job System](#asynchronous-processing--job-system)
     -   [Sliding windows and partitioning](#sliding-windows-and-partitioning)
+    -   [Lazy FDAs and the onDemand refresh policy](#lazy-fdas-and-the-ondemand-refresh-policy)
     -   [Multi-instance coverage](#multi-instance-coverage)
 -   [Uploading Tabular Data](#uploading-tabular-data)
     -   [File Format Support](#file-format-support)
