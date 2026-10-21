@@ -1852,6 +1852,7 @@ async function measureFDAStorageSafely(service, fdaId, servicePath) {
 }
 
 async function cleanTmpFolder(s3Client, bucket, tmpPath) {
+  logger.info({ bucket, tmpPath }, 'Cleaning temporary files in S3');
   // We need to clean tmp folder in failed attempts to avoid accumulation of temp files in S3
   await dropFile(s3Client, bucket, tmpPath);
   const remnantTempFiles = await listObjects(s3Client, bucket, `${tmpPath}/`);
@@ -2118,15 +2119,32 @@ export async function deleteFDA(service, fdaId, visibility, servicePath) {
   );
   // This way we remove FDAs independently of if theyre partitioned or not
   const storagePath = getFDAStoragePath(fdaId, targetServicePath);
-  const allObjPaths = await listObjects(s3Client, bucketName, storagePath);
+  const allObjects = await listObjectsWithSize(
+    s3Client,
+    bucketName,
+    storagePath,
+  );
   // Filter strictly to objects belonging to this FDA only, preventing
   // accidental deletion of sibling FDAs whose IDs share a common prefix
   // (e.g. fda_test and fda_test_1 both match the prefix "fda_test").
-  const objPaths = allObjPaths.filter(
-    (key) =>
+  const objectsToDelete = allObjects.filter(
+    ({ key }) =>
       key.startsWith(`${storagePath}/`) || key.startsWith(`${storagePath}.`),
   );
+  const objPaths = objectsToDelete.map(({ key }) => key);
   await dropFiles(s3Client, bucketName, objPaths);
+  logger.info(
+    {
+      service,
+      fdaId,
+      deletedFiles: objectsToDelete.length,
+      deletedBytes: objectsToDelete.reduce(
+        (total, { size }) => total + size,
+        0,
+      ),
+    },
+    'FDA storage objects deleted',
+  );
   await cleanTmpFolder(s3Client, bucketName, `tmp/${storagePath}.parquet`);
 
   await removeFDA(service, fdaId, targetServicePath);
