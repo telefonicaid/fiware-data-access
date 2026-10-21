@@ -152,6 +152,67 @@ The same tests are executed in CI using GitHub Actions
 
 ---
 
+## Available npm Scripts
+
+The following scripts are defined in `package.json` and can be executed with `npm run <script>` (`npm start` and
+`npm test` can be used without `run`). Extra arguments can be forwarded to the underlying tool after `--`, for example
+`npm test -- test/unit`.
+
+### Development
+
+| Script  | Description                                                                                                                                                                                                |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `start` | Starts the FDA service (`node src/index.js`). Used by the Docker image. Requires the configuration described in [`04_config_operational_guide.md`](./04_config_operational_guide.md) (e.g. a `.env` file). |
+| `dev`   | Starts the FDA service with `nodemon`, restarting it automatically when source files change. Intended for local development only. Same configuration requirements as `start`.                              |
+| `clean` | Removes `node_modules` and `package-lock.json`. Useful to force a clean reinstall of dependencies; run `npm install` afterwards.                                                                           |
+
+### Linting and Formatting
+
+| Script      | Description                                                                                                                                   |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lint`      | Runs `lint:api` and `lint:test`. This is the check executed in CI, so run it before opening a pull request.                                   |
+| `lint:api`  | Runs ESLint over the application sources (`src/lib/` and `src/routes/`).                                                                      |
+| `lint:test` | Runs ESLint over the integration tests (`test/integration/`).                                                                                 |
+| `lint:fix`  | Runs ESLint over `src/lib/` and `src/routes/` applying automatic fixes. Test files are not fixed by this script.                              |
+| `prettier`  | Formats all JavaScript files of the repository with Prettier using `.prettierrc.json`. Modifies files in place, so review the resulting diff. |
+
+ESLint scripts use `--cache`, storing results in `.eslintcache` (ignored by git). Additionally, a `husky` pre-commit
+hook runs `lint-staged`, which formats staged `*.js` and `*.md` files with Prettier automatically.
+
+### Tests
+
+All test scripts run Jest in band (`--runInBand`) with `NODE_ENV=test` and `--experimental-vm-modules` (required for ES
+modules). Integration and performance tests require Docker to be running, since dependencies are started with
+Testcontainers.
+
+| Script                    | Description                                                                                                                                                                                                                                                                        |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `test`                    | Runs every `*.test.js` file of the repository (unit, integration and performance suites). Because the performance suite is included, a full run can take a long time; pass a path or a name filter to narrow it down (e.g. `npm test -- test/unit` or `npm test -- -t "pattern"`). |
+| `test:performance`        | Runs only the performance suite (`test/performance`). See [Performance](./07_performance.md) for available parameters.                                                                                                                                                             |
+| `test:performance:memory` | Runs the DuckDB window memory scenarios of the performance suite (`FDA_MEMORY_MATRIX=true`) with a 3,000,000-row source table. Demanding in time and memory. See [DuckDB memory management](./AdvancedTopics/duckdb_memory_management.md).                                         |
+
+### Coverage
+
+Coverage is collected with `c8` over `src/**/*.js` and written in `lcov` and text-summary formats. See
+[Coverage Considerations](#coverage-considerations) for details on how reports are merged.
+
+| Script                      | Description                                                                                                                                    |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `test:coverage`             | Runs all test suites (same scope as `test`) collecting coverage into `coverage/`.                                                              |
+| `test:coverage:unit`        | Runs only the unit tests (`test/unit`) collecting coverage into `coverage/unit/`. Does not require Docker. Executed in CI.                     |
+| `test:coverage:integration` | Runs only the integration tests (`test/integration`) collecting coverage into `coverage/integration/`. Requires Docker. Executed in CI.        |
+| `test:coverage:merge`       | Merges `coverage/*/lcov.info` into `coverage/lcov.info` using `lcov-result-merger` (downloaded through `npx`, network access may be required). |
+| `test:coverage:ci`          | Runs `test:coverage:unit`, `test:coverage:integration` and `test:coverage:merge` in sequence, reproducing locally the report published by CI.  |
+
+### OpenAPI
+
+| Script             | Description                                                                                                                                                                                                               |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `openapi:generate` | Generates `openapi.generated.json` (ignored by git) from the `@swagger` JSDoc annotations in `src/routes/*.js` and `src/lib/openapiComponents.js`.                                                                        |
+| `openapi:validate` | Runs `openapi:generate` and lints the generated spec with `@redocly/cli` (downloaded through `npx`, network access may be required). Executed in CI; run it after changing API routes or their documentation annotations. |
+
+---
+
 ## 🧭 Navigation
 
 -   [⬅️ Previous: Advanced Topics](/doc/05_advanced_topics.md)

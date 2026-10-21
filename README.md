@@ -44,7 +44,7 @@ Complete documentation is available in the [`doc/`](./doc/) directory:
     [Swagger UI](https://swagger.io/tools/swagger-ui/) at `GET /api-docs` on a running instance)
 -   [`04_config_operational_guide.md`](./doc/04_config_operational_guide.md) – Configuration and operational guide
 -   [`05_advanced_topics.md`](./doc/05_advanced_topics.md) – Advanced topics
--   [`06_testing.md`](./doc/06_testing.md) – Test strategy and execution
+-   [`06_testing.md`](./doc/06_testing.md) – Test strategy, execution and available npm scripts
 -   [`07_performance.md`](./doc/07_performance.md) – Performance measurement utilities
 
 ---
