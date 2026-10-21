@@ -734,3 +734,17 @@ Therefore, the current evidence indicates that the production OOM is caused by t
 
 The important consequence for the FDA configuration is that the DuckDB memory limit must leave enough headroom for these
 non-spillable extension allocations in addition to the memory required by the query itself.
+
+# Observability of DuckDB memory
+
+Every Parquet export logs the DuckDB memory before it starts and the peak sampled while it runs, at `INFO` when it
+succeeds and at `WARN` when it fails (see the operational guide). The Fetcher heartbeat, `GET /health` and
+`GET /metrics` report the DuckDB memory state of the process between exports. Use them to decide the memory limit before
+changing it:
+
+-   The peak logs show which allocation tags were holding memory when an export failed. A large `EXTENSION` value is the
+    non-spillable `httpfs` memory described above, so the limit must leave room for it.
+-   `fda_duckdb_memory_limit_bytes` and `fda_duckdb_memory_used_bytes` show the effective `memory_limit` and current
+    usage. Outside exports the usage is usually `0`, because DuckDB releases memory when an export ends.
+-   `fda_duckdb_memory_usage_bytes{tag=...}` and `fda_duckdb_temp_storage_bytes` give the same breakdown and the bytes
+    spilled to `FDA_DUCKDB_TEMP_DIR` at scrape time.

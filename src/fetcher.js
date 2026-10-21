@@ -229,8 +229,12 @@ export async function startFetcher() {
 
   let heartbeatTimer;
   if (config.fetcher.heartbeatIntervalMs > 0) {
-    heartbeatTimer = setInterval(() => {
-      logger.debug('[Fetcher] Heartbeat: alive');
+    heartbeatTimer = setInterval(async () => {
+      const { formatDuckDBMemory, getDuckDBMemorySnapshot } = await import(
+        './lib/utils/db.js'
+      );
+      const snapshot = await getDuckDBMemorySnapshot();
+      logger.info(formatDuckDBMemory(snapshot), '[Fetcher] Heartbeat: alive');
     }, config.fetcher.heartbeatIntervalMs);
 
     heartbeatTimer.unref();
