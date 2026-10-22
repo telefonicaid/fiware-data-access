@@ -2229,6 +2229,25 @@ describe('fetchFDA', () => {
     expect(agenda.now).not.toHaveBeenCalled();
   });
 
+  test('accepts an uncached FDA without a refresh policy', async () => {
+    await fetchFDA(
+      'fda1',
+      'SELECT id FROM users;',
+      'svc',
+      'public',
+      '/servicepath',
+      'test FDA',
+      undefined,
+      undefined,
+      undefined,
+      true,
+      false,
+    );
+
+    expect(mongoMocks.createFDAMongo).toHaveBeenCalled();
+    expect(agenda.now).not.toHaveBeenCalled();
+  });
+
   test('rejects DA creation for only-fresh FDAs', async () => {
     mongoMocks.retrieveFDA.mockResolvedValue({
       visibility: 'public',
