@@ -3824,6 +3824,116 @@ describe('putFDA with update body', () => {
     expect(mongoMocks.regenerateFDA).not.toHaveBeenCalled();
   });
 
+  test('updates maxDownloads keeping the stored expiration', async () => {
+    const expirationDate = new Date('2100-01-01T00:00:00.000Z');
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      ...storedFDA,
+      downloadPolicy: { maxDownloads: 1, expirationDate },
+      downloadsUsed: 1,
+    });
+
+    await putFDA('svc', 'fda42', 'public', '/servicepath', {
+      maxDownloads: 5,
+    });
+
+    expect(mongoMocks.regenerateFDA).toHaveBeenCalledWith(
+      'svc',
+      'fda42',
+      '/servicepath',
+      { downloadPolicy: { maxDownloads: 5, expirationDate } },
+      [],
+    );
+    expect(agenda.cancel).not.toHaveBeenCalled();
+  });
+
+  test('counts a validityPeriod update from now', async () => {
+    jest.useFakeTimers({ now: new Date('2026-10-22T00:00:00.000Z') });
+
+    try {
+      await putFDA('svc', 'fda42', 'public', '/servicepath', {
+        validityPeriod: '7 days',
+      });
+    } finally {
+      jest.useRealTimers();
+    }
+
+    expect(mongoMocks.regenerateFDA).toHaveBeenCalledWith(
+      'svc',
+      'fda42',
+      '/servicepath',
+      {
+        downloadPolicy: {
+          expirationDate: new Date('2026-10-29T00:00:00.000Z'),
+        },
+      },
+      [],
+    );
+  });
+
+  test('removes a single download limit when it is set to null', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      ...storedFDA,
+      downloadPolicy: {
+        maxDownloads: 3,
+        expirationDate: new Date('2100-01-01T00:00:00.000Z'),
+      },
+    });
+
+    await putFDA('svc', 'fda42', 'public', '/servicepath', {
+      expirationDate: null,
+    });
+
+    expect(mongoMocks.regenerateFDA).toHaveBeenCalledWith(
+      'svc',
+      'fda42',
+      '/servicepath',
+      { downloadPolicy: { maxDownloads: 3 } },
+      [],
+    );
+  });
+
+  test('removes the download policy when every limit is set to null', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      ...storedFDA,
+      downloadPolicy: { maxDownloads: 3 },
+    });
+
+    await putFDA('svc', 'fda42', 'public', '/servicepath', {
+      maxDownloads: null,
+      expirationDate: null,
+    });
+
+    expect(mongoMocks.regenerateFDA).toHaveBeenCalledWith(
+      'svc',
+      'fda42',
+      '/servicepath',
+      {},
+      ['downloadPolicy'],
+    );
+  });
+
+  test.each([
+    [{ maxDownloads: 0 }, 'maxDownloads must be a positive safe integer'],
+    [
+      { expirationDate: '2100-01-01T00:00:00Z', validityPeriod: '7 days' },
+      'Specify expirationDate or validityPeriod, not both',
+    ],
+    [
+      { expirationDate: '2000-01-01T00:00:00Z' },
+      'expirationDate must be in the future',
+    ],
+  ])('rejects the download policy update %o', async (updates, message) => {
+    await expect(
+      putFDA('svc', 'fda42', 'public', '/servicepath', updates),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidUpdateBody',
+      message: expect.stringContaining(message),
+    });
+
+    expect(mongoMocks.regenerateFDA).not.toHaveBeenCalled();
+  });
+
   test('rejects storage rebuilds for upload FDAs', async () => {
     mongoMocks.retrieveFDA.mockResolvedValue({
       ...storedFDA,

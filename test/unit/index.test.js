@@ -933,6 +933,9 @@ describe('index routes - validation and middleware branches', () => {
       'timeColumn',
       'objStgConf',
       'validationMode',
+      'maxDownloads',
+      'expirationDate',
+      'validityPeriod',
     ]);
   });
 
