@@ -565,6 +565,11 @@ router.get('/:visibility/fdas/:fdaId', async (req, res) => {
  *       `objStgConf.partition`, or the `timeColumn` of a partitioned FDA, deletes the stored data and rebuilds
  *       it from scratch, so the FDA cannot be queried until the regeneration completes. A `compression`-only
  *       change applies to files written from then on.
+ *
+ *       `maxDownloads`, `expirationDate` and `validityPeriod` update the download restrictions independently
+ *       (`expirationDate` and `validityPeriod` are mutually exclusive). `validityPeriod` starts counting from the
+ *       update, `null` removes that limit, and `downloadsUsed` is kept, so raising `maxDownloads` re-enables an
+ *       exhausted FDA.
  *     parameters:
  *       - $ref: '#/components/parameters/VisibilityPath'
  *       - $ref: '#/components/parameters/FdaIdPath'
@@ -590,6 +595,19 @@ router.get('/:visibility/fdas/:fdaId', async (req, res) => {
  *                 $ref: '#/components/schemas/RefreshPolicy'
  *               objStgConf:
  *                 $ref: '#/components/schemas/ObjStgConf'
+ *               maxDownloads:
+ *                 type: integer
+ *                 minimum: 1
+ *                 maximum: 9007199254740991
+ *                 nullable: true
+ *               expirationDate:
+ *                 type: string
+ *                 format: date-time
+ *                 nullable: true
+ *               validityPeriod:
+ *                 type: string
+ *                 pattern: '^(?:(\d+)\s+)?(second|minute|hour|day|week|month|year)s?$'
+ *                 nullable: true
  *           examples:
  *             changeRefreshPolicy:
  *               summary: Refresh the whole FDA every hour
@@ -604,6 +622,16 @@ router.get('/:visibility/fdas/:fdaId', async (req, res) => {
  *                 timeColumn: observedAt
  *                 objStgConf:
  *                   partition: month
+ *             extendDownloads:
+ *               summary: Allow 10 downloads during the next 7 days
+ *               value:
+ *                 maxDownloads: 10
+ *                 validityPeriod: 7 days
+ *             removeDownloadLimits:
+ *               summary: Remove the download restrictions
+ *               value:
+ *                 maxDownloads: null
+ *                 expirationDate: null
  *     responses:
  *       '202':
  *         description: Regeneration accepted; processing continues asynchronously.
@@ -651,6 +679,9 @@ router.put('/:visibility/fdas/:fdaId', async (req, res) => {
     'timeColumn',
     'objStgConf',
     'validationMode',
+    'maxDownloads',
+    'expirationDate',
+    'validityPeriod',
   ];
   validateAllowedFieldsBody(body, updatableFields);
 

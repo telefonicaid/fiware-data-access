@@ -1451,11 +1451,8 @@ export async function putFDA(
     return;
   }
 
-  const { setFields, rescheduleJobs, rebuildStorage } = await validateFDAUpdate(
-    fda,
-    datasource,
-    updates,
-  );
+  const { setFields, unsetFields, rescheduleJobs, rebuildStorage } =
+    await validateFDAUpdate(fda, datasource, updates);
 
   // Claims the FDA (409 if it is being processed) and stores the new values atomically
   const previous = await regenerateFDA(
@@ -1463,7 +1460,7 @@ export async function putFDA(
     fdaId,
     normalizedServicePath,
     setFields,
-    rebuildStorage ? ['lastFetch'] : [],
+    unsetFields,
   );
   const effectiveServicePath = previous.servicePath ?? normalizedServicePath;
 
@@ -1547,8 +1544,16 @@ async function scheduleFDARegeneration(
 }
 
 async function validateFDAUpdate(fda, datasource, updates) {
-  const { description, timeColumn, validationMode, refreshPolicy, objStgConf } =
-    updates;
+  const {
+    description,
+    timeColumn,
+    validationMode,
+    refreshPolicy,
+    objStgConf,
+    maxDownloads,
+    expirationDate,
+    validityPeriod,
+  } = updates;
 
   try {
     if (
@@ -1682,13 +1687,34 @@ async function validateFDAUpdate(fda, datasource, updates) {
       setFields.objStgConf = effectiveObjStgConf;
     }
 
+    const unsetFields = [];
+    if (
+      maxDownloads !== undefined ||
+      expirationDate !== undefined ||
+      validityPeriod !== undefined
+    ) {
+      const downloadPolicy = buildUpdatedDownloadPolicy(
+        fda.downloadPolicy,
+        updates,
+      );
+      if (downloadPolicy) {
+        setFields.downloadPolicy = downloadPolicy;
+      } else {
+        unsetFields.push('downloadPolicy');
+      }
+    }
+
     // Recurring jobs keep a copy of these values, so they must be recreated
     const rescheduleJobs =
       timeColumnChanged ||
       !isDeepStrictEqual(effectiveRefreshPolicy, fda.refreshPolicy) ||
       !isDeepStrictEqual(effectiveObjStgConf, fda.objStgConf ?? {});
 
-    return { setFields, rescheduleJobs, rebuildStorage };
+    if (rebuildStorage) {
+      unsetFields.push('lastFetch');
+    }
+
+    return { setFields, unsetFields, rescheduleJobs, rebuildStorage };
   } catch (err) {
     if (err.status !== 400) {
       throw err;
@@ -1742,6 +1768,30 @@ function validateObjStgConfUpdate(objStgConf) {
       'objStgConf.compression must be a boolean.',
     );
   }
+}
+
+// Each download limit is updated independently: null removes it, and a
+// validityPeriod starts counting from the update. downloadsUsed is kept.
+function buildUpdatedDownloadPolicy(
+  currentPolicy,
+  { maxDownloads, expirationDate, validityPeriod },
+) {
+  const updatedLimits = normalizeDownloadPolicy({
+    maxDownloads: maxDownloads ?? undefined,
+    expirationDate: expirationDate ?? undefined,
+    validityPeriod: validityPeriod ?? undefined,
+  });
+
+  const downloadPolicy = { ...currentPolicy };
+  if (maxDownloads === null) {
+    delete downloadPolicy.maxDownloads;
+  }
+  if (expirationDate === null || validityPeriod === null) {
+    delete downloadPolicy.expirationDate;
+  }
+  Object.assign(downloadPolicy, updatedLimits);
+
+  return Object.keys(downloadPolicy).length > 0 ? downloadPolicy : undefined;
 }
 
 function getEffectivePartition(objStgConf) {
