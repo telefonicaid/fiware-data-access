@@ -52,12 +52,14 @@ import { registerFreshQueriesIntegrationTests } from './suites/freshQueries.inte
 import { registerQueryStyleDataIntegrationTests } from './suites/queryStyleData.integration.tests.js';
 import { registerVisibilityConstraintsIntegrationTests } from './suites/visibilityConstraints.integration.tests.js';
 import { registerCdaCompatibilityIntegrationTests } from './suites/cdaCompatibility.integration.tests.js';
+import { registerDownloadLimitsIntegrationTests } from './suites/downloadLimits.integration.tests.js';
 import { registerFdaLifecycleIntegrationTests } from './suites/fdaLifecycle.integration.tests.js';
 import { registerMongoFdasIntegrationTests } from './suites/mongoFdas.integration.tests.js';
 import { registerMongoSlidingWindowsIntegrationTests } from './suites/mongoSlidingWindows.integration.tests.js';
 import { registerComplexCasesIntegrationTests } from './suites/complexCases.integration.tests.js';
 import { registerUploadFdasIntegrationTests } from './suites/uploadFdas.integration.tests.js';
 import { registerStorageCleanupIntegrationTests } from './suites/storageCleanup.integration.tests.js';
+import { registerStorageQuotaIntegrationTests } from './suites/storageQuota.integration.tests.js';
 import { registerFdaAccoutingIntegrationTests } from './suites/fdaAccounting.integration.tests.js';
 import {
   httpReq,
@@ -581,6 +583,20 @@ export function runFDAIntegrationSuite({ mode, label }) {
       getPgPort: () => pgPort,
     });
 
+    registerDownloadLimitsIntegrationTests({
+      getBaseUrl: () => baseUrl,
+      service,
+      servicePath,
+      visibility,
+      httpReq,
+      httpFormReq,
+      waitUntilFDACompleted,
+      buildDaDataUrl,
+      buildFdaDataUrl,
+      getPgHost: () => pgHost,
+      getPgPort: () => pgPort,
+    });
+
     registerFdaLifecycleIntegrationTests({
       getBaseUrl: () => baseUrl,
       service,
@@ -642,6 +658,16 @@ export function runFDAIntegrationSuite({ mode, label }) {
     });
 
     registerStorageCleanupIntegrationTests({
+      getBaseUrl: () => baseUrl,
+      getMinioUrl: () => minioUrl,
+      getPgHost: () => pgHost,
+      getPgPort: () => pgPort,
+      service,
+      visibility,
+      httpReq,
+    });
+
+    registerStorageQuotaIntegrationTests({
       getBaseUrl: () => baseUrl,
       getMinioUrl: () => minioUrl,
       getPgHost: () => pgHost,

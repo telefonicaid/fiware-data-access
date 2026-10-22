@@ -203,6 +203,9 @@ router.post('/:visibility/fdas', async (req, res) => {
     'cached',
     'datasourceId',
     'validationMode',
+    'maxDownloads',
+    'expirationDate',
+    'validityPeriod',
   ]);
   const {
     id,
@@ -214,6 +217,9 @@ router.post('/:visibility/fdas', async (req, res) => {
     cached,
     datasourceId,
     validationMode,
+    maxDownloads,
+    expirationDate,
+    validityPeriod,
   } = body;
   const service = req.get('Fiware-Service');
   const servicePath = req.get('Fiware-ServicePath');
@@ -259,6 +265,7 @@ router.post('/:visibility/fdas', async (req, res) => {
     cachedEnabled,
     datasourceId,
     resolvedValidationMode,
+    { maxDownloads, expirationDate, validityPeriod },
   );
 
   return res.status(202).json({
@@ -460,6 +467,14 @@ router.post('/:visibility/fdas/upload', (req, res) => {
         objStgConf: uploadData.objStgConfParsed,
         cached: true,
         defaultDataAccessEnabled: uploadData.defaultDataAccessBool,
+        maxDownloads:
+          req.body.maxDownloads === undefined || req.body.maxDownloads === ''
+            ? undefined
+            : Number(req.body.maxDownloads),
+        expirationDate:
+          req.body.expirationDate === '' ? undefined : req.body.expirationDate,
+        validityPeriod:
+          req.body.validityPeriod === '' ? undefined : req.body.validityPeriod,
       });
 
       return res.status(202).json({

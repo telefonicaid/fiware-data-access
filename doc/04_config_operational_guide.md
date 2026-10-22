@@ -5,6 +5,28 @@ The application is configured primarily through environment variables.
 
 ---
 
+## Table of Contents
+
+-   [Introduction](#introduction)
+-   [Environment Variables](#environment-variables)
+    -   [Environment](#environment)
+    -   [Instance Roles](#instance-roles)
+    -   [PostgreSQL pool and datasources](#postgresql-pool-and-datasources)
+    -   [Object bucket-based storage system](#object-bucket-based-storage-system)
+    -   [DuckDB](#duckdb)
+    -   [MongoDB](#mongodb)
+    -   [Uploads](#uploads)
+    -   [Logger](#logger)
+-   [Example `.env` file](#example-env-file)
+-   [Health and Metrics Endpoints](#health-and-metrics-endpoints)
+    -   [`GET /health`](#get-health)
+    -   [`GET /metrics`](#get-metrics)
+    -   [Metrics Reference Table](#metrics-reference-table)
+-   [Logging and Traceability](#logging-and-traceability)
+-   [Navigation](#-navigation)
+
+---
+
 ## Introduction
 
 `Fiware-data-access` supports configuration via a `.env` file, or in docker service in
@@ -41,15 +63,16 @@ Variables related to the environment of the application:
 
 Variables that define which components of the application are executed by this instance:
 
-| Variable                            | Optional | Type    | Description                                                                                                                                                          |
-| ----------------------------------- | -------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `FDA_ROLE_APISERVER`                | ✓        | boolean | If `true`, the instance runs the API server to handle HTTP requests. Default `true`.                                                                                 |
-| `FDA_ROLE_FETCHER`                  | ✓        | boolean | If `true`, the instance runs the fetcher responsible for regenerating and updating FDAs. Default `true`.                                                             |
-| `FDA_ROLE_SYNCQUERIES`              | ✓        | boolean | If `true`, the API instance accepts creation of fresh queries, `GET /{visibility}/fdas/{fdaId}/data` and executes FDAs directly against PostgreSQL. Default `false`. |
-| `FDA_MAX_CONCURRENT_FRESH_QUERIES`  | ✓        | number  | Maximum number of concurrent direct fresh FDA queries accepted by the API instance. Additional requests return `429 TooManyFreshQueries`. Default `5`.               |
-| `FDA_CREATE_DEFAULT_DATA_ACCESS`    | ✓        | boolean | If `true`, FDA creation also creates a built-in `defaultDataAccess` DA unless the request overrides it. Default `true`.                                              |
-| `FDA_FETCHER_HEARTBEAT_INTERVAL_MS` | ✓        | number  | Interval in milliseconds between Fetcher heartbeat logs. Default `60000`. Set to `0` to disable the heartbeat.                                                       |
-| `FDA_MAX_CONCURRENT_REFRESH_JOBS`   | ✓        | number  | Maximum number of concurrent refresh jobs done by fetcher. Memory consuption is incresed when concurrent refresh jobs grows. Default `1`.                            |
+| Variable                            | Optional | Type    | Description                                                                                                                                                                     |
+| ----------------------------------- | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FDA_ROLE_APISERVER`                | ✓        | boolean | If `true`, the instance runs the API server to handle HTTP requests. Default `true`.                                                                                            |
+| `FDA_ROLE_FETCHER`                  | ✓        | boolean | If `true`, the instance runs the fetcher responsible for regenerating and updating FDAs. Default `true`.                                                                        |
+| `FDA_ROLE_SYNCQUERIES`              | ✓        | boolean | If `true`, the API instance accepts creation of fresh queries, `GET /{visibility}/fdas/{fdaId}/data` and executes FDAs directly against PostgreSQL. Default `false`.            |
+| `FDA_MAX_CONCURRENT_FRESH_QUERIES`  | ✓        | number  | Maximum number of concurrent direct fresh FDA queries accepted by the API instance. Additional requests return `429 TooManyFreshQueries`. Default `5`.                          |
+| `FDA_CREATE_DEFAULT_DATA_ACCESS`    | ✓        | boolean | If `true`, FDA creation also creates a built-in `defaultDataAccess` DA unless the request overrides it. Default `true`.                                                         |
+| `FDA_FETCHER_HEARTBEAT_INTERVAL_MS` | ✓        | number  | Interval in milliseconds between Fetcher heartbeat logs. Each heartbeat is logged at `INFO` with the DuckDB memory state. Default `60000`. Set to `0` to disable the heartbeat. |
+| `FDA_MAX_CONCURRENT_REFRESH_JOBS`   | ✓        | number  | Maximum number of concurrent refresh jobs done by fetcher. Memory consuption is incresed when concurrent refresh jobs grows. Default `1`.                                       |
+| `FDA_ACCESS_FLUSH_INTERVAL_MS`      | ✓        | integer | Interval in milliseconds between MongoDB flushes of buffered FDA/DA access counters. Default `10000`; valid range is `1` to `2147483647`.                                       |
 
 > Note: By default, an instance runs both roles (API server and Fetcher). You can disable one to separate
 > responsibilities.
@@ -119,14 +142,15 @@ Variabes related to the object bucket-based storage system:
 
 Configuration variables for DuckDB runtime and temporary storage:
 
-| Variable                              | Optional | Type    | Description                                                                                                                                                                                                                                 |
-| ------------------------------------- | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `FDA_DUCKDB_DIR`                      | ✓        | string  | Directory used to store the DuckDB database file. Default `/tmp/duckdb`.                                                                                                                                                                    |
-| `FDA_DUCKDB_MEMORY_LIMIT`             | ✓        | string  | DuckDB `memory_limit` configuration (e.g., `1.0GB`). Default `1.0GB`.                                                                                                                                                                       |
-| `FDA_DUCKDB_TEMP_DIR`                 | ✓        | string  | Directory used by DuckDB for temporary files. Default `/tmp/duckdb/temp`.                                                                                                                                                                   |
-| `FDA_DUCKDB_MAX_TEMP_SIZE`            | ✓        | string  | Maximum size allowed for DuckDB temp directory (e.g., `10GB`). Default `10GB`.                                                                                                                                                              |
-| `FDA_DUCKDB_MAX_THREADS`              | ✓        | number  | Maximum number of threads DuckDB can use to execute queries in parallel. Lower values reduce memory consumption and resource contention, while higher values may improve performance for complex analytical queries. Default `2`.           |
-| `FDA_DUCKDB_PRESERVE_INSERTION_ORDER` | ✓        | boolean | Controls whether DuckDB preserves the original row insertion order during query execution. Setting it to `false` can reduce memory usage and improve performance for analytical workloads where row order is not important. Default `true`. |
+| Variable                               | Optional | Type    | Description                                                                                                                                                                                                                                 |
+| -------------------------------------- | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FDA_DUCKDB_DIR`                       | ✓        | string  | Directory used to store the DuckDB database file. Default `/tmp/duckdb`.                                                                                                                                                                    |
+| `FDA_DUCKDB_MEMORY_LIMIT`              | ✓        | string  | DuckDB `memory_limit` configuration (e.g., `1.0GB`). Default `1.0GB`.                                                                                                                                                                       |
+| `FDA_DUCKDB_TEMP_DIR`                  | ✓        | string  | Directory used by DuckDB for temporary files. Default `/tmp/duckdb/temp`.                                                                                                                                                                   |
+| `FDA_DUCKDB_MAX_TEMP_SIZE`             | ✓        | string  | Maximum size allowed for DuckDB temp directory (e.g., `10GB`). Default `10GB`.                                                                                                                                                              |
+| `FDA_DUCKDB_MAX_THREADS`               | ✓        | number  | Maximum number of threads DuckDB can use to execute queries in parallel. Lower values reduce memory consumption and resource contention, while higher values may improve performance for complex analytical queries. Default `2`.           |
+| `FDA_DUCKDB_PRESERVE_INSERTION_ORDER`  | ✓        | boolean | Controls whether DuckDB preserves the original row insertion order during query execution. Setting it to `false` can reduce memory usage and improve performance for analytical workloads where row order is not important. Default `true`. |
+| `FDA_DUCKDB_MEMORY_SAMPLE_INTERVAL_MS` | ✓        | number  | Interval in milliseconds at which `duckdb_memory()` is sampled while a Parquet export runs, to log its memory peak. Lower values catch shorter peaks at the cost of more queries. Set to `0` to disable the peak logs. Default `250`.       |
 
 ### MongoDB
 
@@ -176,6 +200,7 @@ FDA_ROLE_SYNCQUERIES=true
 FDA_MAX_CONCURRENT_FRESH_QUERIES=5
 FDA_CREATE_DEFAULT_DATA_ACCESS=true
 FDA_FETCHER_HEARTBEAT_INTERVAL_MS=60000
+FDA_ACCESS_FLUSH_INTERVAL_MS=10000
 
 # POSTGRESQL POOL
 FDA_PG_POOL_MAX=10
@@ -236,6 +261,15 @@ Health endpoint with liveness and runtime summary.
             "rssBytes": 151928832,
             "heapTotalBytes": 44363776,
             "heapUsedBytes": 41261368
+        }
+    },
+    "duckdb": {
+        "memoryLimitBytes": 1000341504,
+        "memoryUsedBytes": 881819648,
+        "tempStorageBytes": 0,
+        "memoryUsageByTagBytes": {
+            "COLUMN_DATA": 712834048,
+            "ALLOCATOR": 168985600
         }
     },
     "roles": {
@@ -394,6 +428,19 @@ fda_process_heap_total_bytes 44888064
 # HELP fda_process_heap_used_bytes Used V8 heap size in bytes.
 # TYPE fda_process_heap_used_bytes gauge
 fda_process_heap_used_bytes 41662472
+# HELP fda_duckdb_memory_limit_bytes DuckDB memory_limit in bytes.
+# TYPE fda_duckdb_memory_limit_bytes gauge
+fda_duckdb_memory_limit_bytes 1000341504
+# HELP fda_duckdb_memory_used_bytes Memory currently used by DuckDB in bytes.
+# TYPE fda_duckdb_memory_used_bytes gauge
+fda_duckdb_memory_used_bytes 881819648
+# HELP fda_duckdb_temp_storage_bytes Bytes DuckDB holds in its temporary directory.
+# TYPE fda_duckdb_temp_storage_bytes gauge
+fda_duckdb_temp_storage_bytes 0
+# HELP fda_duckdb_memory_usage_bytes Memory used by DuckDB in bytes, per allocation tag.
+# TYPE fda_duckdb_memory_usage_bytes gauge
+fda_duckdb_memory_usage_bytes{tag="COLUMN_DATA"} 712834048
+fda_duckdb_memory_usage_bytes{tag="ALLOCATOR"} 168985600
 # EOF
 ```
 
@@ -427,6 +474,10 @@ The following table summarizes the main metrics exposed by `GET /metrics`, their
 | `fda_process_resident_memory_bytes`         | gauge   | none                                                                                     | RSS memory usage in bytes.                                        | sustained growth / threshold                |
 | `fda_process_heap_total_bytes`              | gauge   | none                                                                                     | Total V8 heap allocation.                                         | no alert by itself                          |
 | `fda_process_heap_used_bytes`               | gauge   | none                                                                                     | Used V8 heap memory.                                              | sustained growth / threshold                |
+| `fda_duckdb_memory_limit_bytes`             | gauge   | none                                                                                     | DuckDB `memory_limit` in bytes. Absent until DuckDB is in use.    | no alert; compare with container limit      |
+| `fda_duckdb_memory_used_bytes`              | gauge   | none                                                                                     | Memory currently used by DuckDB.                                  | `used / limit` close to `1` for N scrapes   |
+| `fda_duckdb_temp_storage_bytes`             | gauge   | none                                                                                     | Bytes DuckDB has spilled to its temporary directory.              | sustained non-zero values                   |
+| `fda_duckdb_memory_usage_bytes`             | gauge   | `tag`                                                                                    | DuckDB memory per allocation tag (`COLUMN_DATA`, `ALLOCATOR`...). | identify which operator consumes memory     |
 
 ---
 
@@ -508,16 +559,61 @@ If a job fails, the log will include `err` with detailed context.
 The Fetcher periodically logs a heartbeat message to indicate that it is alive. The interval can be configured using
 `FDA_FETCHER_HEARTBEAT_INTERVAL_MS`.
 
+Each heartbeat is logged at `INFO` and includes the DuckDB memory state when DuckDB has been initialised in the process:
+`duckdbLimitBytes` (the effective `memory_limit`), `duckdbUsedBytes`, `duckdbTempBytes` (bytes spilled to the temporary
+directory) and `duckdbTopTags` (the five allocation tags using the most memory). When DuckDB is not initialised yet, the
+heartbeat carries no DuckDB fields.
+
 Example:
 
 ```
-time=2026-08-11T08:36:01.785Z | lvl=DEBUG | corr=n/a | trans=n/a | op=n/a | ver=1.2.0-next | comp=Fda | srv=n/a | subsrv=n/a | msg=[Fetcher] Heartbeat: alive
+time=2026-08-11T08:36:01.785Z | lvl=INFO | corr=n/a | trans=n/a | op=n/a | ver=1.2.0-next | comp=Fda | srv=n/a | subsrv=n/a | duckdbLimitBytes=1000341504 | duckdbUsedBytes=881819648 | duckdbTempBytes=0 | duckdbTopTags=[COLUMN_DATA=712834048, ALLOCATOR=168985600] | msg=[Fetcher] Heartbeat: alive
 ```
 
 The heartbeat is enabled when the configured interval is greater than `0`. Set it to `0` (or a negative value) to
 disable the heartbeat.
 
 The default interval is `60000` milliseconds (1 minute).
+
+### DuckDB memory around Parquet exports
+
+Out of Memory errors happen in the Parquet export (`COPY ... TO PARQUET`) of fetches and uploads. DuckDB only holds
+memory while that export runs and releases it as soon as it ends or fails, so the export logs its own memory figures:
+
+-   Before the export, an `INFO` dump of `duckdb_memory()`: `msg=DuckDB memory before Parquet export` with `resultPath`,
+    `duckdbLimitBytes`, `duckdbUsedBytes`, `duckdbTempBytes` and `duckdbTags` (every allocation tag in use, largest
+    first, as `[TAG=bytes, ...]`). It is usually close to `0`; a higher value means another export was running at the
+    same time.
+-   While the export runs, `duckdb_memory()` is sampled from a separate connection every
+    `FDA_DUCKDB_MEMORY_SAMPLE_INTERVAL_MS` (default 250 ms, `0` disables it). When it ends, the highest sample is logged
+    with `duckdbSamples`, `duckdbFailedSamples`, `duckdbLimitBytes`, `duckdbPeakUsedBytes`, `duckdbPeakTempBytes` and
+    `duckdbPeakTags`: at `INFO` as `msg=DuckDB memory peak during Parquet export` when it succeeds, and at `WARN` as
+    `msg=DuckDB memory peak during failed Parquet export` when it fails, just before the `Job failed` error and under
+    the same `corr=job-...`.
+
+Example of a refresh that fails with a 256 MB limit (3 million rows partitioned by day):
+
+```
+... | lvl=WARN | corr=job-6ad62f836e78b23f45af0754 | ... | op=refresh-fda | ... | resultPath=trantor/tmp/public/mem_demo.parquet | duckdbSamples=7 | duckdbFailedSamples=0 | duckdbLimitBytes=255957402 | duckdbPeakUsedBytes=252164170 | duckdbPeakTempBytes=30015488 | duckdbPeakTags=[EXTENSION=160432128, COLUMN_DATA=57409536, CSV_READER=32002048, ALLOCATOR=2320384] | msg=DuckDB memory peak during failed Parquet export
+```
+
+How to read it:
+
+-   `duckdbPeakUsedBytes` close to `duckdbLimitBytes` means the export hit `FDA_DUCKDB_MEMORY_LIMIT`. Successful exports
+    log their peak too, which tells how much headroom the current limit leaves.
+-   `EXTENSION` is the memory of the `httpfs` S3 uploads. It cannot be spilled to disk and grows with the number of
+    partitions written at the same time. With the same 3 million rows, the export partitioned by day still failed with a
+    1 GB limit, with about 800 MB of `EXTENSION`, while the unpartitioned export completed with a 256 MB limit and 160
+    MB of `EXTENSION`. When it dominates, raising the limit helps little; a coarser partition (or a smaller window per
+    refresh) does.
+-   A non-zero `duckdbFailedSamples` means DuckDB had no memory left even for the sampling query: it was at the limit.
+-   A non-zero `duckdbPeakTempBytes` means DuckDB spilled to disk; check `FDA_DUCKDB_MAX_TEMP_SIZE` and the free space
+    in `FDA_DUCKDB_TEMP_DIR`.
+-   Sampling may miss the exact peak of a very short allocation. The DuckDB error message reports the usage at the
+    moment of the failure, for example `(204.0 MiB/244.1 MiB used)`.
+
+When the temporary Parquet files of an FDA are removed, after a failed fetch or when the FDA is deleted, an `INFO` line
+`Cleaning temporary files in S3` with `bucket` and `tmpPath` is logged.
 
 ### Observability and Deployment Considerations
 

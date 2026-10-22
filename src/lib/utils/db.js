@@ -22,9 +22,9 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
-import { retrieveDA, retrieveFDA } from './mongo.js';
+import { retrieveDA, retrieveFDA, claimFDADownload } from './mongo.js';
+import { FDAError, storageQuotaErrorFor } from '../fdaError.js';
 import { recordAccess } from '../accessTracker.js';
-import { FDAError } from '../fdaError.js';
 import { getBasicLogger } from './logger.js';
 import { config } from '../fdaConfig.js';
 import { getBucketNameFromService, getFDAStoragePath } from './fdaScope.js';
@@ -32,12 +32,21 @@ import {
   NO_PARQUET_FILES_MATCH_ERROR,
   UNKNOWN_COLUMN_TYPE,
   JSON_INTEGER_COLUMN_TYPES,
+  DUCKDB_MEMORY_SNAPSHOT_TTL_MS,
+  DUCKDB_MEMORY_TOP_TAGS,
+  DEFAULT_DUCKDB_MEMORY_SAMPLE_INTERVAL_MS,
+  DUCKDB_SIZE_PATTERN,
 } from '../constants.js';
 import { convertRefreshIntervalToMs, toJsonInteger } from './utils.js';
+import { getS3Client, listObjects } from './aws.js';
+import { resolveTimeRange, selectPartitionFiles } from './partitionPruning.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
 let instancePromise = null;
+let instanceReady = false;
+let memorySnapshot = null;
+let memorySnapshotRequest = null;
 
 const logger = getBasicLogger();
 
@@ -99,6 +108,207 @@ async function logDuckDBConfig(conn) {
       'DuckDB setting',
     );
   }
+}
+
+function parseDuckDBSize(value) {
+  const match = DUCKDB_SIZE_PATTERN.exec(String(value ?? '').trim());
+  if (!match) {
+    return null;
+  }
+  const exponent = match[2] ? 'KMGT'.indexOf(match[2].toUpperCase()) + 1 : 0;
+  const base = match[3] ? 1024 : 1000;
+  return Math.round(Number(match[1]) * base ** exponent);
+}
+
+async function readDuckDBMemory(conn) {
+  const reader = await conn.runAndReadAll(`
+    SELECT tag, memory_usage_bytes, temporary_storage_bytes,
+      current_setting('memory_limit') AS limit_value
+    FROM duckdb_memory()
+  `);
+  const rows = reader.getRowObjects();
+
+  let usedBytes = 0;
+  let tempBytes = 0;
+  const byTag = {};
+  for (const row of rows) {
+    const used = Number(row.memory_usage_bytes ?? 0);
+    usedBytes += used;
+    tempBytes += Number(row.temporary_storage_bytes ?? 0);
+    if (used > 0) {
+      byTag[row.tag] = used;
+    }
+  }
+
+  return {
+    limitBytes: parseDuckDBSize(rows[0]?.limit_value),
+    usedBytes,
+    tempBytes,
+    byTag,
+  };
+}
+
+function formatDuckDBTags(byTag, limit = Infinity) {
+  const tags = Object.entries(byTag)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([tag, bytes]) => `${tag}=${bytes}`)
+    .join(', ');
+  return `[${tags}]`;
+}
+
+function toLogValue(value) {
+  return value === null || value === undefined ? undefined : String(value);
+}
+
+export function formatDuckDBMemory(snapshot) {
+  if (!snapshot) {
+    return {};
+  }
+
+  return {
+    duckdbLimitBytes: toLogValue(snapshot.limitBytes),
+    duckdbUsedBytes: toLogValue(snapshot.usedBytes),
+    duckdbTempBytes: toLogValue(snapshot.tempBytes),
+    duckdbTopTags: formatDuckDBTags(snapshot.byTag, DUCKDB_MEMORY_TOP_TAGS),
+  };
+}
+
+export function getDuckDBMemorySnapshot() {
+  if (!instanceReady) {
+    return Promise.resolve(null);
+  }
+
+  if (memorySnapshotRequest) {
+    return memorySnapshotRequest;
+  }
+
+  const cacheIsFresh =
+    memorySnapshot &&
+    Date.now() - memorySnapshot.atMs < DUCKDB_MEMORY_SNAPSHOT_TTL_MS;
+  if (cacheIsFresh) {
+    return Promise.resolve(memorySnapshot.value);
+  }
+
+  memorySnapshotRequest = (async () => {
+    const conn = await getDBConnection();
+    try {
+      const value = await readDuckDBMemory(conn);
+      memorySnapshot = { atMs: Date.now(), value };
+      return value;
+    } finally {
+      await releaseDBConnection(conn);
+    }
+  })()
+    .catch((error) => {
+      logger.debug({ err: error }, 'Could not read DuckDB memory snapshot');
+      return null;
+    })
+    .finally(() => {
+      memorySnapshotRequest = null;
+    });
+
+  return memorySnapshotRequest;
+}
+
+async function logDuckDBMemoryDump(conn, message, fields = {}) {
+  try {
+    const snapshot = await readDuckDBMemory(conn);
+    logger.info(
+      {
+        ...fields,
+        duckdbLimitBytes: toLogValue(snapshot.limitBytes),
+        duckdbUsedBytes: toLogValue(snapshot.usedBytes),
+        duckdbTempBytes: toLogValue(snapshot.tempBytes),
+        duckdbTags: formatDuckDBTags(snapshot.byTag),
+      },
+      message,
+    );
+  } catch (error) {
+    logger.debug({ err: error }, 'Could not dump DuckDB memory');
+  }
+}
+
+function startDuckDBMemorySampler() {
+  const intervalMs = Number(
+    config.duckdb?.memorySampleIntervalMs ??
+      DEFAULT_DUCKDB_MEMORY_SAMPLE_INTERVAL_MS,
+  );
+  const peak = {
+    samples: 0,
+    failedSamples: 0,
+    limitBytes: null,
+    usedBytes: 0,
+    tempBytes: 0,
+    byTag: {},
+  };
+  const sampler = { stopped: false };
+  let wake = null;
+
+  const pause = () =>
+    new Promise((resolve) => {
+      const timer = setTimeout(resolve, intervalMs);
+      wake = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+    });
+
+  const loop = (async () => {
+    if (!instanceReady || intervalMs <= 0) {
+      return;
+    }
+    const conn = await getDBConnection();
+    try {
+      while (!sampler.stopped) {
+        try {
+          const snapshot = await readDuckDBMemory(conn);
+          peak.samples += 1;
+          peak.limitBytes = snapshot.limitBytes;
+          peak.tempBytes = Math.max(peak.tempBytes, snapshot.tempBytes);
+          if (snapshot.usedBytes >= peak.usedBytes) {
+            peak.usedBytes = snapshot.usedBytes;
+            peak.byTag = snapshot.byTag;
+          }
+        } catch (error) {
+          peak.failedSamples += 1;
+          logger.debug({ err: error }, 'Could not sample DuckDB memory');
+        }
+        if (!sampler.stopped) {
+          await pause();
+        }
+      }
+    } finally {
+      await releaseDBConnection(conn);
+    }
+  })().catch((error) => {
+    logger.debug({ err: error }, 'Could not sample DuckDB memory');
+  });
+
+  return async () => {
+    sampler.stopped = true;
+    wake?.();
+    await loop;
+    return peak;
+  };
+}
+
+function logDuckDBMemoryPeak(level, peak, message, fields) {
+  if (peak.samples === 0 && peak.failedSamples === 0) {
+    return;
+  }
+  logger[level](
+    {
+      ...fields,
+      duckdbSamples: String(peak.samples),
+      duckdbFailedSamples: String(peak.failedSamples),
+      duckdbLimitBytes: toLogValue(peak.limitBytes),
+      duckdbPeakUsedBytes: String(peak.usedBytes),
+      duckdbPeakTempBytes: String(peak.tempBytes),
+      duckdbPeakTags: formatDuckDBTags(peak.byTag),
+    },
+    message,
+  );
 }
 
 async function createDuckDBInstance() {
@@ -170,6 +380,7 @@ async function createDuckDBInstance() {
     await configConn.disconnect();
   }
   logger.debug('DuckDB initialized with HTTPFS');
+  instanceReady = true;
   return dbInstance;
 }
 
@@ -365,40 +576,53 @@ export async function runPreparedStatement(
     );
   }
 
-  const {
-    objStgConf,
-    servicePath: storedServicePath,
-    schema,
-    lastFetch,
-  } = await retrieveFDA(service, fdaId, servicePath);
-  const query = buildDAQuery(
-    service,
-    fdaId,
-    da.query,
-    objStgConf?.partition,
-    storedServicePath ?? servicePath,
-  );
+  const fda = await retrieveFDA(service, fdaId, servicePath);
+  const { objStgConf, servicePath: storedServicePath, schema, lastFetch } = fda;
+  const fdaServicePath = storedServicePath ?? servicePath;
 
   let stmt;
 
   try {
     validateDAParamBindings(da.query, da.params || []);
     const resolvedParams = applyParams(paramValues || {}, da.params);
+    if (fda.downloadPolicy) {
+      await claimFDADownload(fda);
+    }
     const boundParams = normalizeParamsForDuckDB(resolvedParams);
+    const fallbackQuery = buildStoredSchemaQuery(schema, da.query);
+    const files = await listPrunedPartitionFiles(
+      service,
+      fdaId,
+      fdaServicePath,
+      objStgConf?.partition,
+      da.timeRange,
+      resolvedParams,
+    );
+    const query =
+      files?.length === 0 && fallbackQuery
+        ? fallbackQuery
+        : buildDAQuery(
+            service,
+            fdaId,
+            da.query,
+            objStgConf?.partition,
+            fdaServicePath,
+            files,
+          );
     const prepared = await prepareAndRunStatementWithFallback(
       conn,
       query,
       boundParams,
       {
         streaming,
-        fallbackQuery: buildStoredSchemaQuery(schema, da.query),
+        fallbackQuery,
       },
     );
 
     stmt = prepared.stmt;
     recordAccess({
       service,
-      servicePath: storedServicePath ?? servicePath,
+      servicePath: fdaServicePath,
       fdaId,
       daId,
       lastFetch,
@@ -536,6 +760,97 @@ export function checkParams(params) {
 
     return normalizedParam;
   });
+}
+
+export function checkTimeRange(timeRange, params) {
+  if (timeRange === undefined || timeRange === null) {
+    return undefined;
+  }
+
+  if (typeof timeRange !== 'object' || Array.isArray(timeRange)) {
+    throw new FDAError(400, 'InvalidParam', `timeRange must be an object.`);
+  }
+
+  const bounds = Object.keys(timeRange);
+  if (bounds.length === 0) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `timeRange must include "start", "finish" or both.`,
+    );
+  }
+
+  const declaredParamNames = new Set(
+    Array.isArray(params) ? params.map((param) => param?.name) : [],
+  );
+  const normalized = {};
+
+  for (const bound of bounds) {
+    if (bound !== 'start' && bound !== 'finish') {
+      throw new FDAError(
+        400,
+        'InvalidParam',
+        `Invalid timeRange field "${bound}". Only "start" and "finish" are allowed.`,
+      );
+    }
+
+    const paramName = timeRange[bound];
+    if (typeof paramName !== 'string' || !declaredParamNames.has(paramName)) {
+      throw new FDAError(
+        400,
+        'InvalidParam',
+        `timeRange.${bound} must be the name of a param declared in DA params.`,
+      );
+    }
+
+    normalized[bound] = paramName;
+  }
+
+  return normalized;
+}
+
+async function listPrunedPartitionFiles(
+  service,
+  fdaId,
+  servicePath,
+  partition,
+  timeRange,
+  resolvedParams,
+) {
+  if (!partition) {
+    return null;
+  }
+
+  const range = resolveTimeRange(timeRange, resolvedParams);
+  if (!range) {
+    return null;
+  }
+
+  const s3Client = getS3Client(
+    `${config.objstg.protocol}://${config.objstg.endpoint}`,
+    config.objstg.usr,
+    config.objstg.pass,
+  );
+  const bucketName = getBucketNameFromService(service);
+  const keys = await listObjects(
+    s3Client,
+    bucketName,
+    `${getFDAStoragePath(fdaId, servicePath)}.parquet/`,
+  );
+
+  if (!keys.some((key) => key.endsWith('.parquet'))) {
+    return null;
+  }
+
+  const files = selectPartitionFiles(keys, range).map(
+    (key) => `s3://${bucketName}/${key}`,
+  );
+  logger.debug(
+    { fdaId, selected: files.length, total: keys.length },
+    '[DEBUG]: listPrunedPartitionFiles',
+  );
+
+  return files;
 }
 
 export function getNamedParamsFromQuery(query) {
@@ -804,7 +1119,7 @@ export async function toParquet(
   }
 }
 
-export function copyQueryToParquet(
+export async function copyQueryToParquet(
   conn,
   sourceQuery,
   resultPath,
@@ -817,11 +1132,33 @@ export function copyQueryToParquet(
   const { cols, partitionBy } = getPartitionConf(partitionType, timeColumn);
   const compressionString = compression ? `, COMPRESSION ZSTD` : '';
 
-  return conn.run(
-    `COPY ( SELECT ${cols}
-                FROM (${sourceQuery}) AS fda_source) 
+  await logDuckDBMemoryDump(conn, 'DuckDB memory before Parquet export', {
+    resultPath,
+  });
+
+  const stopSampler = startDuckDBMemorySampler();
+  try {
+    const result = await conn.run(
+      `COPY ( SELECT ${cols}
+                FROM (${sourceQuery}) AS fda_source)
       TO 's3://${resultPath}' (FORMAT PARQUET ${partitionBy} ${compressionString});`,
-  );
+    );
+    logDuckDBMemoryPeak(
+      'info',
+      await stopSampler(),
+      'DuckDB memory peak during Parquet export',
+      { resultPath },
+    );
+    return result;
+  } catch (e) {
+    logDuckDBMemoryPeak(
+      'warn',
+      await stopSampler(),
+      'DuckDB memory peak during failed Parquet export',
+      { resultPath },
+    );
+    throw storageQuotaErrorFor(e, resultPath.split('/')[0]) ?? e;
+  }
 }
 
 export function refreshIntervalPartitionCheck(refreshInterval, partition) {
@@ -915,6 +1252,7 @@ export function buildDAQuery(
   userQuery,
   partition,
   servicePath,
+  files,
 ) {
   logger.debug({ fdaId }, '[DEBUG]: buildDAQuery');
   if (!userQuery || typeof userQuery !== 'string') {
@@ -934,6 +1272,13 @@ export function buildDAQuery(
   const objectKey = getFDAStoragePath(fdaId, servicePath);
   const bucketName = getBucketNameFromService(service);
   const parquetPath = `s3://${bucketName}/${objectKey}`;
+
+  if (partition && Array.isArray(files) && files.length > 0) {
+    const fileList = files
+      .map((file) => `'${file.replaceAll("'", "''")}'`)
+      .join(', ');
+    return `FROM read_parquet([${fileList}], hive_partitioning = true, union_by_name = true) ${trimmed}`;
+  }
 
   if (partition) {
     return `FROM read_parquet('${parquetPath}.parquet/**/*.parquet', union_by_name = true) ${trimmed}`;

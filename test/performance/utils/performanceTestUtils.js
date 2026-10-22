@@ -124,6 +124,7 @@ export async function waitUntilFDAStatus({
   service,
   fdaId,
   visibility = 'public',
+  servicePath = '/public',
   timeout = 10000,
   interval = 300,
   status,
@@ -137,11 +138,24 @@ export async function waitUntilFDAStatus({
     const res = await httpReq({
       method: 'GET',
       url: `${baseUrl}/${visibility}/fdas/${encodeURIComponent(fdaId)}`,
-      headers: { 'Fiware-Service': service },
+      headers: {
+        'Fiware-Service': service,
+        'Fiware-ServicePath': servicePath,
+      },
     });
 
     if (res.status === 200 && res.json) {
-      lastSeen = { status: res.json.status, progress: res.json.progress };
+      lastSeen = {
+        status: res.json.status,
+        progress: res.json.progress,
+        error: res.json.error,
+      };
+
+      if (res.json.status === 'failed') {
+        throw new Error(
+          `FDA ${fdaId} failed: ${res.json.error ?? 'unknown error'}`,
+        );
+      }
 
       if (
         res.json.status === status &&

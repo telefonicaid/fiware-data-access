@@ -34,7 +34,6 @@ import {
   runWithLogger,
 } from './lib/utils/logger.js';
 import { config } from './lib/fdaConfig.js';
-import { buildFDAJobFilter } from './lib/utils/fdaScope.js';
 import { v4 as uuidv4 } from 'uuid';
 
 const logger = getBasicLogger();
@@ -65,16 +64,17 @@ export async function startFetcher() {
       if (job.attrs.name === 'refresh-fda-recurring') {
         let consistencyInProgress = false;
         try {
-          const consistencyJobs = await agenda.jobs({
-            ...buildFDAJobFilter(
-              'consistency-refresh-fda-recurring',
+          const { total } = await agenda.queryJobs({
+            name: 'consistency-refresh-fda-recurring',
+            data: {
               service,
               fdaId,
               servicePath,
-            ),
-            lockedAt: { $ne: null },
+            },
+            state: 'running',
+            limit: 1,
           });
-          consistencyInProgress = consistencyJobs.length > 0;
+          consistencyInProgress = total > 0;
         } catch (e) {
           jobLogger.warn(
             { err: e, fdaId },
@@ -229,8 +229,12 @@ export async function startFetcher() {
 
   let heartbeatTimer;
   if (config.fetcher.heartbeatIntervalMs > 0) {
-    heartbeatTimer = setInterval(() => {
-      logger.debug('[Fetcher] Heartbeat: alive');
+    heartbeatTimer = setInterval(async () => {
+      const { formatDuckDBMemory, getDuckDBMemorySnapshot } = await import(
+        './lib/utils/db.js'
+      );
+      const snapshot = await getDuckDBMemorySnapshot();
+      logger.info(formatDuckDBMemory(snapshot), '[Fetcher] Heartbeat: alive');
     }, config.fetcher.heartbeatIntervalMs);
 
     heartbeatTimer.unref();

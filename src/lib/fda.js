@@ -34,6 +34,7 @@ import {
   toParquet,
   copyQueryToParquet,
   checkParams,
+  checkTimeRange,
   validateDAParamBindings,
   resolveDAParams,
   validateDAQuery,
@@ -72,6 +73,7 @@ import {
   updateFDAStorage,
   claimFDAForFetch,
   claimFDAForDeletion,
+  claimFDADownload,
   createDatasource,
   retrieveDatasources,
   retrieveDatasource,
@@ -109,7 +111,8 @@ import {
   normalizeServicePath,
 } from './utils/fdaScope.js';
 import { config } from './fdaConfig.js';
-import { FDAError } from './fdaError.js';
+import { FDAError, storageQuotaErrorFor } from './fdaError.js';
+import { normalizeDownloadPolicy } from './utils/downloadPolicy.js';
 
 import { getBasicLogger } from './utils/logger.js';
 import {
@@ -454,6 +457,7 @@ export async function executeFDAQuery({
       fdaId,
     );
 
+    await claimFDADownload(fda);
     if (datasource.type === 'mongodb') {
       const rows = await runMongoQuery(datasource.config, fda.query);
       return normalizeForSerialization(rows);
@@ -683,6 +687,7 @@ async function createFreshRowSource({
       fda.datasourceId ?? DEFAULT_DATASOURCE_ID,
     );
 
+    await claimFDADownload(fda);
     cursorReader = await createPgCursorReader(
       pgCredentials,
       text,
@@ -730,6 +735,7 @@ async function createFreshFDARowSource({
       fdaId,
     );
 
+    await claimFDADownload(fda);
     cursorReader =
       datasource.type === 'mongodb'
         ? await createMongoCursorReader(datasource.config, fda.query)
@@ -775,6 +781,7 @@ async function executeFreshQuery({ service, visibility, servicePath, params }) {
       service,
       fda.datasourceId ?? DEFAULT_DATASOURCE_ID,
     );
+    await claimFDADownload(fda);
     const rows = await runPgQuery(pgCredentials, text, values);
     return normalizeForSerialization(rows);
   } catch (e) {
@@ -935,6 +942,7 @@ export async function createDA(
   params,
   visibility,
   servicePath,
+  timeRange,
 ) {
   const conn = await getDBConnection();
 
@@ -960,6 +968,7 @@ export async function createDA(
     }
 
     const normalizedParams = checkParams(params);
+    const normalizedTimeRange = checkTimeRange(timeRange, normalizedParams);
     validateDAParamBindings(userQuery, normalizedParams || []);
     if (shouldValidateDACompatibility(fda)) {
       await validateDAQuery(conn, service, fdaId, userQuery, servicePath);
@@ -972,6 +981,7 @@ export async function createDA(
       description,
       userQuery,
       normalizedParams,
+      normalizedTimeRange,
     );
   } finally {
     await releaseDBConnection(conn);
@@ -992,7 +1002,9 @@ export async function fetchFDA(
   cached = true,
   datasourceId = DEFAULT_DATASOURCE_ID,
   validationMode = FDA_VALIDATION_MODE_STRICT,
+  downloadOptions = {},
 ) {
+  const downloadPolicy = normalizeDownloadPolicy(downloadOptions);
   const normalizedVisibility = normalizeVisibility(visibility);
   const normalizedServicePath = normalizeServicePath(servicePath);
   const datasource = await getDatasourceForService(service, datasourceId);
@@ -1026,6 +1038,7 @@ export async function fetchFDA(
     datasourceId,
     validationMode,
     persistedSchema,
+    downloadPolicy,
   );
 
   if (cached && validationMode === FDA_VALIDATION_MODE_STRICT) {
@@ -1919,7 +1932,8 @@ export async function processFDAAsync(
       progress: 100,
       lastRefresh: { durationMs: Date.now() - startedAt, bytesFetched },
     });
-  } catch (err) {
+  } catch (error) {
+    const err = storageQuotaErrorFor(error, bucketName) ?? error;
     await updateFDAStatus({
       service,
       fdaId,
@@ -1928,13 +1942,25 @@ export async function processFDAAsync(
       progress: 0,
       error: err.message,
     });
+    await cleanFailedFetchObjects(bucketName, storagePath);
+    throw err;
+  }
+}
+
+async function cleanFailedFetchObjects(bucketName, storagePath) {
+  try {
     const s3Client = getS3Client(
       `${config.objstg.protocol}://${config.objstg.endpoint}`,
       config.objstg.usr,
       config.objstg.pass,
     );
+    await dropFile(s3Client, bucketName, `${storagePath}.csv`);
     await cleanTmpFolder(s3Client, bucketName, `tmp/${storagePath}.parquet`);
-    throw err;
+  } catch (cleanupError) {
+    logger.warn(
+      { err: cleanupError, bucketName, storagePath },
+      'Could not clean the objects left by a failed fetch',
+    );
   }
 }
 
@@ -1984,7 +2010,9 @@ async function measureFDAStorageSafely(service, fdaId, servicePath) {
 }
 
 async function cleanTmpFolder(s3Client, bucket, tmpPath) {
+  logger.info({ bucket, tmpPath }, 'Cleaning temporary files in S3');
   // We need to clean tmp folder in failed attempts to avoid accumulation of temp files in S3
+  await dropFile(s3Client, bucket, tmpPath);
   const remnantTempFiles = await listObjects(s3Client, bucket, `${tmpPath}/`);
   for (const tempPartition of remnantTempFiles) {
     await dropFile(s3Client, bucket, tempPartition);
@@ -2154,11 +2182,18 @@ async function uploadMongoCursorContentToObjectStorage(
     return bytesFetched;
   } catch (error) {
     uploadBody.destroy(error);
-    await uploadDone.catch(() => {});
-    throw new FDAError(
-      503,
-      'UploadError',
-      `Error uploading FDA to object storage: ${error.message}`,
+    const uploadError = await uploadDone.then(
+      () => undefined,
+      (err) => err,
+    );
+    throw (
+      storageQuotaErrorFor(uploadError, bucket) ??
+      storageQuotaErrorFor(error, bucket) ??
+      new FDAError(
+        503,
+        'UploadError',
+        `Error uploading FDA to object storage: ${error.message}`,
+      )
     );
   } finally {
     await reader.close();
@@ -2175,10 +2210,13 @@ async function uploadCsvContentToObjectStorage(s3Client, bucket, path, body) {
     await upload.done();
   } catch (error) {
     uploadBody.destroy(error);
-    throw new FDAError(
-      503,
-      'UploadError',
-      `Error uploading FDA to object storage: ${error.message}`,
+    throw (
+      storageQuotaErrorFor(error, bucket) ??
+      new FDAError(
+        503,
+        'UploadError',
+        `Error uploading FDA to object storage: ${error.message}`,
+      )
     );
   }
 }
@@ -2247,15 +2285,32 @@ async function dropFDAStorage(service, fdaId, servicePath) {
   );
   // This way we remove FDAs independently of if theyre partitioned or not
   const storagePath = getFDAStoragePath(fdaId, servicePath);
-  const allObjPaths = await listObjects(s3Client, bucketName, storagePath);
+  const allObjects = await listObjectsWithSize(
+    s3Client,
+    bucketName,
+    storagePath,
+  );
   // Filter strictly to objects belonging to this FDA only, preventing
   // accidental deletion of sibling FDAs whose IDs share a common prefix
   // (e.g. fda_test and fda_test_1 both match the prefix "fda_test").
-  const objPaths = allObjPaths.filter(
-    (key) =>
+  const objectsToDelete = allObjects.filter(
+    ({ key }) =>
       key.startsWith(`${storagePath}/`) || key.startsWith(`${storagePath}.`),
   );
+  const objPaths = objectsToDelete.map(({ key }) => key);
   await dropFiles(s3Client, bucketName, objPaths);
+  logger.info(
+    {
+      service,
+      fdaId,
+      deletedFiles: objectsToDelete.length,
+      deletedBytes: objectsToDelete.reduce(
+        (total, { size }) => total + size,
+        0,
+      ),
+    },
+    'FDA storage objects deleted',
+  );
   await cleanTmpFolder(s3Client, bucketName, `tmp/${storagePath}.parquet`);
 }
 
@@ -2308,6 +2363,7 @@ export async function putDA(
   params,
   visibility,
   servicePath,
+  timeRange,
 ) {
   const conn = await getDBConnection();
 
@@ -2323,6 +2379,7 @@ export async function putDA(
     }
 
     const normalizedParams = checkParams(params);
+    const normalizedTimeRange = checkTimeRange(timeRange, normalizedParams);
     validateDAParamBindings(userQuery, normalizedParams || []);
     if (shouldValidateDACompatibility(fda)) {
       await validateDAQuery(conn, service, fdaId, userQuery, servicePath);
@@ -2335,6 +2392,7 @@ export async function putDA(
       description,
       userQuery,
       normalizedParams,
+      normalizedTimeRange ?? null,
     );
   } finally {
     await releaseDBConnection(conn);
@@ -2405,6 +2463,12 @@ export async function cleanPartition(
   }
   await dropFiles(s3Client, bucketName, partitionsToRemove);
   await measureFDAStorageSafely(service, fdaId, servicePath);
+}
+
+async function publishTmpFile(s3Client, bucket, path) {
+  const tmpKey = `tmp/${path}.parquet`;
+  await moveObject(s3Client, bucket, `${bucket}/${tmpKey}`, `${path}.parquet`);
+  await dropFile(s3Client, bucket, tmpKey);
 }
 
 async function publishTmpPartitions(
@@ -2510,10 +2574,8 @@ async function uploadTableToObjStg(
       progress: 60,
     });
 
-    // DuckDB cant overwrite files in Minio, so for partitioned files we upload them in a tmp file and then move them.
-    const parquetPath = objStgConf?.partition
-      ? getPath(bucket, `tmp/${path}.parquet`, '')
-      : getPath(bucket, path, '.parquet');
+    // DuckDB cant overwrite files in Minio, so we write them in a tmp path and then move them.
+    const parquetPath = getPath(bucket, `tmp/${path}.parquet`, '');
 
     const csvPath = getPath(bucket, path, '.csv');
     if (datasource.type === 'postgres' && schemaFields.length > 0) {
@@ -2536,6 +2598,8 @@ async function uploadTableToObjStg(
       );
     }
 
+    await dropFile(s3Client, bucket, `${path}.csv`);
+
     if (objStgConf?.partition) {
       await publishTmpPartitions(
         s3Client,
@@ -2544,6 +2608,8 @@ async function uploadTableToObjStg(
         objStgConf.partition,
         Boolean(rebuildSchema),
       );
+    } else {
+      await publishTmpFile(s3Client, bucket, path);
     }
 
     await updateFDAStatus({
@@ -2557,12 +2623,14 @@ async function uploadTableToObjStg(
     if (objStgConf?.partition) {
       await dropFile(s3Client, bucket, `${path}.parquet`);
     }
-    await dropFile(s3Client, bucket, `${path}.csv`);
   } catch (e) {
     if (e instanceof FDAError) {
       throw e;
     }
-    throw new FDAError(500, 'UploadError', e.message);
+    throw (
+      storageQuotaErrorFor(e, bucket) ??
+      new FDAError(500, 'UploadError', e.message)
+    );
   } finally {
     await releaseDBConnection(conn);
   }
@@ -2581,6 +2649,7 @@ async function ensureFDAReadyForQuery(service, fdaId, visibility, servicePath) {
       `FDA ${fdaId} is not queryable yet because the first fetch has not completed`,
     );
   }
+  return fda;
 }
 
 export async function getStoredFDA(service, fdaId, servicePath) {
@@ -2734,7 +2803,10 @@ async function createParquet(
     if (e instanceof FDAError) {
       throw e;
     }
-    throw new FDAError(500, 'UploadError', e.message);
+    throw (
+      storageQuotaErrorFor(e, bucketName) ??
+      new FDAError(500, 'UploadError', e.message)
+    );
   } finally {
     await releaseDBConnection(conn);
   }
@@ -2915,10 +2987,15 @@ async function buildDefaultDataAccessDefinition(
   const whereClause =
     filters.length > 0 ? ` WHERE ${filters.join(' AND ')}` : '';
 
-  return {
+  const definition = {
     query: `SELECT *, COUNT(*) OVER() as __total${whereClause} LIMIT CAST($pageSize AS BIGINT) OFFSET CAST($pageStart AS BIGINT)`,
     params,
   };
+  if (resolvedTimeColumn) {
+    definition.timeRange = { start: 'start', finish: 'finish' };
+  }
+
+  return definition;
 }
 
 function normalizeDefaultDASchemaFields(schemaOverride) {
@@ -3325,6 +3402,7 @@ async function createDefaultDAIfNeeded({
       defaultDA.params,
       normalizedVisibility,
       normalizedServicePath,
+      defaultDA.timeRange,
     );
   } catch (err) {
     await rollbackFDAProvisioning(service, fdaId, normalizedServicePath);
@@ -3349,7 +3427,15 @@ export async function uploadFDA({
   objStgConf = {},
   cached = true,
   defaultDataAccessEnabled = config.defaultDataAccess?.enabled ?? true,
+  maxDownloads,
+  expirationDate,
+  validityPeriod,
 }) {
+  const downloadPolicy = normalizeDownloadPolicy({
+    maxDownloads,
+    expirationDate,
+    validityPeriod,
+  });
   const normalizedVisibility = normalizeVisibility(visibility);
   const normalizedServicePath = normalizeServicePath(servicePath);
 
@@ -3371,6 +3457,8 @@ export async function uploadFDA({
     cached,
     null,
     FDA_VALIDATION_MODE_STRICT,
+    null,
+    downloadPolicy,
   );
 
   logger.debug({ fdaId }, 'FDA record created');
@@ -3530,6 +3618,7 @@ export async function processUploadFDAJob({
         daDefinition.params,
         visibility,
         servicePath,
+        daDefinition.timeRange,
       );
     }
 
@@ -3549,7 +3638,8 @@ export async function processUploadFDAJob({
     });
 
     logger.info({ fdaId }, 'Upload FDA completed successfully');
-  } catch (err) {
+  } catch (error) {
+    const err = storageQuotaErrorFor(error, bucketName) ?? error;
     logger.error({ err, fdaId }, 'Upload FDA failed');
     await updateFDAStatus({
       service,
