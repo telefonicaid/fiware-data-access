@@ -2410,6 +2410,12 @@ describe('fetchFDA', () => {
 
   test.each([
     [
+      'missing params',
+      { type: 'interval' },
+      undefined,
+      'Missing required refresh policy parameter: refreshInterval.',
+    ],
+    [
       'missing refreshInterval',
       { type: 'interval', params: {} },
       undefined,

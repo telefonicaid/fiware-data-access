@@ -1203,7 +1203,7 @@ function getMongoWindowQuery(query, timeColumn, startDate) {
 }
 
 function validateRefreshWindowOptions(refreshPolicy, objStgConf) {
-  const { fetchSize } = refreshPolicy.params || {};
+  const { fetchSize } = refreshPolicy.params;
   if (refreshPolicy.type === 'window' && !fetchSize) {
     throw new FDAError(
       400,
@@ -1248,8 +1248,7 @@ function validateRefreshWindowOptions(refreshPolicy, objStgConf) {
 }
 
 function validateConsistencyRefreshInterval(refreshPolicy) {
-  const { refreshInterval, consistencyRefreshInterval } =
-    refreshPolicy.params || {};
+  const { refreshInterval, consistencyRefreshInterval } = refreshPolicy.params;
   if (consistencyRefreshInterval) {
     if (refreshPolicy.type !== 'window') {
       throw new FDAError(
