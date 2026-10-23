@@ -1461,7 +1461,8 @@ _**Example Response:**_
 
 #### Regenerate FDA `PUT /{visibility}/fdas/{fdaId}`
 
-Regenerate the FDA, fetching again the source table from DB.
+Regenerate the FDA, fetching again the source table from DB. An optional body updates some FDA properties before
+regenerating it (see the request payload below); without a body the FDA is only regenerated.
 
 For PostgreSQL FDAs in `strict` mode, the source query is validated before regenerating. If it is no longer valid (for
 example, its `timeColumn` has been removed), the operation returns `400 InvalidParam` and the FDA is left untouched.
@@ -1484,10 +1485,6 @@ _**Request query parameters**_
 
 None so far
 
-_**Request payload**_
-
-None.
-
 _**Request headers**_
 
 | Header               | Optional | Description                                                          | Example        |
@@ -1497,16 +1494,46 @@ _**Request headers**_
 
 _**Request payload**_
 
-This endpoint does not accept a request body.
+The body is optional. Every field is optional and only the fields sent are updated; the rest keep their stored value.
+`query`, `datasourceId` and `cached` cannot be updated (any other field returns `400 BadRequest`), so the existing DAs
+keep working.
 
-If a body is provided, the API will return:
+| Parameter        | Type              | Description                                                                                                                                                                                                                                                |
+| ---------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `description`    | string            | New FDA description.                                                                                                                                                                                                                                       |
+| `timeColumn`     | string or `null`  | New time column. In `strict` mode it is validated against the source query. On a partitioned FDA the stored data is rebuilt from scratch.                                                                                                                  |
+| `validationMode` | string            | `strict` or `unchecked`.                                                                                                                                                                                                                                   |
+| `refreshPolicy`  | object            | Replaces the stored refresh policy, with the same rules as on creation. The scheduled refresh jobs are recreated.                                                                                                                                          |
+| `objStgConf`     | object            | Merged into the stored one (sending only `compression` keeps the partition). Only `partition` and `compression` are accepted. Changing `partition` deletes the stored data and rebuilds it, so the FDA cannot be queried until the regeneration completes. |
+| `maxDownloads`   | integer or `null` | New download limit. `null` removes it. Downloads already used are kept, so raising the limit re-enables an exhausted FDA.                                                                                                                                  |
+| `expirationDate` | string or `null`  | New download expiration. `null` removes it. Mutually exclusive with `validityPeriod`.                                                                                                                                                                      |
+| `validityPeriod` | string or `null`  | New download validity, counted from the update. `null` removes the expiration. Mutually exclusive with `expirationDate`.                                                                                                                                   |
 
--   **400 BadRequest**
--   `PUT /{visibility}/fdas/{fdaId} does not accept a request body`
+The new values are validated together with the stored ones, using the same rules as on creation (for example, a `window`
+refresh policy needs a `timeColumn`, and `fetchSize` must match the partition). Invalid values return
+`400 InvalidUpdateBody` and the FDA is left untouched. If the stored source query is no longer valid and the body does
+not change `timeColumn` or `validationMode`, the error is `400 InvalidParam`, the same as without a body.
+
+Example:
+
+```json
+{
+    "refreshPolicy": {
+        "type": "interval",
+        "params": { "refreshInterval": "1 hour", "fetchSize": "month" }
+    },
+    "objStgConf": { "partition": "month" },
+    "maxDownloads": 10,
+    "validityPeriod": "7 days"
+}
+```
 
 _**Response code**_
 
 -   Successful operation uses 202 Accepted (asynchronous regeneration)
+-   For FDAs created from an uploaded file, a body is only stored (there is no source to refetch from) and the operation
+    returns 200 OK with `{ "id": "...", "status": "<current status>" }`. These FDAs cannot change `objStgConf`, and
+    their `refreshPolicy` must stay `none`.
 -   Errors use a non-2xx and (optionally) an error payload. See subsection on [Error Responses](#error-responses) for
     more details.
 

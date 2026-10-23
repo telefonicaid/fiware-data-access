@@ -28,7 +28,7 @@ import {
   getFDAs,
   fetchFDA,
   getFDA,
-  updateFDA,
+  putFDA,
   deleteFDA,
   uploadFDA,
 } from '../lib/fda.js';
@@ -553,16 +553,94 @@ router.get('/:visibility/fdas/:fdaId', async (req, res) => {
  *     operationId: regenerateFda
  *     summary: Regenerate FDA
  *     description: >
- *       Regenerates the FDA, fetching the source data again. Does not accept a request body. For PostgreSQL FDAs
- *       in `strict` mode, the source query is validated first. Returns `409` if the FDA is currently being
- *       processed, or if it is configured as only-fresh (`cached: false`, which does not support manual
- *       regeneration).
+ *       Regenerates the FDA, fetching the source data again. For PostgreSQL FDAs in `strict` mode, the source
+ *       query is validated first. Returns `409` if the FDA is currently being processed, or if it is configured
+ *       as only-fresh (`cached: false`, which does not support manual regeneration).
+ *
+ *       An optional body updates some FDA properties before regenerating it. Without a body (or with `{}`) the
+ *       FDA is only regenerated. `query`, `datasourceId` and `cached` cannot be changed. The new values are
+ *       validated against the source query (`strict` mode) and against each other (same rules as on creation).
+ *       `refreshPolicy` replaces the stored one; `objStgConf` is merged into the stored one. Changing
+ *       `refreshPolicy`, `timeColumn` or `objStgConf` recreates the scheduled refresh jobs. Changing
+ *       `objStgConf.partition`, or the `timeColumn` of a partitioned FDA, deletes the stored data and rebuilds
+ *       it from scratch, so the FDA cannot be queried until the regeneration completes. A `compression`-only
+ *       change applies to files written from then on.
+ *
+ *       `maxDownloads`, `expirationDate` and `validityPeriod` update the download restrictions independently
+ *       (`expirationDate` and `validityPeriod` are mutually exclusive). `validityPeriod` starts counting from the
+ *       update, `null` removes that limit, and `downloadsUsed` is kept, so raising `maxDownloads` re-enables an
+ *       exhausted FDA.
  *     parameters:
  *       - $ref: '#/components/parameters/VisibilityPath'
  *       - $ref: '#/components/parameters/FdaIdPath'
  *       - $ref: '#/components/parameters/FiwareServiceHeader'
  *       - $ref: '#/components/parameters/FiwareServicePathHeader'
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             additionalProperties: false
+ *             properties:
+ *               description:
+ *                 type: string
+ *               timeColumn:
+ *                 type: string
+ *                 nullable: true
+ *               validationMode:
+ *                 type: string
+ *                 enum: [strict, unchecked]
+ *               refreshPolicy:
+ *                 $ref: '#/components/schemas/RefreshPolicy'
+ *               objStgConf:
+ *                 $ref: '#/components/schemas/ObjStgConf'
+ *               maxDownloads:
+ *                 type: integer
+ *                 minimum: 1
+ *                 maximum: 9007199254740991
+ *                 nullable: true
+ *               expirationDate:
+ *                 type: string
+ *                 format: date-time
+ *                 nullable: true
+ *               validityPeriod:
+ *                 type: string
+ *                 pattern: '^(?:(\d+)\s+)?(second|minute|hour|day|week|month|year)s?$'
+ *                 nullable: true
+ *           examples:
+ *             changeRefreshPolicy:
+ *               summary: Refresh the whole FDA every hour
+ *               value:
+ *                 refreshPolicy:
+ *                   type: interval
+ *                   params:
+ *                     refreshInterval: 1 hour
+ *             repartition:
+ *               summary: Partition the stored data by month
+ *               value:
+ *                 timeColumn: observedAt
+ *                 objStgConf:
+ *                   partition: month
+ *             extendDownloads:
+ *               summary: Allow 10 downloads during the next 7 days
+ *               value:
+ *                 maxDownloads: 10
+ *                 validityPeriod: 7 days
+ *             removeDownloadLimits:
+ *               summary: Remove the download restrictions
+ *               value:
+ *                 maxDownloads: null
+ *                 expirationDate: null
  *     responses:
+ *       '200':
+ *         description: >
+ *           FDA created from an uploaded file: the new values are stored without regenerating it (it has no source
+ *           to refetch from). Returns the FDA's current `status`.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/PendingStatus'
  *       '202':
  *         description: Regeneration accepted; processing continues asynchronously.
  *         content:
@@ -571,9 +649,9 @@ router.get('/:visibility/fdas/:fdaId', async (req, res) => {
  *               $ref: '#/components/schemas/PendingStatus'
  *       '400':
  *         description: >
- *           `BadRequest`, including sending a non-empty request body (not accepted by this operation).
- *           `InvalidParam` when the source query of a `strict` PostgreSQL FDA is no longer valid (for example,
- *           its `timeColumn` was removed from the source table).
+ *           `BadRequest`, including body fields that cannot be updated. `InvalidUpdateBody` when the new values
+ *           are not valid. `InvalidParam` when the source query of a `strict` PostgreSQL FDA is no longer valid
+ *           (for example, its `timeColumn` was removed from the source table).
  *         content:
  *           application/json:
  *             schema:
@@ -601,6 +679,25 @@ router.put('/:visibility/fdas/:fdaId', async (req, res) => {
   const service = req.get('Fiware-Service');
   const servicePath = req.get('Fiware-ServicePath');
   const { visibility, fdaId } = req.params;
+  const body = req.body ?? {};
+  // query, datasourceId and cached are not updatable: DAs could stop working
+  const updatableFields = [
+    'description',
+    'refreshPolicy',
+    'timeColumn',
+    'objStgConf',
+    'validationMode',
+    'maxDownloads',
+    'expirationDate',
+    'validityPeriod',
+  ];
+  validateAllowedFieldsBody(body, updatableFields);
+
+  const updates = Object.fromEntries(
+    updatableFields
+      .filter((field) => body[field] !== undefined)
+      .map((field) => [field, body[field]]),
+  );
 
   if (!service || !fdaId || !servicePath || !visibility) {
     return res.status(400).json({
@@ -609,14 +706,17 @@ router.put('/:visibility/fdas/:fdaId', async (req, res) => {
     });
   }
 
-  if (req.body && Object.keys(req.body).length > 0) {
-    return res.status(400).json({
-      error: 'BadRequest',
-      description: 'PUT /fdas does not accept a request body',
-    });
-  }
+  const { regenerated, status } = await putFDA(
+    service,
+    fdaId,
+    visibility,
+    servicePath,
+    updates,
+  );
 
-  await updateFDA(service, fdaId, visibility, servicePath);
+  if (!regenerated) {
+    return res.status(200).json({ id: fdaId, status });
+  }
 
   return res.status(202).json({
     id: fdaId,
