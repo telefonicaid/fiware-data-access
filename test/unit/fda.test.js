@@ -3723,6 +3723,9 @@ describe('putFDA with update body', () => {
     expect(mongoMocks.regenerateFDA.mock.invocationCallOrder[0]).toBeLessThan(
       awsMocks.dropFiles.mock.invocationCallOrder[0],
     );
+    expect(agenda.cancel.mock.invocationCallOrder[0]).toBeLessThan(
+      awsMocks.dropFiles.mock.invocationCallOrder[0],
+    );
     expect(agenda.now).toHaveBeenCalledWith(
       'refresh-fda',
       expect.objectContaining({ objStgConf: { partition: 'month' } }),

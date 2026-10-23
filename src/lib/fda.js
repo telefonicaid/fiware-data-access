@@ -1466,12 +1466,16 @@ export async function putFDA(
   const effectiveServicePath = previous.servicePath ?? normalizedServicePath;
 
   try {
+    // Cancel the old jobs first, so none writes with the old layout while the storage is dropped
+    if (rescheduleJobs || rebuildStorage) {
+      await cancelFDARecurringJobs(service, fdaId, effectiveServicePath);
+    }
+
     if (rebuildStorage) {
       await dropFDAStorage(service, fdaId, effectiveServicePath);
     }
 
     if (rescheduleJobs) {
-      await cancelFDARecurringJobs(service, fdaId, effectiveServicePath);
       await scheduleRecurringFDAJobs({
         fdaId,
         query: previous.query,
