@@ -3312,7 +3312,7 @@ const getPath = (bucket, path, extension) => {
 async function scheduleFDAJobs(jobConf) {
   const {
     fdaId,
-    query, // Query original (sin filtrar)
+    query,
     service,
     servicePath,
     timeColumn,
