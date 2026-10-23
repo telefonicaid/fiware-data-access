@@ -633,6 +633,14 @@ router.get('/:visibility/fdas/:fdaId', async (req, res) => {
  *                 maxDownloads: null
  *                 expirationDate: null
  *     responses:
+ *       '200':
+ *         description: >
+ *           FDA created from an uploaded file: the new values are stored without regenerating it (it has no source
+ *           to refetch from). Returns the FDA's current `status`.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/PendingStatus'
  *       '202':
  *         description: Regeneration accepted; processing continues asynchronously.
  *         content:
@@ -698,7 +706,17 @@ router.put('/:visibility/fdas/:fdaId', async (req, res) => {
     });
   }
 
-  await putFDA(service, fdaId, visibility, servicePath, updates);
+  const { regenerated, status } = await putFDA(
+    service,
+    fdaId,
+    visibility,
+    servicePath,
+    updates,
+  );
+
+  if (!regenerated) {
+    return res.status(200).json({ id: fdaId, status });
+  }
 
   return res.status(202).json({
     id: fdaId,

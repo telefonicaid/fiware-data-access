@@ -60,6 +60,7 @@ import {
 import {
   createFDAMongo,
   regenerateFDA,
+  updateFDAFields,
   retrieveFDAs,
   retrieveFDA,
   storeDA,
@@ -1436,11 +1437,23 @@ export async function putFDA(
       previous,
       datasource,
     );
-    return;
+    return { regenerated: true };
   }
 
   const { setFields, unsetFields, rescheduleJobs, rebuildStorage } =
     await validateFDAUpdate(fda, datasource, updates);
+
+  // Upload FDAs have no source to refetch from, so the new values are only stored
+  if (isUploadFDA(fda)) {
+    const updated = await updateFDAFields(
+      service,
+      fdaId,
+      normalizedServicePath,
+      setFields,
+      unsetFields,
+    );
+    return { regenerated: false, status: updated.status };
+  }
 
   // Claims the FDA (409 if it is being processed) and stores the new values atomically
   const previous = await regenerateFDA(
@@ -1489,6 +1502,11 @@ export async function putFDA(
     previous,
     datasource,
   );
+  return { regenerated: true };
+}
+
+function isUploadFDA(fda) {
+  return fda.query === null || fda.query === undefined;
 }
 
 async function scheduleFDARegeneration(
@@ -1540,6 +1558,7 @@ async function validateFDAUpdate(fda, datasource, updates) {
     await validateUpdateAgainstSource(
       fda,
       datasource,
+      updates,
       effective,
       rebuildStorage,
     );
@@ -1659,11 +1678,12 @@ function getUpdateImpact(fda, effective) {
 async function validateUpdateAgainstSource(
   fda,
   datasource,
+  updates,
   effective,
   rebuildStorage,
 ) {
-  // Upload FDAs have no source query to refetch from
-  if (fda.query === null || fda.query === undefined) {
+  // Upload FDAs have no source query to refetch from, and their files are never rewritten
+  if (isUploadFDA(fda)) {
     if (effective.refreshPolicy.type !== 'none') {
       throw new FDAError(
         400,
@@ -1671,11 +1691,11 @@ async function validateUpdateAgainstSource(
         'Upload FDAs cannot have a refreshPolicy; omit it or set {"type":"none"}',
       );
     }
-    if (rebuildStorage) {
+    if (updates.objStgConf !== undefined || rebuildStorage) {
       throw new FDAError(
         400,
         'InvalidParam',
-        'Upload FDAs cannot change their partitioning or partitioned timeColumn.',
+        'Upload FDAs cannot change their objStgConf or partitioned timeColumn.',
       );
     }
     return;

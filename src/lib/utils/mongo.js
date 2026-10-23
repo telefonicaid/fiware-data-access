@@ -960,17 +960,6 @@ export async function regenerateFDA(
   const collection = await getCollection();
 
   // Claim the FDA and apply the PUT body changes in the same atomic update
-  const update = {
-    $set: {
-      ...setFields,
-      status: 'fetching',
-      progress: 0,
-    },
-  };
-  if (unsetFields.length > 0) {
-    update.$unset = Object.fromEntries(unsetFields.map((field) => [field, '']));
-  }
-
   const previous = await collection.findOneAndUpdate(
     {
       service,
@@ -978,37 +967,83 @@ export async function regenerateFDA(
       servicePath,
       status: { $in: ['completed', 'failed'] },
     },
-    update,
+    buildFieldsUpdate(
+      { ...setFields, status: 'fetching', progress: 0 },
+      unsetFields,
+    ),
     { returnDocument: 'before' },
   );
 
   if (!previous) {
-    const existing = await collection.findOne({ service, fdaId, servicePath });
-
-    if (!existing) {
-      throw new FDAError(
-        404,
-        'NotFound',
-        `FDA ${fdaId} not found in service ${service} and servicePath ${servicePath}`,
-      );
-    }
-
-    if (existing.status === 'fetching') {
-      throw new FDAError(
-        409,
-        'AlreadyFetching',
-        `FDA ${fdaId} is already being regenerated`,
-      );
-    }
-
-    throw new FDAError(
-      409,
-      'InvalidState',
-      `FDA ${fdaId} cannot be regenerated from status ${existing.status}`,
-    );
+    await throwFDANotIdleError(collection, service, fdaId, servicePath);
   }
 
   return { ...previous, ...setFields };
+}
+
+// Updates the fields of an FDA that is not being processed, without regenerating it
+export async function updateFDAFields(
+  service,
+  fdaId,
+  servicePath,
+  setFields = {},
+  unsetFields = [],
+) {
+  const collection = await getCollection();
+
+  const updated = await collection.findOneAndUpdate(
+    {
+      service,
+      fdaId,
+      servicePath,
+      status: { $in: ['completed', 'failed'] },
+    },
+    buildFieldsUpdate(setFields, unsetFields),
+    { returnDocument: 'after' },
+  );
+
+  if (!updated) {
+    await throwFDANotIdleError(collection, service, fdaId, servicePath);
+  }
+
+  return updated;
+}
+
+function buildFieldsUpdate(setFields, unsetFields) {
+  const update = {};
+  if (Object.keys(setFields).length > 0) {
+    update.$set = setFields;
+  }
+  if (unsetFields.length > 0) {
+    update.$unset = Object.fromEntries(unsetFields.map((field) => [field, '']));
+  }
+  return update;
+}
+
+async function throwFDANotIdleError(collection, service, fdaId, servicePath) {
+  const existing = await collection.findOne({ service, fdaId, servicePath });
+
+  if (!existing) {
+    throw new FDAError(
+      404,
+      'NotFound',
+      `FDA ${fdaId} not found in service ${service} and servicePath ${servicePath}`,
+    );
+  }
+
+  if (existing.status === 'fetching') {
+    throw new FDAError(
+      409,
+      'AlreadyFetching',
+      `FDA ${fdaId} is already being regenerated`,
+    );
+  }
+
+  throw new FDAError(
+    409,
+    'InvalidState',
+    `FDA ${fdaId} cannot be regenerated from status ${existing.status}`,
+  );
 }
 
 export async function storeDA(

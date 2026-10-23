@@ -87,6 +87,7 @@ const mongoMocks = {
   updateFDALastFetch: jest.fn(),
   updateFDASchema: jest.fn(),
   updateFDAStorage: jest.fn(),
+  updateFDAFields: jest.fn(),
   claimFDAForFetch: jest.fn(),
   claimFDAForDeletion: jest.fn(),
   claimFDADownload: jest.fn(),
@@ -163,6 +164,7 @@ await jest.unstable_mockModule('../../src/lib/utils/mongo.js', () => ({
   updateFDALastFetch: mongoMocks.updateFDALastFetch,
   updateFDASchema: mongoMocks.updateFDASchema,
   updateFDAStorage: mongoMocks.updateFDAStorage,
+  updateFDAFields: mongoMocks.updateFDAFields,
   claimFDAForFetch: mongoMocks.claimFDAForFetch,
   claimFDAForDeletion: mongoMocks.claimFDAForDeletion,
   claimFDADownload: mongoMocks.claimFDADownload,
@@ -3950,6 +3952,61 @@ describe('putFDA with update body', () => {
       type: 'InvalidUpdateBody',
       message: expect.stringContaining('Upload FDAs cannot change'),
     });
+  });
+
+  test('stores the new values of upload FDAs without regenerating them', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      ...storedFDA,
+      query: null,
+      datasourceId: null,
+    });
+    mongoMocks.updateFDAFields.mockResolvedValueOnce({
+      ...storedFDA,
+      status: 'completed',
+    });
+
+    const result = await putFDA('svc', 'fda42', 'public', '/servicepath', {
+      maxDownloads: 5,
+    });
+
+    expect(result).toEqual({ regenerated: false, status: 'completed' });
+    expect(mongoMocks.updateFDAFields).toHaveBeenCalledWith(
+      'svc',
+      'fda42',
+      '/servicepath',
+      { downloadPolicy: { maxDownloads: 5 } },
+      [],
+    );
+    expect(mongoMocks.regenerateFDA).not.toHaveBeenCalled();
+    expect(agenda.now).not.toHaveBeenCalled();
+  });
+
+  test('rejects objStgConf changes on upload FDAs', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      ...storedFDA,
+      query: null,
+      datasourceId: null,
+    });
+
+    await expect(
+      putFDA('svc', 'fda42', 'public', '/servicepath', {
+        objStgConf: { compression: true },
+      }),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidUpdateBody',
+      message: expect.stringContaining('Upload FDAs cannot change'),
+    });
+    expect(mongoMocks.updateFDAFields).not.toHaveBeenCalled();
+  });
+
+  test('reports that query FDAs are regenerated', async () => {
+    await expect(
+      putFDA('svc', 'fda42', 'public', '/servicepath', {
+        description: 'new description',
+      }),
+    ).resolves.toEqual({ regenerated: true });
+    expect(mongoMocks.updateFDAFields).not.toHaveBeenCalled();
   });
 });
 

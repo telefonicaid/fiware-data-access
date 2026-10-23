@@ -144,7 +144,7 @@ function resetModuleMocks() {
     });
   fdaMocks.createDA.mockReset().mockResolvedValue(undefined);
   fdaMocks.getFDA.mockReset().mockResolvedValue({ fdaId: 'fda1' });
-  fdaMocks.putFDA.mockReset().mockResolvedValue(undefined);
+  fdaMocks.putFDA.mockReset().mockResolvedValue({ regenerated: true });
   fdaMocks.deleteFDA.mockReset().mockResolvedValue(undefined);
   fdaMocks.getDAs.mockReset().mockResolvedValue([]);
   fdaMocks.getDA.mockReset().mockResolvedValue({ id: 'da1' });
@@ -937,6 +937,22 @@ describe('index routes - validation and middleware branches', () => {
       'expirationDate',
       'validityPeriod',
     ]);
+  });
+
+  test('returns 200 with the current status when PUT /fdas only stores the values', async () => {
+    fdaMocks.putFDA.mockResolvedValueOnce({
+      regenerated: false,
+      status: 'completed',
+    });
+
+    const res = await request(app)
+      .put('/public/fdas/fda1')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .send({ maxDownloads: 5 })
+      .expect(200);
+
+    expect(res.body).toEqual({ id: 'fda1', status: 'completed' });
   });
 
   test('returns 409 when PUT /fdas targets a fresh-only FDA', async () => {

@@ -416,5 +416,70 @@ export function registerUploadFdasIntegrationTests({
           'FDA id must contain only alphanumeric characters, hyphens, and underscores.',
       });
     });
+
+    test('PUT /{visibility}/fdas/{fdaId} stores the new values of an uploaded FDA without regenerating it', async () => {
+      const baseUrl = getBaseUrl();
+      const fdaId = `upload_put_${Date.now()}`;
+      const headers = {
+        'Fiware-Service': service,
+        'Fiware-ServicePath': servicePath,
+      };
+
+      try {
+        const uploadRes = await httpMultipartReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas/upload`,
+          headers,
+          fields: { id: fdaId },
+          file: {
+            fieldName: 'file',
+            filename: 'upload.csv',
+            contentType: 'text/csv',
+            content: Buffer.from(
+              'device,status,reading\nsensor-a,ok,21.5\nsensor-b,warn,19.2\n',
+            ),
+          },
+        });
+        expect(uploadRes.status).toBe(202);
+        const uploaded = await waitUntilFDACompleted({
+          baseUrl,
+          service,
+          fdaId,
+          visibility,
+        });
+        expect(uploaded.status).toBe('completed');
+
+        const putRes = await httpReq({
+          method: 'PUT',
+          url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
+          headers,
+          body: { maxDownloads: 5 },
+        });
+        expect(putRes.status).toBe(200);
+        expect(putRes.json).toEqual({ id: fdaId, status: 'completed' });
+
+        const getRes = await httpReq({
+          method: 'GET',
+          url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
+          headers,
+        });
+        expect(getRes.status).toBe(200);
+        expect(getRes.json).toMatchObject({
+          status: 'completed',
+          maxDownloads: 5,
+          lastFetch: uploaded.lastFetch,
+        });
+
+        const dataRes = await httpReq({
+          method: 'GET',
+          url: `${baseUrl}/${visibility}/fdas/${fdaId}/das/defaultDataAccess/data`,
+          headers,
+        });
+        expect(dataRes.status).toBe(200);
+        expect(dataRes.json.length).toBe(2);
+      } finally {
+        await deleteFdaIfPresent(baseUrl, fdaId);
+      }
+    });
   });
 }

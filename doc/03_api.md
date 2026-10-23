@@ -1530,6 +1530,9 @@ Example:
 _**Response code**_
 
 -   Successful operation uses 202 Accepted (asynchronous regeneration)
+-   For FDAs created from an uploaded file, a body is only stored (there is no source to refetch from) and the operation
+    returns 200 OK with `{ "id": "...", "status": "<current status>" }`. These FDAs cannot change `objStgConf`, and
+    their `refreshPolicy` must stay `none`.
 -   Errors use a non-2xx and (optionally) an error payload. See subsection on [Error Responses](#error-responses) for
     more details.
 
