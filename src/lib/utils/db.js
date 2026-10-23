@@ -93,7 +93,9 @@ async function logDuckDBConfig(conn) {
       'temp_directory',
       'max_temp_directory_size',
       'threads',
-      'preserve_insertion_order'
+      'preserve_insertion_order',
+      's3_uploader_max_filesize',
+      'partitioned_write_max_open_files'
     )
     ORDER BY name
   `);
@@ -335,6 +337,12 @@ async function createDuckDBInstance() {
   const preserveInsertionOrder = String(
     config.duckdb?.preserveInsertionOrder ?? 'true',
   );
+  const s3UploaderMaxFilesize = String(
+    config.duckdb?.s3UploaderMaxFilesize || '50GB',
+  );
+  const partitionedWriteMaxOpenFiles = String(
+    config.duckdb?.partitionedWriteMaxOpenFiles ?? '8',
+  );
 
   if (!fs.existsSync(tempDir)) {
     fs.mkdirSync(tempDir, { recursive: true });
@@ -361,11 +369,18 @@ async function createDuckDBInstance() {
     `SET preserve_insertion_order='${preserveInsertionOrder}';`,
   );
 
-  // Log efective config for duckdb
-  await logDuckDBConfig(configConn);
-
   await configConn.run('INSTALL httpfs;');
   await configConn.run('LOAD httpfs;');
+
+  await configConn.run(
+    `SET GLOBAL s3_uploader_max_filesize='${s3UploaderMaxFilesize}';`,
+  );
+  await configConn.run(
+    `SET GLOBAL partitioned_write_max_open_files='${partitionedWriteMaxOpenFiles}';`,
+  );
+
+  // Log efective config for duckdb
+  await logDuckDBConfig(configConn);
 
   // Common config
   await configConn.run(`

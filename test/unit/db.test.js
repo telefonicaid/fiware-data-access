@@ -173,6 +173,44 @@ describe('db utils', () => {
     expect(configConn.disconnect).toHaveBeenCalledTimes(1);
   });
 
+  test('getDBConnection sets the httpfs upload settings globally after loading httpfs', async () => {
+    const { getDBConnection, configConn } = await loadDbModule();
+
+    await getDBConnection();
+
+    const statements = configConn.run.mock.calls.map(([sql]) => sql);
+    const loadIndex = statements.indexOf('LOAD httpfs;');
+    expect(
+      statements.indexOf("SET GLOBAL s3_uploader_max_filesize='50GB';"),
+    ).toBeGreaterThan(loadIndex);
+    expect(
+      statements.indexOf("SET GLOBAL partitioned_write_max_open_files='8';"),
+    ).toBeGreaterThan(loadIndex);
+    expect(configConn.runAndReadAll).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /'s3_uploader_max_filesize',\s+'partitioned_write_max_open_files'/,
+      ),
+    );
+  });
+
+  test('getDBConnection applies the configured httpfs upload settings', async () => {
+    const { getDBConnection, configConn } = await loadDbModule({
+      duckdbConfig: {
+        s3UploaderMaxFilesize: '100GB',
+        partitionedWriteMaxOpenFiles: 16,
+      },
+    });
+
+    await getDBConnection();
+
+    expect(configConn.run).toHaveBeenCalledWith(
+      "SET GLOBAL s3_uploader_max_filesize='100GB';",
+    );
+    expect(configConn.run).toHaveBeenCalledWith(
+      "SET GLOBAL partitioned_write_max_open_files='16';",
+    );
+  });
+
   test('runPreparedStatement throws DaNotFound for missing DA', async () => {
     const { runPreparedStatement, runtimeConn } = await loadDbModule({
       retrieveDAResult: {},

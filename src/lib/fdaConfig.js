@@ -115,6 +115,14 @@ const envVarsSchema = {
       type: 'number',
       default: DEFAULT_DUCKDB_MEMORY_SAMPLE_INTERVAL_MS,
     },
+    FDA_DUCKDB_S3_UPLOADER_MAX_FILESIZE: {
+      type: 'string',
+      default: '50GB',
+    },
+    FDA_DUCKDB_PARTITIONED_WRITE_MAX_OPEN_FILES: {
+      type: 'number',
+      default: 8,
+    },
     FDA_MAX_CONCURRENT_REFRESH_JOBS: {
       type: 'number',
       default: 1,
@@ -217,6 +225,9 @@ export const config = {
     maxThreads: envVars.FDA_DUCKDB_MAX_THREADS,
     preserveInsertionOrder: envVars.FDA_DUCKDB_PRESERVE_INSERTION_ORDER,
     memorySampleIntervalMs: envVars.FDA_DUCKDB_MEMORY_SAMPLE_INTERVAL_MS,
+    s3UploaderMaxFilesize: envVars.FDA_DUCKDB_S3_UPLOADER_MAX_FILESIZE,
+    partitionedWriteMaxOpenFiles:
+      envVars.FDA_DUCKDB_PARTITIONED_WRITE_MAX_OPEN_FILES,
   },
   mongo: {
     uri: envVars.FDA_MONGO_URI,
