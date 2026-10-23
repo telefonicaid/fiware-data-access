@@ -12,6 +12,8 @@ environment variables:
 -   `FDA_DUCKDB_MEMORY_LIMIT`
 -   `FDA_DUCKDB_MAX_THREADS`
 -   `FDA_DUCKDB_PRESERVE_INSERTION_ORDER`
+-   `FDA_DUCKDB_S3_UPLOADER_MAX_FILESIZE`
+-   `FDA_DUCKDB_PARTITIONED_WRITE_MAX_OPEN_FILES`
 
 These settings allow us to control the amount of memory DuckDB is allowed to use. Together with the container's memory
 limit, this gives us much tighter control over the total memory consumption of the FDA component.
@@ -522,7 +524,7 @@ This explains the behaviour observed in the tests:
 
 # `httpfs` configuration tests
 
-Several `httpfs`-related settings were tested to determine whether the extension's memory usage could be reduced:
+A first round of tests tried these settings to reduce the memory of the extension:
 
 ```text
 partitioned_write_max_open_files=1
@@ -530,13 +532,43 @@ s3_uploader_thread_limit=1
 s3_uploader_max_filesize='80GB'
 ```
 
-None of these changes prevented the `EXTENSION` memory from growing enough to reproduce the problem.
+None of them prevented the `EXTENSION` memory from growing enough to reproduce the problem, which led to the conclusion
+that no `httpfs` setting could limit it. That conclusion was wrong.
 
-At this point, there does not appear to be a configuration option that provides a direct memory limit for the `httpfs`
-S3 upload buffers.
+**The part size depends on `s3_uploader_max_filesize`.** Each file being uploaded keeps one multipart part in memory,
+and the part size is `s3_uploader_max_filesize / s3_uploader_max_parts_per_file`. With the defaults this is
+`800GB / 10000 = 80 MB`, the `76.5 MiB` block that appears in the errors. `80GB` still leaves 8 MB parts. The minimum
+DuckDB allows, `50GB`, gives 5 MB parts, the minimum S3 part size. The memory of a partitioned export is therefore:
 
-Therefore, reducing the DuckDB `memory_limit` alone cannot guarantee that this workload will succeed: the memory limit
-applies to DuckDB's overall managed memory, but some extension allocations still need to remain resident.
+```text
+EXTENSION ≈ min(partitions written, partitioned_write_max_open_files) × s3_uploader_max_filesize / 10000
+```
+
+**Both settings are per connection.** A plain `SET` only changes them for the connection that runs it (scope `LOCAL` in
+`duckdb_settings()`). Set on any other connection than the one that runs the `COPY`, they have no effect, which may be
+why `partitioned_write_max_open_files=1` made no difference in the first round. FDA applies them with `SET GLOBAL` when
+it creates the DuckDB instance, so every connection uses them.
+
+Measured with DuckDB 1.5.6 inside the FDA container, writing to MinIO: 3 million rows over ~35 days, partitioned by day,
+`threads=2`, `preserve_insertion_order=false`, peak sampled from `duckdb_memory()` every 50 ms.
+
+| Settings                                        | memory_limit | Result | Peak     | `EXTENSION` |
+| ----------------------------------------------- | ------------ | ------ | -------- | ----------- |
+| defaults                                        | 1 GB         | OOM    | ~1000 MB | 963 MB      |
+| `partitioned_write_max_open_files=8`            | 1 GB         | ok     | 694 MB   | 642 MB      |
+| `s3_uploader_max_filesize='80GB'`               | 256 MB       | OOM    | 256 MB   | 228 MB      |
+| `s3_uploader_max_filesize='50GB'`               | 256 MB       | ok     | 240 MB   | 182 MB      |
+| `'50GB'` + `partitioned_write_max_open_files=8` | **128 MB**   | **ok** | 107 MB   | 39 MB       |
+
+With both settings, an export that failed with 1 GB completes with 128 MB. FDA exposes them as
+`FDA_DUCKDB_S3_UPLOADER_MAX_FILESIZE` (default `50GB`) and `FDA_DUCKDB_PARTITIONED_WRITE_MAX_OPEN_FILES` (default `8`).
+
+Two side effects:
+
+-   `50GB` is also the largest Parquet file DuckDB can upload, which is far above the size of an FDA file.
+-   With more partitions than open files allowed, DuckDB closes partition files and opens new ones. When the rows are
+    not ordered by time, a partition directory can end up with several files (`data_0.parquet`, `data_1.parquet`, ...).
+    Queries and partition pruning read all of them, and a refresh replaces every file of the partitions it rewrites.
 
 ---
 
@@ -722,18 +754,20 @@ The investigation leads to the following conclusions:
 6. **The `httpfs` S3 uploader uses resident multipart-upload buffers.** These buffers are accounted for under
    `EXTENSION` and are not necessarily spillable in the same way as `COLUMN_DATA`.
 
-7. **The tested `httpfs` configuration options do not provide a sufficient solution.**
-   `partitioned_write_max_open_files`, `s3_uploader_thread_limit` and `s3_uploader_max_filesize` did not prevent the
-   high extension memory usage.
+7. **The `httpfs` memory can be limited with two settings.** `s3_uploader_max_filesize` sets the size of each upload
+   part and `partitioned_write_max_open_files` how many partition files upload at the same time. With `50GB` and `8`,
+   the partitioned export completes with a 128 MB limit.
 
-8. **A higher DuckDB memory limit allows the operation to complete.** With a 1 GB limit, the workload reached
-   approximately **382.5 MB of `EXTENSION` memory** and completed successfully.
+8. **A higher DuckDB memory limit is not a reliable fix.** It was enough for the test FDA above (382.5 MB of `EXTENSION`
+   with 1 GB), but with the default settings `EXTENSION` grows with the number of partitions: an export with 35 daily
+   partitions failed with 1 GB, with 963 MB of `EXTENSION`.
 
 Therefore, the current evidence indicates that the production OOM is caused by the memory requirements of the
 **partitioned S3 upload performed by `httpfs`**, rather than a failure of DuckDB's out-of-core processing.
 
 The important consequence for the FDA configuration is that the DuckDB memory limit must leave enough headroom for these
-non-spillable extension allocations in addition to the memory required by the query itself.
+non-spillable extension allocations, which `FDA_DUCKDB_S3_UPLOADER_MAX_FILESIZE` and
+`FDA_DUCKDB_PARTITIONED_WRITE_MAX_OPEN_FILES` keep small.
 
 # Observability of DuckDB memory
 

@@ -142,15 +142,17 @@ Variabes related to the object bucket-based storage system:
 
 Configuration variables for DuckDB runtime and temporary storage:
 
-| Variable                               | Optional | Type    | Description                                                                                                                                                                                                                                 |
-| -------------------------------------- | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `FDA_DUCKDB_DIR`                       | ✓        | string  | Directory used to store the DuckDB database file. Default `/tmp/duckdb`.                                                                                                                                                                    |
-| `FDA_DUCKDB_MEMORY_LIMIT`              | ✓        | string  | DuckDB `memory_limit` configuration (e.g., `1.0GB`). Default `1.0GB`.                                                                                                                                                                       |
-| `FDA_DUCKDB_TEMP_DIR`                  | ✓        | string  | Directory used by DuckDB for temporary files. Default `/tmp/duckdb/temp`.                                                                                                                                                                   |
-| `FDA_DUCKDB_MAX_TEMP_SIZE`             | ✓        | string  | Maximum size allowed for DuckDB temp directory (e.g., `10GB`). Default `10GB`.                                                                                                                                                              |
-| `FDA_DUCKDB_MAX_THREADS`               | ✓        | number  | Maximum number of threads DuckDB can use to execute queries in parallel. Lower values reduce memory consumption and resource contention, while higher values may improve performance for complex analytical queries. Default `2`.           |
-| `FDA_DUCKDB_PRESERVE_INSERTION_ORDER`  | ✓        | boolean | Controls whether DuckDB preserves the original row insertion order during query execution. Setting it to `false` can reduce memory usage and improve performance for analytical workloads where row order is not important. Default `true`. |
-| `FDA_DUCKDB_MEMORY_SAMPLE_INTERVAL_MS` | ✓        | number  | Interval in milliseconds at which `duckdb_memory()` is sampled while a Parquet export runs, to log its memory peak. Lower values catch shorter peaks at the cost of more queries. Set to `0` to disable the peak logs. Default `250`.       |
+| Variable                                      | Optional | Type    | Description                                                                                                                                                                                                                                                                                |
+| --------------------------------------------- | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `FDA_DUCKDB_DIR`                              | ✓        | string  | Directory used to store the DuckDB database file. Default `/tmp/duckdb`.                                                                                                                                                                                                                   |
+| `FDA_DUCKDB_MEMORY_LIMIT`                     | ✓        | string  | DuckDB `memory_limit` configuration (e.g., `1.0GB`). Default `1.0GB`.                                                                                                                                                                                                                      |
+| `FDA_DUCKDB_TEMP_DIR`                         | ✓        | string  | Directory used by DuckDB for temporary files. Default `/tmp/duckdb/temp`.                                                                                                                                                                                                                  |
+| `FDA_DUCKDB_MAX_TEMP_SIZE`                    | ✓        | string  | Maximum size allowed for DuckDB temp directory (e.g., `10GB`). Default `10GB`.                                                                                                                                                                                                             |
+| `FDA_DUCKDB_MAX_THREADS`                      | ✓        | number  | Maximum number of threads DuckDB can use to execute queries in parallel. Lower values reduce memory consumption and resource contention, while higher values may improve performance for complex analytical queries. Default `2`.                                                          |
+| `FDA_DUCKDB_PRESERVE_INSERTION_ORDER`         | ✓        | boolean | Controls whether DuckDB preserves the original row insertion order during query execution. Setting it to `false` can reduce memory usage and improve performance for analytical workloads where row order is not important. Default `true`.                                                |
+| `FDA_DUCKDB_MEMORY_SAMPLE_INTERVAL_MS`        | ✓        | number  | Interval in milliseconds at which `duckdb_memory()` is sampled while a Parquet export runs, to log its memory peak. Lower values catch shorter peaks at the cost of more queries. Set to `0` to disable the peak logs. Default `250`.                                                      |
+| `FDA_DUCKDB_S3_UPLOADER_MAX_FILESIZE`         | ✓        | string  | DuckDB `s3_uploader_max_filesize` configuration. Each file uploaded to the object storage keeps a buffer of this size / 10000 in memory, which DuckDB cannot spill to disk. `50GB`, the minimum allowed, gives 5 MB buffers and caps each Parquet file at 50 GB. Default `50GB`.           |
+| `FDA_DUCKDB_PARTITIONED_WRITE_MAX_OPEN_FILES` | ✓        | number  | DuckDB `partitioned_write_max_open_files` configuration: the partition files a partitioned Parquet export keeps open, each with its own upload buffer. With more partitions than this, DuckDB closes files and opens new ones, so a partition can hold several Parquet files. Default `8`. |
 
 ### MongoDB
 
@@ -601,11 +603,17 @@ How to read it:
 
 -   `duckdbPeakUsedBytes` close to `duckdbLimitBytes` means the export hit `FDA_DUCKDB_MEMORY_LIMIT`. Successful exports
     log their peak too, which tells how much headroom the current limit leaves.
--   `EXTENSION` is the memory of the `httpfs` S3 uploads. It cannot be spilled to disk and grows with the number of
-    partitions written at the same time. With the same 3 million rows, the export partitioned by day still failed with a
-    1 GB limit, with about 800 MB of `EXTENSION`, while the unpartitioned export completed with a 256 MB limit and 160
-    MB of `EXTENSION`. When it dominates, raising the limit helps little; a coarser partition (or a smaller window per
-    refresh) does.
+-   `EXTENSION` is the memory of the `httpfs` S3 uploads. It cannot be spilled to disk: each file being uploaded keeps
+    one upload part in memory, of `FDA_DUCKDB_S3_UPLOADER_MAX_FILESIZE / 10000` bytes. A partitioned export uploads one
+    file per open partition, so
+
+    `EXTENSION ≈ min(partitions written, FDA_DUCKDB_PARTITIONED_WRITE_MAX_OPEN_FILES) × FDA_DUCKDB_S3_UPLOADER_MAX_FILESIZE / 10000`
+
+    With the defaults (`50GB` and `8`) this is about 40 MB. With DuckDB's own defaults (`800GB` and `100`), exporting 3
+    million rows partitioned by day over 35 days kept 35 parts of 80 MB alive and failed with a 1 GB limit; with `50GB`
+    and `8` the same export completed with 128 MB. When `EXTENSION` dominates, raising `FDA_DUCKDB_MEMORY_LIMIT` helps
+    little; lower these two settings instead.
+
 -   A non-zero `duckdbFailedSamples` means DuckDB had no memory left even for the sampling query: it was at the limit.
 -   A non-zero `duckdbPeakTempBytes` means DuckDB spilled to disk; check `FDA_DUCKDB_MAX_TEMP_SIZE` and the free space
     in `FDA_DUCKDB_TEMP_DIR`.
