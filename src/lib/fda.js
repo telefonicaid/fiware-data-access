@@ -1371,19 +1371,7 @@ function validateUploadOptions(timeColumn, objStgConf) {
     );
   }
 
-  if (timeColumn !== undefined && timeColumn !== null) {
-    if (
-      typeof timeColumn !== 'string' ||
-      timeColumn.length === 0 ||
-      !TIME_COLUMN_NAME_PATTERN.test(timeColumn)
-    ) {
-      throw new FDAError(
-        400,
-        'InvalidParam',
-        `Invalid time column name "${timeColumn}".`,
-      );
-    }
-  }
+  assertValidTimeColumnName(timeColumn);
 
   if (objStgConf.partition) {
     if (!PARTITION_TYPES.includes(objStgConf.partition)) {
@@ -1544,175 +1532,23 @@ async function scheduleFDARegeneration(
 }
 
 async function validateFDAUpdate(fda, datasource, updates) {
-  const {
-    description,
-    timeColumn,
-    validationMode,
-    refreshPolicy,
-    objStgConf,
-    maxDownloads,
-    expirationDate,
-    validityPeriod,
-  } = updates;
-
   try {
-    if (
-      description !== undefined &&
-      description !== null &&
-      typeof description !== 'string'
-    ) {
-      throw new FDAError(400, 'InvalidParam', 'description must be a string.');
-    }
-
-    if (refreshPolicy !== undefined && !isPlainObject(refreshPolicy)) {
-      throw new FDAError(
-        400,
-        'InvalidParam',
-        'refreshPolicy must be a JSON object.',
-      );
-    }
-
-    if (objStgConf !== undefined) {
-      validateObjStgConfUpdate(objStgConf);
-    }
-
-    // We get the effective values for the fields that are being updated
-    const effectiveTimeColumn =
-      timeColumn !== undefined ? timeColumn : fda.timeColumn;
-    const effectiveValidationMode =
-      validationMode !== undefined
-        ? validationMode ?? FDA_VALIDATION_MODE_STRICT
-        : fda.validationMode ?? FDA_VALIDATION_MODE_STRICT;
-    const effectiveRefreshPolicy =
-      refreshPolicy !== undefined
-        ? refreshPolicy
-        : fda.refreshPolicy ?? { type: 'none' };
-    // objStgConf is merged, so sending only compression keeps the partition
-    const effectiveObjStgConf = { ...fda.objStgConf, ...objStgConf };
-    if (effectiveObjStgConf.partition === 'none') {
-      delete effectiveObjStgConf.partition;
-    }
-
-    if (
-      effectiveTimeColumn !== undefined &&
-      effectiveTimeColumn !== null &&
-      (typeof effectiveTimeColumn !== 'string' ||
-        effectiveTimeColumn.length === 0 ||
-        !TIME_COLUMN_NAME_PATTERN.test(effectiveTimeColumn))
-    ) {
-      throw new FDAError(
-        400,
-        'InvalidParam',
-        `Invalid time column name "${effectiveTimeColumn}".`,
-      );
-    }
-
-    if (!VALIDATION_MODES.includes(effectiveValidationMode)) {
-      throw new FDAError(
-        400,
-        'InvalidParam',
-        `Invalid validation mode "${effectiveValidationMode}".`,
-      );
-    }
-
-    if (effectiveObjStgConf.partition && !effectiveTimeColumn) {
-      throw new FDAError(
-        400,
-        'InvalidParam',
-        'timeColumn is required when using partitioning.',
-      );
-    }
-
-    validateScheduledOptions(
-      effectiveRefreshPolicy,
-      effectiveObjStgConf,
-      effectiveTimeColumn,
+    validateUpdateFieldTypes(updates);
+    const effective = getEffectiveUpdateValues(fda, updates);
+    validateEffectiveUpdateValues(effective);
+    const { rescheduleJobs, rebuildStorage } = getUpdateImpact(fda, effective);
+    await validateUpdateAgainstSource(
+      fda,
+      datasource,
+      effective,
+      rebuildStorage,
     );
-
-    const timeColumnChanged =
-      (effectiveTimeColumn ?? null) !== (fda.timeColumn ?? null);
-    const partitionChanged =
-      (effectiveObjStgConf.partition ?? null) !==
-      (getEffectivePartition(fda.objStgConf) ?? null);
-    // Partition folders depend on the partition type and the timeColumn, so
-    // changing them requires rebuilding the stored files from scratch
-    const rebuildStorage =
-      partitionChanged ||
-      (Boolean(effectiveObjStgConf.partition) && timeColumnChanged);
-
-    // Upload FDAs have no source query to refetch from
-    if (fda.query === null || fda.query === undefined) {
-      if (effectiveRefreshPolicy.type !== 'none') {
-        throw new FDAError(
-          400,
-          'InvalidParam',
-          'Upload FDAs cannot have a refreshPolicy; omit it or set {"type":"none"}',
-        );
-      }
-      if (rebuildStorage) {
-        throw new FDAError(
-          400,
-          'InvalidParam',
-          'Upload FDAs cannot change their partitioning or partitioned timeColumn.',
-        );
-      }
-    } else {
-      if (datasource.type === 'mongodb') {
-        validateMongoFDAContract(fda.query, effectiveTimeColumn);
-      }
-
-      await validateAndGetSourceSchema(
-        datasource,
-        effectiveValidationMode,
-        fda.query,
-        effectiveTimeColumn,
-        fda.cached ?? true,
-      );
-    }
-
-    const setFields = {};
-    if (description !== undefined) {
-      setFields.description = description;
-    }
-    if (timeColumn !== undefined) {
-      setFields.timeColumn = timeColumn;
-    }
-    if (validationMode !== undefined) {
-      setFields.validationMode = effectiveValidationMode;
-    }
-    if (refreshPolicy !== undefined) {
-      setFields.refreshPolicy = effectiveRefreshPolicy;
-    }
-    if (objStgConf !== undefined) {
-      setFields.objStgConf = effectiveObjStgConf;
-    }
-
-    const unsetFields = [];
-    if (
-      maxDownloads !== undefined ||
-      expirationDate !== undefined ||
-      validityPeriod !== undefined
-    ) {
-      const downloadPolicy = buildUpdatedDownloadPolicy(
-        fda.downloadPolicy,
-        updates,
-      );
-      if (downloadPolicy) {
-        setFields.downloadPolicy = downloadPolicy;
-      } else {
-        unsetFields.push('downloadPolicy');
-      }
-    }
-
-    // Recurring jobs keep a copy of these values, so they must be recreated
-    const rescheduleJobs =
-      timeColumnChanged ||
-      !isDeepStrictEqual(effectiveRefreshPolicy, fda.refreshPolicy) ||
-      !isDeepStrictEqual(effectiveObjStgConf, fda.objStgConf ?? {});
-
-    if (rebuildStorage) {
-      unsetFields.push('lastFetch');
-    }
+    const { setFields, unsetFields } = buildUpdateFields(
+      fda,
+      updates,
+      effective,
+      rebuildStorage,
+    );
 
     return { setFields, unsetFields, rescheduleJobs, rebuildStorage };
   } catch (err) {
@@ -1723,6 +1559,193 @@ async function validateFDAUpdate(fda, datasource, updates) {
       400,
       'InvalidUpdateBody',
       `Error updating FDA with new values: ${err.message}`,
+    );
+  }
+}
+
+function validateUpdateFieldTypes({ description, refreshPolicy, objStgConf }) {
+  if (
+    description !== undefined &&
+    description !== null &&
+    typeof description !== 'string'
+  ) {
+    throw new FDAError(400, 'InvalidParam', 'description must be a string.');
+  }
+
+  if (refreshPolicy !== undefined && !isPlainObject(refreshPolicy)) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      'refreshPolicy must be a JSON object.',
+    );
+  }
+
+  if (objStgConf !== undefined) {
+    validateObjStgConfUpdate(objStgConf);
+  }
+}
+
+// The values the FDA will have after the update: the sent ones or the stored ones
+function getEffectiveUpdateValues(fda, updates) {
+  const { timeColumn, validationMode, refreshPolicy, objStgConf } = updates;
+
+  const effectiveValidationMode =
+    validationMode === undefined ? fda.validationMode : validationMode;
+  // objStgConf is merged, so sending only compression keeps the partition
+  const effectiveObjStgConf = { ...fda.objStgConf, ...objStgConf };
+  if (effectiveObjStgConf.partition === 'none') {
+    delete effectiveObjStgConf.partition;
+  }
+
+  return {
+    timeColumn: timeColumn === undefined ? fda.timeColumn : timeColumn,
+    validationMode: effectiveValidationMode ?? FDA_VALIDATION_MODE_STRICT,
+    refreshPolicy:
+      refreshPolicy === undefined
+        ? fda.refreshPolicy ?? { type: 'none' }
+        : refreshPolicy,
+    objStgConf: effectiveObjStgConf,
+  };
+}
+
+function validateEffectiveUpdateValues({
+  timeColumn,
+  validationMode,
+  refreshPolicy,
+  objStgConf,
+}) {
+  assertValidTimeColumnName(timeColumn);
+
+  if (!VALIDATION_MODES.includes(validationMode)) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Invalid validation mode "${validationMode}".`,
+    );
+  }
+
+  if (objStgConf.partition && !timeColumn) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      'timeColumn is required when using partitioning.',
+    );
+  }
+
+  validateScheduledOptions(refreshPolicy, objStgConf, timeColumn);
+}
+
+function getUpdateImpact(fda, effective) {
+  const timeColumnChanged =
+    (effective.timeColumn ?? null) !== (fda.timeColumn ?? null);
+  const partitionChanged =
+    (effective.objStgConf.partition ?? null) !==
+    (getEffectivePartition(fda.objStgConf) ?? null);
+
+  return {
+    // Recurring jobs keep a copy of these values, so they must be recreated
+    rescheduleJobs:
+      timeColumnChanged ||
+      !isDeepStrictEqual(effective.refreshPolicy, fda.refreshPolicy) ||
+      !isDeepStrictEqual(effective.objStgConf, fda.objStgConf ?? {}),
+    // Partition folders depend on the partition type and the timeColumn, so
+    // changing them requires rebuilding the stored files from scratch
+    rebuildStorage:
+      partitionChanged ||
+      (Boolean(effective.objStgConf.partition) && timeColumnChanged),
+  };
+}
+
+async function validateUpdateAgainstSource(
+  fda,
+  datasource,
+  effective,
+  rebuildStorage,
+) {
+  // Upload FDAs have no source query to refetch from
+  if (fda.query === null || fda.query === undefined) {
+    if (effective.refreshPolicy.type !== 'none') {
+      throw new FDAError(
+        400,
+        'InvalidParam',
+        'Upload FDAs cannot have a refreshPolicy; omit it or set {"type":"none"}',
+      );
+    }
+    if (rebuildStorage) {
+      throw new FDAError(
+        400,
+        'InvalidParam',
+        'Upload FDAs cannot change their partitioning or partitioned timeColumn.',
+      );
+    }
+    return;
+  }
+
+  if (datasource.type === 'mongodb') {
+    validateMongoFDAContract(fda.query, effective.timeColumn);
+  }
+
+  await validateAndGetSourceSchema(
+    datasource,
+    effective.validationMode,
+    fda.query,
+    effective.timeColumn,
+    fda.cached ?? true,
+  );
+}
+
+function buildUpdateFields(fda, updates, effective, rebuildStorage) {
+  const setFields = {};
+  const unsetFields = [];
+
+  for (const field of ['description', 'timeColumn']) {
+    if (updates[field] !== undefined) {
+      setFields[field] = updates[field];
+    }
+  }
+  for (const field of ['validationMode', 'refreshPolicy', 'objStgConf']) {
+    if (updates[field] !== undefined) {
+      setFields[field] = effective[field];
+    }
+  }
+
+  const { maxDownloads, expirationDate, validityPeriod } = updates;
+  if (
+    maxDownloads !== undefined ||
+    expirationDate !== undefined ||
+    validityPeriod !== undefined
+  ) {
+    const downloadPolicy = buildUpdatedDownloadPolicy(
+      fda.downloadPolicy,
+      updates,
+    );
+    if (downloadPolicy) {
+      setFields.downloadPolicy = downloadPolicy;
+    } else {
+      unsetFields.push('downloadPolicy');
+    }
+  }
+
+  if (rebuildStorage) {
+    unsetFields.push('lastFetch');
+  }
+
+  return { setFields, unsetFields };
+}
+
+function assertValidTimeColumnName(timeColumn) {
+  if (timeColumn === undefined || timeColumn === null) {
+    return;
+  }
+  if (
+    typeof timeColumn !== 'string' ||
+    timeColumn.length === 0 ||
+    !TIME_COLUMN_NAME_PATTERN.test(timeColumn)
+  ) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Invalid time column name "${timeColumn}".`,
     );
   }
 }
