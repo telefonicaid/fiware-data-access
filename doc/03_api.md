@@ -1511,7 +1511,8 @@ keep working.
 
 The new values are validated together with the stored ones, using the same rules as on creation (for example, a `window`
 refresh policy needs a `timeColumn`, and `fetchSize` must match the partition). Invalid values return
-`400 InvalidUpdateBody` and the FDA is left untouched.
+`400 InvalidUpdateBody` and the FDA is left untouched. If the stored source query is no longer valid and the body does
+not change `timeColumn` or `validationMode`, the error is `400 InvalidParam`, the same as without a body.
 
 Example:
 

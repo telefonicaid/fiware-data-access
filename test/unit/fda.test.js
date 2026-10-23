@@ -3492,6 +3492,24 @@ describe('putFDA timeColumn validation', () => {
     expect(mongoMocks.regenerateFDA).not.toHaveBeenCalled();
   });
 
+  test('keeps InvalidParam when the source query fails and the body does not affect it', async () => {
+    pgMocks.validatePostgresQuery.mockRejectedValueOnce(
+      new FDAError(
+        400,
+        'InvalidParam',
+        'Time column "old_time" is not present in the SELECT clause of the FDA query.',
+      ),
+    );
+
+    await expect(
+      putFDA('svc', 'fda42', undefined, '/servicepath', {
+        description: 'only the description',
+      }),
+    ).rejects.toMatchObject({ status: 400, type: 'InvalidParam' });
+
+    expect(mongoMocks.regenerateFDA).not.toHaveBeenCalled();
+  });
+
   test('validates the updated timeColumn against the Mongo query projection', async () => {
     mongoMocks.retrieveFDA.mockResolvedValueOnce({
       fdaId: 'fda42',

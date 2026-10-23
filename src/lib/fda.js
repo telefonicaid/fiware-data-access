@@ -1554,36 +1554,57 @@ async function scheduleFDARegeneration(
 }
 
 async function validateFDAUpdate(fda, datasource, updates) {
+  let validated;
   try {
-    validateUpdateFieldTypes(updates);
-    const effective = getEffectiveUpdateValues(fda, updates);
-    validateEffectiveUpdateValues(effective);
-    const { rescheduleJobs, rebuildStorage } = getUpdateImpact(fda, effective);
-    await validateUpdateAgainstSource(
-      fda,
-      datasource,
-      updates,
-      effective,
-      rebuildStorage,
-    );
-    const { setFields, unsetFields } = buildUpdateFields(
-      fda,
-      updates,
-      effective,
-      rebuildStorage,
-    );
-
-    return { setFields, unsetFields, rescheduleJobs, rebuildStorage };
+    validated = validateUpdateBody(fda, updates);
   } catch (err) {
-    if (err.status !== 400) {
-      throw err;
-    }
-    throw new FDAError(
-      400,
-      'InvalidUpdateBody',
-      `Error updating FDA with new values: ${err.message}`,
-    );
+    throw toInvalidUpdateBodyError(err);
   }
+
+  if (!isUploadFDA(fda)) {
+    try {
+      await validateSourceForUpdate(fda, datasource, validated.effective);
+    } catch (err) {
+      // Only the body values the source validation depends on make it an
+      // invalid body; otherwise it fails as it would without a body
+      const bodyAffectsSource =
+        updates.timeColumn !== undefined ||
+        updates.validationMode !== undefined;
+      throw bodyAffectsSource ? toInvalidUpdateBodyError(err) : err;
+    }
+  }
+
+  const { setFields, unsetFields, rescheduleJobs, rebuildStorage } = validated;
+  return { setFields, unsetFields, rescheduleJobs, rebuildStorage };
+}
+
+function validateUpdateBody(fda, updates) {
+  validateUpdateFieldTypes(updates);
+  const effective = getEffectiveUpdateValues(fda, updates);
+  validateEffectiveUpdateValues(effective);
+  const { rescheduleJobs, rebuildStorage } = getUpdateImpact(fda, effective);
+  if (isUploadFDA(fda)) {
+    validateUploadFDAUpdate(updates, effective, rebuildStorage);
+  }
+  const { setFields, unsetFields } = buildUpdateFields(
+    fda,
+    updates,
+    effective,
+    rebuildStorage,
+  );
+
+  return { effective, setFields, unsetFields, rescheduleJobs, rebuildStorage };
+}
+
+function toInvalidUpdateBodyError(err) {
+  if (err.status !== 400) {
+    return err;
+  }
+  return new FDAError(
+    400,
+    'InvalidUpdateBody',
+    `Error updating FDA with new values: ${err.message}`,
+  );
 }
 
 function validateUpdateFieldTypes({ description, refreshPolicy, objStgConf }) {
@@ -1679,32 +1700,25 @@ function getUpdateImpact(fda, effective) {
   };
 }
 
-async function validateUpdateAgainstSource(
-  fda,
-  datasource,
-  updates,
-  effective,
-  rebuildStorage,
-) {
-  // Upload FDAs have no source query to refetch from, and their files are never rewritten
-  if (isUploadFDA(fda)) {
-    if (effective.refreshPolicy.type !== 'none') {
-      throw new FDAError(
-        400,
-        'InvalidParam',
-        'Upload FDAs cannot have a refreshPolicy; omit it or set {"type":"none"}',
-      );
-    }
-    if (updates.objStgConf !== undefined || rebuildStorage) {
-      throw new FDAError(
-        400,
-        'InvalidParam',
-        'Upload FDAs cannot change their objStgConf or partitioned timeColumn.',
-      );
-    }
-    return;
+// Upload FDAs have no source query to refetch from, and their files are never rewritten
+function validateUploadFDAUpdate(updates, effective, rebuildStorage) {
+  if (effective.refreshPolicy.type !== 'none') {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      'Upload FDAs cannot have a refreshPolicy; omit it or set {"type":"none"}',
+    );
   }
+  if (updates.objStgConf !== undefined || rebuildStorage) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      'Upload FDAs cannot change their objStgConf or partitioned timeColumn.',
+    );
+  }
+}
 
+async function validateSourceForUpdate(fda, datasource, effective) {
   if (datasource.type === 'mongodb') {
     validateMongoFDAContract(fda.query, effective.timeColumn);
   }
