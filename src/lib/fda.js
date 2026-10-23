@@ -1608,11 +1608,7 @@ function toInvalidUpdateBodyError(err) {
 }
 
 function validateUpdateFieldTypes({ description, refreshPolicy, objStgConf }) {
-  if (
-    description !== undefined &&
-    description !== null &&
-    typeof description !== 'string'
-  ) {
+  if (description !== undefined && typeof description !== 'string') {
     throw new FDAError(400, 'InvalidParam', 'description must be a string.');
   }
 

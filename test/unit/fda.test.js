@@ -3835,6 +3835,11 @@ describe('putFDA with update body', () => {
       { refreshPolicy: 'interval' },
       'refreshPolicy must be a JSON object',
     ],
+    [
+      'a null description',
+      { description: null },
+      'description must be a string',
+    ],
   ])('rejects %s', async (_, updates, message) => {
     await expect(
       putFDA('svc', 'fda42', 'public', '/servicepath', updates),
