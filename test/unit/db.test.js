@@ -1199,6 +1199,7 @@ describe('db utils', () => {
     expect(sql).toContain("TO 's3://test-bucket/target'");
     expect(sql).toContain('FORMAT PARQUET');
     expect(sql).not.toContain('PARTITION_BY');
+    expect(sql).not.toContain('ORDER BY');
   });
 
   test('toParquet reports a DuckDB bucket quota failure as StorageQuotaExceeded', async () => {
@@ -1239,6 +1240,25 @@ describe('db utils', () => {
     expect(sql).toContain('year(timestamp::TIMESTAMP) as year');
     expect(sql).toContain('PARTITION_BY (year, month, day)');
     expect(sql).toContain('COMPRESSION ZSTD');
+  });
+
+  test('toParquet sorts partitioned exports by the time column', async () => {
+    const { toParquet } = await loadDbModule();
+    const conn = { run: jest.fn().mockResolvedValue(undefined) };
+
+    await toParquet(
+      conn,
+      'test-bucket/source',
+      'test-bucket/target',
+      'timestamp',
+      'week',
+      false,
+    );
+
+    const sql = conn.run.mock.calls[0][0];
+    expect(sql).toMatch(
+      /AS fda_source ORDER BY timestamp::TIMESTAMP\)\s+TO 's3:\/\/test-bucket\/target'/,
+    );
   });
 
   test('toParquet throws PartitionError when partitionType requires timeColumn but missing', async () => {

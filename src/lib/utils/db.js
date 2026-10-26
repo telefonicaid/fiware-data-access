@@ -1144,7 +1144,10 @@ export async function copyQueryToParquet(
 ) {
   logger.debug({ resultPath }, '[DEBUG]: copyQueryToParquet');
 
-  const { cols, partitionBy } = getPartitionConf(partitionType, timeColumn);
+  const { cols, partitionBy, orderBy } = getPartitionConf(
+    partitionType,
+    timeColumn,
+  );
   const compressionString = compression ? `, COMPRESSION ZSTD` : '';
 
   await logDuckDBMemoryDump(conn, 'DuckDB memory before Parquet export', {
@@ -1155,7 +1158,7 @@ export async function copyQueryToParquet(
   try {
     const result = await conn.run(
       `COPY ( SELECT ${cols}
-                FROM (${sourceQuery}) AS fda_source)
+                FROM (${sourceQuery}) AS fda_source ${orderBy})
       TO 's3://${resultPath}' (FORMAT PARQUET ${partitionBy} ${compressionString});`,
     );
     logDuckDBMemoryPeak(
@@ -1257,8 +1260,11 @@ function getPartitionConf(partitionType = 'none', timeColumn) {
   const partitionBy = partitionConf.partitionBy
     ? `, PARTITION_BY (${partitionConf.partitionBy})`
     : '';
+  const orderBy = partitionConf.partitionBy
+    ? `ORDER BY ${timeColumn}::TIMESTAMP`
+    : '';
 
-  return { cols, partitionBy };
+  return { cols, partitionBy, orderBy };
 }
 
 export function buildDAQuery(
