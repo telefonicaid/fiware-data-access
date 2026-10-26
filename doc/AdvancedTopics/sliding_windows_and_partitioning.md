@@ -92,9 +92,10 @@ fdaId/
 
 Each partition contains only the data corresponding to its time slice, stored in MinIO.
 
-A partition can hold more than one file (`data_0.parquet`, `data_1.parquet`, ...) when an export writes more partitions
-than `FDA_DUCKDB_PARTITIONED_WRITE_MAX_OPEN_FILES` and the rows are not ordered by time. Queries read all of them, and a
-refresh replaces every file of each partition it rewrites.
+FDA sorts the rows by `timeColumn` before writing the partitions, so each partition is written in one go. A partition
+can still hold more than one file (`data_0.parquet`, `data_1.parquet`, ...) when an export writes more partitions than
+`FDA_DUCKDB_PARTITIONED_WRITE_MAX_OPEN_FILES`. Queries read all of them, and a refresh replaces every file of each
+partition it rewrites.
 
 ### Partition pruning
 

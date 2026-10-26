@@ -569,8 +569,12 @@ Two side effects:
 -   A file can have at most 10000 parts, so with 5 MiB parts the largest Parquet file DuckDB can upload is ~52 GB, far
     above the size of an FDA file.
 -   With more partitions than open files allowed, DuckDB closes partition files and opens new ones. When the rows are
-    not ordered by time, a partition directory can end up with several files (`data_0.parquet`, `data_1.parquet`, ...).
-    Queries and partition pruning read all of them, and a refresh replaces every file of the partitions it rewrites.
+    not ordered by time, a partition directory can end up with many files (`data_0.parquet`, `data_1.parquet`, ...): 10
+    million unordered rows over 365 days gave 6349 files and took 60 s to export. FDA therefore sorts the rows by
+    `timeColumn` before a partitioned export: the same export then writes 396 files in 24 s, and sorting rows that were
+    already ordered costs 9% to 28% more time. The sort spills to disk, so `FDA_DUCKDB_MAX_TEMP_SIZE` must hold about
+    the size of the exported data. Queries and partition pruning read every file of a partition, and a refresh replaces
+    every file of the partitions it rewrites.
 
 ---
 
