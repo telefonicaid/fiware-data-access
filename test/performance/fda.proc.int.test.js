@@ -29,12 +29,31 @@ import {
 
 for (const mode of [EXECUTION_MODES.COMBINED, EXECUTION_MODES.SEPARATED]) {
   if (process.env.FDA_MEMORY_MATRIX === 'true') {
-    for (const memoryLimit of ['2GB', '3GB']) {
+    const duckdbDefaults = {
+      FDA_DUCKDB_S3_UPLOADER_MAX_FILESIZE: '800GB',
+      FDA_DUCKDB_PARTITIONED_WRITE_MAX_OPEN_FILES: '100',
+    };
+    const fdaDefaults = {
+      FDA_DUCKDB_S3_UPLOADER_MAX_FILESIZE: '50GB',
+      FDA_DUCKDB_PARTITIONED_WRITE_MAX_OPEN_FILES: '8',
+    };
+    for (const { memoryLimit, uploads, duckdbEnv, expectWindowOom } of [
+      // DuckDB defaults, to reproduce the OOM fixed by #355
+      {
+        memoryLimit: '2GB',
+        uploads: 'DuckDB uploads',
+        duckdbEnv: duckdbDefaults,
+        expectWindowOom: true,
+      },
+      { memoryLimit: '2GB', uploads: 'FDA uploads', duckdbEnv: fdaDefaults },
+      { memoryLimit: '3GB', uploads: 'FDA uploads', duckdbEnv: fdaDefaults },
+    ]) {
       runFDAIntegrationSuite({
         mode,
-        label: `${mode} roles, DuckDB ${memoryLimit}`,
+        label: `${mode} roles, DuckDB ${memoryLimit}, ${uploads}`,
         memoryLimit,
-        expectWindowOom: memoryLimit === '2GB',
+        duckdbEnv,
+        expectWindowOom,
       });
     }
   } else {

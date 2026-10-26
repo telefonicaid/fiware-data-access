@@ -657,21 +657,27 @@ The number of source rows is controlled by `PERFORMANCE_TABLE_ROWS`. The perform
 
 ## Running the scenarios
 
-To run the fixed 3-million-row regression matrix with **both 2 GB and 3 GB**, use:
+To run the fixed 3-million-row regression matrix at **2 GB and 3 GB**, use:
 
 ```bash
 npm run test:performance:memory
 ```
 
-This runs both combined and separated roles, starting fresh FDA processes and infrastructure for each limit. At **2
-GB**, the monthly control must complete and the daily scenario must fail during creation with an explicit
-`Out of Memory Error`. At **3 GB**, both must complete, including two incremental refreshes for the daily scenario. The
-matrix passes only if all these expectations hold; a timeout, an unrelated error, or unexpected success at 2 GB fails
-the matrix. A future fix that eliminates the OOM will therefore require updating that expectation. The command fixes the
-source row count at 3 million and overrides any externally supplied DuckDB memory limit with the matrix values. Thread
-count and insertion-order settings remain overridable as described above. FDA still runs as a child process on the host,
-not inside a memory-limited container. The complete matrix was verified on 2026-10-19: all eight cases passed their
-expected outcomes in approximately six minutes, including the expected OOM at 2 GB in both runtime modes.
+This runs both combined and separated roles, starting fresh FDA processes and infrastructure for each case. The matrix
+has three cases:
+
+| DuckDB limit | httpfs upload settings                      | Monthly control | Daily partitions                     |
+| ------------ | ------------------------------------------- | --------------- | ------------------------------------ |
+| 2 GB         | DuckDB defaults (`800GB`, `100` open files) | Must complete   | Must fail with `Out of Memory Error` |
+| 2 GB         | FDA defaults (`50GB`, `8` open files)       | Must complete   | Creation and two refreshes complete  |
+| 3 GB         | FDA defaults (`50GB`, `8` open files)       | Must complete   | Creation and two refreshes complete  |
+
+The settings are `FDA_DUCKDB_S3_UPLOADER_MAX_FILESIZE` and `FDA_DUCKDB_PARTITIONED_WRITE_MAX_OPEN_FILES`. The first case
+keeps reproducing the OOM fixed by #355 and the second proves that the FDA defaults avoid it at the same limit. A
+timeout, an unrelated error, or unexpected success in the first case fails the matrix. The command fixes the source row
+count at 3 million and overrides any externally supplied DuckDB memory limit and httpfs upload settings with the matrix
+values. Thread count and insertion-order settings remain overridable as described above. FDA still runs as a child
+process on the host, not inside a memory-limited container.
 
 Node.js 24+, installed project dependencies and a working Docker runtime are required. Run the scenarios alone to avoid
 confusing their memory consumption with concurrent load tests:
