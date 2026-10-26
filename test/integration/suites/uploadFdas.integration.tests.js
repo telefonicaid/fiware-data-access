@@ -481,5 +481,58 @@ export function registerUploadFdasIntegrationTests({
         await deleteFdaIfPresent(baseUrl, fdaId);
       }
     });
+
+    test('PUT /{visibility}/fdas/{fdaId} without a body rejects regenerating an uploaded FDA', async () => {
+      const baseUrl = getBaseUrl();
+      const fdaId = `upload_put_nobody_${Date.now()}`;
+      const headers = {
+        'Fiware-Service': service,
+        'Fiware-ServicePath': servicePath,
+      };
+
+      try {
+        const uploadRes = await httpMultipartReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas/upload`,
+          headers,
+          fields: { id: fdaId },
+          file: {
+            fieldName: 'file',
+            filename: 'upload.csv',
+            contentType: 'text/csv',
+            content: Buffer.from('device,reading\nsensor-a,21.5\n'),
+          },
+        });
+        expect(uploadRes.status).toBe(202);
+        const uploaded = await waitUntilFDACompleted({
+          baseUrl,
+          service,
+          fdaId,
+          visibility,
+        });
+        expect(uploaded.status).toBe('completed');
+
+        const putRes = await httpReq({
+          method: 'PUT',
+          url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
+          headers,
+        });
+        expect(putRes.status).toBe(409);
+        expect(putRes.json.error).toBe('FDAUploadNotRegenerable');
+
+        const getRes = await httpReq({
+          method: 'GET',
+          url: `${baseUrl}/${visibility}/fdas/${fdaId}`,
+          headers,
+        });
+        expect(getRes.status).toBe(200);
+        expect(getRes.json).toMatchObject({
+          status: 'completed',
+          lastFetch: uploaded.lastFetch,
+        });
+      } finally {
+        await deleteFdaIfPresent(baseUrl, fdaId);
+      }
+    });
   });
 }

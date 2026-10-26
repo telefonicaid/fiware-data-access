@@ -3134,6 +3134,7 @@ describe('putFDA', () => {
       cached: true,
       servicePath: '/servicepath',
       visibility: 'public',
+      query: 'SELECT id FROM users',
     });
     mongoMocks.regenerateFDA.mockResolvedValue({
       query: 'SELECT id FROM users',
@@ -3230,6 +3231,7 @@ describe('putFDA', () => {
       servicePath: '/servicepath',
       visibility: 'public',
       datasourceId: 'mongo-ds',
+      query: { collection: 'events', filter: { status: 'ok' } },
     });
     mongoMocks.retrieveDatasource.mockResolvedValueOnce({
       datasourceId: 'mongo-ds',
@@ -4003,6 +4005,24 @@ describe('putFDA with update body', () => {
       { downloadPolicy: { maxDownloads: 5 } },
       [],
     );
+    expect(mongoMocks.regenerateFDA).not.toHaveBeenCalled();
+    expect(agenda.now).not.toHaveBeenCalled();
+  });
+
+  test('rejects regenerating upload FDAs without a body', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      ...storedFDA,
+      query: null,
+      datasourceId: null,
+    });
+
+    await expect(
+      putFDA('svc', 'fda42', 'public', '/servicepath', {}),
+    ).rejects.toMatchObject({
+      status: 409,
+      type: 'FDAUploadNotRegenerable',
+    });
+    expect(mongoMocks.retrieveDatasource).not.toHaveBeenCalled();
     expect(mongoMocks.regenerateFDA).not.toHaveBeenCalled();
     expect(agenda.now).not.toHaveBeenCalled();
   });
