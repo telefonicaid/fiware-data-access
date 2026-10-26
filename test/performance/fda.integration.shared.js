@@ -112,7 +112,6 @@ export function runFDAIntegrationSuite({
   mode,
   label,
   memoryLimit = process.env.FDA_DUCKDB_MEMORY_LIMIT ?? '1GB',
-  expectWindowOom = false,
 }) {
   describe(`FDA API - integration (${label})`, () => {
     let minio;
@@ -544,7 +543,6 @@ export function runFDAIntegrationSuite({
       rows: performanceTableRows,
       timeout: maxTimeoutMs,
       memoryLimit,
-      expectWindowOom,
     });
 
     registerFdaQueryPerformanceTests({

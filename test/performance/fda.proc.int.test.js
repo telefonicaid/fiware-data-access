@@ -34,7 +34,6 @@ for (const mode of [EXECUTION_MODES.COMBINED, EXECUTION_MODES.SEPARATED]) {
         mode,
         label: `${mode} roles, DuckDB ${memoryLimit}`,
         memoryLimit,
-        expectWindowOom: memoryLimit === '2GB',
       });
     }
   } else {
