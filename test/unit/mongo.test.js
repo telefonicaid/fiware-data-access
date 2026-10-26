@@ -581,6 +581,7 @@ describe('mongo utils', () => {
     const { claimOnDemandRefresh, collectionMock } = await loadMongoModule();
     const staleBefore = new Date('2026-10-15T10:00:00Z');
     const retryBefore = new Date('2026-10-15T09:59:00Z');
+    const pendingBefore = new Date('2026-10-15T09:50:00Z');
     collectionMock.findOneAndUpdate.mockResolvedValueOnce({ status: 'idle' });
 
     const claimed = await claimOnDemandRefresh({
@@ -589,6 +590,7 @@ describe('mongo utils', () => {
       servicePath: '/sp',
       staleBefore,
       retryBefore,
+      pendingBefore,
     });
 
     expect(claimed).toEqual({ status: 'idle' });
@@ -597,16 +599,26 @@ describe('mongo utils', () => {
         service: 'svc',
         fdaId: 'fdaA',
         servicePath: '/sp',
-        status: {
-          $nin: [
-            'pending',
-            'fetching',
-            'transforming',
-            'uploading',
-            'deleting',
-          ],
-        },
         $and: [
+          {
+            $or: [
+              {
+                status: {
+                  $nin: [
+                    'pending',
+                    'fetching',
+                    'transforming',
+                    'uploading',
+                    'deleting',
+                  ],
+                },
+              },
+              {
+                status: 'pending',
+                pendingSince: { $not: { $gte: pendingBefore } },
+              },
+            ],
+          },
           { $or: [{ lastFetch: null }, { lastFetch: { $lt: staleBefore } }] },
           {
             $or: [
@@ -617,7 +629,13 @@ describe('mongo utils', () => {
           },
         ],
       },
-      { $set: { status: 'pending', progress: 0 } },
+      {
+        $set: {
+          status: 'pending',
+          progress: 0,
+          pendingSince: expect.any(Date),
+        },
+      },
       { returnDocument: 'before' },
     );
   });
@@ -637,7 +655,7 @@ describe('mongo utils', () => {
     ).resolves.toBeNull();
 
     const [filter] = collectionMock.findOneAndUpdate.mock.calls[0];
-    expect(filter.$and[0]).toEqual({ $or: [{ lastFetch: null }] });
+    expect(filter.$and[1]).toEqual({ $or: [{ lastFetch: null }] });
   });
 
   test('releaseOnDemandRefresh restores the status of a pending claim', async () => {

@@ -805,6 +805,7 @@ export async function claimOnDemandRefresh({
   servicePath,
   staleBefore,
   retryBefore,
+  pendingBefore,
 }) {
   const collection = await getCollection();
 
@@ -813,8 +814,20 @@ export async function claimOnDemandRefresh({
       service,
       fdaId,
       servicePath,
-      status: { $nin: [...FDA_REFRESH_IN_PROGRESS_STATUSES, 'deleting'] },
       $and: [
+        {
+          $or: [
+            {
+              status: {
+                $nin: [...FDA_REFRESH_IN_PROGRESS_STATUSES, 'deleting'],
+              },
+            },
+            {
+              status: 'pending',
+              pendingSince: { $not: { $gte: pendingBefore } },
+            },
+          ],
+        },
         {
           $or: [
             { lastFetch: null },
@@ -830,7 +843,7 @@ export async function claimOnDemandRefresh({
         },
       ],
     },
-    { $set: { status: 'pending', progress: 0 } },
+    { $set: { status: 'pending', progress: 0, pendingSince: new Date() } },
     { returnDocument: 'before' },
   );
 }

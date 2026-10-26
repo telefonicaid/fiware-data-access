@@ -126,6 +126,7 @@ import {
   PARTITION_TYPES,
   UNKNOWN_COLUMN_TYPE,
   FDA_REFRESH_IN_PROGRESS_STATUSES,
+  FDA_ON_DEMAND_PENDING_TIMEOUT_MS,
 } from './constants.js';
 const logger = getBasicLogger();
 const TIME_COLUMN_NAME_PATTERN = /^\w+$/;
@@ -2534,7 +2535,7 @@ async function waitForOnDemandData(fda) {
     }
 
     if (
-      !FDA_REFRESH_IN_PROGRESS_STATUSES.includes(current.status) &&
+      !isRefreshInProgress(current) &&
       !(await requestOnDemandRefresh(current))
     ) {
       current = await reloadAfterLostRefreshClaim(current);
@@ -2567,6 +2568,15 @@ async function reloadAfterLostRefreshClaim({ service, fdaId, servicePath }) {
   return current;
 }
 
+function isRefreshInProgress(fda) {
+  if (fda.status === 'pending') {
+    const pendingSince = new Date(fda.pendingSince ?? 0).getTime();
+    return Date.now() - pendingSince < FDA_ON_DEMAND_PENDING_TIMEOUT_MS;
+  }
+
+  return FDA_REFRESH_IN_PROGRESS_STATUSES.includes(fda.status);
+}
+
 function onDemandUnavailableError(fdaId) {
   return new FDAError(
     409,
@@ -2596,6 +2606,7 @@ async function requestOnDemandRefresh(
     servicePath,
     staleBefore: maxAgeMs === null ? null : new Date(now - maxAgeMs),
     retryBefore: new Date(now - retryBackoffMs),
+    pendingBefore: new Date(now - FDA_ON_DEMAND_PENDING_TIMEOUT_MS),
   });
 
   if (!claimed) {

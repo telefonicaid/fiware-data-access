@@ -7062,6 +7062,39 @@ describe('lazy and onDemand FDAs', () => {
     },
   );
 
+  test('a recent pending claim is waited for without claiming it again', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue(
+      storedFDA({ status: 'pending', pendingSince: new Date() }),
+    );
+
+    await expect(queryLazyFDA()).rejects.toMatchObject({
+      status: 409,
+      type: 'FDAUnavailable',
+    });
+    expect(mongoMocks.claimOnDemandRefresh).not.toHaveBeenCalled();
+  });
+
+  test('a pending claim older than the pending timeout is taken over', async () => {
+    const stuck = storedFDA({
+      status: 'pending',
+      pendingSince: new Date(Date.now() - 11 * 60 * 1000),
+    });
+    mongoMocks.retrieveFDA.mockResolvedValueOnce(stuck).mockResolvedValueOnce({
+      ...stuck,
+      status: 'completed',
+      lastFetch: new Date(),
+    });
+    mongoMocks.claimOnDemandRefresh.mockResolvedValueOnce(stuck);
+
+    await expect(queryLazyFDA()).resolves.toEqual([{ id: 1 }]);
+
+    const [{ pendingBefore }] = mongoMocks.claimOnDemandRefresh.mock.calls[0];
+    expect(Date.now() - pendingBefore.getTime()).toBeGreaterThanOrEqual(
+      10 * 60 * 1000,
+    );
+    expect(agenda.now).toHaveBeenCalledTimes(1);
+  });
+
   test('returns 409 when the FDA is being deleted while waiting for its data', async () => {
     mongoMocks.retrieveFDA.mockResolvedValue(storedFDA({ status: 'deleting' }));
 

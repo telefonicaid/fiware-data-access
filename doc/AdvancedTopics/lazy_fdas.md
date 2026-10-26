@@ -65,6 +65,10 @@ for a full fetch. Waiting does not hold a DuckDB connection.
 The fetch itself runs in an instance with the fetcher role, like any other refresh. If no fetcher is running, queries
 wait until the timeout.
 
+If the instance that requested the fetch stops before enqueuing it, the FDA would stay `pending` with no fetch on its
+way. A `pending` FDA older than 10 minutes (the claim stores `pendingSince`) can therefore be claimed again by the next
+query or manual refresh.
+
 ## Incremental refresh
 
 Without partitioning, every `onDemand` refresh fetches the whole query. With `objStgConf.partition` (which requires

@@ -76,6 +76,8 @@ export const VALID_REFRESH_POLICY_TYPES = [
   'onDemand',
 ];
 
+export const FDA_ON_DEMAND_PENDING_TIMEOUT_MS = 10 * 60 * 1000;
+
 export const FDA_REFRESH_IN_PROGRESS_STATUSES = [
   'pending',
   'fetching',
