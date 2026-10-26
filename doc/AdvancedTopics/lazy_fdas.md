@@ -13,7 +13,7 @@ Two options avoid that cost:
     query and, after `maxAge`, on the next query that arrives. Nothing is refreshed while nobody queries it. An
     `onDemand` FDA is always lazy.
 
-|                              | `lazy` + `none`     | `lazy` + `interval`/`window`    | `onDemand`                            |
+|                              | `lazy` + `none`     | `lazy` + `interval`/`window`    | `lazy` + `onDemand`                            |
 | ---------------------------- | ------------------- | ------------------------------- | ------------------------------------- |
 | First fetch                  | First query         | First query                     | First query                           |
 | Later refreshes              | Only manual (`PUT`) | Their recurring jobs, from then | First query after `maxAge`, or manual |
