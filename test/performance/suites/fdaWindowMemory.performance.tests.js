@@ -37,6 +37,7 @@ export function registerWindowMemoryPerformanceTests({
   rows,
   timeout,
   memoryLimit,
+  expectWindowOom = false,
 }) {
   test.each([
     {
@@ -45,7 +46,9 @@ export function registerWindowMemoryPerformanceTests({
     },
     {
       partition: 'day',
-      outcome: 'creation and two daily refreshes complete successfully',
+      outcome: expectWindowOom
+        ? 'creation fails with expected Out of Memory Error'
+        : 'creation and two daily refreshes complete successfully',
     },
   ])(
     'Window memory: $partition partitions, $outcome',
@@ -140,6 +143,12 @@ export function registerWindowMemoryPerformanceTests({
           });
         };
 
+        if (partition === 'day' && expectWindowOom) {
+          await expect(assertCompleted()).rejects.toThrow(
+            /FDA .* failed: Out of Memory Error:/,
+          );
+          return;
+        }
         await assertCompleted();
 
         const da = await httpReq({
