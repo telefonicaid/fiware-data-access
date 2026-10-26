@@ -155,6 +155,7 @@ All error responses follow this structure:
 | 409  | Conflict               | `FDAProcessing`                  | Attempted to delete an FDA while it is being processed (status other than `completed` or `failed`). Retry once the fetch finishes.                                                                                                                                                                                 |
 | 409  | Conflict               | `FDANotOnlyFresh`                | The FDA is cached (`cached=true`) and cannot be queried through `GET /{visibility}/fdas/{fdaId}/data`; use a DA instead.                                                                                                                                                                                           |
 | 409  | Conflict               | `FDAOnlyFresh`                   | The FDA was created with `cached=false`, so it does not allow DAs nor cached DA queries.                                                                                                                                                                                                                           |
+| 409  | Conflict               | `FDAUploadNotRegenerable`        | The FDA was created from an uploaded file, so it has no source query to regenerate it from. `PUT /{visibility}/fdas/{fdaId}` on it only stores the body values.                                                                                                                                                    |
 | 409  | Conflict               | `RequestStyleConflict`           | The request mixes query-style context (`service`, `servicePath` in query params) with legacy `Fiware-Service`/`Fiware-ServicePath` headers in the same data-query URL. Use only one style per request.                                                                                                             |
 | 409  | Conflict               | `DatasourceInUse`                | Attempted to delete a datasource that is currently referenced by one or more FDAs in the same `Fiware-Service`.                                                                                                                                                                                                    |
 | 429  | Too Many Requests      | `TooManyFreshQueries`            | The number of concurrent direct fresh FDA queries exceeded `FDA_MAX_CONCURRENT_FRESH_QUERIES`.                                                                                                                                                                                                                     |
@@ -1473,6 +1474,8 @@ The operation may return `409 Conflict` in the following cases:
 
 -   If the FDA is currently being processed.
 -   If the FDA is configured as _fresh-only_ (non-cached) and does not support manual regeneration.
+-   If the FDA was created from an uploaded file and no body is sent (`FDAUploadNotRegenerable`): it has no source
+    query, so it cannot be regenerated.
 
 _**Request path parameters**_
 
@@ -1533,7 +1536,8 @@ _**Response code**_
 -   Successful operation uses 202 Accepted (asynchronous regeneration)
 -   For FDAs created from an uploaded file, a body is only stored (there is no source to refetch from) and the operation
     returns 200 OK with `{ "id": "...", "status": "<current status>" }`. These FDAs cannot change `objStgConf`, and
-    their `refreshPolicy` must stay `none`.
+    their `refreshPolicy` must stay `none`. As they cannot be regenerated, a request without a body returns
+    `409 FDAUploadNotRegenerable`.
 -   Errors use a non-2xx and (optionally) an error payload. See subsection on [Error Responses](#error-responses) for
     more details.
 
