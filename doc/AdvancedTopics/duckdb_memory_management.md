@@ -537,8 +537,9 @@ that no `httpfs` setting could limit it. That conclusion was wrong.
 
 **The part size depends on `s3_uploader_max_filesize`.** Each file being uploaded keeps one multipart part in memory,
 and the part size is `s3_uploader_max_filesize / s3_uploader_max_parts_per_file`. With the defaults this is
-`800GB / 10000 = 80 MB`, the `76.5 MiB` block that appears in the errors. `80GB` still leaves 8 MB parts. The minimum
-DuckDB allows, `50GB`, gives 5 MB parts, the minimum S3 part size. The memory of a partitioned export is therefore:
+`800GB / 10000 = 80 MB`, rounded up to `76.5 MiB`, the block that appears in the errors. `80GB` still leaves 8 MB parts.
+The part is never smaller than 5 MiB, the S3 minimum, so any value up to ~52 GB, such as `50GB`, gives 5 MiB parts. The
+memory of a partitioned export is therefore:
 
 ```text
 EXTENSION ≈ min(partitions written, partitioned_write_max_open_files) × s3_uploader_max_filesize / 10000
@@ -565,7 +566,8 @@ With both settings, an export that failed with 1 GB completes with 128 MB. FDA e
 
 Two side effects:
 
--   `50GB` is also the largest Parquet file DuckDB can upload, which is far above the size of an FDA file.
+-   A file can have at most 10000 parts, so with 5 MiB parts the largest Parquet file DuckDB can upload is ~52 GB, far
+    above the size of an FDA file.
 -   With more partitions than open files allowed, DuckDB closes partition files and opens new ones. When the rows are
     not ordered by time, a partition directory can end up with several files (`data_0.parquet`, `data_1.parquet`, ...).
     Queries and partition pruning read all of them, and a refresh replaces every file of the partitions it rewrites.
