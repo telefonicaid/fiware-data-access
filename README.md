@@ -14,22 +14,22 @@ replacing the legacy Pentaho CDA extension in smart city stacks.
 
 ## 📦 Main Components
 
--   🔄 **Fiware Data Access**  
-     Node.js service that provides an API to store and query sets in minio.
+- 🔄 **Fiware Data Access**  
+  Node.js service that provides an API to store and query sets in minio.
 
--   🔌 **DuckDB**  
-     High-performance analytical database system. With the `httpfs` extension DuckDB supports reading/writing/globbing files
-    on object storage servers using the S3 API.
+- 🔌 **DuckDB**  
+  High-performance analytical database system. With the `httpfs` extension DuckDB supports reading/writing/globbing files
+  on object storage servers using the S3 API.
 
--   🏢 **MinIO object storage**  
-     Object storage system compatible with S3 and capable of working with unstructured data. Stores the sets in parquet format.
+- 🏢 **MinIO object storage**  
+  Object storage system compatible with S3 and capable of working with unstructured data. Stores the sets in parquet format.
 
 ---
 
 ## 🚀 Purpose
 
--   Replace Pentaho CDAs in FIWARE smart city stacks.
--   Provide an efficient, modern data access layer for analytical queries.
+- Replace Pentaho CDAs in FIWARE smart city stacks.
+- Provide an efficient, modern data access layer for analytical queries.
 
 ---
 
@@ -37,36 +37,37 @@ replacing the legacy Pentaho CDA extension in smart city stacks.
 
 Complete documentation is available in the [`doc/`](./doc/) directory:
 
--   [`00_overview.md`](./doc/00_overview.md) – Project overview
--   [`01_installation.md`](./doc/01_installation.md) – How to install & run (includes Docker section)
--   [`02_architecture.md`](./doc/02_architecture.md) – System architecture, main concepts and database model
--   [`03_api.md`](./doc/03_api.md) – API reference (also available as interactive
-    [Swagger UI](https://swagger.io/tools/swagger-ui/) at `GET /api-docs` on a running instance)
--   [`04_config_operational_guide.md`](./doc/04_config_operational_guide.md) – Configuration and operational guide
--   [`05_advanced_topics.md`](./doc/05_advanced_topics.md) – Advanced topics
--   [`06_testing.md`](./doc/06_testing.md) – Test strategy, execution and available npm scripts
--   [`07_performance.md`](./doc/07_performance.md) – Performance measurement utilities
+- [`00_overview.md`](./doc/00_overview.md) – Project overview
+- [`01_installation.md`](./doc/01_installation.md) – How to install & run (includes Docker section)
+- [`02_architecture.md`](./doc/02_architecture.md) – System architecture, main concepts and database model
+- [`03_api.md`](./doc/03_api.md) – API reference (also available as interactive
+  [Swagger UI](https://swagger.io/tools/swagger-ui/) at `GET /api-docs` on a running instance)
+- [`04_config_operational_guide.md`](./doc/04_config_operational_guide.md) – Configuration and operational guide
+- [`05_advanced_topics.md`](./doc/05_advanced_topics.md) – Advanced topics
+- [`06_testing.md`](./doc/06_testing.md) – Test strategy and execution
+- [`07_performance.md`](./doc/07_performance.md) – Performance measurement utilities
+- [`08_developers_guide.md`](./doc/08_developers_guide.md) – Local development, npm scripts and documentation conventions
 
 ---
 
 ## 🛠️ Requirements
 
--   Node.js >= 24
--   Docker & docker-compose
--   PostgreSQL
--   MongoDB
--   MinIO
+- Node.js >= 24
+- Docker & docker-compose
+- PostgreSQL
+- MongoDB
+- MinIO
 
 ---
 
-##   License
+## License
 
 Fiware-data-access is licensed under Affero General Public License (GPL) version 3.
 
 © 2026 Telefónica Soluciones de Informática y Comunicaciones de España, S.A.U.
 <details>
 <summary><strong>Further information on the use of the AGPL open source license</strong></summary>
-     
+
 ### Are there any legal issues with AGPL 3.0? Is it safe for me to use?
 
 There is absolutely no problem in using a product licensed under AGPL 3.0. Issues with GPL
