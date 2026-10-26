@@ -669,7 +669,9 @@ router.get('/:visibility/fdas/:fdaId', async (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/Error'
  *       '409':
- *         description: FDA is currently processing, or is only-fresh and does not support regeneration.
+ *         description: >
+ *           FDA is currently processing, is only-fresh and does not support regeneration, or was created from an
+ *           uploaded file (no source query to regenerate it from) and no body is sent (`FDAUploadNotRegenerable`).
  *         content:
  *           application/json:
  *             schema:

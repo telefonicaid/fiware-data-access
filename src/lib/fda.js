@@ -1422,10 +1422,22 @@ export async function putFDA(
 
   assertFDAIsCached(fda, fdaId);
 
-  const datasource = await resolveDatasource(
-    service,
-    fda.datasourceId ?? DEFAULT_DATASOURCE_ID,
-  );
+  // Upload FDAs have no source query, so they have no datasource to refetch from
+  const uploadFDA = isUploadFDA(fda);
+  if (uploadFDA && Object.keys(updates).length === 0) {
+    throw new FDAError(
+      409,
+      'FDAUploadNotRegenerable',
+      `FDA ${fdaId} was created from an uploaded file and cannot be regenerated.`,
+    );
+  }
+
+  const datasource = uploadFDA
+    ? null
+    : await resolveDatasource(
+        service,
+        fda.datasourceId ?? DEFAULT_DATASOURCE_ID,
+      );
 
   if (Object.keys(updates).length === 0) {
     await resolveSourceSchema(datasource, fda);
@@ -1444,7 +1456,7 @@ export async function putFDA(
     await validateFDAUpdate(fda, datasource, updates);
 
   // Upload FDAs have no source to refetch from, so the new values are only stored
-  if (isUploadFDA(fda)) {
+  if (uploadFDA) {
     const updated = await updateFDAFields(
       service,
       fdaId,
