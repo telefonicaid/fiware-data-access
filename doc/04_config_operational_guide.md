@@ -73,6 +73,9 @@ Variables that define which components of the application are executed by this i
 | `FDA_FETCHER_HEARTBEAT_INTERVAL_MS` | ✓        | number  | Interval in milliseconds between Fetcher heartbeat logs. Each heartbeat is logged at `INFO` with the DuckDB memory state. Default `60000`. Set to `0` to disable the heartbeat. |
 | `FDA_MAX_CONCURRENT_REFRESH_JOBS`   | ✓        | number  | Maximum number of concurrent refresh jobs done by fetcher. Memory consuption is incresed when concurrent refresh jobs grows. Default `1`.                                       |
 | `FDA_ACCESS_FLUSH_INTERVAL_MS`      | ✓        | integer | Interval in milliseconds between MongoDB flushes of buffered FDA/DA access counters. Default `10000`; valid range is `1` to `2147483647`.                                       |
+| `FDA_ON_DEMAND_WAIT_TIMEOUT_MS`     | ✓        | integer | How long a query to a lazy or `onDemand` FDA waits for its fetch before returning `409 FDAUnavailable`. Default `30000`. See [Lazy FDAs](/doc/AdvancedTopics/lazy_fdas.md).     |
+| `FDA_ON_DEMAND_POLL_INTERVAL_MS`    | ✓        | integer | How often, in milliseconds, a waiting query checks the FDA in MongoDB. Default `500`.                                                                                           |
+| `FDA_ON_DEMAND_RETRY_BACKOFF_MS`    | ✓        | integer | Time after a failed on-demand fetch during which queries return `503 FDAMaterializationFailed` without retrying. Default `60000`.                                               |
 
 > Note: By default, an instance runs both roles (API server and Fetcher). You can disable one to separate
 > responsibilities.
@@ -201,6 +204,9 @@ FDA_MAX_CONCURRENT_FRESH_QUERIES=5
 FDA_CREATE_DEFAULT_DATA_ACCESS=true
 FDA_FETCHER_HEARTBEAT_INTERVAL_MS=60000
 FDA_ACCESS_FLUSH_INTERVAL_MS=10000
+FDA_ON_DEMAND_WAIT_TIMEOUT_MS=30000
+FDA_ON_DEMAND_POLL_INTERVAL_MS=500
+FDA_ON_DEMAND_RETRY_BACKOFF_MS=60000
 
 # POSTGRESQL POOL
 FDA_PG_POOL_MAX=10

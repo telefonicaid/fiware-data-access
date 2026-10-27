@@ -132,6 +132,25 @@ router.get('/:visibility/fdas', async (req, res) => {
  *                   params:
  *                     refreshInterval: 1 hour
  *                 cached: true
+ *             onDemand:
+ *               summary: Cached FDA fetched only when queried, expiring after maxAge
+ *               value:
+ *                 id: fda_alarms_on_demand
+ *                 query: SELECT * FROM public.alarms
+ *                 refreshPolicy:
+ *                   type: onDemand
+ *                   params:
+ *                     maxAge: 15 minutes
+ *             lazy:
+ *               summary: Cached FDA with interval refresh that starts on the first query
+ *               value:
+ *                 id: fda_alarms_lazy
+ *                 query: SELECT * FROM public.alarms
+ *                 refreshPolicy:
+ *                   type: interval
+ *                   params:
+ *                     refreshInterval: 1 hour
+ *                 lazy: true
  *             onlyFresh:
  *               summary: Only-fresh FDA (no parquet snapshot, no DAs)
  *               value:
@@ -206,6 +225,7 @@ router.post('/:visibility/fdas', async (req, res) => {
     'maxDownloads',
     'expirationDate',
     'validityPeriod',
+    'lazy',
   ]);
   const {
     id,
@@ -220,6 +240,7 @@ router.post('/:visibility/fdas', async (req, res) => {
     maxDownloads,
     expirationDate,
     validityPeriod,
+    lazy,
   } = body;
   const service = req.get('Fiware-Service');
   const servicePath = req.get('Fiware-ServicePath');
@@ -238,6 +259,8 @@ router.post('/:visibility/fdas', async (req, res) => {
       ? true
       : parseBooleanQueryParam(cached, 'cached', true);
   const resolvedValidationMode = parseValidationMode(validationMode);
+  const lazyEnabled =
+    lazy === undefined ? undefined : parseBooleanQueryParam(lazy, 'lazy');
 
   if (!id || !query || !service || !servicePath || !visibility) {
     return res.status(400).json({
@@ -251,7 +274,7 @@ router.post('/:visibility/fdas', async (req, res) => {
   const finalRefreshPolicy = refreshPolicy ?? { type: 'none' };
   const finalObjStgConf = objStgConf ?? {};
 
-  await fetchFDA(
+  const { status } = await fetchFDA(
     id,
     query,
     service,
@@ -266,11 +289,12 @@ router.post('/:visibility/fdas', async (req, res) => {
     datasourceId,
     resolvedValidationMode,
     { maxDownloads, expirationDate, validityPeriod },
+    lazyEnabled,
   );
 
   return res.status(202).json({
     id,
-    status: 'pending',
+    status,
   });
 });
 
@@ -633,7 +657,7 @@ router.put('/:visibility/fdas/:fdaId', async (req, res) => {
  *     summary: Delete FDA
  *     description: >
  *       Deletes the FDA. Deleting an FDA cascades to delete all DAs belonging to it. Returns `409` while the FDA
- *       is being processed (status other than `completed` or `failed`).
+ *       is being processed (status other than `completed`, `failed` or `idle`).
  *     parameters:
  *       - $ref: '#/components/parameters/VisibilityPath'
  *       - $ref: '#/components/parameters/FdaIdPath'

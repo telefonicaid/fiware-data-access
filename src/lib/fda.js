@@ -73,6 +73,8 @@ import {
   claimFDAForFetch,
   claimFDAForDeletion,
   claimFDADownload,
+  claimOnDemandRefresh,
+  releaseOnDemandRefresh,
   createDatasource,
   retrieveDatasources,
   retrieveDatasource,
@@ -123,6 +125,8 @@ import {
   VALID_WINDOW_FETCH_SIZES,
   PARTITION_TYPES,
   UNKNOWN_COLUMN_TYPE,
+  FDA_REFRESH_IN_PROGRESS_STATUSES,
+  FDA_ON_DEMAND_PENDING_TIMEOUT_MS,
 } from './constants.js';
 const logger = getBasicLogger();
 const TIME_COLUMN_NAME_PATTERN = /^\w+$/;
@@ -416,7 +420,7 @@ export async function executeQuery({
 
   const { fdaId, daId, ...rest } = params;
 
-  await ensureFDAReadyForQuery(service, fdaId, visibility, servicePath);
+  await ensureFDAReadyForQuery(service, fdaId, daId, visibility, servicePath);
 
   const conn = await getDBConnection();
 
@@ -607,7 +611,7 @@ async function createCachedRowSource({
 }) {
   const { fdaId, daId, ...rest } = params;
 
-  await ensureFDAReadyForQuery(service, fdaId, visibility, servicePath);
+  await ensureFDAReadyForQuery(service, fdaId, daId, visibility, servicePath);
 
   const conn = await getDBConnection();
 
@@ -1001,12 +1005,14 @@ export async function fetchFDA(
   datasourceId = DEFAULT_DATASOURCE_ID,
   validationMode = FDA_VALIDATION_MODE_STRICT,
   downloadOptions = {},
+  lazy,
 ) {
   const downloadPolicy = normalizeDownloadPolicy(downloadOptions);
   const normalizedVisibility = normalizeVisibility(visibility);
   const normalizedServicePath = normalizeServicePath(servicePath);
   const datasource = await getDatasourceForService(service, datasourceId);
   validateScheduledOptions(refreshPolicy, objStgConf, timeColumn);
+  const lazyEnabled = resolveLazy(lazy, refreshPolicy, cached);
 
   if (datasource.type === 'mongodb') {
     validateMongoFDAContract(query, timeColumn);
@@ -1037,6 +1043,7 @@ export async function fetchFDA(
     validationMode,
     persistedSchema,
     downloadPolicy,
+    lazyEnabled,
   );
 
   if (cached && validationMode === FDA_VALIDATION_MODE_STRICT) {
@@ -1055,7 +1062,11 @@ export async function fetchFDA(
   }
 
   if (!cached) {
-    return;
+    return { status: 'pending' };
+  }
+
+  if (lazyEnabled) {
+    return { status: 'idle' };
   }
 
   // Schedule refreshes according to the refresh policy
@@ -1069,6 +1080,30 @@ export async function fetchFDA(
     objStgConf,
     datasource,
   });
+
+  return { status: 'pending' };
+}
+
+function resolveLazy(lazy, refreshPolicy, cached) {
+  const onDemand = refreshPolicy?.type === 'onDemand';
+
+  if ((lazy || onDemand) && cached === false) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      'lazy and onDemand refresh policy are only supported for cached FDAs.',
+    );
+  }
+
+  if (onDemand && lazy === false) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      'onDemand refresh policy is always lazy; lazy cannot be false.',
+    );
+  }
+
+  return onDemand || lazy === true;
 }
 
 async function validateAndGetSourceSchema(
@@ -1162,15 +1197,24 @@ async function prepareCachedFDA({
 }
 
 function resolveRefreshQueries(datasource, refreshPolicy, query, timeColumn) {
+  const windowQueryFn =
+    datasource.type === 'mongodb' ? getMongoWindowQuery : getWindowQuery;
+
+  if (refreshPolicy?.type === 'onDemand') {
+    const firstQuery = windowQueryFn(
+      query,
+      timeColumn,
+      refreshPolicy.params?.windowSize,
+    );
+    return { firstQuery, recurringQuery: firstQuery };
+  }
+
   if (refreshPolicy?.type !== 'window') {
     return {
       firstQuery: query,
       recurringQuery: query,
     };
   }
-
-  const windowQueryFn =
-    datasource.type === 'mongodb' ? getMongoWindowQuery : getWindowQuery;
 
   return {
     firstQuery: windowQueryFn(
@@ -1202,6 +1246,43 @@ function getMongoWindowQuery(query, timeColumn, startDate) {
   return getUpdateMongoWindowQuery(query, timeColumn, prevWindowStartDate);
 }
 
+function validateOnDemandOptions(refreshPolicy, objStgConf, timeColumn) {
+  const { maxAge, windowSize, ...unsupported } = refreshPolicy.params || {};
+
+  if (!maxAge) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      'Missing required refresh policy parameter: maxAge.',
+    );
+  }
+
+  if (convertRefreshIntervalToMs(maxAge) === null) {
+    throw new FDAError(400, 'InvalidParam', `Invalid maxAge "${maxAge}".`);
+  }
+
+  const unsupportedParams = Object.keys(unsupported);
+  if (unsupportedParams.length > 0) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Unsupported onDemand refresh policy parameters: ${unsupportedParams.join(', ')}.`,
+    );
+  }
+
+  if (objStgConf?.partition && !timeColumn) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      'timeColumn is required when using partitioning.',
+    );
+  }
+
+  validatePartitionType(objStgConf);
+  validateWindowSizeRequiresPartition(windowSize, objStgConf);
+  validateWindowSize(windowSize);
+}
+
 function validateScheduledOptions(refreshPolicy, objStgConf, timeColumn) {
   if (!refreshPolicy) {
     return;
@@ -1219,8 +1300,13 @@ function validateScheduledOptions(refreshPolicy, objStgConf, timeColumn) {
     return;
   }
 
+  if (refreshPolicy.type === 'onDemand') {
+    validateOnDemandOptions(refreshPolicy, objStgConf, timeColumn);
+    return;
+  }
+
   if (
-    (refreshPolicy?.type === 'window' || objStgConf?.partition) &&
+    (refreshPolicy.type === 'window' || objStgConf?.partition) &&
     !timeColumn
   ) {
     throw new FDAError(
@@ -1230,9 +1316,21 @@ function validateScheduledOptions(refreshPolicy, objStgConf, timeColumn) {
     );
   }
 
-  const { refreshInterval, fetchSize } = refreshPolicy.params || {};
-  const consistencyRefreshInterval =
-    refreshPolicy.params?.consistencyRefreshInterval;
+  const { refreshInterval, fetchSize, windowSize } = refreshPolicy.params || {};
+  validateRefreshInterval(refreshInterval);
+
+  if (refreshPolicy.type === 'window') {
+    validateFetchSize(fetchSize);
+    validateWindowSizeRequiresPartition(windowSize, objStgConf);
+  }
+
+  validateWindowSize(windowSize);
+  validatePartitionType(objStgConf);
+  validateConsistencyRefreshInterval(refreshPolicy);
+  validatePartitionAlignment(refreshInterval, fetchSize, objStgConf);
+}
+
+function validateRefreshInterval(refreshInterval) {
   if (!refreshInterval) {
     throw new FDAError(
       400,
@@ -1248,8 +1346,10 @@ function validateScheduledOptions(refreshPolicy, objStgConf, timeColumn) {
       `Invalid refresh interval "${refreshInterval}".`,
     );
   }
+}
 
-  if (refreshPolicy.type === 'window' && !fetchSize) {
+function validateFetchSize(fetchSize) {
+  if (!fetchSize) {
     throw new FDAError(
       400,
       'InvalidParam',
@@ -1257,40 +1357,37 @@ function validateScheduledOptions(refreshPolicy, objStgConf, timeColumn) {
     );
   }
 
-  if (refreshPolicy.type === 'window' && fetchSize) {
-    const { unit } = processFetchSize(fetchSize);
-    if (!VALID_WINDOW_FETCH_SIZES.includes(unit)) {
-      throw new FDAError(
-        400,
-        'InvalidParam',
-        `Invalid fetchSize "${fetchSize}".`,
-      );
-    }
+  const { unit } = processFetchSize(fetchSize);
+  if (!VALID_WINDOW_FETCH_SIZES.includes(unit)) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Invalid fetchSize "${fetchSize}".`,
+    );
   }
+}
 
-  if (
-    refreshPolicy.type === 'window' &&
-    refreshPolicy.params?.windowSize &&
-    !objStgConf?.partition
-  ) {
+function validateWindowSizeRequiresPartition(windowSize, objStgConf) {
+  if (windowSize && !objStgConf?.partition) {
     throw new FDAError(
       400,
       'InvalidParam',
       'windowSize requires objStgConf.partition.',
     );
   }
+}
 
-  if (refreshPolicy.params?.windowSize) {
-    const { unit } = processFetchSize(refreshPolicy.params.windowSize);
-    if (!getWindowDate(unit)) {
-      throw new FDAError(
-        400,
-        'InvalidParam',
-        `Invalid windowSize "${refreshPolicy.params.windowSize}".`,
-      );
-    }
+function validateWindowSize(windowSize) {
+  if (windowSize && !getWindowDate(processFetchSize(windowSize).unit)) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Invalid windowSize "${windowSize}".`,
+    );
   }
+}
 
+function validatePartitionType(objStgConf) {
   if (
     objStgConf?.partition &&
     !PARTITION_TYPES.includes(objStgConf.partition)
@@ -1301,42 +1398,44 @@ function validateScheduledOptions(refreshPolicy, objStgConf, timeColumn) {
       `Invalid partition type "${objStgConf.partition}".`,
     );
   }
+}
 
-  if (consistencyRefreshInterval) {
-    if (refreshPolicy.type !== 'window') {
-      throw new FDAError(
-        400,
-        'InvalidParam',
-        'consistencyRefreshInterval is only supported for window refresh policy.',
-      );
-    }
+function validateConsistencyRefreshInterval(refreshPolicy) {
+  const { refreshInterval, consistencyRefreshInterval } =
+    refreshPolicy.params || {};
 
-    if (convertRefreshIntervalToMs(consistencyRefreshInterval) === null) {
-      throw new FDAError(
-        400,
-        'InvalidParam',
-        `Invalid consistency refresh interval "${consistencyRefreshInterval}".`,
-      );
-    }
-
-    const refreshMs = convertRefreshIntervalToMs(refreshInterval);
-    const consistencyMs = convertRefreshIntervalToMs(
-      consistencyRefreshInterval,
-    );
-
-    if (
-      refreshMs !== null &&
-      consistencyMs !== null &&
-      consistencyMs < refreshMs
-    ) {
-      throw new FDAError(
-        400,
-        'InvalidParam',
-        `consistencyRefreshInterval ("${consistencyRefreshInterval}") must be greater than refreshInterval ("${refreshInterval}").`,
-      );
-    }
+  if (!consistencyRefreshInterval) {
+    return;
   }
 
+  if (refreshPolicy.type !== 'window') {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      'consistencyRefreshInterval is only supported for window refresh policy.',
+    );
+  }
+
+  const consistencyMs = convertRefreshIntervalToMs(consistencyRefreshInterval);
+  if (consistencyMs === null) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Invalid consistency refresh interval "${consistencyRefreshInterval}".`,
+    );
+  }
+
+  const refreshMs = convertRefreshIntervalToMs(refreshInterval);
+  if (refreshMs !== null && consistencyMs < refreshMs) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `consistencyRefreshInterval ("${consistencyRefreshInterval}") must be greater than refreshInterval ("${refreshInterval}").`,
+    );
+  }
+}
+
+function validatePartitionAlignment(refreshInterval, fetchSize, objStgConf) {
   // RefreshInterval must be smaller or equal than partition size
   if (!refreshIntervalPartitionCheck(refreshInterval, objStgConf?.partition)) {
     throw new FDAError(
@@ -1431,6 +1530,11 @@ export async function updateFDA(service, fdaId, visibility, servicePath) {
   );
   await resolveSourceSchema(datasource, fda);
 
+  if (isMaterializedOnDemand(fda) && !fda.lastFetch) {
+    await materializeIdleFDA(fda);
+    return;
+  }
+
   const previous = await regenerateFDA(service, fdaId, normalizedServicePath);
 
   const agenda = getAgenda();
@@ -1438,16 +1542,12 @@ export async function updateFDA(service, fdaId, visibility, servicePath) {
   // Execute refresh immediately (when a fetcher is free)
   const effectiveServicePath = previous.servicePath ?? normalizedServicePath;
 
-  let firstQuery = previous.query;
-  if (previous.refreshPolicy?.type === 'window') {
-    const windowQueryFn =
-      datasource.type === 'mongodb' ? getMongoWindowQuery : getWindowQuery;
-    firstQuery = windowQueryFn(
-      previous.query,
-      previous.timeColumn,
-      previous.refreshPolicy?.params?.windowSize,
-    );
-  }
+  const { firstQuery } = resolveRefreshQueries(
+    datasource,
+    previous.refreshPolicy,
+    previous.query,
+    previous.timeColumn,
+  );
   await agenda.now('refresh-fda', {
     fdaId,
     query: firstQuery,
@@ -1468,6 +1568,18 @@ export async function updateFDA(service, fdaId, visibility, servicePath) {
       objStgConf: previous.objStgConf,
     });
   }
+}
+
+async function materializeIdleFDA(fda) {
+  if (await requestOnDemandRefresh(fda, { ignoreRetryBackoff: true })) {
+    return;
+  }
+
+  throw new FDAError(
+    409,
+    'AlreadyFetching',
+    `FDA ${fda.fdaId} is already being materialized`,
+  );
 }
 
 async function resolveSourceSchema(datasource, fda) {
@@ -2361,9 +2473,20 @@ async function uploadTableToObjStg(
   return bytesFetched ?? 0;
 }
 
-async function ensureFDAReadyForQuery(service, fdaId, visibility, servicePath) {
+async function ensureFDAReadyForQuery(
+  service,
+  fdaId,
+  daId,
+  visibility,
+  servicePath,
+) {
   const fda = await getAccessibleFDA(service, fdaId, visibility, servicePath);
   assertFDAIsCached(fda, fdaId);
+
+  if (isMaterializedOnDemand(fda)) {
+    assertDAExists(fda, daId, service);
+    return waitForOnDemandData(fda);
+  }
 
   // Queries are blocked only before the first successful fetch.
   if (!fda.lastFetch) {
@@ -2374,6 +2497,258 @@ async function ensureFDAReadyForQuery(service, fdaId, visibility, servicePath) {
     );
   }
   return fda;
+}
+
+function assertDAExists(fda, daId, service) {
+  if (!fda.das?.[daId]?.query) {
+    throw new FDAError(
+      404,
+      'DaNotFound',
+      `DA ${daId} does not exist in FDA ${fda.fdaId} with service ${service}.`,
+    );
+  }
+}
+
+function isMaterializedOnDemand(fda) {
+  return fda.lazy === true || fda.refreshPolicy?.type === 'onDemand';
+}
+
+function getOnDemandMaxAgeMs(fda) {
+  if (fda.refreshPolicy?.type !== 'onDemand') {
+    return null;
+  }
+
+  return convertRefreshIntervalToMs(fda.refreshPolicy.params?.maxAge);
+}
+
+function hasFreshData(fda) {
+  if (!fda.lastFetch) {
+    return false;
+  }
+
+  const maxAgeMs = getOnDemandMaxAgeMs(fda);
+  return (
+    maxAgeMs === null ||
+    Date.now() - new Date(fda.lastFetch).getTime() < maxAgeMs
+  );
+}
+
+async function waitForOnDemandData(fda) {
+  const { service, fdaId, servicePath } = fda;
+  const deadline = Date.now() + config.onDemand.waitTimeoutMs;
+  let current = fda;
+
+  for (;;) {
+    if (hasFreshData(current)) {
+      return current;
+    }
+
+    if (current.status === 'deleting') {
+      throw onDemandUnavailableError(fdaId);
+    }
+
+    if (
+      !isRefreshInProgress(current) &&
+      !(await requestOnDemandRefresh(current))
+    ) {
+      current = await reloadAfterLostRefreshClaim(current);
+
+      if (hasFreshData(current)) {
+        return current;
+      }
+    }
+
+    if (Date.now() >= deadline) {
+      throw onDemandUnavailableError(fdaId);
+    }
+
+    await delay(config.onDemand.pollIntervalMs);
+    current = await getStoredFDA(service, fdaId, servicePath);
+  }
+}
+
+async function reloadAfterLostRefreshClaim({ service, fdaId, servicePath }) {
+  const current = await getStoredFDA(service, fdaId, servicePath);
+
+  if (!hasFreshData(current) && current.status === 'failed') {
+    logger.error(
+      { fdaId, service, servicePath, error: current.error },
+      'On-demand materialization failed',
+    );
+    throw new FDAError(
+      503,
+      'FDAMaterializationFailed',
+      `FDA ${fdaId} could not be materialized. Retry later or check the FDA status.`,
+    );
+  }
+
+  return current;
+}
+
+function isRefreshInProgress(fda) {
+  if (fda.status === 'pending') {
+    const pendingSince = new Date(fda.pendingSince ?? 0).getTime();
+    return Date.now() - pendingSince < FDA_ON_DEMAND_PENDING_TIMEOUT_MS;
+  }
+
+  return FDA_REFRESH_IN_PROGRESS_STATUSES.includes(fda.status);
+}
+
+function onDemandUnavailableError(fdaId) {
+  return new FDAError(
+    409,
+    'FDAUnavailable',
+    `FDA ${fdaId} is not queryable yet because its data is being materialized`,
+  );
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function requestOnDemandRefresh(
+  fda,
+  { ignoreRetryBackoff = false } = {},
+) {
+  const { service, fdaId, servicePath } = fda;
+  const now = Date.now();
+  const maxAgeMs = getOnDemandMaxAgeMs(fda);
+  const retryBackoffMs = ignoreRetryBackoff
+    ? 0
+    : config.onDemand.retryBackoffMs;
+
+  const claimed = await claimOnDemandRefresh({
+    service,
+    fdaId,
+    servicePath,
+    staleBefore: maxAgeMs === null ? null : new Date(now - maxAgeMs),
+    retryBefore: new Date(now - retryBackoffMs),
+    pendingBefore: new Date(now - FDA_ON_DEMAND_PENDING_TIMEOUT_MS),
+  });
+
+  if (!claimed) {
+    return false;
+  }
+
+  try {
+    const datasource = await resolveDatasource(
+      service,
+      claimed.datasourceId ?? DEFAULT_DATASOURCE_ID,
+    );
+
+    if (isIncrementalOnDemandRefresh(claimed)) {
+      await enqueueIncrementalOnDemandRefresh(claimed, datasource);
+    } else {
+      await scheduleFDAJobs({
+        fdaId,
+        query: claimed.query,
+        service,
+        servicePath,
+        timeColumn: claimed.timeColumn,
+        refreshPolicy: claimed.refreshPolicy,
+        objStgConf: claimed.objStgConf,
+        datasource,
+      });
+    }
+  } catch (err) {
+    await releaseOnDemandRefresh({
+      service,
+      fdaId,
+      servicePath,
+      status: claimed.status,
+    });
+    throw err;
+  }
+
+  logger.info(
+    { fdaId, service, servicePath },
+    'On-demand materialization requested',
+  );
+  return true;
+}
+
+function isIncrementalOnDemandRefresh(fda) {
+  return (
+    fda.refreshPolicy?.type === 'onDemand' &&
+    Boolean(fda.objStgConf?.partition) &&
+    Boolean(fda.lastFetch)
+  );
+}
+
+async function enqueueIncrementalOnDemandRefresh(fda, datasource) {
+  const { fdaId, service, servicePath, timeColumn, refreshPolicy, objStgConf } =
+    fda;
+  const start = getIncrementalOnDemandStart(fda);
+  const query =
+    datasource.type === 'mongodb'
+      ? getUpdateMongoWindowQuery(fda.query, timeColumn, start)
+      : getUpdateWindowQuery(fda.query, timeColumn, start);
+  const agenda = getAgenda();
+
+  await agenda.now('refresh-fda', {
+    fdaId,
+    query,
+    service,
+    servicePath,
+    timeColumn,
+    refreshPolicy,
+    objStgConf,
+    datasourceId: datasource.datasourceId ?? DEFAULT_DATASOURCE_ID,
+  });
+
+  if (refreshPolicy.params?.windowSize) {
+    await agenda.now('clean-partition', {
+      fdaId,
+      service,
+      servicePath,
+      windowSize: refreshPolicy.params.windowSize,
+      objStgConf,
+    });
+  }
+}
+
+function getIncrementalOnDemandStart(fda) {
+  const { refreshPolicy, objStgConf } = fda;
+  const partitionStart = getPartitionStart(
+    new Date(fda.lastFetchStartedAt ?? fda.lastFetch),
+    objStgConf.partition,
+  );
+
+  if (!refreshPolicy.params?.windowSize) {
+    return partitionStart.toISOString();
+  }
+
+  const windowStart = new Date(
+    getPreviousWindowStartDate(refreshPolicy.params.windowSize),
+  );
+  return new Date(Math.max(partitionStart, windowStart)).toISOString();
+}
+
+export function getPartitionStart(date, partition) {
+  const year = date.getUTCFullYear();
+
+  switch (partition) {
+    case 'day':
+      return new Date(Date.UTC(year, date.getUTCMonth(), date.getUTCDate()));
+    case 'week': {
+      const daysSinceMonday = (date.getUTCDay() + 6) % 7;
+      const monday = new Date(
+        Date.UTC(year, date.getUTCMonth(), date.getUTCDate() - daysSinceMonday),
+      );
+      const yearStart = new Date(Date.UTC(year, 0, 1));
+      return new Date(Math.max(monday, yearStart));
+    }
+    case 'month':
+      return new Date(Date.UTC(year, date.getUTCMonth(), 1));
+    case 'year':
+      return new Date(Date.UTC(year, 0, 1));
+    default:
+      throw new FDAError(
+        400,
+        'PartitionError',
+        `Invalid partition type: ${partition}.`,
+      );
+  }
 }
 
 export async function getStoredFDA(service, fdaId, servicePath) {

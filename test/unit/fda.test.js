@@ -90,6 +90,8 @@ const mongoMocks = {
   claimFDAForFetch: jest.fn(),
   claimFDAForDeletion: jest.fn(),
   claimFDADownload: jest.fn(),
+  claimOnDemandRefresh: jest.fn(),
+  releaseOnDemandRefresh: jest.fn(),
   createDatasource: jest.fn(),
   retrieveDatasources: jest.fn(),
   retrieveDatasource: jest.fn(),
@@ -166,6 +168,8 @@ await jest.unstable_mockModule('../../src/lib/utils/mongo.js', () => ({
   claimFDAForFetch: mongoMocks.claimFDAForFetch,
   claimFDAForDeletion: mongoMocks.claimFDAForDeletion,
   claimFDADownload: mongoMocks.claimFDADownload,
+  claimOnDemandRefresh: mongoMocks.claimOnDemandRefresh,
+  releaseOnDemandRefresh: mongoMocks.releaseOnDemandRefresh,
   createDatasource: mongoMocks.createDatasource,
   retrieveDatasources: mongoMocks.retrieveDatasources,
   retrieveDatasource: mongoMocks.retrieveDatasource,
@@ -187,6 +191,11 @@ await jest.unstable_mockModule('../../src/lib/fdaConfig.js', () => ({
     },
     freshQueries: {
       maxConcurrent: 2,
+    },
+    onDemand: {
+      waitTimeoutMs: 1000,
+      pollIntervalMs: 1,
+      retryBackoffMs: 60000,
     },
     objstg: {
       protocol: 'http',
@@ -221,6 +230,7 @@ const {
   getFDAs,
   validateMongoFDAContract,
   cleanPartition,
+  getPartitionStart,
 } = await import('../../src/lib/fda.js');
 
 function createReqRes() {
@@ -1336,6 +1346,7 @@ describe('fetchFDA', () => {
       'strict',
       null,
       undefined,
+      false,
     );
     expect(pgMocks.uploadTable).toHaveBeenCalledWith(
       {},
@@ -1613,7 +1624,6 @@ describe('fetchFDA', () => {
         false,
         'mongo-ds',
         'events',
-        [],
       ),
     ).rejects.toMatchObject({
       status: 400,
@@ -1646,7 +1656,6 @@ describe('fetchFDA', () => {
         false,
         'mongo-ds',
         'events',
-        ['name'],
       ),
     ).rejects.toMatchObject({
       status: 400,
@@ -1695,6 +1704,7 @@ describe('fetchFDA', () => {
       'unchecked',
       null,
       undefined,
+      false,
     );
     expect(mongoMocks.validateMongoQuery).not.toHaveBeenCalled();
   });
@@ -1826,6 +1836,7 @@ describe('fetchFDA', () => {
         { name: 'observedAt', type: null },
       ],
       undefined,
+      false,
     );
 
     // The bootstrap snapshot is written as a pure, zero-row DuckDB query
@@ -6415,6 +6426,753 @@ describe('validateMongoFDAContract functions', () => {
         type: 'InvalidMongoFDAContract',
         message: 'Mongo FDA query must define either filter or aggregation',
       }),
+    );
+  });
+});
+
+describe('lazy and onDemand FDAs', () => {
+  const agenda = {
+    now: jest.fn(),
+    create: jest.fn(),
+  };
+
+  const onDemandPolicy = { type: 'onDemand', params: { maxAge: '15 minutes' } };
+
+  function storedFDA(overrides = {}) {
+    return {
+      fdaId: 'fdaLazy',
+      service: 'svc',
+      servicePath: '/servicepath',
+      visibility: 'public',
+      cached: true,
+      query: 'SELECT id FROM users',
+      datasourceId: 'default',
+      refreshPolicy: onDemandPolicy,
+      status: 'idle',
+      lastFetch: null,
+      initFetch: null,
+      das: { daA: { query: 'SELECT id' } },
+      ...overrides,
+    };
+  }
+
+  function queryLazyFDA() {
+    return executeQuery({
+      service: 'svc',
+      visibility: 'public',
+      servicePath: '/servicepath',
+      params: { fdaId: 'fdaLazy', daId: 'daA' },
+    });
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    awsMocks.getS3Client.mockReturnValue({});
+    mongoMocks.createFDAMongo.mockResolvedValue(undefined);
+    mongoMocks.retrieveDatasource.mockResolvedValue({
+      datasourceId: 'default',
+      type: 'postgres',
+      config: {},
+    });
+    dbMocks.getDBConnection.mockResolvedValue({});
+    dbMocks.releaseDBConnection.mockResolvedValue(undefined);
+    dbMocks.runPreparedStatement.mockResolvedValue([{ id: 1 }]);
+    dbMocks.refreshIntervalPartitionCheck.mockReturnValue(true);
+    pgMocks.uploadTable.mockResolvedValue(undefined);
+    jobsMocks.getAgenda.mockReturnValue(agenda);
+    agenda.now.mockResolvedValue(undefined);
+    agenda.create.mockImplementation((name, data) => ({
+      name,
+      data,
+      unique: jest.fn().mockReturnThis(),
+      repeatEvery: jest.fn().mockReturnThis(),
+      priority: jest.fn().mockReturnThis(),
+      save: jest.fn().mockResolvedValue(undefined),
+    }));
+    mongoMocks.releaseOnDemandRefresh.mockResolvedValue(undefined);
+  });
+
+  async function createFDA(refreshPolicy, { lazy, cached = true } = {}) {
+    return fetchFDA(
+      'fdaLazy',
+      'SELECT id FROM users',
+      'svc',
+      'public',
+      '/servicepath',
+      'desc',
+      refreshPolicy,
+      undefined,
+      {},
+      false,
+      cached,
+      'default',
+      'strict',
+      {},
+      lazy,
+    );
+  }
+
+  test('creating a lazy FDA stores it idle and schedules no job', async () => {
+    const result = await createFDA(
+      { type: 'interval', params: { refreshInterval: '1 hour' } },
+      { lazy: true },
+    );
+
+    expect(result).toEqual({ status: 'idle' });
+    expect(mongoMocks.createFDAMongo.mock.calls[0][14]).toBe(true);
+    expect(agenda.now).not.toHaveBeenCalled();
+    expect(agenda.create).not.toHaveBeenCalled();
+  });
+
+  test('creating an onDemand FDA is lazy without asking for it', async () => {
+    const result = await createFDA(onDemandPolicy);
+
+    expect(result).toEqual({ status: 'idle' });
+    expect(mongoMocks.createFDAMongo.mock.calls[0][14]).toBe(true);
+    expect(agenda.now).not.toHaveBeenCalled();
+  });
+
+  test('creating a non lazy FDA keeps the immediate first fetch', async () => {
+    const result = await createFDA({ type: 'none' });
+
+    expect(result).toEqual({ status: 'pending' });
+    expect(mongoMocks.createFDAMongo.mock.calls[0][14]).toBe(false);
+    expect(agenda.now).toHaveBeenCalledWith(
+      'refresh-fda',
+      expect.objectContaining({ fdaId: 'fdaLazy' }),
+    );
+  });
+
+  test.each([
+    ['maxAge is missing', { type: 'onDemand', params: {} }, {}],
+    ['maxAge is invalid', { type: 'onDemand', params: { maxAge: 'soon' } }, {}],
+    [
+      'onDemand gets interval parameters',
+      {
+        type: 'onDemand',
+        params: { maxAge: '15 minutes', refreshInterval: '1 hour' },
+      },
+      {},
+    ],
+    ['onDemand is not lazy', onDemandPolicy, { lazy: false }],
+    ['onDemand is not cached', onDemandPolicy, { cached: false }],
+    ['lazy is not cached', { type: 'none' }, { lazy: true, cached: false }],
+    [
+      'onDemand has a windowSize without partitioning',
+      { type: 'onDemand', params: { maxAge: '1 hour', windowSize: '1 week' } },
+      {},
+    ],
+    [
+      'onDemand has an invalid windowSize',
+      { type: 'onDemand', params: { maxAge: '1 hour', windowSize: 'ages' } },
+      {},
+    ],
+  ])('rejects the FDA when %s', async (_name, refreshPolicy, options) => {
+    await expect(
+      createFDA(refreshPolicy, { ...options, cached: options.cached ?? true }),
+    ).rejects.toMatchObject({ status: 400, type: 'InvalidParam' });
+    expect(mongoMocks.createFDAMongo).not.toHaveBeenCalled();
+  });
+
+  test('the first query materializes an idle FDA and waits for its data', async () => {
+    const idle = storedFDA();
+    mongoMocks.retrieveFDA
+      .mockResolvedValueOnce(idle)
+      .mockResolvedValueOnce({ ...idle, status: 'fetching' })
+      .mockResolvedValueOnce({
+        ...idle,
+        status: 'completed',
+        lastFetch: new Date(),
+      });
+    mongoMocks.claimOnDemandRefresh.mockResolvedValueOnce(idle);
+
+    await expect(queryLazyFDA()).resolves.toEqual([{ id: 1 }]);
+
+    expect(mongoMocks.claimOnDemandRefresh).toHaveBeenCalledWith(
+      expect.objectContaining({
+        service: 'svc',
+        fdaId: 'fdaLazy',
+        servicePath: '/servicepath',
+        staleBefore: expect.any(Date),
+        retryBefore: expect.any(Date),
+      }),
+    );
+    expect(agenda.now).toHaveBeenCalledTimes(1);
+    expect(agenda.now).toHaveBeenCalledWith(
+      'refresh-fda',
+      expect.objectContaining({
+        fdaId: 'fdaLazy',
+        query: 'SELECT id FROM users',
+        refreshPolicy: onDemandPolicy,
+      }),
+    );
+    expect(agenda.create).not.toHaveBeenCalled();
+    expect(dbMocks.runPreparedStatement).toHaveBeenCalled();
+  });
+
+  test('a query that loses the claim waits for the running materialization', async () => {
+    const idle = storedFDA();
+    mongoMocks.retrieveFDA
+      .mockResolvedValueOnce(idle)
+      .mockResolvedValueOnce({ ...idle, status: 'pending' })
+      .mockResolvedValueOnce({
+        ...idle,
+        status: 'completed',
+        lastFetch: new Date(),
+      });
+    mongoMocks.claimOnDemandRefresh.mockResolvedValueOnce(null);
+
+    await expect(queryLazyFDA()).resolves.toEqual([{ id: 1 }]);
+    expect(agenda.now).not.toHaveBeenCalled();
+  });
+
+  test('a fresh onDemand FDA is queried without refreshing', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue(
+      storedFDA({ status: 'completed', lastFetch: new Date() }),
+    );
+
+    await expect(queryLazyFDA()).resolves.toEqual([{ id: 1 }]);
+    expect(mongoMocks.claimOnDemandRefresh).not.toHaveBeenCalled();
+  });
+
+  test('an expired onDemand FDA is refreshed before answering', async () => {
+    const expired = storedFDA({
+      status: 'completed',
+      lastFetch: new Date(Date.now() - 16 * 60 * 1000),
+    });
+    mongoMocks.retrieveFDA
+      .mockResolvedValueOnce(expired)
+      .mockResolvedValueOnce({
+        ...expired,
+        status: 'completed',
+        lastFetch: new Date(),
+      });
+    mongoMocks.claimOnDemandRefresh.mockResolvedValueOnce(expired);
+
+    await expect(queryLazyFDA()).resolves.toEqual([{ id: 1 }]);
+
+    const [{ staleBefore }] = mongoMocks.claimOnDemandRefresh.mock.calls[0];
+    expect(Date.now() - staleBefore.getTime()).toBeGreaterThanOrEqual(
+      15 * 60 * 1000,
+    );
+    expect(agenda.now).toHaveBeenCalledTimes(1);
+  });
+
+  test('a lazy interval FDA schedules its recurring refresh on first access', async () => {
+    const lazyInterval = storedFDA({
+      lazy: true,
+      refreshPolicy: {
+        type: 'interval',
+        params: { refreshInterval: '1 hour' },
+      },
+    });
+    mongoMocks.retrieveFDA
+      .mockResolvedValueOnce(lazyInterval)
+      .mockResolvedValueOnce({
+        ...lazyInterval,
+        status: 'completed',
+        lastFetch: new Date(Date.now() - 24 * 60 * 60 * 1000),
+      });
+    mongoMocks.claimOnDemandRefresh.mockResolvedValueOnce(lazyInterval);
+
+    await expect(queryLazyFDA()).resolves.toEqual([{ id: 1 }]);
+
+    expect(mongoMocks.claimOnDemandRefresh).toHaveBeenCalledWith(
+      expect.objectContaining({ staleBefore: null }),
+    );
+    expect(agenda.now).toHaveBeenCalledTimes(1);
+    expect(agenda.create).toHaveBeenCalledWith(
+      'refresh-fda-recurring',
+      expect.objectContaining({ fdaId: 'fdaLazy' }),
+    );
+  });
+
+  test('returns 503 when the materialization fails', async () => {
+    const idle = storedFDA();
+    mongoMocks.retrieveFDA
+      .mockResolvedValueOnce(idle)
+      .mockResolvedValueOnce({
+        ...idle,
+        status: 'failed',
+        initFetch: new Date(),
+        error: 'source down',
+      })
+      .mockResolvedValueOnce({
+        ...idle,
+        status: 'failed',
+        initFetch: new Date(),
+        error: 'source down',
+      });
+    mongoMocks.claimOnDemandRefresh
+      .mockResolvedValueOnce(idle)
+      .mockResolvedValueOnce(null);
+
+    await expect(queryLazyFDA()).rejects.toMatchObject({
+      status: 503,
+      type: 'FDAMaterializationFailed',
+      message: expect.not.stringContaining('source down'),
+    });
+    expect(agenda.now).toHaveBeenCalledTimes(1);
+    expect(dbMocks.runPreparedStatement).not.toHaveBeenCalled();
+  });
+
+  test('returns 503 at once while a failed materialization is in its retry backoff', async () => {
+    const failed = storedFDA({
+      status: 'failed',
+      initFetch: new Date(),
+      error: 'source down',
+    });
+    mongoMocks.retrieveFDA.mockResolvedValue(failed);
+    mongoMocks.claimOnDemandRefresh.mockResolvedValueOnce(null);
+
+    await expect(queryLazyFDA()).rejects.toMatchObject({
+      status: 503,
+      type: 'FDAMaterializationFailed',
+    });
+    expect(agenda.now).not.toHaveBeenCalled();
+  });
+
+  test('returns 409 when the materialization does not finish in time', async () => {
+    const idle = storedFDA();
+    mongoMocks.retrieveFDA
+      .mockResolvedValueOnce(idle)
+      .mockResolvedValue({ ...idle, status: 'fetching' });
+    mongoMocks.claimOnDemandRefresh.mockResolvedValueOnce(idle);
+
+    await expect(queryLazyFDA()).rejects.toMatchObject({
+      status: 409,
+      type: 'FDAUnavailable',
+    });
+  });
+
+  test('returns 404 when the FDA is deleted while waiting', async () => {
+    const idle = storedFDA();
+    mongoMocks.retrieveFDA
+      .mockResolvedValueOnce(idle)
+      .mockResolvedValueOnce(null);
+    mongoMocks.claimOnDemandRefresh.mockResolvedValueOnce(idle);
+
+    await expect(queryLazyFDA()).rejects.toMatchObject({
+      status: 404,
+      type: 'FDANotFound',
+    });
+  });
+
+  test('restores the previous status when the job cannot be enqueued', async () => {
+    const idle = storedFDA();
+    mongoMocks.retrieveFDA.mockResolvedValueOnce(idle);
+    mongoMocks.claimOnDemandRefresh.mockResolvedValueOnce(idle);
+    agenda.now.mockRejectedValueOnce(new Error('agenda down'));
+
+    await expect(queryLazyFDA()).rejects.toThrow('agenda down');
+    expect(mongoMocks.releaseOnDemandRefresh).toHaveBeenCalledWith({
+      service: 'svc',
+      fdaId: 'fdaLazy',
+      servicePath: '/servicepath',
+      status: 'idle',
+    });
+  });
+
+  test('a non lazy FDA without data keeps answering 409 at once', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue(
+      storedFDA({ refreshPolicy: { type: 'none' }, status: 'fetching' }),
+    );
+
+    await expect(queryLazyFDA()).rejects.toMatchObject({
+      status: 409,
+      type: 'FDAUnavailable',
+    });
+    expect(mongoMocks.claimOnDemandRefresh).not.toHaveBeenCalled();
+  });
+
+  test('a manual refresh of an idle FDA materializes it ignoring the retry backoff', async () => {
+    const failed = storedFDA({ status: 'failed', initFetch: new Date() });
+    mongoMocks.retrieveFDA.mockResolvedValue(failed);
+    mongoMocks.claimOnDemandRefresh.mockResolvedValueOnce(failed);
+
+    await updateFDA('svc', 'fdaLazy', undefined, '/servicepath');
+
+    const [{ retryBefore }] = mongoMocks.claimOnDemandRefresh.mock.calls[0];
+    expect(retryBefore.getTime()).toBeGreaterThanOrEqual(Date.now() - 1000);
+    expect(mongoMocks.regenerateFDA).not.toHaveBeenCalled();
+    expect(agenda.now).toHaveBeenCalledTimes(1);
+  });
+
+  test('a manual refresh of an FDA already being materialized returns 409', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue(storedFDA({ status: 'pending' }));
+    mongoMocks.claimOnDemandRefresh.mockResolvedValueOnce(null);
+
+    await expect(
+      updateFDA('svc', 'fdaLazy', undefined, '/servicepath'),
+    ).rejects.toMatchObject({ status: 409, type: 'AlreadyFetching' });
+  });
+
+  test('creating a lazy window FDA schedules no job', async () => {
+    const result = await fetchFDA(
+      'fdaLazy',
+      'SELECT id, observed_at FROM users',
+      'svc',
+      'public',
+      '/servicepath',
+      'desc',
+      {
+        type: 'window',
+        params: {
+          refreshInterval: '1 day',
+          fetchSize: 'day',
+          windowSize: '1 week',
+        },
+      },
+      'observed_at',
+      { partition: 'day' },
+      false,
+      true,
+      'default',
+      'strict',
+      {},
+      true,
+    );
+
+    expect(result).toEqual({ status: 'idle' });
+    expect(agenda.now).not.toHaveBeenCalled();
+    expect(agenda.create).not.toHaveBeenCalled();
+  });
+
+  test('a lazy window FDA computes its window and schedules its jobs on first access', async () => {
+    const lazyWindow = storedFDA({
+      lazy: true,
+      query: 'SELECT id, observed_at FROM users',
+      timeColumn: 'observed_at',
+      objStgConf: { partition: 'day' },
+      refreshPolicy: {
+        type: 'window',
+        params: {
+          refreshInterval: '1 day',
+          fetchSize: 'day',
+          windowSize: '1 week',
+        },
+      },
+    });
+    mongoMocks.retrieveFDA
+      .mockResolvedValueOnce(lazyWindow)
+      .mockResolvedValueOnce({
+        ...lazyWindow,
+        status: 'completed',
+        lastFetch: new Date(),
+      });
+    mongoMocks.claimOnDemandRefresh.mockResolvedValueOnce(lazyWindow);
+
+    await expect(queryLazyFDA()).resolves.toEqual([{ id: 1 }]);
+
+    const [, firstFetch] = agenda.now.mock.calls[0];
+    expect(firstFetch.query).toMatch(/observed_at >= TIMESTAMP '/);
+    expect(agenda.create.mock.calls.map(([name]) => name)).toEqual(
+      expect.arrayContaining([
+        'refresh-fda-recurring',
+        'clean-partition-recurring',
+      ]),
+    );
+  });
+
+  test('the first fetch of an onDemand FDA with windowSize only asks for the window', async () => {
+    const idle = storedFDA({
+      query: 'SELECT id, observed_at FROM users',
+      timeColumn: 'observed_at',
+      objStgConf: { partition: 'day' },
+      refreshPolicy: {
+        type: 'onDemand',
+        params: { maxAge: '15 minutes', windowSize: '1 week' },
+      },
+    });
+    mongoMocks.retrieveFDA.mockResolvedValueOnce(idle).mockResolvedValueOnce({
+      ...idle,
+      status: 'completed',
+      lastFetch: new Date(),
+    });
+    mongoMocks.claimOnDemandRefresh.mockResolvedValueOnce(idle);
+
+    await expect(queryLazyFDA()).resolves.toEqual([{ id: 1 }]);
+
+    expect(agenda.now).toHaveBeenCalledTimes(1);
+    const [, firstFetch] = agenda.now.mock.calls[0];
+    expect(firstFetch.query).toMatch(/observed_at >= TIMESTAMP '/);
+    expect(agenda.create).not.toHaveBeenCalled();
+  });
+
+  test('an expired partitioned onDemand FDA only fetches from the partition of its last fetch', async () => {
+    const lastFetchStartedAt = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    const expired = storedFDA({
+      status: 'completed',
+      query: 'SELECT id, observed_at FROM users',
+      timeColumn: 'observed_at',
+      objStgConf: { partition: 'day' },
+      lastFetchStartedAt,
+      lastFetch: new Date(lastFetchStartedAt.getTime() + 1000),
+    });
+    mongoMocks.retrieveFDA
+      .mockResolvedValueOnce(expired)
+      .mockResolvedValueOnce({ ...expired, lastFetch: new Date() });
+    mongoMocks.claimOnDemandRefresh.mockResolvedValueOnce(expired);
+
+    await expect(queryLazyFDA()).resolves.toEqual([{ id: 1 }]);
+
+    const partitionStart = getPartitionStart(lastFetchStartedAt, 'day');
+    expect(agenda.now).toHaveBeenCalledTimes(1);
+    expect(agenda.now).toHaveBeenCalledWith(
+      'refresh-fda',
+      expect.objectContaining({
+        query: `SELECT * FROM (SELECT id, observed_at FROM users) q WHERE observed_at >= TIMESTAMP '${partitionStart.toISOString()}' AND observed_at < NOW()`,
+      }),
+    );
+    expect(agenda.create).not.toHaveBeenCalled();
+  });
+
+  test('an incremental onDemand refresh never asks for data older than the window and cleans it', async () => {
+    const expired = storedFDA({
+      status: 'completed',
+      query: 'SELECT id, observed_at FROM users',
+      timeColumn: 'observed_at',
+      objStgConf: { partition: 'day' },
+      refreshPolicy: {
+        type: 'onDemand',
+        params: { maxAge: '15 minutes', windowSize: '2 days' },
+      },
+      lastFetchStartedAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+      lastFetch: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+    });
+    mongoMocks.retrieveFDA
+      .mockResolvedValueOnce(expired)
+      .mockResolvedValueOnce({ ...expired, lastFetch: new Date() });
+    mongoMocks.claimOnDemandRefresh.mockResolvedValueOnce(expired);
+
+    await expect(queryLazyFDA()).resolves.toEqual([{ id: 1 }]);
+
+    const [, refresh] = agenda.now.mock.calls[0];
+    const start = new Date(refresh.query.match(/TIMESTAMP '([^']+)'/)[1]);
+    const twoDaysAgo = new Date();
+    twoDaysAgo.setUTCDate(twoDaysAgo.getUTCDate() - 2);
+    twoDaysAgo.setUTCHours(0, 0, 0, 0);
+    expect(start).toEqual(twoDaysAgo);
+    expect(agenda.now).toHaveBeenCalledWith(
+      'clean-partition',
+      expect.objectContaining({ fdaId: 'fdaLazy', windowSize: '2 days' }),
+    );
+  });
+
+  test('an incremental onDemand refresh of a Mongo FDA uses the Mongo window condition', async () => {
+    mongoMocks.retrieveDatasource.mockResolvedValue({
+      datasourceId: 'mongo-ds',
+      type: 'mongodb',
+      config: {},
+    });
+    const lastFetchStartedAt = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    const expired = storedFDA({
+      status: 'completed',
+      datasourceId: 'mongo-ds',
+      query: {
+        collection: 'events',
+        filter: {},
+        projection: { observedAt: 1 },
+      },
+      timeColumn: 'observedAt',
+      objStgConf: { partition: 'month' },
+      lastFetchStartedAt,
+      lastFetch: lastFetchStartedAt,
+    });
+    mongoMocks.retrieveFDA
+      .mockResolvedValueOnce(expired)
+      .mockResolvedValueOnce({ ...expired, lastFetch: new Date() });
+    mongoMocks.claimOnDemandRefresh.mockResolvedValueOnce(expired);
+
+    await expect(queryLazyFDA()).resolves.toEqual([{ id: 1 }]);
+
+    const [, refresh] = agenda.now.mock.calls[0];
+    expect(refresh.query.filter.$and[1].$expr.$and[0]).toEqual({
+      $gte: ['$observedAt', getPartitionStart(lastFetchStartedAt, 'month')],
+    });
+  });
+
+  test.each([
+    ['day', '2026-10-15T13:45:00Z', '2026-10-15T00:00:00.000Z'],
+    ['week', '2026-10-15T13:45:00Z', '2026-10-12T00:00:00.000Z'],
+    ['week', '2026-01-02T08:00:00Z', '2026-01-01T00:00:00.000Z'],
+    ['month', '2026-10-15T13:45:00Z', '2026-10-01T00:00:00.000Z'],
+    ['year', '2026-10-15T13:45:00Z', '2026-01-01T00:00:00.000Z'],
+  ])('the %s partition of %s starts at %s', (partition, date, expected) => {
+    expect(getPartitionStart(new Date(date), partition).toISOString()).toBe(
+      expected,
+    );
+  });
+
+  test('getPartitionStart rejects an unknown partition type', () => {
+    expect(() => getPartitionStart(new Date(), 'decade')).toThrow(
+      expect.objectContaining({ status: 400, type: 'PartitionError' }),
+    );
+  });
+
+  test.each([
+    [
+      'onDemand has no params',
+      { type: 'onDemand' },
+      'observed_at',
+      { partition: 'day' },
+      'Missing required refresh policy parameter: maxAge.',
+    ],
+    [
+      'a partitioned onDemand FDA has no timeColumn',
+      onDemandPolicy,
+      undefined,
+      { partition: 'day' },
+      'timeColumn is required when using partitioning.',
+    ],
+    [
+      'a partitioned onDemand FDA has an invalid partition type',
+      onDemandPolicy,
+      'observed_at',
+      { partition: 'decade' },
+      'Invalid partition type "decade".',
+    ],
+    [
+      'a partitioned onDemand FDA has an invalid windowSize',
+      { type: 'onDemand', params: { maxAge: '1 hour', windowSize: '3 ages' } },
+      'observed_at',
+      { partition: 'day' },
+      'Invalid windowSize "3 ages".',
+    ],
+  ])(
+    'rejects the FDA when %s',
+    async (_name, refreshPolicy, timeColumn, objStgConf, message) => {
+      await expect(
+        fetchFDA(
+          'fdaLazy',
+          'SELECT id, observed_at FROM users',
+          'svc',
+          'public',
+          '/servicepath',
+          'desc',
+          refreshPolicy,
+          timeColumn,
+          objStgConf,
+          false,
+          true,
+          'default',
+          'strict',
+        ),
+      ).rejects.toMatchObject({ status: 400, type: 'InvalidParam', message });
+      expect(mongoMocks.createFDAMongo).not.toHaveBeenCalled();
+    },
+  );
+
+  test('a recent pending claim is waited for without claiming it again', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue(
+      storedFDA({ status: 'pending', pendingSince: new Date() }),
+    );
+
+    await expect(queryLazyFDA()).rejects.toMatchObject({
+      status: 409,
+      type: 'FDAUnavailable',
+    });
+    expect(mongoMocks.claimOnDemandRefresh).not.toHaveBeenCalled();
+  });
+
+  test('a pending claim older than the pending timeout is taken over', async () => {
+    const stuck = storedFDA({
+      status: 'pending',
+      pendingSince: new Date(Date.now() - 11 * 60 * 1000),
+    });
+    mongoMocks.retrieveFDA.mockResolvedValueOnce(stuck).mockResolvedValueOnce({
+      ...stuck,
+      status: 'completed',
+      lastFetch: new Date(),
+    });
+    mongoMocks.claimOnDemandRefresh.mockResolvedValueOnce(stuck);
+
+    await expect(queryLazyFDA()).resolves.toEqual([{ id: 1 }]);
+
+    const [{ pendingBefore }] = mongoMocks.claimOnDemandRefresh.mock.calls[0];
+    expect(Date.now() - pendingBefore.getTime()).toBeGreaterThanOrEqual(
+      10 * 60 * 1000,
+    );
+    expect(agenda.now).toHaveBeenCalledTimes(1);
+  });
+
+  test('returns 409 when the FDA is being deleted while waiting for its data', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue(storedFDA({ status: 'deleting' }));
+
+    await expect(queryLazyFDA()).rejects.toMatchObject({
+      status: 409,
+      type: 'FDAUnavailable',
+    });
+    expect(mongoMocks.claimOnDemandRefresh).not.toHaveBeenCalled();
+  });
+
+  test('a query that loses the claim to a finished refresh answers with the new data', async () => {
+    const expired = storedFDA({
+      status: 'completed',
+      lastFetch: new Date(Date.now() - 16 * 60 * 1000),
+    });
+    mongoMocks.retrieveFDA
+      .mockResolvedValueOnce(expired)
+      .mockResolvedValueOnce({ ...expired, lastFetch: new Date() });
+    mongoMocks.claimOnDemandRefresh.mockResolvedValueOnce(null);
+
+    await expect(queryLazyFDA()).resolves.toEqual([{ id: 1 }]);
+    expect(agenda.now).not.toHaveBeenCalled();
+  });
+
+  test('a failed materialization does not expose the fetch error in the response', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue(
+      storedFDA({
+        status: 'failed',
+        failedAt: new Date(),
+        error: 'relation "public.secret_table" does not exist',
+      }),
+    );
+    mongoMocks.claimOnDemandRefresh.mockResolvedValueOnce(null);
+
+    await expect(queryLazyFDA()).rejects.toMatchObject({
+      status: 503,
+      type: 'FDAMaterializationFailed',
+      message: expect.not.stringContaining('secret_table'),
+    });
+  });
+
+  test('a query to an unknown DA of a lazy FDA returns 404 without fetching', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue(storedFDA());
+
+    await expect(
+      executeQuery({
+        service: 'svc',
+        visibility: 'public',
+        servicePath: '/servicepath',
+        params: { fdaId: 'fdaLazy', daId: 'missingDA' },
+      }),
+    ).rejects.toMatchObject({ status: 404, type: 'DaNotFound' });
+    expect(mongoMocks.claimOnDemandRefresh).not.toHaveBeenCalled();
+  });
+
+  test('a manual refresh of an onDemand FDA with windowSize rebuilds only the window', async () => {
+    const windowed = storedFDA({
+      status: 'completed',
+      lastFetch: new Date(),
+      query: 'SELECT id, observed_at FROM users',
+      timeColumn: 'observed_at',
+      objStgConf: { partition: 'day' },
+      refreshPolicy: {
+        type: 'onDemand',
+        params: { maxAge: '15 minutes', windowSize: '1 week' },
+      },
+    });
+    mongoMocks.retrieveFDA.mockResolvedValue(windowed);
+    mongoMocks.regenerateFDA.mockResolvedValue(windowed);
+
+    await updateFDA('svc', 'fdaLazy', undefined, '/servicepath');
+
+    const [, refresh] = agenda.now.mock.calls[0];
+    expect(refresh.query).toMatch(/observed_at >= TIMESTAMP '/);
+    expect(agenda.now).toHaveBeenCalledWith(
+      'clean-partition',
+      expect.objectContaining({ windowSize: '1 week' }),
     );
   });
 });
