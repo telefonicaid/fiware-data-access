@@ -74,7 +74,7 @@ This behavior is implemented in [src/lib/fda.js](../../src/lib/fda.js).
 
 ## 4. Fresh query pressure control
 
-Fresh mode (`GET /{visibility}/fdas/{fdaId}/data`) executes FDAs directly in PostgreSQL.
+Fresh mode (DA queries on only-fresh FDAs, `cached=false`) executes queries directly against the datasource.
 
 To avoid API overload, FDA applies a concurrency cap per API instance:
 
