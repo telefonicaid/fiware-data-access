@@ -927,6 +927,11 @@ export async function fetchFDA(
   }
 
   if (!cached) {
+    await storeFixedDA({
+      service,
+      fdaId,
+      servicePath: normalizedServicePath,
+    });
     return { status: 'pending' };
   }
 
@@ -947,6 +952,23 @@ export async function fetchFDA(
   });
 
   return { status: 'pending' };
+}
+
+async function storeFixedDA({ service, fdaId, servicePath }) {
+  try {
+    await storeDA(
+      service,
+      fdaId,
+      servicePath,
+      DEFAULT_DATA_ACCESS_ID,
+      'Fixed Data Access returning the whole FDA query result. Always fresh.',
+      'SELECT *',
+      [],
+    );
+  } catch (err) {
+    await rollbackFDAProvisioning(service, fdaId, servicePath);
+    throw err;
+  }
 }
 
 function resolveLazy(lazy, refreshPolicy, cached) {
