@@ -19,8 +19,7 @@ Default DA creation is enabled by default and can be controlled in two ways:
 -   `POST /{visibility}/fdas?defaultDataAccess=false` disables it for a specific FDA creation request, overriding the
     instance default for that request only.
 
-Default DA creation only applies to cached FDAs. If an FDA is created with `cached=false`, no parquet bootstrap is
-generated and no DAs are created for that FDA.
+The rules above only apply to cached FDAs. See [Only-fresh FDAs](#only-fresh-fdas) for FDAs created with `cached=false`.
 
 If enabled, the DA is created automatically after the one-row bootstrap parquet is generated and before the async fetch
 job is scheduled.
@@ -106,6 +105,26 @@ instead of typed `IN (...)` filters.
 
 For custom DAs, parameters can still be used according to the actual data type stored in Parquet. If a MongoDB field can
 contain different types across documents, an explicit `CAST` may be required for comparisons involving that field.
+
+## Only-fresh FDAs
+
+An FDA created with `cached=false` has no parquet, so the generated query described above does not apply. Instead it
+always gets a fixed `defaultDataAccess`, whatever `FDA_CREATE_DEFAULT_DATA_ACCESS` or `defaultDataAccess=false` say,
+since it is the only way to read its data:
+
+```json
+{
+    "description": "Fixed Data Access returning the whole FDA query result. Always fresh.",
+    "query": "SELECT *",
+    "params": []
+}
+```
+
+-   Querying it runs the FDA query as is against the datasource (PostgreSQL or MongoDB), with no filters or pagination.
+-   It cannot be created again, updated or deleted: those operations return `409 FDAOnlyFresh`.
+-   Only-fresh FDAs created before this DA existed are queried through `defaultDataAccess` too, with no migration.
+
+See [Only-fresh FDAs](../03_api.md#only-fresh-fdas) for custom DAs on these FDAs.
 
 ## Time range support
 

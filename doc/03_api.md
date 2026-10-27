@@ -34,7 +34,6 @@
         -   [Update DA](#update-da-put-visibilityfdasfdaiddasdaid)
         -   [Delete DA](#delete-da-delete-visibilityfdasfdaiddasdaid)
     -   [Data operations](#data-operations)
-        -   [FDA data query](#fda-data-query-get-visibilityfdasfdaiddata)
         -   [Data Access query](#data-access-query-get-visibilityfdasfdaiddasdaiddata)
         -   [Query (Pentaho CDA legacy support)](#query-plugincdaapidoquery-pentaho-cda-legacy-support)
 -   [Navigation](#-navigation)
@@ -138,7 +137,7 @@ All error responses follow this structure:
 | Code | Status                 | Error Code                       | Cause                                                                                                                                                                                                                                                                                                              |
 | ---- | ---------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 400  | Bad Request            | `BadRequest`                     | Missing or invalid values in request body, headers, or query parameters. `Fiware-Service`, `Fiware-ServicePath`, and `visibility` (path segment) are required for all operations.                                                                                                                                  |
-| 400  | Bad Request            | `BadRequest`                     | Invalid or unsupported query fields were provided (for example, using `fresh` in `GET /{visibility}/fdas/{fdaId}/das/{daId}/data` or any query string in `GET /{visibility}/fdas/{fdaId}/data`).                                                                                                                   |
+| 400  | Bad Request            | `BadRequest`                     | Invalid or unsupported query fields were provided (for example, using `fresh` in `GET /{visibility}/fdas/{fdaId}/das/{daId}/data`).                                                                                                                                                                                |
 | 400  | Bad Request            | `InvalidVisibility`              | The `visibility` path segment is not one of the allowed values (`public`, `private`).                                                                                                                                                                                                                              |
 | 400  | Bad Request            | `InvalidServicePath`             | The `Fiware-ServicePath` header value is not a valid non-root absolute path (e.g. `/servicePath/site`). The root path `/` is not allowed.                                                                                                                                                                          |
 | 400  | Bad Request            | `InvalidQueryParam`              | Some of the params in the request don't comply with the [params](#params) array restrictions.                                                                                                                                                                                                                      |
@@ -153,8 +152,7 @@ All error responses follow this structure:
 | 409  | Conflict               | `DuplicatedKey`                  | The resource already exists in the database. Attempting to create a duplicate resource.                                                                                                                                                                                                                            |
 | 409  | Conflict               | `FDAUnavailable`                 | FDA `exampleId` is not queryable yet because the first fetch has not completed, or a lazy/`onDemand` FDA is still being fetched after `FDA_ON_DEMAND_WAIT_TIMEOUT_MS`.                                                                                                                                             |
 | 409  | Conflict               | `FDAProcessing`                  | Attempted to delete an FDA while it is being processed (status other than `completed` or `failed`). Retry once the fetch finishes.                                                                                                                                                                                 |
-| 409  | Conflict               | `FDANotOnlyFresh`                | The FDA is cached (`cached=true`) and cannot be queried through `GET /{visibility}/fdas/{fdaId}/data`; use a DA instead.                                                                                                                                                                                           |
-| 409  | Conflict               | `FDAOnlyFresh`                   | The FDA was created with `cached=false`, so it does not allow DAs nor cached DA queries.                                                                                                                                                                                                                           |
+| 409  | Conflict               | `FDAOnlyFresh`                   | The FDA was created with `cached=false` and does not support the operation: Parquet regeneration, custom DAs on a MongoDB FDA, or changing its fixed `defaultDataAccess`.                                                                                                                                          |
 | 409  | Conflict               | `RequestStyleConflict`           | The request mixes query-style context (`service`, `servicePath` in query params) with legacy `Fiware-Service`/`Fiware-ServicePath` headers in the same data-query URL. Use only one style per request.                                                                                                             |
 | 409  | Conflict               | `DatasourceInUse`                | Attempted to delete a datasource that is currently referenced by one or more FDAs in the same `Fiware-Service`.                                                                                                                                                                                                    |
 | 429  | Too Many Requests      | `TooManyFreshQueries`            | The number of concurrent direct fresh FDA queries exceeded `FDA_MAX_CONCURRENT_FRESH_QUERIES`.                                                                                                                                                                                                                     |
@@ -865,7 +863,7 @@ A FDA is represented by a JSON object with the following fields:
 | [`refreshPolicy`](#refresh-policy-object)                | ✓        | object                  | Optional policy for automatic refresh.                                                                                                                                                                                                                                                                                          |
 | [`objStgConf`](#object-storage-configuration-objstgconf) | ✓        | object                  | Various options to configure the FDA uploaded in the object storage app.                                                                                                                                                                                                                                                        |
 | `timeColumn`                                             | ✓        | string                  | Required with `refreshPolicy` of type `window` and `partition`. Column in the table indicating when the data was received (date). In `strict` validation mode, this column must be explicitly projected in the SELECT clause. See [Advanced Topics - Time Column](/doc/05_advanced_topics.md#time-column-behavior) for details. |
-| `cached`                                                 | ✓        | boolean                 | If `false`, the FDA is created as only-fresh: no parquet snapshot is maintained, no DAs are allowed, and the FDA is queried through `GET /{visibility}/fdas/{fdaId}/data`. Default `true`.                                                                                                                                      |
+| `cached`                                                 | ✓        | boolean                 | If `false`, the FDA is created as only-fresh: no parquet snapshot is maintained and every DA query runs against the datasource. A fixed `defaultDataAccess` is always created; PostgreSQL FDAs also accept custom DAs. See [Only-fresh FDAs](#only-fresh-fdas). Default `true`.                                                 |
 | `datasourceId`                                           | ✓        | string                  | Datasource id used to resolve DB credentials for this FDA. If omitted, FDA uses `default`.                                                                                                                                                                                                                                      |
 | `validationMode`                                         | ✓        | string                  | Controls synchronous validation during creation. Allowed values: `strict` and `unchecked`. Default `strict`.                                                                                                                                                                                                                    |
 | `maxDownloads`                                           | ✓        | integer                 | Optional positive safe integer limiting downloads across the FDA. Omit for unlimited downloads.                                                                                                                                                                                                                                 |
@@ -915,7 +913,8 @@ Example Mongo aggregation query:
 Datasource-specific constraints:
 
 -   Mongo datasource FDAs support both cached (`cached=true`, the default) and only-fresh (`cached=false`) mode. See
-    [`cached`](#fda-payload-datamodel) and [FDA data query](#fda-data-query-get-visibilityfdasfdaiddata).
+    [`cached`](#fda-payload-datamodel) and [Only-fresh FDAs](#only-fresh-fdas). Only-fresh Mongo FDAs only have the
+    fixed `defaultDataAccess`.
 -   MongoDB FDAs datasources support `refreshPolicy.type=window`, enabling sliding-window refresh and partitioning. See
     [Sliding windows and partitioning](AdvancedTopics/sliding_windows_and_partitioning.md) for more details.
 -   `filter` and `aggregation` are mutually exclusive. Exactly one of them must be provided.
@@ -1237,8 +1236,9 @@ curl -i -X POST http://localhost:8080/public/fdas \
     }'
 ```
 
-The FDA created above is queried directly against MongoDB through `GET /{visibility}/fdas/fda_mongo_live_events/data`
-(see [FDA data query](#fda-data-query-get-visibilityfdasfdaiddata)), the same way an only-fresh PostgreSQL FDA is.
+The FDA created above is queried directly against MongoDB through its fixed DA,
+`GET /{visibility}/fdas/fda_mongo_live_events/das/defaultDataAccess/data` (see [Only-fresh FDAs](#only-fresh-fdas)), the
+same way an only-fresh PostgreSQL FDA is.
 
 _**Response code**_
 
@@ -1597,8 +1597,9 @@ A DA is represented by a JSON object with the following fields:
 
 (\*) The `id` field is mandatory when creating a DA (`POST`) and must not be included when updating a DA (`PUT`).
 
-> Note: `query` is plain SQL, so it can use any SQL clause supported by the underlying engine, including `LIKE` with
-> wildcards. This is standard SQL, not a built-in FDA capability — see
+> Note: `query` is plain SQL, so it can use any SQL clause supported by the underlying engine (DuckDB for cached FDAs,
+> PostgreSQL for [only-fresh FDAs](#only-fresh-fdas)), including `LIKE` with wildcards. This is standard SQL, not a
+> built-in FDA capability — see
 > [SQL Pattern Matching in DA Queries](/doc/05_advanced_topics.md#sql-pattern-matching-in-da-queries) for details.
 
 #### Params
@@ -1762,7 +1763,8 @@ _**Example Response:**_
 
 #### Create DA `POST /{visibility}/fdas/{fdaId}/das`
 
-Create a new DA on a given FDA.
+Create a new DA on a given FDA. On only-fresh FDAs (`cached=false`) the DA query is written in PostgreSQL dialect and
+MongoDB FDAs do not accept custom DAs; see [Only-fresh FDAs](#only-fresh-fdas).
 
 _**Request path parameters**_
 
@@ -1885,7 +1887,7 @@ _**Example Response:**_
 
 #### Update DA `PUT /{visibility}/fdas/{fdaId}/das/{daId}`
 
-Update an existing DA.
+Update an existing DA. The fixed `defaultDataAccess` of an only-fresh FDA cannot be updated (`409 FDAOnlyFresh`).
 
 _**Request path parameters**_
 
@@ -1941,7 +1943,7 @@ None
 
 #### Delete DA `DELETE /{visibility}/fdas/{fdaId}/das/{daId}`
 
-Delete DA.
+Delete DA. The fixed `defaultDataAccess` of an only-fresh FDA cannot be deleted (`409 FDAOnlyFresh`).
 
 _**Request path parameters**_
 
@@ -1996,123 +1998,6 @@ None
 >
 > Moreover, `outputType=json` could be discontinued in the future, so you can have backward compatibility issues is you
 > still use it.
-
-#### FDA data query `GET /{visibility}/fdas/{fdaId}/data`
-
-Runs the FDA base query directly against its configured datasource (PostgreSQL or MongoDB). This endpoint is always
-fresh and does not use the parquet cache. It is only available for only-fresh FDAs (`cached=false`); calling it on a
-cached FDA returns `409 FDANotOnlyFresh`.
-
-_**Request path parameters**_
-
-| Parameter    | Optional | Description                                                          | Example  |
-| ------------ | -------- | -------------------------------------------------------------------- | -------- |
-| `visibility` |          | FDA access visibility. Allowed values: `public`, `private`           | `public` |
-| `fdaId`      |          | Id of the `fda`. Must be unique in combination with `Fiware-Service` | `fda1`   |
-
-_**Request query parameters**_
-
-The endpoint supports two request styles:
-
-| Parameter     | Optional | Description                                                                                                      | Example        |
-| ------------- | -------- | ---------------------------------------------------------------------------------------------------------------- | -------------- |
-| `service`     | ✓        | Tenant or service. Required when using query-style context (instead of FIWARE headers).                          | `trantor`      |
-| `servicePath` | ✓        | NGSI hierarchical service path. Required when using query-style context (instead of FIWARE headers).             | `/servicePath` |
-| `outputType`  | ✓        | Output format for query-style context. Allowed values: `json`, `ndjson`, `csv`, `xls`, `cda`. Default: `ndjson`. | `csv`          |
-
-When using header-style context, any query string parameter is rejected with `400 BadRequest`.
-
-_**Request headers**_
-
-| Header               | Optional | Description                                                                                                                                                                                                                                                                                                 | Example            |
-| -------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
-| `Fiware-Service`     | ✓        | Tenant or service for header-style context.                                                                                                                                                                                                                                                                 | `trantor`          |
-| `Fiware-ServicePath` | ✓        | NGSI hierarchical service path for header-style context.                                                                                                                                                                                                                                                    | `/servicePath`     |
-| `Accept`             | ✓        | Response format for header-style context, negotiated via standard HTTP content negotiation. Allowed values: `application/json`, `application/x-ndjson`, `text/csv`, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` (or `application/vnd.ms-excel`), `application/vnd.fiware.cda+json`. | `application/json` |
-
-See "Content negotiation and serialization notes" below for the request-style mixing and precedence rules.
-
-_**Request payload**_
-
-None.
-
-_**Response code**_
-
--   Successful operation uses 200 OK
--   Errors use a non-2xx and (optionally) an error payload. See subsection on [Error Responses](#error-responses) for
-    more details.
-
-_**Response headers**_
-
-| `outputType` (query-style) | `Accept` (header-style)                                                                           | `Content-Type`                                                      | `Content-Disposition`                 |
-| -------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------- |
-| `json`                     | `application/json`, missing, or `*/*`                                                             | `application/json`                                                  | —                                     |
-| `ndjson` (default)         | `application/x-ndjson`                                                                            | `application/x-ndjson`                                              | —                                     |
-| `csv`                      | `text/csv`                                                                                        | `text/csv; charset=utf-8`                                           | `attachment; filename="results.csv"`  |
-| `xls`                      | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` or `application/vnd.ms-excel` | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` | `attachment; filename="results.xlsx"` |
-| `cda`                      | `application/vnd.fiware.cda+json`                                                                 | `application/json`                                                  | —                                     |
-
-> Note: for `cda`, the response body follows the CDA-compatible JSON structure shown below, but the actual
-> `Content-Type` response header is `application/json`, not `application/vnd.fiware.cda+json`.
-
-_**Response payload**_
-
-Depends on the resolved output format:
-
--   `json` (or default in header-style context): array of JSON objects, each one being a record of the FDA base query
-    result.
--   `application/x-ndjson`: one JSON object per line (streamed response).
--   `text/csv`: comma-separated values file. The first row contains column names. Values containing commas,
-    double-quotes or newlines are quoted.
--   spreadsheet MIME types: Excel workbook (`.xlsx` format, Office Open XML). The first row contains column names.
--   `cda`: CDA-compatible JSON structure:
-
-```json
-{
-    "metadata": [{ "colIndex": 0, "colName": "column1" }, ...],
-    "resultset": [["value1", "value2", ...]],
-    "queryInfo": {
-        "pageStart": 0,
-        "pageSize": 10,
-        "totalRows": 120
-    }
-}
-```
-
-_**Content negotiation and serialization notes**_
-
--   In header-style context, response format is negotiated through the `Accept` header (using the
-    [standard HTTP content negotiation mechanism](https://datatracker.ietf.org/doc/html/rfc2616#section-12)).
--   In query-style context, response format is controlled by `outputType` query parameter.
--   `Fiware-Service`/`Fiware-ServicePath` headers cannot be mixed with `service`/`servicePath` query parameters; if both
-    are present, the API returns `409 RequestStyleConflict`.
--   Precedence: within query-style context, `outputType` always determines the response format, and an `Accept` header
-    sent alongside it is ignored. Header-style context does not accept `outputType` (nor any other query parameter, see
-    below) — it is rejected with `400 BadRequest` rather than being ignored in favor of `Accept`.
--   This endpoint requires `FDA_ROLE_SYNCQUERIES=true` in the API instance.
--   In query-style context, no additional query parameters are allowed besides `service`, `servicePath`, and
-    `outputType`; if the client attempts to send any other query parameter, the API returns `400 BadRequest` with
-    `FDA fresh query does not accept query parameters`.
--   Date values are normalized to strings (ISO 8601) before JSON/NDJSON/CSV serialization.
--   Numeric database values are returned as JSON numbers, including 64-bit and 128-bit integers beyond
-    `Number.MAX_SAFE_INTEGER`, which keep all their digits. `DECIMAL` / `NUMERIC` values are returned as strings to
-    preserve their exact scale. See [Numeric Precision](/doc/05_advanced_topics.md#numeric-precision).
--   With `Accept: application/x-ndjson` and `Accept: text/csv`, results are streamed incrementally from the datasource
-    using a cursor (PostgreSQL) or a chunked collection cursor (MongoDB).
-
-_**Example Request:**_
-
-```bash
-curl -i -X GET "http://localhost:8080/public/fdas/fda_live_alarms/data" \
-    -H "Fiware-Service: trantor" \
-    -H "Fiware-ServicePath: /servicePath"
-```
-
-_**Example Request (query-style context):**_
-
-```bash
-curl -i -X GET "http://localhost:8080/public/fdas/fda_live_alarms/data?service=trantor&servicePath=%2FservicePath"
-```
 
 #### Data Access query `GET /{visibility}/fdas/{fdaId}/das/{daId}/data`
 
@@ -2169,6 +2054,32 @@ _**Behavior note**_
 -   Query execution is blocked until the first successful fetch is completed (`lastFetch` available).
 -   After that first completion, query execution is allowed even if a later regeneration is in progress, returning the
     last available parquet snapshot.
+-   For only-fresh FDAs (`cached=false`) none of the above applies: the query always runs against the datasource. See
+    [Only-fresh FDAs](#only-fresh-fdas).
+
+##### Only-fresh FDAs
+
+This endpoint is the only way to read data from any FDA, cached or not. For an FDA created with `cached=false`:
+
+-   The fixed `defaultDataAccess` runs the FDA query as is against its datasource (PostgreSQL or MongoDB), with no
+    params. It is created with the FDA whatever `defaultDataAccess`/`FDA_CREATE_DEFAULT_DATA_ACCESS` say, and it cannot
+    be created again, updated or deleted (`409 FDAOnlyFresh`).
+-   On PostgreSQL FDAs, custom DAs can also be created. Their query is written in **PostgreSQL** dialect and must be a
+    `SELECT` without `FROM`: it is run as `SELECT <projection> FROM (<FDA query>) AS fda_source <rest of the DA query>`.
+    It is checked when the DA is created (`400 InvalidDAQuery`), but not run against the database, so SQL errors show up
+    on the first query. PostgreSQL must be able to infer each param type from its use: a param only compared with
+    `IS NULL` needs a cast (`$name::text IS NULL`).
+-   On MongoDB FDAs, custom DAs are rejected with `409 FDAOnlyFresh`.
+-   Queries require `FDA_ROLE_SYNCQUERIES=true` in the API instance (`503 SyncQueriesDisabled` otherwise) and are
+    limited by `FDA_MAX_CONCURRENT_FRESH_QUERIES` (`429 TooManyFreshQueries`).
+-   With `Accept: application/x-ndjson` and `Accept: text/csv`, results are streamed from the datasource using a cursor
+    (PostgreSQL) or a chunked collection cursor (MongoDB).
+
+```bash
+curl -i -X GET "http://localhost:8080/public/fdas/fda_live_alarms/das/defaultDataAccess/data" \
+    -H "Fiware-Service: trantor" \
+    -H "Fiware-ServicePath: /servicePath"
+```
 
 _**Response headers**_
 
