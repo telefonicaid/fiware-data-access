@@ -36,13 +36,12 @@ export function registerFreshQueriesIntegrationTests({
   httpReqRaw,
   waitUntilFDACompleted,
   buildDaDataUrl,
-  buildFdaDataUrl,
   fdaId,
   getPgHost,
   getPgPort,
 }) {
   describe('Fresh FDA data queries', () => {
-    test('GET /{visibility}/fdas/{fdaId}/data runs FDA query directly against PostgreSQL source', async () => {
+    test('defaultDataAccess of an only-fresh FDA runs the FDA query directly against PostgreSQL source', async () => {
       const baseUrl = getBaseUrl();
       const daFreshId = 'da_fresh_users';
       const freshFdaId = 'fda_fresh_users_direct';
@@ -121,7 +120,12 @@ export function registerFreshQueriesIntegrationTests({
 
         const freshRes = await httpReq({
           method: 'GET',
-          url: buildFdaDataUrl(baseUrl, servicePath, freshFdaId),
+          url: buildDaDataUrl(
+            baseUrl,
+            servicePath,
+            freshFdaId,
+            'defaultDataAccess',
+          ),
           headers: { 'Fiware-Service': service },
         });
 
@@ -140,43 +144,7 @@ export function registerFreshQueriesIntegrationTests({
       }
     });
 
-    test('GET /{visibility}/fdas/{fdaId}/data rejects query params', async () => {
-      const baseUrl = getBaseUrl();
-      const fdaFreshDefaultsId = 'fda_fresh_defaults';
-
-      const createFda = await httpReq({
-        method: 'POST',
-        url: `${baseUrl}/${visibility}/fdas`,
-        headers: {
-          'Fiware-Service': service,
-          'Fiware-ServicePath': servicePath,
-        },
-        body: {
-          id: fdaFreshDefaultsId,
-          description: 'fresh defaults test fda',
-          query:
-            'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
-        },
-      });
-
-      expect(createFda.status).toBe(202);
-      await waitUntilFDACompleted({
-        baseUrl,
-        service,
-        fdaId: fdaFreshDefaultsId,
-      });
-
-      const freshRes = await httpReq({
-        method: 'GET',
-        url: `${buildFdaDataUrl(baseUrl, servicePath, fdaFreshDefaultsId)}?limit=1`,
-        headers: { 'Fiware-Service': service },
-      });
-
-      expect(freshRes.status).toBe(400);
-      expect(freshRes.json.error).toBe('BadRequest');
-    });
-
-    test('GET /{visibility}/fdas/{fdaId}/data returns 429 when max concurrent fresh queries is reached', async () => {
+    test('only-fresh DA queries return 429 when max concurrent fresh queries is reached', async () => {
       const baseUrl = getBaseUrl();
       const fdaFreshLimitId = 'fda_fresh_limit';
 
@@ -200,7 +168,12 @@ export function registerFreshQueriesIntegrationTests({
 
       const firstFreshRequest = httpReq({
         method: 'GET',
-        url: buildFdaDataUrl(baseUrl, servicePath, fdaFreshLimitId),
+        url: buildDaDataUrl(
+          baseUrl,
+          servicePath,
+          fdaFreshLimitId,
+          'defaultDataAccess',
+        ),
         headers: { 'Fiware-Service': service },
       });
 
@@ -208,7 +181,12 @@ export function registerFreshQueriesIntegrationTests({
 
       const secondFreshRes = await httpReq({
         method: 'GET',
-        url: buildFdaDataUrl(baseUrl, servicePath, fdaFreshLimitId),
+        url: buildDaDataUrl(
+          baseUrl,
+          servicePath,
+          fdaFreshLimitId,
+          'defaultDataAccess',
+        ),
         headers: { 'Fiware-Service': service },
       });
 
@@ -219,7 +197,7 @@ export function registerFreshQueriesIntegrationTests({
       expect(firstFreshRes.status).toBe(200);
     });
 
-    test('GET /{visibility}/fdas/{fdaId}/data streams NDJSON progressively from PostgreSQL (real streaming)', async () => {
+    test('only-fresh DA queries stream NDJSON progressively from PostgreSQL (real streaming)', async () => {
       const baseUrl = getBaseUrl();
       const fdaFreshStreamId = 'fda_fresh_stream_real';
       const TOTAL_ROWS = 600;
@@ -262,7 +240,12 @@ export function registerFreshQueriesIntegrationTests({
         }
 
         const url = new URL(
-          buildFdaDataUrl(baseUrl, servicePath, fdaFreshStreamId),
+          buildDaDataUrl(
+            baseUrl,
+            servicePath,
+            fdaFreshStreamId,
+            'defaultDataAccess',
+          ),
         );
 
         const chunks = [];
@@ -326,7 +309,7 @@ export function registerFreshQueriesIntegrationTests({
       }
     });
 
-    test('GET /{visibility}/fdas/{fdaId}/data serializes dates consistently across cached and fresh JSON/NDJSON/CSV', async () => {
+    test('only-fresh DA queries serialize dates consistently across cached and fresh JSON/NDJSON/CSV', async () => {
       const baseUrl = getBaseUrl();
       const fixtureTable = 'format_serialization_fixture';
       const fdaSerializationId = 'fda_serialization_regression';
@@ -500,7 +483,12 @@ export function registerFreshQueriesIntegrationTests({
 
         const freshJson = await httpReq({
           method: 'GET',
-          url: buildFdaDataUrl(baseUrl, servicePath, fdaFreshSerializationId),
+          url: buildDaDataUrl(
+            baseUrl,
+            servicePath,
+            fdaFreshSerializationId,
+            'defaultDataAccess',
+          ),
           headers: {
             'Fiware-Service': service,
             Accept: 'application/json',
@@ -513,7 +501,12 @@ export function registerFreshQueriesIntegrationTests({
 
         const freshNdjson = await httpReqRaw({
           method: 'GET',
-          url: buildFdaDataUrl(baseUrl, servicePath, fdaFreshSerializationId),
+          url: buildDaDataUrl(
+            baseUrl,
+            servicePath,
+            fdaFreshSerializationId,
+            'defaultDataAccess',
+          ),
           headers: {
             'Fiware-Service': service,
             Accept: 'application/x-ndjson',
@@ -533,7 +526,12 @@ export function registerFreshQueriesIntegrationTests({
 
         const freshCsv = await httpReqRaw({
           method: 'GET',
-          url: buildFdaDataUrl(baseUrl, servicePath, fdaFreshSerializationId),
+          url: buildDaDataUrl(
+            baseUrl,
+            servicePath,
+            fdaFreshSerializationId,
+            'defaultDataAccess',
+          ),
           headers: {
             'Fiware-Service': service,
             Accept: 'text/csv',
@@ -696,10 +694,11 @@ export function registerFreshQueriesIntegrationTests({
 
         expect(createFreshFda.status).toBe(202);
 
-        const freshUrl = buildFdaDataUrl(
+        const freshUrl = buildDaDataUrl(
           baseUrl,
           servicePath,
           fdaFreshBigintId,
+          'defaultDataAccess',
         );
         const expectedFreshRows = [
           '{"id":1,"big_value":9007199254740993,"amount":"12.34"}',

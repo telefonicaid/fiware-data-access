@@ -355,7 +355,7 @@ export function registerDatasourcesIntegrationTests({
 
       const freshReadWithDefault = await httpReq({
         method: 'GET',
-        url: `${baseUrl}/${visibility}/fdas/${freshFdaId}/data`,
+        url: `${baseUrl}/${visibility}/fdas/${freshFdaId}/das/defaultDataAccess/data`,
         headers: {
           'Fiware-Service': service,
           'Fiware-ServicePath': servicePath,

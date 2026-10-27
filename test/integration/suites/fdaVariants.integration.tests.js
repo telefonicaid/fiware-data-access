@@ -31,7 +31,7 @@ export function registerFdaVariantsIntegrationTests({
   visibility,
   httpReq,
   waitUntilFDACompleted,
-  buildFdaDataUrl,
+  buildDaDataUrl,
 }) {
   describe('FDA variants', () => {
     test('DELETE /fdas/:fdaId only removes the targeted FDA when another FDA shares its prefix', async () => {
@@ -452,7 +452,7 @@ export function registerFdaVariantsIntegrationTests({
       }
     });
 
-    test('POST /fdas with cached=false creates an only-fresh FDA without DAs', async () => {
+    test('POST /fdas with cached=false creates an only-fresh FDA with the fixed defaultDataAccess', async () => {
       const baseUrl = getBaseUrl();
       const onlyFreshFdaId = 'fda_only_fresh';
 
@@ -483,11 +483,18 @@ export function registerFdaVariantsIntegrationTests({
 
         expect(storedFda.status).toBe(200);
         expect(storedFda.json.cached).toBe(false);
-        expect(storedFda.json.das || {}).toEqual({});
+        expect(Object.keys(storedFda.json.das || {})).toEqual([
+          'defaultDataAccess',
+        ]);
 
         const directQueryRes = await httpReq({
           method: 'GET',
-          url: buildFdaDataUrl(baseUrl, servicePath, onlyFreshFdaId),
+          url: buildDaDataUrl(
+            baseUrl,
+            servicePath,
+            onlyFreshFdaId,
+            'defaultDataAccess',
+          ),
           headers: { 'Fiware-Service': service },
         });
 
@@ -503,14 +510,27 @@ export function registerFdaVariantsIntegrationTests({
           url: `${baseUrl}/${visibility}/fdas/${onlyFreshFdaId}/das`,
           headers: { 'Fiware-Service': service },
           body: {
-            id: 'da_should_fail',
-            description: 'must fail',
-            query: 'SELECT id ORDER BY id',
+            id: 'da_fresh_ordered',
+            description: 'custom fresh DA',
+            query: 'SELECT id ORDER BY id DESC',
           },
         });
 
-        expect(createDa.status).toBe(409);
-        expect(createDa.json.error).toBe('FDAOnlyFresh');
+        expect(createDa.status).toBe(204);
+
+        const customDaRes = await httpReq({
+          method: 'GET',
+          url: buildDaDataUrl(
+            baseUrl,
+            servicePath,
+            onlyFreshFdaId,
+            'da_fresh_ordered',
+          ),
+          headers: { 'Fiware-Service': service },
+        });
+
+        expect(customDaRes.status).toBe(200);
+        expect(customDaRes.json).toEqual([{ id: 3 }, { id: 2 }, { id: 1 }]);
       } finally {
         await httpReq({
           method: 'DELETE',

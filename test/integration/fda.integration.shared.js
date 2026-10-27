@@ -68,7 +68,6 @@ import {
   httpMultipartReq,
   httpReqRaw,
   buildDaDataUrl,
-  buildFdaDataUrl,
   getFreePort,
   connectWithRetry,
   waitUntilFDACompleted,
@@ -513,7 +512,6 @@ export function runFDAIntegrationSuite({ mode, label }) {
       httpReq,
       httpReqRaw,
       buildDaDataUrl,
-      buildFdaDataUrl,
       waitUntilFDACompleted,
     });
 
@@ -524,7 +522,7 @@ export function runFDAIntegrationSuite({ mode, label }) {
       visibility,
       httpReq,
       waitUntilFDACompleted,
-      buildFdaDataUrl,
+      buildDaDataUrl,
     });
 
     registerFdaTimeColumnIntegrationTests({
@@ -558,7 +556,6 @@ export function runFDAIntegrationSuite({ mode, label }) {
       httpReqRaw,
       waitUntilFDACompleted,
       buildDaDataUrl,
-      buildFdaDataUrl,
       fdaId,
       getPgHost: () => pgHost,
       getPgPort: () => pgPort,
@@ -596,7 +593,6 @@ export function runFDAIntegrationSuite({ mode, label }) {
       httpFormReq,
       waitUntilFDACompleted,
       buildDaDataUrl,
-      buildFdaDataUrl,
       getPgHost: () => pgHost,
       getPgPort: () => pgPort,
     });
@@ -624,7 +620,6 @@ export function runFDAIntegrationSuite({ mode, label }) {
       httpReqRaw,
       waitUntilFDACompleted,
       buildDaDataUrl,
-      buildFdaDataUrl,
     });
 
     registerMongoSlidingWindowsIntegrationTests({

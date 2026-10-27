@@ -35,7 +35,6 @@ export function registerMongoFdasIntegrationTests({
   httpReqRaw,
   waitUntilFDACompleted,
   buildDaDataUrl,
-  buildFdaDataUrl,
 }) {
   describe('Mongo cached FDAs', () => {
     const datasourceId = 'mongo-cache-ds';
@@ -174,19 +173,6 @@ export function registerMongoFdasIntegrationTests({
           `Failed to create Mongo DA: ${createDaRes.status} ${JSON.stringify(createDaRes.json)}`,
         );
       }
-    });
-
-    test('GET /{fdaId}/data rejects direct queries against a cached Mongo FDA', async () => {
-      const baseUrl = getBaseUrl();
-
-      const res = await httpReq({
-        method: 'GET',
-        url: buildFdaDataUrl(baseUrl, servicePath, fdaId),
-        headers: { 'Fiware-Service': service },
-      });
-
-      expect(res.status).toBe(409);
-      expect(res.json.error).toBe('FDANotOnlyFresh');
     });
 
     test('GET /fdas/{fdaId} exposes Mongo-specific metadata', async () => {
@@ -1112,12 +1098,17 @@ export function registerMongoFdasIntegrationTests({
       expect(getFdaRes.json.cached).toBe(false);
     });
 
-    test('GET /{fdaId}/data runs the only-fresh Mongo FDA directly against MongoDB', async () => {
+    test('defaultDataAccess runs the only-fresh Mongo FDA directly against MongoDB', async () => {
       const baseUrl = getBaseUrl();
 
       const res = await httpReq({
         method: 'GET',
-        url: buildFdaDataUrl(baseUrl, servicePath, freshFdaId),
+        url: buildDaDataUrl(
+          baseUrl,
+          servicePath,
+          freshFdaId,
+          'defaultDataAccess',
+        ),
         headers: { 'Fiware-Service': service },
       });
 
@@ -1139,12 +1130,17 @@ export function registerMongoFdasIntegrationTests({
       ]);
     });
 
-    test('GET /{fdaId}/data streams NDJSON for the only-fresh Mongo FDA', async () => {
+    test('defaultDataAccess streams NDJSON for the only-fresh Mongo FDA', async () => {
       const baseUrl = getBaseUrl();
 
       const res = await httpReqRaw({
         method: 'GET',
-        url: buildFdaDataUrl(baseUrl, servicePath, freshFdaId),
+        url: buildDaDataUrl(
+          baseUrl,
+          servicePath,
+          freshFdaId,
+          'defaultDataAccess',
+        ),
         headers: {
           'Fiware-Service': service,
           Accept: 'application/x-ndjson',
@@ -1176,7 +1172,7 @@ export function registerMongoFdasIntegrationTests({
       ]);
     });
 
-    test('POST /{fdaId}/das rejects DA creation for the only-fresh Mongo FDA', async () => {
+    test('POST /{fdaId}/das rejects custom DA creation for the only-fresh Mongo FDA', async () => {
       const baseUrl = getBaseUrl();
 
       const res = await httpReq({
