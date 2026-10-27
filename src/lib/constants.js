@@ -28,6 +28,9 @@
 export const DEFAULT_DATASOURCE_ID = 'default';
 export const SUPPORTED_DATASOURCE_TYPES = new Set(['postgres', 'mongodb']);
 
+// Data Accesses
+export const DEFAULT_DATA_ACCESS_ID = 'defaultDataAccess';
+
 // Allowlist of read-only MongoDB aggregation pipeline stages
 export const ALLOWED_MONGO_AGGREGATION_STAGES = new Set([
   '$match',

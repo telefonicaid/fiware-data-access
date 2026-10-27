@@ -118,6 +118,7 @@ import { normalizeDownloadPolicy } from './utils/downloadPolicy.js';
 import { getBasicLogger } from './utils/logger.js';
 import {
   DEFAULT_DATASOURCE_ID,
+  DEFAULT_DATA_ACCESS_ID,
   SUPPORTED_DATASOURCE_TYPES,
   FDA_VALIDATION_MODE_STRICT,
   FDA_VALIDATION_MODE_UNCHECKED,
@@ -3471,7 +3472,7 @@ async function createDefaultDAIfNeeded({
     await createDA(
       service,
       fdaId,
-      'defaultDataAccess',
+      DEFAULT_DATA_ACCESS_ID,
       'Default Data Access providing access to whole FDA data. It has parameters for all columns in the FDA.',
       defaultDA.query,
       defaultDA.params,
@@ -3687,7 +3688,7 @@ export async function processUploadFDAJob({
       await createDA(
         service,
         fdaId,
-        'defaultDataAccess',
+        DEFAULT_DATA_ACCESS_ID,
         'Default Data Access for uploaded data',
         daDefinition.query,
         daDefinition.params,
