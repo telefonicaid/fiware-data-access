@@ -6141,6 +6141,51 @@ describe('mongo utils extra coverage', () => {
 });
 
 describe('validateMongoFDAContract functions', () => {
+  test('rejects window FDA when timeColumn is an aliased projection', () => {
+    expect(() =>
+      validateMongoFDAContract(
+        {
+          collection: 'col',
+          filter: {},
+          projection: { fecha_hasta: '$dateObservedTo' },
+        },
+        'fecha_hasta',
+        { type: 'window', params: { fetchSize: 'year' } },
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        status: 400,
+        type: 'InvalidMongoFDAContract',
+        message:
+          'Mongo window FDA timeColumn must be a raw field projected with 1, not an alias or expression',
+      }),
+    );
+  });
+
+  test('accepts window FDA when timeColumn is a raw projected field', () => {
+    expect(() =>
+      validateMongoFDAContract(
+        { collection: 'col', filter: {}, projection: { dateObservedTo: 1 } },
+        'dateObservedTo',
+        { type: 'window', params: { fetchSize: 'year' } },
+      ),
+    ).not.toThrow();
+  });
+
+  test('accepts aliased timeColumn when refreshPolicy is not window', () => {
+    expect(() =>
+      validateMongoFDAContract(
+        {
+          collection: 'col',
+          filter: {},
+          projection: { fecha_hasta: '$dateObservedTo' },
+        },
+        'fecha_hasta',
+        { type: 'interval', params: { refreshInterval: '1 hour' } },
+      ),
+    ).not.toThrow();
+  });
+
   test('validateFilter throws when filter is null', () => {
     expect(() =>
       validateMongoFDAContract(

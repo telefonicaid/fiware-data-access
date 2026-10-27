@@ -190,6 +190,44 @@ export function registerMongoSlidingWindowsIntegrationTests({
       );
     });
 
+    test('POST /fdas rejects a Mongo window FDA whose timeColumn is an aliased projection', async () => {
+      const baseUrl = getBaseUrl();
+      const suffix = `${Date.now()}`;
+      const collectionName = `mongo_sw_alias_${suffix}`;
+      const fdaId = `fda_mongo_sw_alias_${suffix}`;
+
+      await seedCollection(collectionName, [
+        { label: 'recent', observedAt: new Date(Date.now() - 60 * 60 * 1000) },
+      ]);
+
+      const createFda = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: fdaId,
+          datasourceId,
+          query: {
+            collection: collectionName,
+            filter: {},
+            projection: { label: 1, observed_at: '$observedAt' },
+          },
+          description: 'Mongo window with aliased timeColumn',
+          refreshPolicy: {
+            type: 'window',
+            params: { refreshInterval: '1 hour', fetchSize: 'day' },
+          },
+          timeColumn: 'observed_at',
+        },
+      });
+
+      expect(createFda.status).toBe(400);
+      expect(createFda.json.error).toBe('InvalidMongoFDAContract');
+    });
+
     test('POST /fdas accepts a Mongo aggregation query with window refresh policy, filtering before the pipeline runs', async () => {
       const baseUrl = getBaseUrl();
       const suffix = `${Date.now()}`;
