@@ -571,10 +571,11 @@ Two side effects:
 -   With more partitions than open files allowed, DuckDB closes partition files and opens new ones. When the rows are
     not ordered by time, a partition directory can end up with many files (`data_0.parquet`, `data_1.parquet`, ...): 10
     million unordered rows over 365 days gave 6349 files and took 60 s to export. FDA therefore sorts the rows by
-    `timeColumn` before a partitioned export: the same export then writes 396 files in 24 s, and sorting rows that were
-    already ordered costs 9% to 28% more time. The sort spills to disk, so `FDA_DUCKDB_MAX_TEMP_SIZE` must hold about
-    the size of the exported data. Queries and partition pruning read every file of a partition, and a refresh replaces
-    every file of the partitions it rewrites.
+    `timeColumn` before a partitioned export (`FDA_DUCKDB_SORT_PARTITIONED_EXPORTS`, default `true`): the same export
+    then writes 396 files in 24 s, and sorting rows that were already ordered costs 9% to 28% more time. Deployments
+    whose sources are already ordered by time can disable it. The sort spills to `FDA_DUCKDB_TEMP_DIR` what does not fit
+    in memory; in this test, 719 MB, but it depends on the number of rows, their width and the memory limit. Queries and
+    partition pruning read every file of a partition, and a refresh replaces every file of the partitions it rewrites.
 
 ---
 
