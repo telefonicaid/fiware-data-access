@@ -45,10 +45,20 @@ const router = express.Router();
  *     operationId: queryDaData
  *     summary: Run a Data Access (DA) query
  *     description: >
- *       Executes the stored parameterized query for the given DA against the FDA's Parquet snapshot. Query
- *       execution is blocked until the FDA's first successful fetch completes (`409 FDAUnavailable`); after
- *       that, execution is allowed even while a later regeneration is in progress (the last available snapshot
- *       is used).
+ *       Executes the stored parameterized query for the given DA. This is the only data endpoint, both for cached
+ *       and only-fresh FDAs.
+ *
+ *
+ *       For cached FDAs the query runs against the FDA's Parquet snapshot. Query execution is blocked until the
+ *       FDA's first successful fetch completes (`409 FDAUnavailable`); after that, execution is allowed even
+ *       while a later regeneration is in progress (the last available snapshot is used).
+ *
+ *
+ *       For only-fresh FDAs (`cached: false`) the query always runs against the source datasource. The fixed
+ *       `defaultDataAccess` runs the FDA query as is (PostgreSQL or MongoDB). Custom DAs (PostgreSQL only) wrap
+ *       the FDA query as `SELECT <projection> FROM (<FDA query>) AS fda_source <clauses>`, in PostgreSQL
+ *       dialect. Requires the API instance to run with `FDA_ROLE_SYNCQUERIES=true`, and is subject to the
+ *       `FDA_MAX_CONCURRENT_FRESH_QUERIES` limit.
 
 
  *       For `lazy` FDAs and FDAs with an `onDemand` refresh policy, a query that finds no data (or, for
@@ -94,20 +104,29 @@ const router = express.Router();
  *         $ref: '#/components/responses/NotAcceptable'
  *       '409':
  *         description: >
- *           `FDAUnavailable` (first fetch not completed, or on-demand fetch still running after the wait timeout)
- *           or `RequestStyleConflict` (mixed request styles).
+ *           `FDAUnavailable` (first fetch not completed, or on-demand fetch still running after the wait timeout),
+ *           `RequestStyleConflict` (mixed request styles) or `FDAOnlyFresh` (custom DA on an only-fresh MongoDB
+ *           FDA).
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
  *       '503':
- *         description: '`FDAMaterializationFailed`: the on-demand fetch of a lazy or `onDemand` FDA failed.'
+ *         description: >
+ *           `FDAMaterializationFailed` (the on-demand fetch of a lazy or `onDemand` FDA failed) or
+ *           `SyncQueriesDisabled` (only-fresh FDA queried on an API instance with `FDA_ROLE_SYNCQUERIES=false`).
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
  *       '410':
  *         description: '`FDAExpired` or `DownloadLimitReached`. No data is delivered.'
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '429':
+ *         description: '`TooManyFreshQueries`: `FDA_MAX_CONCURRENT_FRESH_QUERIES` exceeded (only-fresh FDAs).'
  *         content:
  *           application/json:
  *             schema:
