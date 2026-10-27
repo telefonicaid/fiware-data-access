@@ -144,6 +144,215 @@ export function registerFreshQueriesIntegrationTests({
       }
     });
 
+    test('only-fresh FDA gets a fixed defaultDataAccess that rejects the fresh query field', async () => {
+      const baseUrl = getBaseUrl();
+      const fdaFreshDefaultsId = 'fda_fresh_defaults';
+
+      const createFda = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas?defaultDataAccess=false`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: fdaFreshDefaultsId,
+          description: 'fresh defaults test fda',
+          query:
+            'SELECT id, name, age, timeinstant, authorized FROM public.users ORDER BY id',
+          cached: false,
+        },
+      });
+
+      expect(createFda.status).toBe(202);
+
+      const listDas = await httpReq({
+        method: 'GET',
+        url: `${baseUrl}/${visibility}/fdas/${fdaFreshDefaultsId}/das`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+      });
+
+      expect(listDas.status).toBe(200);
+      expect(listDas.json).toEqual([
+        expect.objectContaining({
+          id: 'defaultDataAccess',
+          query: 'SELECT *',
+          params: [],
+        }),
+      ]);
+
+      const freshRes = await httpReq({
+        method: 'GET',
+        url: buildDaDataUrl(
+          baseUrl,
+          servicePath,
+          fdaFreshDefaultsId,
+          'defaultDataAccess',
+          { fresh: true },
+        ),
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect(freshRes.status).toBe(400);
+      expect(freshRes.json.error).toBe('BadRequest');
+
+      const updateFixed = await httpReq({
+        method: 'PUT',
+        url: `${baseUrl}/${visibility}/fdas/${fdaFreshDefaultsId}/das/defaultDataAccess`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: { description: 'changed', query: 'SELECT id' },
+      });
+
+      expect(updateFixed.status).toBe(409);
+      expect(updateFixed.json.error).toBe('FDAOnlyFresh');
+
+      const deleteFixed = await httpReq({
+        method: 'DELETE',
+        url: `${baseUrl}/${visibility}/fdas/${fdaFreshDefaultsId}/das/defaultDataAccess`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+      });
+
+      expect(deleteFixed.status).toBe(409);
+      expect(deleteFixed.json.error).toBe('FDAOnlyFresh');
+
+      const removedEndpoint = await httpReq({
+        method: 'GET',
+        url: `${baseUrl}/${visibility}/fdas/${fdaFreshDefaultsId}/data`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+      });
+
+      expect(removedEndpoint.status).toBe(404);
+    });
+
+    test('custom DAs on only-fresh PostgreSQL FDAs run against the source on every query', async () => {
+      const baseUrl = getBaseUrl();
+      const freshFdaId = 'fda_fresh_custom_da';
+      const daId = 'da_fresh_older_than';
+
+      const createFda = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: freshFdaId,
+          description: 'fresh custom DA test fda',
+          query: 'SELECT id, name, age FROM public.users',
+          cached: false,
+        },
+      });
+
+      expect(createFda.status).toBe(202);
+
+      const invalidDa = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas/${freshFdaId}/das`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: 'da_with_from',
+          description: 'invalid fresh DA',
+          query: 'SELECT id FROM public.users',
+        },
+      });
+
+      expect(invalidDa.status).toBe(400);
+      expect(invalidDa.json.error).toBe('InvalidDAQuery');
+
+      const createDa = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas/${freshFdaId}/das`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: daId,
+          description: 'fresh DA with params',
+          query: 'SELECT id, name WHERE age > $minAge ORDER BY id',
+          params: [{ name: 'minAge', type: 'Number', required: true }],
+        },
+      });
+
+      expect(createDa.status).toBe(204);
+
+      const daUrl = buildDaDataUrl(baseUrl, servicePath, freshFdaId, daId, {
+        minAge: 25,
+      });
+
+      const before = await httpReq({
+        method: 'GET',
+        url: daUrl,
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect(before.status).toBe(200);
+      expect(before.json.map((x) => x.name)).toEqual(['ana', 'carlos']);
+
+      const insertedId = 1002;
+      const pgClient = new Client({
+        host: getPgHost(),
+        port: getPgPort(),
+        user: 'postgres',
+        password: 'postgres',
+        database: service,
+        connectionTimeoutMillis: 10_000,
+      });
+
+      await connectWithRetry(pgClient);
+
+      try {
+        await pgClient.query(
+          `INSERT INTO public.users (id, name, age, timeinstant, authorized)
+         VALUES ($1, $2, $3, $4, $5)`,
+          [insertedId, 'elena', 40, '2020-08-17T18:25:28.332Z', true],
+        );
+
+        const after = await httpReq({
+          method: 'GET',
+          url: daUrl,
+          headers: { 'Fiware-Service': service },
+        });
+
+        expect(after.status).toBe(200);
+        expect(after.json).toEqual([
+          { id: 1, name: 'ana' },
+          { id: 3, name: 'carlos' },
+          { id: insertedId, name: 'elena' },
+        ]);
+
+        const missingParam = await httpReq({
+          method: 'GET',
+          url: buildDaDataUrl(baseUrl, servicePath, freshFdaId, daId),
+          headers: { 'Fiware-Service': service },
+        });
+
+        expect(missingParam.status).toBe(400);
+        expect(missingParam.json.error).toBe('InvalidQueryParam');
+      } finally {
+        await pgClient.query('DELETE FROM public.users WHERE id = $1', [
+          insertedId,
+        ]);
+        await pgClient.end();
+      }
+    });
+
     test('only-fresh DA queries return 429 when max concurrent fresh queries is reached', async () => {
       const baseUrl = getBaseUrl();
       const fdaFreshLimitId = 'fda_fresh_limit';
