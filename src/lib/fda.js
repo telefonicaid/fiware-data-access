@@ -717,6 +717,25 @@ function assertFreshDAsSupported(fdaId, datasource) {
   }
 }
 
+async function validateDAQueryForFDA(
+  conn,
+  { fda, service, fdaId, userQuery, servicePath },
+) {
+  if (fda?.cached === false) {
+    const datasource = await resolveDatasource(
+      service,
+      fda.datasourceId ?? DEFAULT_DATASOURCE_ID,
+    );
+    assertFreshDAsSupported(fdaId, datasource);
+    buildFreshDAQuery(fda.query, userQuery);
+    return;
+  }
+
+  if (shouldValidateDACompatibility(fda)) {
+    await validateDAQuery(conn, service, fdaId, userQuery, servicePath);
+  }
+}
+
 function buildFreshQueryFromFDA(fda) {
   return removeTrailingSemicolon(fda.query?.trim() || '');
 }
@@ -817,7 +836,6 @@ export async function createDA(
     let fda;
     if (visibility !== undefined || servicePath !== undefined) {
       fda = await getAccessibleFDA(service, fdaId, visibility, servicePath);
-      assertFDAIsCached(fda, fdaId);
     }
 
     if (!fda) {
@@ -837,9 +855,13 @@ export async function createDA(
     const normalizedParams = checkParams(params);
     const normalizedTimeRange = checkTimeRange(timeRange, normalizedParams);
     validateDAParamBindings(userQuery, normalizedParams || []);
-    if (shouldValidateDACompatibility(fda)) {
-      await validateDAQuery(conn, service, fdaId, userQuery, servicePath);
-    }
+    await validateDAQueryForFDA(conn, {
+      fda,
+      service,
+      fdaId,
+      userQuery,
+      servicePath,
+    });
     await storeDA(
       service,
       fdaId,
@@ -2104,9 +2126,13 @@ export async function putDA(
     const normalizedParams = checkParams(params);
     const normalizedTimeRange = checkTimeRange(timeRange, normalizedParams);
     validateDAParamBindings(userQuery, normalizedParams || []);
-    if (shouldValidateDACompatibility(fda)) {
-      await validateDAQuery(conn, service, fdaId, userQuery, servicePath);
-    }
+    await validateDAQueryForFDA(conn, {
+      fda,
+      service,
+      fdaId,
+      userQuery,
+      servicePath,
+    });
     await updateDA(
       service,
       fdaId,
