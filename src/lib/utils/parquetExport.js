@@ -24,7 +24,7 @@
 
 import { FDAError } from '../fdaError.js';
 
-export function getPartitionConf(partitionType = 'none', timeColumn) {
+export function getPartitionConf(timeColumn, partitionType = 'none') {
   if (!timeColumn && partitionType !== 'none') {
     throw new FDAError(400, 'PartitionError', `Missing timeColumn value.`);
   }
@@ -92,8 +92,8 @@ export function buildParquetCopyQuery(
   sortPartitions = true,
 ) {
   const { cols, partitionBy, orderBy } = getPartitionConf(
-    partitionType,
     timeColumn,
+    partitionType,
   );
   const compressionString = compression ? `, COMPRESSION ZSTD` : '';
 
