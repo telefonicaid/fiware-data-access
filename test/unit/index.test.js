@@ -48,9 +48,7 @@ const fdaMocks = {
   fetchFDA: jest.fn(),
   uploadFDA: jest.fn(),
   executeQuery: jest.fn(),
-  executeFDAQuery: jest.fn(),
   executeQueryStream: jest.fn(),
-  executeFDAQueryStream: jest.fn(),
   createDA: jest.fn(),
   getFDA: jest.fn(),
   updateFDA: jest.fn(),
@@ -129,18 +127,10 @@ function resetModuleMocks() {
     .mockReset()
     .mockResolvedValue({ id: 'upload-fda-id', status: 'pending' });
   fdaMocks.executeQuery.mockReset().mockResolvedValue([{ ok: true }]);
-  fdaMocks.executeFDAQuery.mockReset().mockResolvedValue([{ ok: 'fda' }]);
   fdaMocks.executeQueryStream
     .mockReset()
     .mockImplementation(({ res, format }) => {
       res.status(200).send(format === 'csv' ? 'streamed-csv' : 'streamed');
-    });
-  fdaMocks.executeFDAQueryStream
-    .mockReset()
-    .mockImplementation(({ res, format }) => {
-      res
-        .status(200)
-        .send(format === 'csv' ? 'streamed-fda-csv' : 'streamed-fda');
     });
   fdaMocks.createDA.mockReset().mockResolvedValue(undefined);
   fdaMocks.getFDA.mockReset().mockResolvedValue({ fdaId: 'fda1' });
@@ -307,9 +297,7 @@ async function loadIndexModule({
     getFDAs: fdaMocks.getFDAs,
     fetchFDA: fdaMocks.fetchFDA,
     executeQuery: fdaMocks.executeQuery,
-    executeFDAQuery: fdaMocks.executeFDAQuery,
     executeQueryStream: fdaMocks.executeQueryStream,
-    executeFDAQueryStream: fdaMocks.executeFDAQueryStream,
     assertFDAAccess: jest.fn(),
     uploadFDA: fdaMocks.uploadFDA,
     createDA: fdaMocks.createDA,
@@ -1226,59 +1214,6 @@ describe('index routes - validation and middleware branches', () => {
     expect(fdaMocks.executeQuery).not.toHaveBeenCalled();
   });
 
-  test('routes FDA direct query through NDJSON streaming when Accept requests ndjson', async () => {
-    await request(app)
-      .get('/public/fdas/fda1/data')
-      .set('Fiware-Service', 'svc')
-      .set('Fiware-ServicePath', '/servicepath')
-      .set('Accept', 'application/x-ndjson')
-      .expect(200)
-      .expect('streamed-fda');
-
-    expect(fdaMocks.executeFDAQueryStream).toHaveBeenCalledWith(
-      expect.objectContaining({
-        service: 'svc',
-        visibility: 'public',
-        servicePath: '/servicepath',
-        fdaId: 'fda1',
-      }),
-    );
-    expect(fdaMocks.executeFDAQuery).not.toHaveBeenCalled();
-  });
-
-  test('returns 406 on FDA direct data endpoint when Accept header is not supported', async () => {
-    const res = await request(app)
-      .get('/public/fdas/fda1/data')
-      .set('Fiware-Service', 'svc')
-      .set('Fiware-ServicePath', '/servicepath')
-      .set('Accept', 'text/html')
-      .expect(406);
-
-    expect(res.body).toEqual({
-      error: 'NotAcceptable',
-      description:
-        'Accept header must allow application/json, application/x-ndjson, text/csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, or application/vnd.fiware.cda+json',
-    });
-    expect(fdaMocks.executeFDAQuery).not.toHaveBeenCalled();
-    expect(fdaMocks.executeFDAQueryStream).not.toHaveBeenCalled();
-  });
-
-  test('rejects query params on FDA direct data endpoint', async () => {
-    const res = await request(app)
-      .get('/public/fdas/fda1/data')
-      .set('Fiware-Service', 'svc')
-      .set('Fiware-ServicePath', '/servicepath')
-      .query({ fresh: 'true' })
-      .expect(400);
-
-    expect(res.body).toEqual({
-      error: 'BadRequest',
-      description: 'FDA fresh query does not accept query parameters',
-    });
-    expect(fdaMocks.executeFDAQuery).not.toHaveBeenCalled();
-    expect(fdaMocks.executeFDAQueryStream).not.toHaveBeenCalled();
-  });
-
   test('rejects outputType on data endpoint even when Accept is ndjson', async () => {
     const res = await request(app)
       .get('/public/fdas/fda1/das/da1/data')
@@ -1345,46 +1280,6 @@ describe('index routes - validation and middleware branches', () => {
     expect(fdaMocks.executeQuery).not.toHaveBeenCalled();
   });
 
-  test('supports query-style FDA variant on GET /:visibility/fdas/:fdaId/data', async () => {
-    fdaMocks.executeFDAQuery.mockResolvedValueOnce([{ id: 'fda-row' }]);
-
-    const res = await request(app)
-      .get('/public/fdas/fda1/data')
-      .query({
-        service: 'svc',
-        servicePath: '/servicepath',
-        outputType: 'json',
-      })
-      .expect(200);
-
-    expect(res.body).toEqual([{ id: 'fda-row' }]);
-    expect(fdaMocks.executeFDAQuery).toHaveBeenCalledWith({
-      service: 'svc',
-      visibility: 'public',
-      servicePath: '/servicepath',
-      fdaId: 'fda1',
-    });
-  });
-
-  test('supports query-style FDA outputType from query param on existing URL', async () => {
-    const res = await request(app)
-      .get('/public/fdas/fda1/data')
-      .query({
-        service: 'svc',
-        servicePath: '/servicepath',
-        outputType: 'csv',
-      })
-      .expect(200);
-
-    expect(res.text).toBe('streamed-fda-csv');
-    expect(fdaMocks.executeFDAQueryStream).toHaveBeenCalledWith(
-      expect.objectContaining({
-        format: 'csv',
-      }),
-    );
-    expect(fdaMocks.executeFDAQuery).not.toHaveBeenCalled();
-  });
-
   test('returns 400 for invalid query-style outputType in DA data URL', async () => {
     const res = await request(app)
       .get('/public/fdas/fda1/das/da1/data')
@@ -1414,39 +1309,6 @@ describe('index routes - validation and middleware branches', () => {
     expect(res.body.error).toBe('RequestStyleConflict');
     expect(fdaMocks.executeQuery).not.toHaveBeenCalled();
     expect(fdaMocks.executeQueryStream).not.toHaveBeenCalled();
-  });
-
-  test('returns 409 when FDA data URL mixes query-style context with legacy headers', async () => {
-    const res = await request(app)
-      .get('/public/fdas/fda1/data')
-      .set('Fiware-ServicePath', '/servicepath')
-      .query({
-        service: 'svc',
-        servicePath: '/servicepath',
-      })
-      .expect(409);
-
-    expect(res.body.error).toBe('RequestStyleConflict');
-    expect(fdaMocks.executeFDAQuery).not.toHaveBeenCalled();
-    expect(fdaMocks.executeFDAQueryStream).not.toHaveBeenCalled();
-  });
-
-  test('returns 400 when query-style FDA request includes unsupported query params', async () => {
-    const res = await request(app)
-      .get('/public/fdas/fda1/data')
-      .query({
-        service: 'svc',
-        servicePath: '/servicepath',
-        limit: '1',
-      })
-      .expect(400);
-
-    expect(res.body).toEqual({
-      error: 'BadRequest',
-      description: 'FDA fresh query does not accept query parameters',
-    });
-    expect(fdaMocks.executeFDAQuery).not.toHaveBeenCalled();
-    expect(fdaMocks.executeFDAQueryStream).not.toHaveBeenCalled();
   });
 
   test('returns 400 when query-style service context is incomplete in DA data URL', async () => {
@@ -1709,24 +1571,6 @@ describe('index routes - validation and middleware branches', () => {
       }),
     );
     expect(fdaMocks.executeQuery).not.toHaveBeenCalled();
-  });
-
-  test('routes FDA direct query to JSON when no Accept header is sent', async () => {
-    fdaMocks.executeFDAQuery.mockResolvedValueOnce([{ id: 1 }]);
-
-    const res = await request(app)
-      .get('/public/fdas/fda1/data')
-      .set('Fiware-Service', 'svc')
-      .set('Fiware-ServicePath', '/servicepath')
-      .expect(200);
-
-    expect(res.body).toEqual([{ id: 1 }]);
-    expect(fdaMocks.executeFDAQuery).toHaveBeenCalledWith({
-      service: 'svc',
-      visibility: 'public',
-      servicePath: '/servicepath',
-      fdaId: 'fda1',
-    });
   });
 
   test('returns Excel buffer when Accept requests xlsx on data endpoint', async () => {
