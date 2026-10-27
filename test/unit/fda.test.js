@@ -564,6 +564,54 @@ describe('fda fresh query execution', () => {
     expect(rows).toEqual([{ device: 'sensor-a', reading: 21.5 }]);
   });
 
+  test('rejects custom DAs on only-fresh MongoDB FDAs', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      query: { collection: 'events', filter: { site: 'lab' } },
+      visibility: 'private',
+      servicePath: '/servicepath',
+      cached: false,
+      datasourceId: 'mongo-ds',
+    });
+    mongoMocks.retrieveDatasource.mockResolvedValue({
+      datasourceId: 'mongo-ds',
+      type: 'mongodb',
+      config: { uri: 'mongodb://mongo:27017', database: 'svc' },
+    });
+
+    await expect(
+      executeQuery({
+        service: 'svc',
+        visibility: 'private',
+        servicePath: '/servicepath',
+        params: { fdaId: 'fdaMongo', daId: 'daA' },
+      }),
+    ).rejects.toMatchObject({ status: 409, type: 'FDAOnlyFresh' });
+    expect(mongoMocks.runMongoQuery).not.toHaveBeenCalled();
+  });
+
+  test('runs cached FDAs through DuckDB even for defaultDataAccess', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      query: 'SELECT 1',
+      visibility: 'private',
+      servicePath: '/servicepath',
+      cached: true,
+      lastFetch: new Date(),
+      datasourceId: 'default',
+    });
+    dbMocks.getDBConnection.mockResolvedValue({});
+    dbMocks.runPreparedStatement.mockResolvedValue([{ id: 1 }]);
+
+    const rows = await executeQuery({
+      service: 'svc',
+      visibility: 'private',
+      servicePath: '/servicepath',
+      params: { fdaId: 'fdaA', daId: 'defaultDataAccess' },
+    });
+
+    expect(rows).toEqual([{ id: 1 }]);
+    expect(pgMocks.runPgQuery).not.toHaveBeenCalled();
+  });
+
   test('streams FDA direct fresh query rows and handles backpressure', async () => {
     const { req, res } = createReqRes();
     const cursorReader = {
@@ -2206,6 +2254,142 @@ describe('fetchFDA', () => {
     );
     expect(agenda.now).not.toHaveBeenCalled();
   });
+
+  test('creates custom DAs on only-fresh PostgreSQL FDAs without DuckDB validation', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValueOnce({
+      query: 'SELECT id FROM users',
+      visibility: 'public',
+      servicePath: '/servicepath',
+      cached: false,
+    });
+    mongoMocks.retrieveDatasource.mockResolvedValueOnce({
+      type: 'postgres',
+      config: {},
+    });
+
+    await createDA(
+      'svc',
+      'fda1',
+      'da1',
+      'desc',
+      'SELECT id WHERE id = $id',
+      [{ name: 'id' }],
+      'public',
+      '/servicepath',
+    );
+
+    expect(dbMocks.validateDAQuery).not.toHaveBeenCalled();
+    expect(mongoMocks.storeDA).toHaveBeenCalledTimes(1);
+  });
+
+  test('rejects only-fresh DA queries that are not a FROM-less SELECT', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValueOnce({
+      query: 'SELECT id FROM users',
+      visibility: 'public',
+      servicePath: '/servicepath',
+      cached: false,
+    });
+    mongoMocks.retrieveDatasource.mockResolvedValueOnce({
+      type: 'postgres',
+      config: {},
+    });
+
+    await expect(
+      createDA(
+        'svc',
+        'fda1',
+        'da1',
+        'desc',
+        'SELECT id FROM users',
+        [],
+        'public',
+        '/servicepath',
+      ),
+    ).rejects.toMatchObject({ status: 400, type: 'InvalidDAQuery' });
+    expect(mongoMocks.storeDA).not.toHaveBeenCalled();
+  });
+
+  test('rejects custom DA creation on only-fresh MongoDB FDAs', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValueOnce({
+      query: { collection: 'events' },
+      visibility: 'public',
+      servicePath: '/servicepath',
+      cached: false,
+      datasourceId: 'mongo-ds',
+    });
+    mongoMocks.retrieveDatasource.mockResolvedValueOnce({
+      type: 'mongodb',
+      config: {},
+    });
+
+    await expect(
+      createDA(
+        'svc',
+        'fda1',
+        'da1',
+        'desc',
+        'SELECT device',
+        [],
+        'public',
+        '/servicepath',
+      ),
+    ).rejects.toMatchObject({ status: 409, type: 'FDAOnlyFresh' });
+    expect(mongoMocks.storeDA).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    [
+      'created',
+      () =>
+        createDA(
+          'svc',
+          'fda1',
+          'defaultDataAccess',
+          'desc',
+          'SELECT id',
+          [],
+          'public',
+          '/servicepath',
+        ),
+    ],
+    [
+      'updated',
+      () =>
+        putDA(
+          'svc',
+          'fda1',
+          'defaultDataAccess',
+          'desc',
+          'SELECT id',
+          [],
+          'public',
+          '/servicepath',
+        ),
+    ],
+    [
+      'deleted',
+      () =>
+        deleteDA('svc', 'fda1', 'defaultDataAccess', 'public', '/servicepath'),
+    ],
+  ])(
+    'fixed defaultDataAccess of only-fresh FDAs cannot be %s',
+    async (name, operation) => {
+      mongoMocks.retrieveFDA.mockResolvedValueOnce({
+        query: 'SELECT id FROM users',
+        visibility: 'public',
+        servicePath: '/servicepath',
+        cached: false,
+      });
+
+      await expect(operation()).rejects.toMatchObject({
+        status: 409,
+        type: 'FDAOnlyFresh',
+      });
+      expect(mongoMocks.storeDA).not.toHaveBeenCalled();
+      expect(mongoMocks.updateDA).not.toHaveBeenCalled();
+      expect(mongoMocks.removeDA).not.toHaveBeenCalled();
+    },
+  );
 
   test('rolls back FDA provisioning when default DA creation fails', async () => {
     const describeRun = jest.fn().mockResolvedValue({

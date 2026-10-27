@@ -1214,6 +1214,17 @@ describe('index routes - validation and middleware branches', () => {
     expect(fdaMocks.executeQuery).not.toHaveBeenCalled();
   });
 
+  test('GET /:visibility/fdas/:fdaId/data no longer exists', async () => {
+    await request(app)
+      .get('/public/fdas/fda1/data')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .expect(404);
+
+    expect(fdaMocks.executeQuery).not.toHaveBeenCalled();
+    expect(fdaMocks.executeQueryStream).not.toHaveBeenCalled();
+  });
+
   test('rejects outputType on data endpoint even when Accept is ndjson', async () => {
     const res = await request(app)
       .get('/public/fdas/fda1/das/da1/data')
