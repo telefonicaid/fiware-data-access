@@ -570,10 +570,107 @@ describe('mongo utils', () => {
         service: 'svc',
         fdaId: 'fdaA',
         servicePath: '/sp',
-        status: { $in: ['completed', 'failed', 'deleting'] },
+        status: { $in: ['completed', 'failed', 'idle', 'deleting'] },
       },
       { $set: { status: 'deleting' } },
       { returnDocument: 'before' },
+    );
+  });
+
+  test('claimOnDemandRefresh claims idle or stale FDAs outside the retry backoff', async () => {
+    const { claimOnDemandRefresh, collectionMock } = await loadMongoModule();
+    const staleBefore = new Date('2026-10-15T10:00:00Z');
+    const retryBefore = new Date('2026-10-15T09:59:00Z');
+    const pendingBefore = new Date('2026-10-15T09:50:00Z');
+    collectionMock.findOneAndUpdate.mockResolvedValueOnce({ status: 'idle' });
+
+    const claimed = await claimOnDemandRefresh({
+      service: 'svc',
+      fdaId: 'fdaA',
+      servicePath: '/sp',
+      staleBefore,
+      retryBefore,
+      pendingBefore,
+    });
+
+    expect(claimed).toEqual({ status: 'idle' });
+    expect(collectionMock.findOneAndUpdate).toHaveBeenCalledWith(
+      {
+        service: 'svc',
+        fdaId: 'fdaA',
+        servicePath: '/sp',
+        $and: [
+          {
+            $or: [
+              {
+                status: {
+                  $nin: [
+                    'pending',
+                    'fetching',
+                    'transforming',
+                    'uploading',
+                    'deleting',
+                  ],
+                },
+              },
+              {
+                status: 'pending',
+                pendingSince: { $not: { $gte: pendingBefore } },
+              },
+            ],
+          },
+          { $or: [{ lastFetch: null }, { lastFetch: { $lt: staleBefore } }] },
+          {
+            $or: [
+              { status: { $ne: 'failed' } },
+              { failedAt: null },
+              { failedAt: { $lt: retryBefore } },
+            ],
+          },
+        ],
+      },
+      {
+        $set: {
+          status: 'pending',
+          progress: 0,
+          pendingSince: expect.any(Date),
+        },
+      },
+      { returnDocument: 'before' },
+    );
+  });
+
+  test('claimOnDemandRefresh only claims never fetched FDAs when they do not expire', async () => {
+    const { claimOnDemandRefresh, collectionMock } = await loadMongoModule();
+    collectionMock.findOneAndUpdate.mockResolvedValueOnce(null);
+
+    await expect(
+      claimOnDemandRefresh({
+        service: 'svc',
+        fdaId: 'fdaA',
+        servicePath: '/sp',
+        staleBefore: null,
+        retryBefore: new Date(),
+      }),
+    ).resolves.toBeNull();
+
+    const [filter] = collectionMock.findOneAndUpdate.mock.calls[0];
+    expect(filter.$and[1]).toEqual({ $or: [{ lastFetch: null }] });
+  });
+
+  test('releaseOnDemandRefresh restores the status of a pending claim', async () => {
+    const { releaseOnDemandRefresh, collectionMock } = await loadMongoModule();
+
+    await releaseOnDemandRefresh({
+      service: 'svc',
+      fdaId: 'fdaA',
+      servicePath: '/sp',
+      status: 'idle',
+    });
+
+    expect(collectionMock.updateOne).toHaveBeenCalledWith(
+      { service: 'svc', fdaId: 'fdaA', servicePath: '/sp', status: 'pending' },
+      { $set: { status: 'idle' } },
     );
   });
 
@@ -606,6 +703,26 @@ describe('mongo utils', () => {
         $unset: { error: '' },
       },
     );
+  });
+
+  test('updateFDAStatus keeps the start of the last successful fetch', async () => {
+    const { updateFDAStatus, collectionMock } = await loadMongoModule();
+
+    await updateFDAStatus({
+      service: 'svc',
+      fdaId: 'fdaA',
+      servicePath: '/sp',
+      status: 'completed',
+      progress: 100,
+      lastRefresh: { durationMs: 10, bytesFetched: 20 },
+    });
+
+    const [, pipeline] = collectionMock.updateOne.mock.calls[0];
+    expect(pipeline[0].$set).toMatchObject({
+      status: 'completed',
+      lastFetch: expect.any(Date),
+      lastFetchStartedAt: '$initFetch',
+    });
   });
 
   test('regenerateFDA throws NotFound when FDA does not exist', async () => {

@@ -1,24 +1,13 @@
 # Installation and Running
 
-This document describes how to install and run **FIWARE Data Access (FDA)**, both using **Docker Compose** and in a
-**local development setup**.
+This document describes how to install and run **FIWARE Data Access (FDA)** using **Docker Compose**.
 
 ---
 
 ## Requirements
 
-Depending on how you want to run the project, you will need:
-
-### Docker-based setup
-
 -   Docker
 -   Docker Compose (v2)
-
-### Local development setup
-
--   Node.js **24.x**
--   npm
--   Docker (to run dependencies: PostgreSQL, MongoDB, MinIO)
 
 ---
 
@@ -60,6 +49,9 @@ http://localhost:8080
 > `FDA_OBJSTG_USER` and `FDA_OBJSTG_PASSWORD`. Ensure that `FDA_OBJSTG_USER` and `FDA_OBJSTG_PASSWORD` are properly
 > defined or exported (typically as `${MINIO_ROOT_USER}` and `${MINIO_ROOT_PASSWORD}` respectively).
 
+If you need to run FDA in local development mode (Node.js process on host + dependencies in Docker), see
+[`08_developers_guide.md`](./08_developers_guide.md#running-in-local-development-mode).
+
 ---
 
 ## Docker images and build
@@ -79,130 +71,16 @@ docker/Dockerfile
 
 ---
 
-## Running in local development mode
-
-For development purposes, it is often useful to run the FDA service locally while keeping dependencies running in
-Docker.
-
-### 1. Start infrastructure services
-
-You can start only the required services using Docker:
-
--   PostgreSQL (PostGIS)
--   MongoDB
--   MinIO
-
-For example, using Docker Compose:
-
-```bash
-docker compose -f docker/docker-compose.yml up minio mongo postgis
-```
-
-Ensure that:
-
--   PostgreSQL is reachable on port `5432`
--   MongoDB is reachable on port `27017`
--   MinIO is reachable on port `9000`
-
----
-
-### 2. Use Node.js 24
-
-FDA requires **Node.js 24**.
-
-If you use `nvm`:
-
-```bash
-nvm use 24
-```
-
-Example output:
-
-```text
-Now using node v24.13.0 (npm v11.6.2)
-```
-
----
-
-### 3. Install dependencies
-
-From the root of the repository:
-
-```bash
-npm install
-```
-
----
-
-### 4. Configure environment variables
-
-Create a `.env` file (or export variables in your shell) with the required configuration.
-
-At minimum, you will need:
-
-```env
-FDA_NODE_ENV=development
-FDA_SERVER_PORT=8080
-
-FDA_PG_POOL_MAX=10
-FDA_PG_POOL_IDLE_TIMEOUT_MS=10000
-FDA_PG_POOL_CONN_TIMEOUT_MS=5000
-FDA_PG_POOL_DB_IDLE_TIMEOUT_MS=300000
-
-FDA_OBJSTG_PROTOCOL=http
-FDA_OBJSTG_ENDPOINT=localhost:9000
-FDA_OBJSTG_USER=admin
-FDA_OBJSTG_PASSWORD=admin123
-
-FDA_MONGO_URI=mongodb://localhost:27017
-```
-
-Refer to [`04_config_operational_guide.md`](./04_config_operational_guide.md) for the full list of configuration
-options.
-
----
-
-### 5. Start the FDA service
-
-Run:
-
-```bash
-npm start
-```
-
-You should see the FDA service starting and listening on port `8080`.
-
----
-
-### 6. Provision datasource(s)
-
-FDA resolves PostgreSQL connection credentials from datasource resources (no global PostgreSQL user fallback).
-
-Create at least one datasource for your `Fiware-Service` before creating FDAs:
-
-```bash
-curl -i -X POST http://localhost:8080/datasources \
-  -H "Content-Type: application/json" \
-  -H "Fiware-Service: trantor" \
-  -d '{
-    "type": "postgres",
-    "config": {
-      "username": "postgres",
-      "password": "postgres",
-      "host": "localhost",
-      "port": 5432,
-      "database": "trantor"
-    }
-  }'
-```
-
-### 7. Verify the setup with tests
+## 7. Verify the setup with tests
 
 To verify that everything is configured correctly, you can run the test suite:
 
 ```bash
 npm test
 ```
+
+For additional scripts (`lint`, coverage, OpenAPI validation, local development helpers), see
+[`08_developers_guide.md`](./08_developers_guide.md#available-npm-scripts).
 
 This will run the integration tests to ensure all components are working properly.
 

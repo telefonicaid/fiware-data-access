@@ -162,6 +162,21 @@ const envVarsSchema = {
       maximum: 2147483647,
       default: 10000,
     },
+    FDA_ON_DEMAND_WAIT_TIMEOUT_MS: {
+      type: 'integer',
+      minimum: 0,
+      default: 30000,
+    },
+    FDA_ON_DEMAND_POLL_INTERVAL_MS: {
+      type: 'integer',
+      minimum: 1,
+      default: 500,
+    },
+    FDA_ON_DEMAND_RETRY_BACKOFF_MS: {
+      type: 'integer',
+      minimum: 0,
+      default: 60000,
+    },
     FDA_MAX_CONCURRENT_FRESH_QUERIES: {
       type: 'number',
       default: 5,
@@ -240,6 +255,11 @@ export const config = {
   },
   freshQueries: {
     maxConcurrent: envVars.FDA_MAX_CONCURRENT_FRESH_QUERIES,
+  },
+  onDemand: {
+    waitTimeoutMs: envVars.FDA_ON_DEMAND_WAIT_TIMEOUT_MS,
+    pollIntervalMs: envVars.FDA_ON_DEMAND_POLL_INTERVAL_MS,
+    retryBackoffMs: envVars.FDA_ON_DEMAND_RETRY_BACKOFF_MS,
   },
   defaultDataAccess: {
     enabled: envVars.FDA_CREATE_DEFAULT_DATA_ACCESS,

@@ -148,7 +148,10 @@ To reproduce the CI coverage flow locally (unit + integration + merged lcov for 
 npm run test:coverage:ci
 ```
 
-The same tests are executed in CI using GitHub Actions
+The same tests are executed in CI using GitHub Actions.
+
+For the complete list of project npm commands (development, linting, tests, coverage and OpenAPI), see
+[`08_developers_guide.md`](./08_developers_guide.md#available-npm-scripts).
 
 ---
 

@@ -150,3 +150,4 @@ memory consumption. You can read more about this special cases in the advanced t
 
 -   [⬅️ Previous: Testing](/doc/06_testing.md)
 -   [🏠 Main index](../README.md#documentation)
+-   [➡️ Next: Developers Guide](/doc/08_developers_guide.md)
