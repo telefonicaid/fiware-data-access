@@ -1477,6 +1477,9 @@ example, its `timeColumn` has been removed), the operation returns `400 InvalidP
 Columns added, removed or renamed in the source table are adopted by the refresh itself, like in any other refresh (see
 [Source schema changes](AdvancedTopics/sliding_windows_and_partitioning.md#source-schema-changes)).
 
+The refresh fetches the same data as the first fetch: the whole query, or only the last `windowSize` for `window` FDAs
+and for `onDemand` FDAs with `windowSize`. In both cases the partitions that fall out of the window are then removed.
+
 On a lazy or `onDemand` FDA that has never been fetched, the operation enqueues its first fetch (and, for a lazy
 `interval` FDA, its recurring refresh jobs) without waiting for it and ignoring the on-demand retry backoff.
 

@@ -771,6 +771,7 @@ export async function updateFDAStatus({
         ...(status !== undefined && { status }),
         ...(status === 'fetching' && { initFetch: new Date() }),
         ...(status === 'completed' && { lastFetch: new Date() }),
+        ...(status === 'failed' && { failedAt: new Date() }),
         ...(error && { error }),
       },
       ...(status === 'completed' && { $unset: { error: '' } }),
@@ -837,8 +838,8 @@ export async function claimOnDemandRefresh({
         {
           $or: [
             { status: { $ne: 'failed' } },
-            { initFetch: null },
-            { initFetch: { $lt: retryBefore } },
+            { failedAt: null },
+            { failedAt: { $lt: retryBefore } },
           ],
         },
       ],

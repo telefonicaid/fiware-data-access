@@ -420,7 +420,7 @@ export async function executeQuery({
 
   const { fdaId, daId, ...rest } = params;
 
-  await ensureFDAReadyForQuery(service, fdaId, visibility, servicePath);
+  await ensureFDAReadyForQuery(service, fdaId, daId, visibility, servicePath);
 
   const conn = await getDBConnection();
 
@@ -611,7 +611,7 @@ async function createCachedRowSource({
 }) {
   const { fdaId, daId, ...rest } = params;
 
-  await ensureFDAReadyForQuery(service, fdaId, visibility, servicePath);
+  await ensureFDAReadyForQuery(service, fdaId, daId, visibility, servicePath);
 
   const conn = await getDBConnection();
 
@@ -1542,16 +1542,12 @@ export async function updateFDA(service, fdaId, visibility, servicePath) {
   // Execute refresh immediately (when a fetcher is free)
   const effectiveServicePath = previous.servicePath ?? normalizedServicePath;
 
-  let firstQuery = previous.query;
-  if (previous.refreshPolicy?.params?.windowSize) {
-    const windowQueryFn =
-      datasource.type === 'mongodb' ? getMongoWindowQuery : getWindowQuery;
-    firstQuery = windowQueryFn(
-      previous.query,
-      previous.timeColumn,
-      previous.refreshPolicy?.params?.windowSize,
-    );
-  }
+  const { firstQuery } = resolveRefreshQueries(
+    datasource,
+    previous.refreshPolicy,
+    previous.query,
+    previous.timeColumn,
+  );
   await agenda.now('refresh-fda', {
     fdaId,
     query: firstQuery,
@@ -2477,11 +2473,18 @@ async function uploadTableToObjStg(
   return bytesFetched ?? 0;
 }
 
-async function ensureFDAReadyForQuery(service, fdaId, visibility, servicePath) {
+async function ensureFDAReadyForQuery(
+  service,
+  fdaId,
+  daId,
+  visibility,
+  servicePath,
+) {
   const fda = await getAccessibleFDA(service, fdaId, visibility, servicePath);
   assertFDAIsCached(fda, fdaId);
 
   if (isMaterializedOnDemand(fda)) {
+    assertDAExists(fda, daId, service);
     return waitForOnDemandData(fda);
   }
 
@@ -2494,6 +2497,16 @@ async function ensureFDAReadyForQuery(service, fdaId, visibility, servicePath) {
     );
   }
   return fda;
+}
+
+function assertDAExists(fda, daId, service) {
+  if (!fda.das?.[daId]?.query) {
+    throw new FDAError(
+      404,
+      'DaNotFound',
+      `DA ${daId} does not exist in FDA ${fda.fdaId} with service ${service}.`,
+    );
+  }
 }
 
 function isMaterializedOnDemand(fda) {
@@ -2558,10 +2571,14 @@ async function reloadAfterLostRefreshClaim({ service, fdaId, servicePath }) {
   const current = await getStoredFDA(service, fdaId, servicePath);
 
   if (!hasFreshData(current) && current.status === 'failed') {
+    logger.error(
+      { fdaId, service, servicePath, error: current.error },
+      'On-demand materialization failed',
+    );
     throw new FDAError(
       503,
       'FDAMaterializationFailed',
-      `FDA ${fdaId} could not be materialized: ${current.error ?? 'unknown error'}`,
+      `FDA ${fdaId} could not be materialized. Retry later or check the FDA status.`,
     );
   }
 

@@ -623,8 +623,8 @@ describe('mongo utils', () => {
           {
             $or: [
               { status: { $ne: 'failed' } },
-              { initFetch: null },
-              { initFetch: { $lt: retryBefore } },
+              { failedAt: null },
+              { failedAt: { $lt: retryBefore } },
             ],
           },
         ],

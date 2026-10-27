@@ -13,7 +13,7 @@ Two options avoid that cost:
     query and, after `maxAge`, on the next query that arrives. Nothing is refreshed while nobody queries it. An
     `onDemand` FDA is always lazy.
 
-|                              | `lazy` + `none`     | `lazy` + `interval`/`window`    | `lazy` + `onDemand`                            |
+|                              | `lazy` + `none`     | `lazy` + `interval`/`window`    | `lazy` + `onDemand`                   |
 | ---------------------------- | ------------------- | ------------------------------- | ------------------------------------- |
 | First fetch                  | First query         | First query                     | First query                           |
 | Later refreshes              | Only manual (`PUT`) | Their recurring jobs, from then | First query after `maxAge`, or manual |
@@ -54,8 +54,9 @@ The DA data endpoints and the CDA legacy endpoint behave the same way:
     For `lazy` + `interval` FDAs this is also when the recurring refresh jobs are created.
 3.  The query polls the FDA every `FDA_ON_DEMAND_POLL_INTERVAL_MS` until one of these happens:
     -   The fetch completes: the query is answered with the new data.
-    -   The fetch fails: the query returns `503 FDAMaterializationFailed` with the error of the FDA (for example
-        `StorageQuotaExceeded`).
+    -   The fetch fails: the query returns `503 FDAMaterializationFailed`. The response does not include the cause,
+        which can contain details of the source query; it is logged and kept in the `error` field of the FDA (for
+        example `StorageQuotaExceeded`), visible in `GET /{visibility}/fdas/{fdaId}`.
     -   `FDA_ON_DEMAND_WAIT_TIMEOUT_MS` passes: the query returns `409 FDAUnavailable`. The fetch goes on, and a later
         query gets the data once it completes.
 
@@ -94,16 +95,18 @@ Without partitioning, every `onDemand` refresh fetches the whole query. With `ob
 -   It does not matter how long the FDA has gone without queries: the refresh covers everything since the last fetch.
 
 As with `window`, rows that change in partitions older than the last fetch are not picked up by an incremental refresh.
-A manual refresh (`PUT /{visibility}/fdas/{fdaId}`) rebuilds the whole FDA (its whole window, with `windowSize`).
+A manual refresh (`PUT /{visibility}/fdas/{fdaId}`) rebuilds the whole FDA, or only its window when `windowSize` is set,
+like the first fetch.
 
 For MongoDB `aggregation` queries the same rule as for `window` applies: `timeColumn` must be a raw field of the
 collection holding BSON `Date` values, because the time condition is injected as the first `$match` stage.
 
 ## Failures
 
-A failed fetch leaves the FDA `failed`. For `FDA_ON_DEMAND_RETRY_BACKOFF_MS` after the failure, queries return
-`503 FDAMaterializationFailed` at once instead of retrying, so a broken source is not queried again on every request.
-After the backoff, the next query tries again. A manual refresh (`PUT /{visibility}/fdas/{fdaId}`) ignores the backoff.
+A failed fetch leaves the FDA `failed` and stores when it failed (`failedAt`). For `FDA_ON_DEMAND_RETRY_BACKOFF_MS`
+after that moment, queries return `503 FDAMaterializationFailed` at once instead of retrying, so a broken source is not
+queried again on every request. After the backoff, the next query tries again. A manual refresh
+(`PUT /{visibility}/fdas/{fdaId}`) ignores the backoff.
 
 ## Manual refresh and deletion
 
