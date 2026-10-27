@@ -1261,6 +1261,26 @@ describe('db utils', () => {
     );
   });
 
+  test('toParquet does not sort partitioned exports when FDA_DUCKDB_SORT_PARTITIONED_EXPORTS is false', async () => {
+    const { toParquet } = await loadDbModule({
+      duckdbConfig: { sortPartitionedExports: false },
+    });
+    const conn = { run: jest.fn().mockResolvedValue(undefined) };
+
+    await toParquet(
+      conn,
+      'test-bucket/source',
+      'test-bucket/target',
+      'timestamp',
+      'day',
+      false,
+    );
+
+    const sql = conn.run.mock.calls[0][0];
+    expect(sql).toContain('PARTITION_BY (year, month, day)');
+    expect(sql).not.toContain('ORDER BY');
+  });
+
   test('toParquet throws PartitionError when partitionType requires timeColumn but missing', async () => {
     const { toParquet } = await loadDbModule();
     const conn = { run: jest.fn().mockResolvedValue(undefined) };

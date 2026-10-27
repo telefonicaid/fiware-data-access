@@ -123,6 +123,10 @@ const envVarsSchema = {
       type: 'number',
       default: 8,
     },
+    FDA_DUCKDB_SORT_PARTITIONED_EXPORTS: {
+      type: 'boolean',
+      default: true,
+    },
     FDA_MAX_CONCURRENT_REFRESH_JOBS: {
       type: 'number',
       default: 1,
@@ -228,6 +232,7 @@ export const config = {
     s3UploaderMaxFilesize: envVars.FDA_DUCKDB_S3_UPLOADER_MAX_FILESIZE,
     partitionedWriteMaxOpenFiles:
       envVars.FDA_DUCKDB_PARTITIONED_WRITE_MAX_OPEN_FILES,
+    sortPartitionedExports: envVars.FDA_DUCKDB_SORT_PARTITIONED_EXPORTS,
   },
   mongo: {
     uri: envVars.FDA_MONGO_URI,
