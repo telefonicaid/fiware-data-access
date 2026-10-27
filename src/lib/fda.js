@@ -717,6 +717,16 @@ function assertFreshDAsSupported(fdaId, datasource) {
   }
 }
 
+function assertFixedDANotModified(fda, daId) {
+  if (fda?.cached === false && daId === DEFAULT_DATA_ACCESS_ID) {
+    throw new FDAError(
+      409,
+      'FDAOnlyFresh',
+      `${DEFAULT_DATA_ACCESS_ID} of an only-fresh FDA is fixed and cannot be created, modified or deleted.`,
+    );
+  }
+}
+
 async function validateDAQueryForFDA(
   conn,
   { fda, service, fdaId, userQuery, servicePath },
@@ -842,6 +852,7 @@ export async function createDA(
       fda = await retrieveFDA(service, fdaId, servicePath);
     }
 
+    assertFixedDANotModified(fda, daId);
     const existing = await retrieveDA(service, fdaId, daId, servicePath);
 
     if (existing) {
@@ -2123,6 +2134,7 @@ export async function putDA(
       fda = await retrieveFDA(service, fdaId, servicePath);
     }
 
+    assertFixedDANotModified(fda, daId);
     const normalizedParams = checkParams(params);
     const normalizedTimeRange = checkTimeRange(timeRange, normalizedParams);
     validateDAParamBindings(userQuery, normalizedParams || []);
@@ -2150,7 +2162,8 @@ export async function putDA(
 
 export async function deleteDA(service, fdaId, daId, visibility, servicePath) {
   if (visibility !== undefined || servicePath !== undefined) {
-    await getAccessibleFDA(service, fdaId, visibility, servicePath);
+    const fda = await getAccessibleFDA(service, fdaId, visibility, servicePath);
+    assertFixedDANotModified(fda, daId);
   }
 
   await removeDA(service, fdaId, daId, servicePath);
