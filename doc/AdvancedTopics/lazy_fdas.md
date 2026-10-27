@@ -98,8 +98,9 @@ As with `window`, rows that change in partitions older than the last fetch are n
 A manual refresh (`PUT /{visibility}/fdas/{fdaId}`) rebuilds the whole FDA, or only its window when `windowSize` is set,
 like the first fetch.
 
-For MongoDB `aggregation` queries the same rule as for `window` applies: `timeColumn` must be a raw field of the
-collection holding BSON `Date` values, because the time condition is injected as the first `$match` stage.
+For MongoDB queries the same rule as for `window` applies: `timeColumn` must be a raw field of the collection holding
+BSON `Date` values (not an alias created in a `projection`), because the time condition is evaluated before any
+projection or pipeline stage.
 
 ## Failures
 

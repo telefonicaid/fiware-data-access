@@ -918,6 +918,8 @@ Datasource-specific constraints:
     [`cached`](#fda-payload-datamodel) and [FDA data query](#fda-data-query-get-visibilityfdasfdaiddata).
 -   MongoDB FDAs datasources support `refreshPolicy.type=window`, enabling sliding-window refresh and partitioning. See
     [Sliding windows and partitioning](AdvancedTopics/sliding_windows_and_partitioning.md) for more details.
+-   With `refreshPolicy.type=window`, `timeColumn` must be a raw field of the collection, projected with `1` (not an
+    alias such as `"fecha_hasta": "$dateObservedTo"`), because the window condition is applied before the projection.
 -   `filter` and `aggregation` are mutually exclusive. Exactly one of them must be provided.
 -   Cached MongoDB FDAs created in `strict` mode must declare their output columns: a `projection` listing the fields to
     include (`filter` queries), or a final `$project`/`$group` stage (`aggregation` queries). MongoDB is schemaless, so
