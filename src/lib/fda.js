@@ -1572,7 +1572,7 @@ export async function putFDA(
     return { regenerated: false, status: updated.status };
   }
 
-  // A lazy FDA never fetched has no jobs nor data yet, so it only needs its first fetch
+  // A lazy FDA never fetched has no data yet, so it only needs its first fetch
   if (isMaterializedOnDemand(fda) && !fda.lastFetch) {
     await updateFDAFields(
       service,
@@ -1581,6 +1581,9 @@ export async function putFDA(
       setFields,
       unsetFields,
     );
+    if (rescheduleJobs) {
+      await cancelFDARecurringJobs(service, fdaId, normalizedServicePath);
+    }
     if (rebuildStorage) {
       await dropFDAStorage(service, fdaId, normalizedServicePath);
     }
