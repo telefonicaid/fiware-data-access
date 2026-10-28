@@ -12,6 +12,8 @@ environment variables:
 -   `FDA_DUCKDB_MEMORY_LIMIT`
 -   `FDA_DUCKDB_MAX_THREADS`
 -   `FDA_DUCKDB_PRESERVE_INSERTION_ORDER`
+-   `FDA_DUCKDB_S3_UPLOADER_MAX_FILESIZE`
+-   `FDA_DUCKDB_PARTITIONED_WRITE_MAX_OPEN_FILES`
 
 These settings allow us to control the amount of memory DuckDB is allowed to use. Together with the container's memory
 limit, this gives us much tighter control over the total memory consumption of the FDA component.
@@ -522,7 +524,7 @@ This explains the behaviour observed in the tests:
 
 # `httpfs` configuration tests
 
-Several `httpfs`-related settings were tested to determine whether the extension's memory usage could be reduced:
+A first round of tests tried these settings to reduce the memory of the extension:
 
 ```text
 partitioned_write_max_open_files=1
@@ -530,13 +532,50 @@ s3_uploader_thread_limit=1
 s3_uploader_max_filesize='80GB'
 ```
 
-None of these changes prevented the `EXTENSION` memory from growing enough to reproduce the problem.
+None of them prevented the `EXTENSION` memory from growing enough to reproduce the problem, which led to the conclusion
+that no `httpfs` setting could limit it. That conclusion was wrong.
 
-At this point, there does not appear to be a configuration option that provides a direct memory limit for the `httpfs`
-S3 upload buffers.
+**The part size depends on `s3_uploader_max_filesize`.** Each file being uploaded keeps one multipart part in memory,
+and the part size is `s3_uploader_max_filesize / s3_uploader_max_parts_per_file`. With the defaults this is
+`800GB / 10000 = 80 MB`, rounded up to `76.5 MiB`, the block that appears in the errors. `80GB` still leaves 8 MB parts.
+The part is never smaller than 5 MiB, the S3 minimum, so any value up to ~52 GB, such as `50GB`, gives 5 MiB parts. The
+memory of a partitioned export is therefore:
 
-Therefore, reducing the DuckDB `memory_limit` alone cannot guarantee that this workload will succeed: the memory limit
-applies to DuckDB's overall managed memory, but some extension allocations still need to remain resident.
+```text
+EXTENSION ≈ min(partitions written, partitioned_write_max_open_files) × s3_uploader_max_filesize / 10000
+```
+
+**Both settings are per connection.** A plain `SET` only changes them for the connection that runs it (scope `LOCAL` in
+`duckdb_settings()`). Set on any other connection than the one that runs the `COPY`, they have no effect, which may be
+why `partitioned_write_max_open_files=1` made no difference in the first round. FDA applies them with `SET GLOBAL` when
+it creates the DuckDB instance, so every connection uses them.
+
+Measured with DuckDB 1.5.6 inside the FDA container, writing to MinIO: 3 million rows over ~35 days, partitioned by day,
+`threads=2`, `preserve_insertion_order=false`, peak sampled from `duckdb_memory()` every 50 ms.
+
+| Settings                                        | memory_limit | Result | Peak     | `EXTENSION` |
+| ----------------------------------------------- | ------------ | ------ | -------- | ----------- |
+| defaults                                        | 1 GB         | OOM    | ~1000 MB | 963 MB      |
+| `partitioned_write_max_open_files=8`            | 1 GB         | ok     | 694 MB   | 642 MB      |
+| `s3_uploader_max_filesize='80GB'`               | 256 MB       | OOM    | 256 MB   | 228 MB      |
+| `s3_uploader_max_filesize='50GB'`               | 256 MB       | ok     | 240 MB   | 182 MB      |
+| `'50GB'` + `partitioned_write_max_open_files=8` | **128 MB**   | **ok** | 107 MB   | 39 MB       |
+
+With both settings, an export that failed with 1 GB completes with 128 MB. FDA exposes them as
+`FDA_DUCKDB_S3_UPLOADER_MAX_FILESIZE` (default `50GB`) and `FDA_DUCKDB_PARTITIONED_WRITE_MAX_OPEN_FILES` (default `8`).
+
+Two side effects:
+
+-   A file can have at most 10000 parts, so with 5 MiB parts the largest Parquet file DuckDB can upload is ~52 GB, far
+    above the size of an FDA file.
+-   With more partitions than open files allowed, DuckDB closes partition files and opens new ones. When the rows are
+    not ordered by time, a partition directory can end up with many files (`data_0.parquet`, `data_1.parquet`, ...): 10
+    million unordered rows over 365 days gave 6349 files and took 60 s to export. FDA therefore sorts the rows by
+    `timeColumn` before a partitioned export (`FDA_DUCKDB_SORT_PARTITIONED_EXPORTS`, default `true`): the same export
+    then writes 396 files in 24 s, and sorting rows that were already ordered costs 9% to 28% more time. Deployments
+    whose sources are already ordered by time can disable it. The sort spills to `FDA_DUCKDB_TEMP_DIR` what does not fit
+    in memory; in this test, 719 MB, but it depends on the number of rows, their width and the memory limit. Queries and
+    partition pruning read every file of a partition, and a refresh replaces every file of the partitions it rewrites.
 
 ---
 
@@ -625,21 +664,27 @@ The number of source rows is controlled by `PERFORMANCE_TABLE_ROWS`. The perform
 
 ## Running the scenarios
 
-To run the fixed 3-million-row regression matrix with **both 2 GB and 3 GB**, use:
+To run the fixed 3-million-row regression matrix at **2 GB and 3 GB**, use:
 
 ```bash
 npm run test:performance:memory
 ```
 
-This runs both combined and separated roles, starting fresh FDA processes and infrastructure for each limit. At **2
-GB**, the monthly control must complete and the daily scenario must fail during creation with an explicit
-`Out of Memory Error`. At **3 GB**, both must complete, including two incremental refreshes for the daily scenario. The
-matrix passes only if all these expectations hold; a timeout, an unrelated error, or unexpected success at 2 GB fails
-the matrix. A future fix that eliminates the OOM will therefore require updating that expectation. The command fixes the
-source row count at 3 million and overrides any externally supplied DuckDB memory limit with the matrix values. Thread
-count and insertion-order settings remain overridable as described above. FDA still runs as a child process on the host,
-not inside a memory-limited container. The complete matrix was verified on 2026-10-19: all eight cases passed their
-expected outcomes in approximately six minutes, including the expected OOM at 2 GB in both runtime modes.
+This runs both combined and separated roles, starting fresh FDA processes and infrastructure for each case. The matrix
+has three cases:
+
+| DuckDB limit | httpfs upload settings                      | Monthly control | Daily partitions                     |
+| ------------ | ------------------------------------------- | --------------- | ------------------------------------ |
+| 2 GB         | DuckDB defaults (`800GB`, `100` open files) | Must complete   | Must fail with `Out of Memory Error` |
+| 2 GB         | FDA defaults (`50GB`, `8` open files)       | Must complete   | Creation and two refreshes complete  |
+| 3 GB         | FDA defaults (`50GB`, `8` open files)       | Must complete   | Creation and two refreshes complete  |
+
+The settings are `FDA_DUCKDB_S3_UPLOADER_MAX_FILESIZE` and `FDA_DUCKDB_PARTITIONED_WRITE_MAX_OPEN_FILES`. The first case
+keeps reproducing the OOM fixed by #355 and the second proves that the FDA defaults avoid it at the same limit. A
+timeout, an unrelated error, or unexpected success in the first case fails the matrix. The command fixes the source row
+count at 3 million and overrides any externally supplied DuckDB memory limit and httpfs upload settings with the matrix
+values. Thread count and insertion-order settings remain overridable as described above. FDA still runs as a child
+process on the host, not inside a memory-limited container.
 
 Node.js 24+, installed project dependencies and a working Docker runtime are required. Run the scenarios alone to avoid
 confusing their memory consumption with concurrent load tests:
@@ -722,18 +767,20 @@ The investigation leads to the following conclusions:
 6. **The `httpfs` S3 uploader uses resident multipart-upload buffers.** These buffers are accounted for under
    `EXTENSION` and are not necessarily spillable in the same way as `COLUMN_DATA`.
 
-7. **The tested `httpfs` configuration options do not provide a sufficient solution.**
-   `partitioned_write_max_open_files`, `s3_uploader_thread_limit` and `s3_uploader_max_filesize` did not prevent the
-   high extension memory usage.
+7. **The `httpfs` memory can be limited with two settings.** `s3_uploader_max_filesize` sets the size of each upload
+   part and `partitioned_write_max_open_files` how many partition files upload at the same time. With `50GB` and `8`,
+   the partitioned export completes with a 128 MB limit.
 
-8. **A higher DuckDB memory limit allows the operation to complete.** With a 1 GB limit, the workload reached
-   approximately **382.5 MB of `EXTENSION` memory** and completed successfully.
+8. **A higher DuckDB memory limit is not a reliable fix.** It was enough for the test FDA above (382.5 MB of `EXTENSION`
+   with 1 GB), but with the default settings `EXTENSION` grows with the number of partitions: an export with 35 daily
+   partitions failed with 1 GB, with 963 MB of `EXTENSION`.
 
 Therefore, the current evidence indicates that the production OOM is caused by the memory requirements of the
 **partitioned S3 upload performed by `httpfs`**, rather than a failure of DuckDB's out-of-core processing.
 
 The important consequence for the FDA configuration is that the DuckDB memory limit must leave enough headroom for these
-non-spillable extension allocations in addition to the memory required by the query itself.
+non-spillable extension allocations, which `FDA_DUCKDB_S3_UPLOADER_MAX_FILESIZE` and
+`FDA_DUCKDB_PARTITIONED_WRITE_MAX_OPEN_FILES` keep small.
 
 # Observability of DuckDB memory
 

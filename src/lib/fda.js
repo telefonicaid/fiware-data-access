@@ -2248,9 +2248,11 @@ async function publishTmpPartitions(
   const hasRealPartitionedParquet = objectsList.some((key) =>
     key.endsWith('.parquet'),
   );
-  const previousPartitions = dropStalePartitions
-    ? await listObjects(s3Client, bucket, `${path}.parquet/`)
-    : [];
+  const previousPartitions = await listObjects(
+    s3Client,
+    bucket,
+    `${path}.parquet/`,
+  );
   for (const tempPartition of objectsList) {
     await moveObject(
       s3Client,
@@ -2264,10 +2266,18 @@ async function publishTmpPartitions(
   const rewrittenPartitions = new Set(
     objectsList.map((key) => key.replace('tmp/', '')),
   );
+  const rewrittenDirs = new Set(
+    [...rewrittenPartitions].map((key) => key.slice(0, key.lastIndexOf('/'))),
+  );
   await dropFiles(
     s3Client,
     bucket,
-    previousPartitions.filter((key) => !rewrittenPartitions.has(key)),
+    previousPartitions.filter(
+      (key) =>
+        !rewrittenPartitions.has(key) &&
+        (dropStalePartitions ||
+          rewrittenDirs.has(key.slice(0, key.lastIndexOf('/')))),
+    ),
   );
 
   if (hasRealPartitionedParquet) {

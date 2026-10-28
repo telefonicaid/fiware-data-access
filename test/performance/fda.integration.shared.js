@@ -112,6 +112,7 @@ export function runFDAIntegrationSuite({
   mode,
   label,
   memoryLimit = process.env.FDA_DUCKDB_MEMORY_LIMIT ?? '1GB',
+  duckdbEnv = {},
   expectWindowOom = false,
 }) {
   describe(`FDA API - integration (${label})`, () => {
@@ -353,6 +354,7 @@ export function runFDAIntegrationSuite({
         FDA_DUCKDB_MAX_THREADS: process.env.FDA_DUCKDB_MAX_THREADS ?? '1',
         FDA_DUCKDB_PRESERVE_INSERTION_ORDER:
           process.env.FDA_DUCKDB_PRESERVE_INSERTION_ORDER ?? 'false',
+        ...duckdbEnv,
         ...overrides,
       };
     }

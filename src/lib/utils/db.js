@@ -40,6 +40,7 @@ import {
 import { convertRefreshIntervalToMs, toJsonInteger } from './utils.js';
 import { getS3Client, listObjects } from './aws.js';
 import { resolveTimeRange, selectPartitionFiles } from './partitionPruning.js';
+import { buildParquetCopyQuery } from './parquetExport.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -93,7 +94,9 @@ async function logDuckDBConfig(conn) {
       'temp_directory',
       'max_temp_directory_size',
       'threads',
-      'preserve_insertion_order'
+      'preserve_insertion_order',
+      's3_uploader_max_filesize',
+      'partitioned_write_max_open_files'
     )
     ORDER BY name
   `);
@@ -335,6 +338,12 @@ async function createDuckDBInstance() {
   const preserveInsertionOrder = String(
     config.duckdb?.preserveInsertionOrder ?? 'true',
   );
+  const s3UploaderMaxFilesize = String(
+    config.duckdb?.s3UploaderMaxFilesize || '50GB',
+  );
+  const partitionedWriteMaxOpenFiles = String(
+    config.duckdb?.partitionedWriteMaxOpenFiles ?? '8',
+  );
 
   if (!fs.existsSync(tempDir)) {
     fs.mkdirSync(tempDir, { recursive: true });
@@ -361,11 +370,18 @@ async function createDuckDBInstance() {
     `SET preserve_insertion_order='${preserveInsertionOrder}';`,
   );
 
-  // Log efective config for duckdb
-  await logDuckDBConfig(configConn);
-
   await configConn.run('INSTALL httpfs;');
   await configConn.run('LOAD httpfs;');
+
+  await configConn.run(
+    `SET GLOBAL s3_uploader_max_filesize='${s3UploaderMaxFilesize}';`,
+  );
+  await configConn.run(
+    `SET GLOBAL partitioned_write_max_open_files='${partitionedWriteMaxOpenFiles}';`,
+  );
+
+  // Log efective config for duckdb
+  await logDuckDBConfig(configConn);
 
   // Common config
   await configConn.run(`
@@ -1129,8 +1145,14 @@ export async function copyQueryToParquet(
 ) {
   logger.debug({ resultPath }, '[DEBUG]: copyQueryToParquet');
 
-  const { cols, partitionBy } = getPartitionConf(partitionType, timeColumn);
-  const compressionString = compression ? `, COMPRESSION ZSTD` : '';
+  const copyQuery = buildParquetCopyQuery(
+    sourceQuery,
+    `s3://${resultPath}`,
+    timeColumn,
+    partitionType,
+    compression,
+    config.duckdb?.sortPartitionedExports ?? true,
+  );
 
   await logDuckDBMemoryDump(conn, 'DuckDB memory before Parquet export', {
     resultPath,
@@ -1138,11 +1160,7 @@ export async function copyQueryToParquet(
 
   const stopSampler = startDuckDBMemorySampler();
   try {
-    const result = await conn.run(
-      `COPY ( SELECT ${cols}
-                FROM (${sourceQuery}) AS fda_source)
-      TO 's3://${resultPath}' (FORMAT PARQUET ${partitionBy} ${compressionString});`,
-    );
+    const result = await conn.run(copyQuery);
     logDuckDBMemoryPeak(
       'info',
       await stopSampler(),
@@ -1188,62 +1206,6 @@ export function refreshIntervalPartitionCheck(refreshInterval, partition) {
   }
 
   return refreshIntervalMs <= partitionMs;
-}
-
-function getPartitionConf(partitionType = 'none', timeColumn) {
-  if (!timeColumn && partitionType !== 'none') {
-    throw new FDAError(400, 'PartitionError', `Missing timeColumn value.`);
-  }
-  const PARTITIONS = {
-    day: {
-      columns: `
-      year(${timeColumn}::TIMESTAMP) as year,
-      month(${timeColumn}::TIMESTAMP) as month,
-      day(${timeColumn}::TIMESTAMP) as day
-    `,
-      partitionBy: 'year, month, day',
-    },
-    week: {
-      columns: `
-      year(${timeColumn}::TIMESTAMP) as year,
-      strftime(${timeColumn}::TIMESTAMP, '%Y-%W') as week
-      `,
-      partitionBy: 'year, week',
-    },
-    month: {
-      columns: `
-      year(${timeColumn}::TIMESTAMP) as year,
-      month(${timeColumn}::TIMESTAMP) as month
-    `,
-      partitionBy: 'year, month',
-    },
-    year: {
-      columns: `
-      year(${timeColumn}::TIMESTAMP) as year
-    `,
-      partitionBy: 'year',
-    },
-    none: {
-      columns: '',
-      partitionBy: '',
-    },
-  };
-
-  const partitionConf = PARTITIONS[partitionType];
-  if (!partitionConf) {
-    throw new FDAError(
-      400,
-      'PartitionError',
-      `Invalid partition type: ${partitionType}.`,
-    );
-  }
-
-  const cols = partitionConf.columns ? `*, ${partitionConf.columns}` : '*';
-  const partitionBy = partitionConf.partitionBy
-    ? `, PARTITION_BY (${partitionConf.partitionBy})`
-    : '';
-
-  return { cols, partitionBy };
 }
 
 export function buildDAQuery(
