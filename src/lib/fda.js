@@ -1539,26 +1539,17 @@ export async function putFDA(
       );
 
   if (Object.keys(updates).length === 0) {
-    await resolveSourceSchema(datasource, fda);
-
-    if (isMaterializedOnDemand(fda) && !fda.lastFetch) {
-      await materializeIdleFDA(fda);
-      return { regenerated: true };
-    }
-
-    const previous = await regenerateFDA(service, fdaId, normalizedServicePath);
-    await scheduleFDARegeneration(
+    return regenerateFDAWithoutUpdates(
       service,
       fdaId,
       normalizedServicePath,
-      previous,
+      fda,
       datasource,
     );
-    return { regenerated: true };
   }
 
-  const { setFields, unsetFields, rescheduleJobs, rebuildStorage } =
-    await validateFDAUpdate(fda, datasource, updates);
+  const validated = await validateFDAUpdate(fda, datasource, updates);
+  const { setFields, unsetFields } = validated;
 
   // Upload FDAs have no source to refetch from, so the new values are only stored
   if (uploadFDA) {
@@ -1574,25 +1565,7 @@ export async function putFDA(
 
   // A lazy FDA never fetched has no data yet, so it only needs its first fetch
   if (isMaterializedOnDemand(fda) && !fda.lastFetch) {
-    await updateFDAFields(
-      service,
-      fdaId,
-      normalizedServicePath,
-      setFields,
-      unsetFields,
-    );
-    if (rescheduleJobs) {
-      await cancelFDARecurringJobs(service, fdaId, normalizedServicePath);
-    }
-    if (rebuildStorage) {
-      await dropFDAStorage(service, fdaId, normalizedServicePath);
-    }
-    // If a query claimed it after the update, its fetch already uses the new values
-    await requestOnDemandRefresh(
-      { service, fdaId, servicePath: normalizedServicePath },
-      { ignoreRetryBackoff: true },
-    );
-    return { regenerated: true };
+    return updateIdleLazyFDA(service, fdaId, normalizedServicePath, validated);
   }
 
   // Claims the FDA (409 if it is being processed) and stores the new values atomically
@@ -1603,16 +1576,96 @@ export async function putFDA(
     setFields,
     unsetFields,
   );
-  const effectiveServicePath = previous.servicePath ?? normalizedServicePath;
 
+  await refreshFDAJobsAndStorage({
+    service,
+    fdaId,
+    servicePath: previous.servicePath ?? normalizedServicePath,
+    previous,
+    datasource,
+    rescheduleJobs: validated.rescheduleJobs,
+    rebuildStorage: validated.rebuildStorage,
+  });
+
+  await scheduleFDARegeneration(
+    service,
+    fdaId,
+    normalizedServicePath,
+    previous,
+    datasource,
+  );
+  return { regenerated: true };
+}
+
+async function regenerateFDAWithoutUpdates(
+  service,
+  fdaId,
+  normalizedServicePath,
+  fda,
+  datasource,
+) {
+  await resolveSourceSchema(datasource, fda);
+
+  if (isMaterializedOnDemand(fda) && !fda.lastFetch) {
+    await materializeIdleFDA(fda);
+    return { regenerated: true };
+  }
+
+  const previous = await regenerateFDA(service, fdaId, normalizedServicePath);
+  await scheduleFDARegeneration(
+    service,
+    fdaId,
+    normalizedServicePath,
+    previous,
+    datasource,
+  );
+  return { regenerated: true };
+}
+
+async function updateIdleLazyFDA(
+  service,
+  fdaId,
+  normalizedServicePath,
+  { setFields, unsetFields, rescheduleJobs, rebuildStorage },
+) {
+  await updateFDAFields(
+    service,
+    fdaId,
+    normalizedServicePath,
+    setFields,
+    unsetFields,
+  );
+  if (rescheduleJobs) {
+    await cancelFDARecurringJobs(service, fdaId, normalizedServicePath);
+  }
+  if (rebuildStorage) {
+    await dropFDAStorage(service, fdaId, normalizedServicePath);
+  }
+  // If a query claimed it after the update, its fetch already uses the new values
+  await requestOnDemandRefresh(
+    { service, fdaId, servicePath: normalizedServicePath },
+    { ignoreRetryBackoff: true },
+  );
+  return { regenerated: true };
+}
+
+async function refreshFDAJobsAndStorage({
+  service,
+  fdaId,
+  servicePath,
+  previous,
+  datasource,
+  rescheduleJobs,
+  rebuildStorage,
+}) {
   try {
     // Cancel the old jobs first, so none writes with the old layout while the storage is dropped
     if (rescheduleJobs || rebuildStorage) {
-      await cancelFDARecurringJobs(service, fdaId, effectiveServicePath);
+      await cancelFDARecurringJobs(service, fdaId, servicePath);
     }
 
     if (rebuildStorage) {
-      await dropFDAStorage(service, fdaId, effectiveServicePath);
+      await dropFDAStorage(service, fdaId, servicePath);
     }
 
     if (rescheduleJobs) {
@@ -1620,7 +1673,7 @@ export async function putFDA(
         fdaId,
         query: previous.query,
         service,
-        servicePath: effectiveServicePath,
+        servicePath,
         timeColumn: previous.timeColumn,
         refreshPolicy: previous.refreshPolicy,
         objStgConf: previous.objStgConf,
@@ -1631,22 +1684,13 @@ export async function putFDA(
     await updateFDAStatus({
       service,
       fdaId,
-      servicePath: effectiveServicePath,
+      servicePath,
       status: 'failed',
       progress: 0,
       error: err.message,
     });
     throw err;
   }
-
-  await scheduleFDARegeneration(
-    service,
-    fdaId,
-    normalizedServicePath,
-    previous,
-    datasource,
-  );
-  return { regenerated: true };
 }
 
 function isUploadFDA(fda) {
