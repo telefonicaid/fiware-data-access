@@ -3715,7 +3715,7 @@ describe('processFDAAsync', () => {
       .mockReset()
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ run: describeRun });
-    awsMocks.listObjects.mockResolvedValueOnce([]);
+    awsMocks.listObjects.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
 
     await processFDAAsync(
       'fda1',
@@ -3937,6 +3937,42 @@ describe('processFDAAsync', () => {
       );
       expect(awsMocks.dropFiles).toHaveBeenCalledWith({}, 'svc', [
         'servicepath/fda1.parquet/year=2026/month=9/day=25/data_0.parquet',
+      ]);
+    });
+
+    test('drops the stale files of the partitions that an incremental refresh rewrites', async () => {
+      mockSourceFields([
+        { name: 'id', duckdbType: 'INTEGER' },
+        { name: 'observed_at', duckdbType: 'TIMESTAMPTZ' },
+      ]);
+      awsMocks.listObjects.mockImplementation((client, bucket, prefix) =>
+        Promise.resolve(
+          prefix.startsWith('tmp/')
+            ? [
+                'tmp/servicepath/fda1.parquet/year=2026/month=9/day=29/data_0.parquet',
+                'tmp/servicepath/fda1.parquet/year=2026/month=9/day=29/data_1.parquet',
+              ]
+            : [
+                'servicepath/fda1.parquet/year=2026/month=9/day=25/data_0.parquet',
+                'servicepath/fda1.parquet/year=2026/month=9/day=29/data_0.parquet',
+                'servicepath/fda1.parquet/year=2026/month=9/day=29/data_1.parquet',
+                'servicepath/fda1.parquet/year=2026/month=9/day=29/data_2.parquet',
+              ],
+        ),
+      );
+
+      await processFDAAsync(
+        'fda1',
+        'SELECT incremental',
+        'svc',
+        '/servicepath',
+        'observed_at',
+        windowPolicy,
+        { partition: 'day' },
+      );
+
+      expect(awsMocks.dropFiles).toHaveBeenCalledWith({}, 'svc', [
+        'servicepath/fda1.parquet/year=2026/month=9/day=29/data_2.parquet',
       ]);
     });
 
