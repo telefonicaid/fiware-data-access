@@ -1,0 +1,150 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="960" viewBox="0 0 1600 960" role="img" aria-labelledby="title description">
+  <title id="title">FIWARE Data Access - Architecture Overview</title>
+  <desc id="description">Architecture showing clients, the FDA API and fetcher, Agenda jobs, DuckDB, PostgreSQL and MongoDB datasources, MongoDB metadata, uploads, and MinIO Parquet storage. Cached and only-fresh query paths are distinguished.</desc>
+  <defs>
+    <marker id="arrow-blue" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0 0L10 5L0 10Z" fill="#2878c8"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0 0L10 5L0 10Z" fill="#23834b"/>
+    </marker>
+    <marker id="arrow-orange" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0 0L10 5L0 10Z" fill="#d87900"/>
+    </marker>
+    <marker id="arrow-purple" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0 0L10 5L0 10Z" fill="#7541a5"/>
+    </marker>
+    <style>
+      text { font-family: Arial, Helvetica, sans-serif; fill: #182b3d; }
+      .title { font-size: 30px; font-weight: 700; letter-spacing: .5px; }
+      .subtitle { font-size: 17px; fill: #526579; }
+      .box-title { font-size: 19px; font-weight: 700; }
+      .body { font-size: 15px; }
+      .small { font-size: 13px; fill: #526579; }
+      .label { font-size: 13px; font-weight: 700; }
+      .panel { fill: #fff; stroke: #9eb4c9; stroke-width: 2; }
+      .api-panel { fill: #f0f7ff; stroke: #2878c8; stroke-width: 2; }
+      .worker-panel { fill: #f1f9f3; stroke: #23834b; stroke-width: 2; }
+      .compute-panel { fill: #fff8eb; stroke: #d87900; stroke-width: 2; }
+      .storage-panel { fill: #f5f0fa; stroke: #7541a5; stroke-width: 2; }
+      .flow-blue { fill: none; stroke: #2878c8; stroke-width: 3; marker-end: url(#arrow-blue); }
+      .flow-green { fill: none; stroke: #23834b; stroke-width: 3; marker-end: url(#arrow-green); }
+      .flow-orange { fill: none; stroke: #d87900; stroke-width: 3; marker-end: url(#arrow-orange); }
+      .flow-purple { fill: none; stroke: #7541a5; stroke-width: 3; marker-end: url(#arrow-purple); }
+      .fresh { stroke-dasharray: 9 7; }
+      .tag { font-size: 12px; font-weight: 700; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="960" fill="#f8fafc"/>
+  <text x="800" y="52" text-anchor="middle" class="title">FIWARE DATA ACCESS — ARCHITECTURE OVERVIEW</text>
+  <text x="800" y="82" text-anchor="middle" class="subtitle">Cached datasets, direct source queries and asynchronous processing</text>
+
+  <rect x="310" y="120" width="920" height="690" rx="22" fill="#fff" stroke="#2878c8" stroke-width="3"/>
+  <rect x="340" y="105" width="420" height="34" rx="17" fill="#2878c8"/>
+  <text x="550" y="128" text-anchor="middle" font-size="16" font-weight="700" fill="#fff">FIWARE DATA ACCESS · NODE.JS</text>
+
+  <rect x="45" y="265" width="215" height="145" rx="14" class="api-panel"/>
+  <text x="152" y="300" text-anchor="middle" class="box-title">Clients</text>
+  <text x="152" y="334" text-anchor="middle" class="body">Dashboards</text>
+  <text x="152" y="359" text-anchor="middle" class="body">Applications · services</text>
+  <text x="152" y="384" text-anchor="middle" class="small">Native API · legacy CDA adapter</text>
+
+  <rect x="45" y="590" width="215" height="105" rx="14" class="panel"/>
+  <text x="152" y="625" text-anchor="middle" class="box-title">File input</text>
+  <text x="152" y="656" text-anchor="middle" class="body">CSV · XLS · XLSX</text>
+  <text x="152" y="678" text-anchor="middle" class="small">Creates a cached FDA</text>
+
+  <rect x="355" y="180" width="340" height="210" rx="15" class="api-panel"/>
+  <text x="525" y="216" text-anchor="middle" class="box-title">REST API</text>
+  <text x="525" y="250" text-anchor="middle" class="body">FDA · DA · datasource management</text>
+  <text x="525" y="278" text-anchor="middle" class="body">Cached and only-fresh queries</text>
+  <text x="525" y="306" text-anchor="middle" class="body">Health · metrics · usage</text>
+  <text x="525" y="352" text-anchor="middle" class="small">JSON · CSV · XLSX · NDJSON · CDA format</text>
+
+  <rect x="790" y="180" width="360" height="135" rx="15" class="api-panel"/>
+  <text x="970" y="218" text-anchor="middle" class="box-title">Cached FDA lifecycle</text>
+  <text x="970" y="250" text-anchor="middle" class="body">Lazy · on-demand · scheduled refresh</text>
+  <text x="970" y="278" text-anchor="middle" class="body">Partitions · retention windows</text>
+
+  <rect x="790" y="375" width="165" height="105" rx="15" class="compute-panel"/>
+  <text x="872" y="410" text-anchor="middle" class="box-title">Agenda</text>
+  <text x="872" y="439" text-anchor="middle" class="body">Persistent jobs</text>
+  <text x="872" y="461" text-anchor="middle" class="small">Distributed locks</text>
+
+  <rect x="1000" y="365" width="190" height="145" rx="15" class="worker-panel"/>
+  <text x="1095" y="400" text-anchor="middle" class="box-title">Fetcher role</text>
+  <text x="1095" y="432" text-anchor="middle" class="body">Fetch · refresh</text>
+  <text x="1095" y="458" text-anchor="middle" class="body">Upload processing</text>
+  <text x="1095" y="484" text-anchor="middle" class="small">Scalable background workers</text>
+
+  <rect x="765" y="565" width="310" height="150" rx="15" class="compute-panel"/>
+  <text x="920" y="605" text-anchor="middle" class="box-title">DuckDB</text>
+  <text x="920" y="637" text-anchor="middle" class="body">Embedded query and transform engine</text>
+  <text x="920" y="666" text-anchor="middle" class="body">Source rows → Parquet</text>
+  <text x="920" y="692" text-anchor="middle" class="small">DA queries run over cached Parquet</text>
+
+  <rect x="1320" y="145" width="235" height="120" rx="15" class="panel"/>
+  <text x="1437" y="184" text-anchor="middle" class="box-title">PostgreSQL</text>
+  <text x="1437" y="216" text-anchor="middle" class="body">Source datasource</text>
+  <text x="1437" y="242" text-anchor="middle" class="small">SQL queries</text>
+
+  <rect x="1320" y="310" width="235" height="120" rx="15" class="panel"/>
+  <text x="1437" y="349" text-anchor="middle" class="box-title">MongoDB</text>
+  <text x="1437" y="381" text-anchor="middle" class="body">Source datasource</text>
+  <text x="1437" y="407" text-anchor="middle" class="small">Filter · aggregation queries</text>
+
+  <rect x="1320" y="500" width="235" height="130" rx="15" class="storage-panel"/>
+  <text x="1437" y="540" text-anchor="middle" class="box-title">MongoDB persistence</text>
+  <text x="1437" y="573" text-anchor="middle" class="body">Metadata · Agenda jobs</text>
+  <text x="1437" y="600" text-anchor="middle" class="small">Shared state and job locks</text>
+
+  <rect x="1320" y="690" width="235" height="120" rx="15" class="worker-panel"/>
+  <text x="1437" y="730" text-anchor="middle" class="box-title">MinIO / S3</text>
+  <text x="1437" y="762" text-anchor="middle" class="body">Cached Parquet snapshots</text>
+  <text x="1437" y="788" text-anchor="middle" class="small">Bucket per Fiware-Service</text>
+
+  <path d="M260 320H345" class="flow-blue"/>
+  <text x="300" y="303" text-anchor="middle" class="label" fill="#2878c8">HTTP / HTTPS</text>
+  <path d="M345 367H260" class="flow-blue"/>
+  <text x="300" y="390" text-anchor="middle" class="small">API responses</text>
+
+  <path d="M260 640C305 640 305 360 350 360" class="flow-blue"/>
+  <text x="290" y="555" class="small">Upload request</text>
+
+  <path d="M695 335H780V425" class="flow-orange"/>
+  <text x="710" y="376" class="small">Schedule work</text>
+  <path d="M955 425H995" class="flow-orange"/>
+  <text x="974" y="405" text-anchor="middle" class="small">Claim jobs</text>
+  <path d="M872 480V535H1315" class="flow-purple"/>
+  <text x="1195" y="526" text-anchor="middle" class="small">Persist jobs / locks</text>
+  <path d="M1320 205H1260V405H1195" class="flow-green"/>
+  <text x="1257" y="294" text-anchor="middle" class="small">Source fetch</text>
+  <path d="M1320 370H1265V438H1195" class="flow-green"/>
+  <path d="M1195 465H1265V560H1320" class="flow-purple"/>
+  <text x="1265" y="516" text-anchor="middle" class="small">Status / usage</text>
+  <path d="M695 370H730V820H1290V635H1315" class="flow-purple"/>
+  <text x="1030" y="805" text-anchor="middle" class="small">Shared FDA / DA / datasource metadata</text>
+
+  <path d="M1095 510V555" class="flow-green"/>
+  <text x="1112" y="540" class="small">Fetched rows</text>
+  <path d="M1075 640H1315" class="flow-green"/>
+  <text x="1195" y="623" text-anchor="middle" class="small">Write / read Parquet</text>
+  <path d="M695 350H735V640H760" class="flow-orange"/>
+  <text x="805" y="552" text-anchor="middle" class="small">DA query</text>
+
+  <path d="M695 285V155H1280V165H1315" fill="none" stroke="#2878c8" stroke-width="3" stroke-dasharray="9 7" marker-end="url(#arrow-blue)"/>
+  <text x="1090" y="148" text-anchor="middle" class="label" fill="#2878c8">ONLY-FRESH · DIRECT SOURCE QUERY</text>
+  <path d="M1280 165V370H1315" fill="none" stroke="#2878c8" stroke-width="3" stroke-dasharray="9 7" marker-end="url(#arrow-blue)"/>
+
+  <rect x="45" y="850" width="1510" height="70" rx="14" fill="#fff" stroke="#c5d2df" stroke-width="1.5"/>
+  <line x1="75" y1="878" x2="135" y2="878" class="flow-green"/>
+  <text x="150" y="883" class="body">Cached fetch / Parquet flow</text>
+  <line x1="420" y1="878" x2="480" y2="878" fill="none" stroke="#2878c8" stroke-width="3" stroke-dasharray="9 7" marker-end="url(#arrow-blue)"/>
+  <text x="495" y="883" class="body">Only-fresh direct query</text>
+  <line x1="765" y1="878" x2="825" y2="878" class="flow-orange"/>
+  <text x="840" y="883" class="body">Job scheduling / query execution</text>
+  <line x1="1210" y1="878" x2="1270" y2="878" class="flow-purple"/>
+  <text x="1285" y="883" class="body">Metadata / persistence</text>
+  <text x="800" y="940" text-anchor="middle" class="small">Cached FDA: PostgreSQL / MongoDB / tabular upload → Parquet in MinIO → DA queries · Only-fresh FDA: source query, no cache and no DAs</text>
+</svg>

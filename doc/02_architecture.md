@@ -8,8 +8,6 @@ This document describes the system architecture of **FIWARE Data Access**, inclu
 
 This section explains what an **FDA** and a **DA / CDA** are in the context of the FIWARE Data Access API.
 
-[Architecture](../doc/images/FDA_diagram.png)
-
 ### Datasource
 
 A **Datasource** represents the connection definition FDA uses to access source systems.
@@ -18,37 +16,42 @@ In the current implementation:
 
 -   Datasources are scoped by `Fiware-Service` and identified by `datasourceId`
 -   FDAs store `datasourceId` and resolve credentials at execution time
--   Supported datasource type is currently `postgres`
+-   Supported datasource types are `postgres` and `mongodb`
+-   Tabular files can also be uploaded to create an FDA without a datasource
 
 In simple terms:
 
-> **A datasource is the reusable connection profile used by FDAs to fetch fresh/source data.**
+> **A datasource is the reusable connection profile used by an FDA to fetch data from a source system.**
 
 ### FDA
 
-An **FDA** represents a **materialized dataset** in the system. It:
+An **FDA** represents a data resource in the system. A cached FDA:
 
--   Defines how data is extracted from a **source database** (PostgreSQL)
--   Executes a **base SQL query**
--   Stores the result as a **Parquet file**
--   Saves the file in a **bucket-based object storage system**
+-   Defines how data is extracted from a source database (PostgreSQL or MongoDB), or created from an uploaded tabular
+    file
+-   Stores the materialized result as **Parquet** in bucket-based object storage
 -   Acts as the **base dataset** for one or more DAs
--   Supports an optional `refreshPolicy` that defines how the FDA is automatically refreshed (none, interval or window)
+-   Supports optional `refreshPolicy` types `none`, `interval`, `window`, and `onDemand`; cached FDAs can also be lazy
 -   Window-based FDAs can also schedule a periodic consistency refresh that triggers the manual rebuild flow and helps
     recover historical gaps.
+-   Can use a generated `defaultDataAccess`; upload FDAs and source-backed FDAs can also have custom DAs
+
+An only-fresh FDA instead queries its PostgreSQL or MongoDB source directly. It does not create a Parquet snapshot or
+support DAs.
 
 In simple terms:
 
-> **An FDA is a reusable, precomputed snapshot of data.**
+> **A cached FDA is a reusable, materialized dataset. An only-fresh FDA queries its source without maintaining a
+> snapshot.**
 
 Key characteristics:
 
--   Created from a base SQL query
--   Physically stored as a Parquet file
--   Stored inside a bucket named after the `Fiware-Service`
+-   A cached FDA can be created from a PostgreSQL SQL query, a MongoDB filter/aggregation query, or an uploaded tabular
+    file
+-   Cached data is stored as Parquet inside a bucket named after the `Fiware-Service`
 -   Associated with a `visibility` level (`public` or `private`) that controls access authorization
 -   Can be regenerated (manually or configured) to refresh the data
--   Parent resource of one or more DAs
+-   Cached FDAs can be the parent resource of one or more DAs
 -   Has status, progress, initFetch and lastFetch fields, and an optional refreshPolicy.
 
 #### Example FDA
@@ -67,7 +70,7 @@ Content-Type: application/json
     "query": "SELECT * FROM animal_activity",
     "refreshPolicy": {
         "type": "interval",
-        "value": "0 * * * *"
+        "params": { "refreshInterval": "1 hour" }
     }
 }
 ```
@@ -84,7 +87,7 @@ It:
 -   Does **not** store data
 -   Defines how to query an existing FDA
 -   Can be executed multiple times with different parameters
--   Returns results in JSON format
+-   Returns results in JSON by default; CSV, XLSX and NDJSON are also supported
 -   Does **not** include **FROM** clause. Access the FDA directly, you don't need to know the internal storage logic
 
 In simple terms:
@@ -96,7 +99,7 @@ Key characteristics:
 -   Always associated with exactly one FDA
 -   Contains a query definition
 -   Supports URL parameters
--   Produces JSON query results
+-   Produces query results in the requested supported format
 -   Used by dashboards, services, or external clients
 
 #### Example DA
@@ -120,29 +123,67 @@ Content-Type: application/json
 
 ## Architecture Overview
 
-The **FIWARE Data Access** system consists of:
+![FIWARE Data Access architecture diagram](images/FDA_diagram.svg)
 
--   **Node.js FDA server**: handles API requests, processes FDA and DA objects, orchestrates data flow
--   **PostgreSQL**: source database for FDAs
--   **MinIO**: object storage for Parquet files
--   **MongoDB**: stores metadata about FDAs, DAs, and datasources
--   **DuckDB**: executes queries over Parquet files stored in MinIO
+The diagram source is maintained as Mermaid for easy editing:
 
-Data flow:
+<details>
+<summary>Editable Mermaid source</summary>
 
-1. FDA is created from PostgreSQL → CSV → Parquet → uploaded to MinIO
-2. Metadata about the FDA and its DAs is stored in MongoDB
-3. FDA source/fresh execution resolves datasource credentials from MongoDB by `service + datasourceId`
-4. DA queries are executed on Parquet datasets using DuckDB
-5. Results are returned as JSON via the API
+```mermaid
+flowchart LR
+    Clients["Dashboards · applications · services"]
 
-Fresh mode:
+    subgraph FDA["FIWARE Data Access · Node.js"]
+        API["REST API<br/>FDA / DA / datasource management<br/>legacy CDA compatibility"]
+        Worker["Fetcher role<br/>asynchronous fetch, refresh and upload jobs"]
+        DuckDB["DuckDB embedded in FDA processes<br/>Parquet transformation and DA queries"]
+        Agenda["Agenda job scheduler"]
+    end
 
--   DAs are always executed on the cached parquet snapshot.
--   For use cases that require real-time data, `GET /{visibility}/fdas/{fdaId}/data` executes the FDA directly on
-    PostgreSQL.
--   FDAs can be created with `cached=false` to disable parquet generation and operate as only-fresh resources.
--   Fresh mode is controlled per instance with `FDA_ROLE_SYNCQUERIES`.
+    Postgres["PostgreSQL datasource"]
+    MongoSource["MongoDB datasource"]
+    Upload["CSV / XLS / XLSX upload"]
+    MongoMeta["MongoDB persistence<br/>FDA / DA / datasource metadata<br/>Agenda jobs and locks"]
+    MinIO["MinIO / S3-compatible object storage<br/>Parquet snapshots, per-service buckets"]
+
+    Clients -->|"HTTP / HTTPS"| API
+    API -->|"JSON · CSV · XLSX · NDJSON · CDA format"| Clients
+    API -->|"Schedule fetch / refresh / upload"| Agenda
+    Agenda <-->|"Persist jobs and distributed locks"| MongoMeta
+    Worker <-->|"Claim and execute jobs"| Agenda
+    API <-->|"Metadata, status and usage accounting"| MongoMeta
+    Worker -->|"Fetch status and metrics"| MongoMeta
+
+    Postgres -->|"Source query"| Worker
+    MongoSource -->|"Filter / aggregation query"| Worker
+    Upload -->|"File upload"| API
+    API -->|"Upload processing job"| Agenda
+    Worker -->|"Rows / uploaded tabular data"| DuckDB
+    DuckDB -->|"Write Parquet"| MinIO
+
+    API -->|"Execute DA query"| DuckDB
+    MinIO -->|"Read cached Parquet via S3"| DuckDB
+    API -->|"Only-fresh query (no cache or DA)"| Postgres
+    API -->|"Only-fresh query (no cache or DA)"| MongoSource
+```
+
+</details>
+
+The diagram distinguishes the two execution paths:
+
+-   **Cached FDA:** the API schedules work through Agenda; a fetcher reads from PostgreSQL or MongoDB (or processes an
+    uploaded CSV/XLSX file), DuckDB materializes Parquet in MinIO, and DA queries read that snapshot. Refreshes can be
+    scheduled (`interval` or `window`), lazy, or triggered on demand. Partitioning and window retention are optional.
+-   **Only-fresh FDA:** `GET /{visibility}/fdas/{fdaId}/data` executes directly against its PostgreSQL or MongoDB
+    source. It has no Parquet snapshot and does not support DAs.
+-   **Persistence and operations:** MongoDB stores FDA, DA and datasource metadata as well as Agenda jobs and locks. The
+    API also exposes health, Prometheus/OpenMetrics and usage-accounting endpoints. FDA does not enforce storage quotas;
+    MinIO bucket quotas are configured by operators.
+
+DuckDB is an embedded library used by FDA processes, not a separately deployed query service. MinIO stores cached
+Parquet objects; it is not the source database. Datasource credentials are resolved from MongoDB using
+`service + datasourceId`.
 
 ---
 
@@ -165,7 +206,7 @@ Each document corresponds to one FDA:
 -   **description**: FDA description
 -   **query**: SQL query used to generate the Parquet file
 -   **das**: keymap of DAs associated with the FDA
--   **refreshPolicy**: object defining automatic refresh behaviour (`none`, `interval`, or `window`)
+-   **refreshPolicy**: object defining refresh behaviour (`none`, `interval`, `window`, or `onDemand`)
 -   **status**: current execution status (`fetching`, `transforming`, `uploading`, `completed`, `failed`, `deleting`)
 -   **progress**: execution progress percentage (0–100)
 -   **initFetch**: timestamp of the current/last fetch start (ISO date)
@@ -283,8 +324,9 @@ Each document corresponds to one datasource definition for one service:
 
 -   **service**: FIWARE service (`fiware-service`) name
 -   **datasourceId**: datasource identifier (unique within the service)
--   **type**: datasource type (currently `postgres`)
--   **config**: connection settings (for postgres: `username`, `password`, `host`, `port`, `database`)
+-   **type**: datasource type (`postgres` or `mongodb`)
+-   **config**: connection settings (for postgres: `username`, `password`, `host`, `port`, `database`; for mongodb:
+    `uri`, `database`)
 
 #### Example MongoDB datasource document
 

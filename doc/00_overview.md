@@ -1,21 +1,23 @@
 # Overview
 
-**FIWARE Data Access (FDA)** is a smart city API designed to efficiently store and query datasets in an object storage
-server.  
-It replaces Pentaho CDA extensions and provides a modern, reusable approach to analytical data access.
+**FIWARE Data Access (FDA)** is an API for reusable analytical data access. Cached datasets are stored in object
+storage; only-fresh resources can query their source directly. FDA also provides a compatibility endpoint for selected
+legacy Pentaho CDA clients, while native FDA endpoints are the recommended interface for new integrations.
 
 The main concepts in FDA are:
 
--   **FDA (FIWARE Data Access)**: a precomputed, materialized dataset stored in Parquet format in object storage.
--   **DA (Data Access) / CDA (Community Data Access)**: parameterized queries executed on top of an FDA, producing JSON
-    results.
+-   **FDA (FIWARE Data Access)**: a data resource backed either by a cached Parquet dataset in object storage or by a
+    direct, only-fresh query to its source.
+-   **DA (Data Access)**: a parameterized query over a cached FDA. The legacy CDA endpoint provides a compatibility
+    adapter for existing clients.
 
-FDA interacts with several systems:
+FDA interacts with these systems:
 
--   PostgreSQL (source database)
+-   PostgreSQL and MongoDB (supported source databases)
+-   CSV/XLS/XLSX uploads (alternative input for cached FDAs)
 -   MinIO (object storage)
--   MongoDB (metadata persistence)
--   DuckDB (query execution on Parquet datasets)
+-   MongoDB (metadata and background-job persistence)
+-   DuckDB (embedded Parquet transformation and query engine)
 
 ---
 
