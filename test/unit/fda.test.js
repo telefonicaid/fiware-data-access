@@ -7069,6 +7069,7 @@ describe('lazy and onDemand FDAs', () => {
   const agenda = {
     now: jest.fn(),
     create: jest.fn(),
+    cancel: jest.fn(),
   };
 
   const onDemandPolicy = { type: 'onDemand', params: { maxAge: '15 minutes' } };
@@ -7484,6 +7485,48 @@ describe('lazy and onDemand FDAs', () => {
       }),
     ).resolves.toEqual({ regenerated: true });
     expect(agenda.now).not.toHaveBeenCalled();
+  });
+
+  test('a PUT switching a never fetched lazy interval FDA to onDemand cancels its recurring jobs', async () => {
+    const failed = storedFDA({
+      lazy: true,
+      refreshPolicy: {
+        type: 'interval',
+        params: { refreshInterval: '1 hour' },
+      },
+      status: 'failed',
+    });
+    mongoMocks.retrieveFDA.mockResolvedValue(failed);
+    mongoMocks.updateFDAFields.mockResolvedValueOnce({
+      ...failed,
+      refreshPolicy: onDemandPolicy,
+    });
+    mongoMocks.claimOnDemandRefresh.mockResolvedValueOnce({
+      ...failed,
+      refreshPolicy: onDemandPolicy,
+    });
+
+    await expect(
+      putFDA('svc', 'fdaLazy', undefined, '/servicepath', {
+        refreshPolicy: onDemandPolicy,
+      }),
+    ).resolves.toEqual({ regenerated: true });
+
+    expect(agenda.cancel).toHaveBeenCalledTimes(3);
+    expect(agenda.create).not.toHaveBeenCalled();
+    expect(agenda.now).toHaveBeenCalledTimes(1);
+  });
+
+  test('a PUT with a body on an idle FDA does not cancel jobs when the refresh policy is unchanged', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue(storedFDA());
+    mongoMocks.updateFDAFields.mockResolvedValueOnce(storedFDA());
+    mongoMocks.claimOnDemandRefresh.mockResolvedValueOnce(storedFDA());
+
+    await putFDA('svc', 'fdaLazy', undefined, '/servicepath', {
+      description: 'new description',
+    });
+
+    expect(agenda.cancel).not.toHaveBeenCalled();
   });
 
   test('a PUT with an invalid maxAge is an invalid body', async () => {
