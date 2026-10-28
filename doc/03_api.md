@@ -1514,15 +1514,16 @@ _**Request headers**_
 _**Request payload**_
 
 The body is optional. Every field is optional and only the fields sent are updated; the rest keep their stored value.
-`query`, `datasourceId` and `cached` cannot be updated (any other field returns `400 BadRequest`), so the existing DAs
-keep working.
+`query`, `datasourceId`, `cached` and `lazy` cannot be updated (any other field returns `400 BadRequest`), so the
+existing DAs keep working. On a lazy or `onDemand` FDA that has never been fetched, the new values are stored and its
+first fetch is enqueued, as without a body.
 
 | Parameter        | Type              | Description                                                                                                                                                                                                                                                |
 | ---------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `description`    | string            | New FDA description.                                                                                                                                                                                                                                       |
 | `timeColumn`     | string or `null`  | New time column. In `strict` mode it is validated against the source query. On a partitioned FDA the stored data is rebuilt from scratch.                                                                                                                  |
 | `validationMode` | string            | `strict` or `unchecked`.                                                                                                                                                                                                                                   |
-| `refreshPolicy`  | object            | Replaces the stored refresh policy, with the same rules as on creation. The scheduled refresh jobs are recreated.                                                                                                                                          |
+| `refreshPolicy`  | object            | Replaces the stored refresh policy, with the same rules as on creation (including `onDemand` and its `maxAge`). The scheduled refresh jobs are recreated. Setting `onDemand` makes the FDA lazy.                                                           |
 | `objStgConf`     | object            | Merged into the stored one (sending only `compression` keeps the partition). Only `partition` and `compression` are accepted. Changing `partition` deletes the stored data and rebuilds it, so the FDA cannot be queried until the regeneration completes. |
 | `maxDownloads`   | integer or `null` | New download limit. `null` removes it. Downloads already used are kept, so raising the limit re-enables an exhausted FDA.                                                                                                                                  |
 | `expirationDate` | string or `null`  | New download expiration. `null` removes it. Mutually exclusive with `validityPeriod`.                                                                                                                                                                      |
