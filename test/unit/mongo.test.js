@@ -822,7 +822,7 @@ describe('mongo utils', () => {
         service: 'svc',
         fdaId: 'fdaA',
         servicePath: '/sp',
-        status: { $in: ['completed', 'failed'] },
+        status: { $in: ['completed', 'failed', 'idle'] },
       },
       { $set: { description: 'new' }, $unset: { downloadPolicy: '' } },
       { returnDocument: 'after' },
@@ -847,6 +847,17 @@ describe('mongo utils', () => {
 
     collectionMock.findOneAndUpdate.mockResolvedValueOnce(null);
     collectionMock.findOne.mockResolvedValueOnce({ status: 'fetching' });
+
+    await expect(
+      updateFDAFields('svc', 'fdaA', '/sp', { description: 'new' }),
+    ).rejects.toMatchObject({ status: 409, type: 'AlreadyFetching' });
+  });
+
+  test('updateFDAFields throws AlreadyFetching while a lazy FDA fetch is requested', async () => {
+    const { updateFDAFields, collectionMock } = await loadMongoModule();
+
+    collectionMock.findOneAndUpdate.mockResolvedValueOnce(null);
+    collectionMock.findOne.mockResolvedValueOnce({ status: 'pending' });
 
     await expect(
       updateFDAFields('svc', 'fdaA', '/sp', { description: 'new' }),

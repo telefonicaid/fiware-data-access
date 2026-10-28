@@ -3627,6 +3627,26 @@ describe('putFDA with update body', () => {
     expect(agenda.now).toHaveBeenCalledTimes(1);
   });
 
+  test('switching to onDemand marks the FDA as lazy and schedules no recurring job', async () => {
+    const refreshPolicy = {
+      type: 'onDemand',
+      params: { maxAge: '15 minutes' },
+    };
+
+    await putFDA('svc', 'fda42', 'public', '/servicepath', { refreshPolicy });
+
+    expect(mongoMocks.regenerateFDA).toHaveBeenCalledWith(
+      'svc',
+      'fda42',
+      '/servicepath',
+      { refreshPolicy, lazy: true },
+      [],
+    );
+    expect(agenda.cancel).toHaveBeenCalled();
+    expect(agenda.create).not.toHaveBeenCalled();
+    expect(agenda.now).toHaveBeenCalledTimes(1);
+  });
+
   test('stores description changes without rescheduling jobs', async () => {
     await putFDA('svc', 'fda42', 'public', '/servicepath', {
       description: 'new description',
@@ -3746,7 +3766,7 @@ describe('putFDA with update body', () => {
       'fda42',
       '/servicepath',
       { objStgConf: { partition: 'month' } },
-      ['lastFetch'],
+      ['lastFetch', 'lastFetchStartedAt'],
     );
     expect(awsMocks.dropFiles).toHaveBeenCalledWith({}, expect.any(String), [
       'servicepath/fda42.parquet',
@@ -3778,7 +3798,7 @@ describe('putFDA with update body', () => {
       'fda42',
       '/servicepath',
       { timeColumn: 'createdAt' },
-      ['lastFetch'],
+      ['lastFetch', 'lastFetchStartedAt'],
     );
   });
 
@@ -7420,6 +7440,61 @@ describe('lazy and onDemand FDAs', () => {
     await expect(
       putFDA('svc', 'fdaLazy', undefined, '/servicepath'),
     ).rejects.toMatchObject({ status: 409, type: 'AlreadyFetching' });
+  });
+
+  test('a PUT with a body on an idle FDA stores the values and requests its first fetch', async () => {
+    const idle = storedFDA();
+    mongoMocks.retrieveFDA.mockResolvedValue(idle);
+    mongoMocks.updateFDAFields.mockResolvedValueOnce({
+      ...idle,
+      description: 'new description',
+    });
+    mongoMocks.claimOnDemandRefresh.mockResolvedValueOnce({
+      ...idle,
+      description: 'new description',
+    });
+
+    await expect(
+      putFDA('svc', 'fdaLazy', undefined, '/servicepath', {
+        description: 'new description',
+      }),
+    ).resolves.toEqual({ regenerated: true });
+
+    expect(mongoMocks.updateFDAFields).toHaveBeenCalledWith(
+      'svc',
+      'fdaLazy',
+      '/servicepath',
+      { description: 'new description' },
+      [],
+    );
+    const [{ retryBefore }] = mongoMocks.claimOnDemandRefresh.mock.calls[0];
+    expect(retryBefore.getTime()).toBeGreaterThanOrEqual(Date.now() - 1000);
+    expect(mongoMocks.regenerateFDA).not.toHaveBeenCalled();
+    expect(agenda.now).toHaveBeenCalledTimes(1);
+  });
+
+  test('a PUT with a body on an idle FDA claimed meanwhile by a query still answers 202', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue(storedFDA());
+    mongoMocks.updateFDAFields.mockResolvedValueOnce(storedFDA());
+    mongoMocks.claimOnDemandRefresh.mockResolvedValueOnce(null);
+
+    await expect(
+      putFDA('svc', 'fdaLazy', undefined, '/servicepath', {
+        description: 'new description',
+      }),
+    ).resolves.toEqual({ regenerated: true });
+    expect(agenda.now).not.toHaveBeenCalled();
+  });
+
+  test('a PUT with an invalid maxAge is an invalid body', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue(storedFDA());
+
+    await expect(
+      putFDA('svc', 'fdaLazy', undefined, '/servicepath', {
+        refreshPolicy: { type: 'onDemand', params: { maxAge: 'soon' } },
+      }),
+    ).rejects.toMatchObject({ status: 400, type: 'InvalidUpdateBody' });
+    expect(mongoMocks.updateFDAFields).not.toHaveBeenCalled();
   });
 
   test('creating a lazy window FDA schedules no job', async () => {
