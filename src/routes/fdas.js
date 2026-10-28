@@ -582,13 +582,14 @@ router.get('/:visibility/fdas/:fdaId', async (req, res) => {
  *       as only-fresh (`cached: false`, which does not support manual regeneration).
  *
  *       An optional body updates some FDA properties before regenerating it. Without a body (or with `{}`) the
- *       FDA is only regenerated. `query`, `datasourceId` and `cached` cannot be changed. The new values are
+ *       FDA is only regenerated. `query`, `datasourceId`, `cached` and `lazy` cannot be changed. The new values are
  *       validated against the source query (`strict` mode) and against each other (same rules as on creation).
  *       `refreshPolicy` replaces the stored one; `objStgConf` is merged into the stored one. Changing
  *       `refreshPolicy`, `timeColumn` or `objStgConf` recreates the scheduled refresh jobs. Changing
  *       `objStgConf.partition`, or the `timeColumn` of a partitioned FDA, deletes the stored data and rebuilds
  *       it from scratch, so the FDA cannot be queried until the regeneration completes. A `compression`-only
- *       change applies to files written from then on.
+ *       change applies to files written from then on. `refreshPolicy` accepts `onDemand` (with `maxAge`), which
+ *       makes the FDA lazy. On a lazy FDA never fetched the values are stored and its first fetch is enqueued.
  *
  *       `maxDownloads`, `expirationDate` and `validityPeriod` update the download restrictions independently
  *       (`expirationDate` and `validityPeriod` are mutually exclusive). `validityPeriod` starts counting from the
@@ -706,7 +707,8 @@ router.put('/:visibility/fdas/:fdaId', async (req, res) => {
   const servicePath = req.get('Fiware-ServicePath');
   const { visibility, fdaId } = req.params;
   const body = req.body ?? {};
-  // query, datasourceId and cached are not updatable: DAs could stop working
+  // query, datasourceId and cached are not updatable: DAs could stop working.
+  // lazy is not either: it only matters before the first fetch
   const updatableFields = [
     'description',
     'refreshPolicy',

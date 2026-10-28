@@ -1072,7 +1072,8 @@ export async function updateFDAFields(
       service,
       fdaId,
       servicePath,
-      status: { $in: ['completed', 'failed'] },
+      // idle: a lazy FDA not fetched yet
+      status: { $in: ['completed', 'failed', 'idle'] },
     },
     buildFieldsUpdate(setFields, unsetFields),
     { returnDocument: 'after' },
@@ -1107,7 +1108,8 @@ async function throwFDANotIdleError(collection, service, fdaId, servicePath) {
     );
   }
 
-  if (existing.status === 'fetching') {
+  // pending: the first fetch of a lazy FDA is already requested
+  if (existing.status === 'fetching' || existing.status === 'pending') {
     throw new FDAError(
       409,
       'AlreadyFetching',

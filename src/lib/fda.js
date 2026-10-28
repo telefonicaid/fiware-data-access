@@ -1572,6 +1572,26 @@ export async function putFDA(
     return { regenerated: false, status: updated.status };
   }
 
+  // A lazy FDA never fetched has no jobs nor data yet, so it only needs its first fetch
+  if (isMaterializedOnDemand(fda) && !fda.lastFetch) {
+    await updateFDAFields(
+      service,
+      fdaId,
+      normalizedServicePath,
+      setFields,
+      unsetFields,
+    );
+    if (rebuildStorage) {
+      await dropFDAStorage(service, fdaId, normalizedServicePath);
+    }
+    // If a query claimed it after the update, its fetch already uses the new values
+    await requestOnDemandRefresh(
+      { service, fdaId, servicePath: normalizedServicePath },
+      { ignoreRetryBackoff: true },
+    );
+    return { regenerated: true };
+  }
+
   // Claims the FDA (409 if it is being processed) and stores the new values atomically
   const previous = await regenerateFDA(
     service,
@@ -1859,6 +1879,10 @@ function buildUpdateFields(fda, updates, effective, rebuildStorage) {
       setFields[field] = effective[field];
     }
   }
+  // onDemand FDAs are always lazy, as on creation
+  if (updates.refreshPolicy?.type === 'onDemand') {
+    setFields.lazy = true;
+  }
 
   const { maxDownloads, expirationDate, validityPeriod } = updates;
   if (
@@ -1878,7 +1902,7 @@ function buildUpdateFields(fda, updates, effective, rebuildStorage) {
   }
 
   if (rebuildStorage) {
-    unsetFields.push('lastFetch');
+    unsetFields.push('lastFetch', 'lastFetchStartedAt');
   }
 
   return { setFields, unsetFields };
