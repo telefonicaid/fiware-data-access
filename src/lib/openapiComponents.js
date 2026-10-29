@@ -484,9 +484,10 @@
  *             Required when `refreshPolicy.type` is `window` or `objStgConf.partition` is set. Column indicating
  *             when the data was received. In `strict` validation mode it must be explicitly projected in the
  *             query's SELECT clause (`postgres`) or projection/final `$project` (`mongodb`). For `mongodb`
- *             `aggregation` queries with a `window` refresh policy, it must additionally be a raw field of the
- *             source collection, readable before any pipeline stage runs, and hold BSON `Date` values — the
- *             window's time-range condition is injected as the first `$match` stage.
+ *             queries with a `window` refresh policy, it must additionally be a raw field of the source
+ *             collection (in a `projection`, projected with `1` or `true`, not an alias), readable before any projection
+ *             or pipeline stage runs, and hold BSON `Date` values — the window's time-range condition is
+ *             evaluated on the stored documents.
  *         objStgConf:
  *           $ref: '#/components/schemas/ObjStgConf'
  *         cached:

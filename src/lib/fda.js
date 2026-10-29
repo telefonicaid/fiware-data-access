@@ -146,7 +146,7 @@ function assertSupportedDatasourceType(type) {
   }
 }
 
-export function validateMongoFDAContract(query, timeColumn) {
+export function validateMongoFDAContract(query, timeColumn, refreshPolicy) {
   validateBasicQueryStructure(query);
 
   const { collection, filter, projection, aggregation } = query;
@@ -155,7 +155,7 @@ export function validateMongoFDAContract(query, timeColumn) {
   const queryType = determineQueryType(filter, aggregation);
 
   if (queryType === 'find') {
-    validateFindQuery(filter, projection, timeColumn);
+    validateFindQuery(filter, projection, timeColumn, refreshPolicy);
   } else if (queryType === 'aggregation') {
     validateAggregationQuery(aggregation, timeColumn);
   }
@@ -197,10 +197,11 @@ function determineQueryType(filter, aggregation) {
   return hasFindQuery ? 'find' : 'aggregation';
 }
 
-function validateFindQuery(filter, projection, timeColumn) {
+function validateFindQuery(filter, projection, timeColumn, refreshPolicy) {
   validateFilter(filter);
   validateProjection(projection);
   validateTimeColumnInProjection(timeColumn, projection);
+  validateWindowTimeColumnIsRawField(timeColumn, projection, refreshPolicy);
 }
 
 function validateFilter(filter) {
@@ -234,6 +235,25 @@ function validateTimeColumnInProjection(timeColumn, projection) {
       400,
       'InvalidMongoFDAContract',
       'Mongo FDA timeColumn must be included in projection',
+    );
+  }
+}
+
+function validateWindowTimeColumnIsRawField(
+  timeColumn,
+  projection,
+  refreshPolicy,
+) {
+  if (refreshPolicy?.type !== 'window' || !timeColumn || !projection) {
+    return;
+  }
+
+  const value = projection[timeColumn];
+  if (value !== 1 && value !== true) {
+    throw new FDAError(
+      400,
+      'InvalidMongoFDAContract',
+      'Mongo window FDA timeColumn must be a raw field projected with 1 or true, not an alias or expression',
     );
   }
 }
@@ -1018,7 +1038,7 @@ export async function fetchFDA(
   const lazyEnabled = resolveLazy(lazy, refreshPolicy, cached);
 
   if (datasource.type === 'mongodb') {
-    validateMongoFDAContract(query, timeColumn);
+    validateMongoFDAContract(query, timeColumn, refreshPolicy);
   }
 
   const sourceSchema = await validateAndGetSourceSchema(
