@@ -760,6 +760,110 @@ describe('mongo utils', () => {
     });
   });
 
+  test('regenerateFDA applies the updated fields in the same claim', async () => {
+    const { regenerateFDA, collectionMock } = await loadMongoModule();
+
+    collectionMock.findOneAndUpdate.mockResolvedValueOnce({
+      fdaId: 'fdaA',
+      status: 'completed',
+      objStgConf: {},
+    });
+
+    const result = await regenerateFDA(
+      'svc',
+      'fdaA',
+      '/sp',
+      { objStgConf: { partition: 'month' } },
+      ['lastFetch'],
+    );
+
+    expect(collectionMock.findOneAndUpdate).toHaveBeenCalledWith(
+      {
+        service: 'svc',
+        fdaId: 'fdaA',
+        servicePath: '/sp',
+        status: { $in: ['completed', 'failed'] },
+      },
+      {
+        $set: {
+          objStgConf: { partition: 'month' },
+          status: 'fetching',
+          progress: 0,
+        },
+        $unset: { lastFetch: '' },
+      },
+      { returnDocument: 'before' },
+    );
+    expect(result).toEqual({
+      fdaId: 'fdaA',
+      status: 'completed',
+      objStgConf: { partition: 'month' },
+    });
+  });
+
+  test('updateFDAFields updates an idle FDA without claiming it', async () => {
+    const { updateFDAFields, collectionMock } = await loadMongoModule();
+
+    collectionMock.findOneAndUpdate.mockResolvedValueOnce({
+      fdaId: 'fdaA',
+      status: 'completed',
+    });
+
+    const result = await updateFDAFields(
+      'svc',
+      'fdaA',
+      '/sp',
+      { description: 'new' },
+      ['downloadPolicy'],
+    );
+
+    expect(collectionMock.findOneAndUpdate).toHaveBeenCalledWith(
+      {
+        service: 'svc',
+        fdaId: 'fdaA',
+        servicePath: '/sp',
+        status: { $in: ['completed', 'failed', 'idle'] },
+      },
+      { $set: { description: 'new' }, $unset: { downloadPolicy: '' } },
+      { returnDocument: 'after' },
+    );
+    expect(result).toEqual({ fdaId: 'fdaA', status: 'completed' });
+  });
+
+  test('updateFDAFields only unsets when there is nothing to set', async () => {
+    const { updateFDAFields, collectionMock } = await loadMongoModule();
+
+    collectionMock.findOneAndUpdate.mockResolvedValueOnce({ fdaId: 'fdaA' });
+
+    await updateFDAFields('svc', 'fdaA', '/sp', {}, ['downloadPolicy']);
+
+    expect(collectionMock.findOneAndUpdate.mock.calls[0][1]).toEqual({
+      $unset: { downloadPolicy: '' },
+    });
+  });
+
+  test('updateFDAFields throws AlreadyFetching while the FDA is processing', async () => {
+    const { updateFDAFields, collectionMock } = await loadMongoModule();
+
+    collectionMock.findOneAndUpdate.mockResolvedValueOnce(null);
+    collectionMock.findOne.mockResolvedValueOnce({ status: 'fetching' });
+
+    await expect(
+      updateFDAFields('svc', 'fdaA', '/sp', { description: 'new' }),
+    ).rejects.toMatchObject({ status: 409, type: 'AlreadyFetching' });
+  });
+
+  test('updateFDAFields throws AlreadyFetching while a lazy FDA fetch is requested', async () => {
+    const { updateFDAFields, collectionMock } = await loadMongoModule();
+
+    collectionMock.findOneAndUpdate.mockResolvedValueOnce(null);
+    collectionMock.findOne.mockResolvedValueOnce({ status: 'pending' });
+
+    await expect(
+      updateFDAFields('svc', 'fdaA', '/sp', { description: 'new' }),
+    ).rejects.toMatchObject({ status: 409, type: 'AlreadyFetching' });
+  });
+
   test('regenerateFDA throws InvalidState for non-regenerable statuses', async () => {
     const { regenerateFDA, collectionMock } = await loadMongoModule();
 

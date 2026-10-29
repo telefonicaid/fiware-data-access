@@ -343,10 +343,12 @@ export async function validatePostgresQuery(
   const { username, password, host, port, database } = pgCredentials;
   const key = getPoolKey(username, password, host, port, database);
   const pgPool = getPgPool(username, password, host, port, database);
-  const pgClient = await pgPool.connect();
 
+  // Built before connecting, so a throw here cannot leak the client
   const normalizedQuery = query.trim().replace(/;+\s*$/, '');
   const validationQuery = `SELECT * FROM (${normalizedQuery}) AS fda_validation LIMIT 0`;
+
+  const pgClient = await pgPool.connect();
 
   try {
     const result = await pgClient.query(validationQuery);

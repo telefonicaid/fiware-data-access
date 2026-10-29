@@ -1,3 +1,5 @@
+- Add: PUT FDA action now can take a body to update some FDA parameters (#196)
+- Fix: PUT FDA without a body on an uploaded FDA now returns 409 `FDAUploadNotRegenerable` and properly releases the PostgreSQL client
 - Add: DuckDB memory usage in the Fetcher heartbeat (now `INFO`), in an `INFO` dump of `duckdb_memory()` before every Parquet export and in the memory peak sampled during it (`INFO` on success, `WARN` on failure, interval set with `FDA_DUCKDB_MEMORY_SAMPLE_INTERVAL_MS`, default `250`), in `GET /health` (`duckdb` block) and as Prometheus gauges (`fda_duckdb_*`) to diagnose Out of Memory errors; `INFO` log when the temporary Parquet files of an FDA are cleaned, after a failed fetch or on deletion (#351)
 - Add: `FDA_DUCKDB_S3_UPLOADER_MAX_FILESIZE` (default `50GB`) and `FDA_DUCKDB_PARTITIONED_WRITE_MAX_OPEN_FILES` (default `8`) to reduce the non-spillable `httpfs` upload memory of partitioned Parquet exports, which caused Out of Memory errors (#355)
 - Fix: a refresh removes the files of the partitions it rewrites that the new export did not write again, so a partition written as several files no longer keeps stale rows (#355)

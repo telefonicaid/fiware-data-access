@@ -5,9 +5,9 @@ in demanding scenarios. To monitor and validate these cases, we maintain a dedic
 
 The suite is divided into two categories:
 
-- **Benchmark tests**, which measure the execution time of critical FDA operations and queries.
-- **Load tests**, which execute concurrent requests with optional ramp-up periods to evaluate system behavior under
-  load.
+-   **Benchmark tests**, which measure the execution time of critical FDA operations and queries.
+-   **Load tests**, which execute concurrent requests with optional ramp-up periods to evaluate system behavior under
+    load.
 
 Like the [integration tests](/doc/06_testing.md), performance tests run against a real environment using Docker
 containers and HTTP requests. To simulate realistic workloads, the suite generates a large PostgreSQL table and uses it
@@ -19,10 +19,10 @@ as the source dataset for all tests. The size of this table can be configured th
 
 Measures the time required to create FDAs using different configurations:
 
-- Basic FDA creation
-- Compressed FDA creation
-- Partitioned FDA creation
-- Fresh FDA creation
+-   Basic FDA creation
+-   Compressed FDA creation
+-   Partitioned FDA creation
+-   Fresh FDA creation
 
 The same PostgreSQL table and base query are used across all creation tests to ensure consistent comparisons.
 
@@ -30,11 +30,11 @@ The same PostgreSQL table and base query are used across all creation tests to e
 
 Measures query execution times against the FDAs created during the benchmark phase:
 
-- Basic query
-- Compressed FDA query
-- Partitioned FDA query
-- Date-filtered query against a partitioned FDA
-- Fresh FDA query
+-   Basic query
+-   Compressed FDA query
+-   Partitioned FDA query
+-   Date-filtered query against a partitioned FDA
+-   Fresh FDA query
 
 These tests cover both generic and FDA-specific access patterns to evaluate the effectiveness of different storage
 configurations.
@@ -149,6 +149,6 @@ memory consumption. You can read more about this special cases in the advanced t
 
 ## 🧭 Navigation
 
-- [⬅️ Previous: Testing](/doc/06_testing.md)
-- [🏠 Main index](../README.md#documentation)
-- [➡️ Next: Developers Guide](/doc/08_developers_guide.md)
+-   [⬅️ Previous: Testing](/doc/06_testing.md)
+-   [🏠 Main index](../README.md#documentation)
+-   [➡️ Next: Developers Guide](/doc/08_developers_guide.md)

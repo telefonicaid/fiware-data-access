@@ -446,5 +446,66 @@ export function registerLazyFdasIntegrationTests({
       expect(fda.status).toBe('completed');
       expect(fda.lastFetch).not.toBeNull();
     });
+
+    test('a PUT with a body on an idle FDA stores the values and materializes it', async () => {
+      const res = await createFDA({
+        id: 'lazy_put_body',
+        query: 'SELECT id FROM public.lazy_rows',
+        refreshPolicy: { type: 'onDemand', params: { maxAge: '1 hour' } },
+      });
+      expect(res.status).toBe(202);
+
+      const update = await httpReq({
+        method: 'PUT',
+        url: `${getBaseUrl()}/${visibility}/fdas/lazy_put_body`,
+        headers,
+        body: { description: 'updated while idle' },
+      });
+      expect(update.status).toBe(202);
+
+      const fda = await waitUntilCompleted('lazy_put_body');
+      expect(fda).toMatchObject({
+        status: 'completed',
+        description: 'updated while idle',
+      });
+      expect(fda.lastFetch).not.toBeNull();
+      await expect(jobsOf('lazy_put_body')).resolves.toEqual([]);
+    });
+
+    test('a PUT changing maxAge applies the new expiration', async () => {
+      await createSequence('lazy_put_maxage_fetches');
+
+      const res = await createFDA({
+        id: 'lazy_put_maxage',
+        query: countingQuery('lazy_put_maxage_fetches'),
+        refreshPolicy: { type: 'onDemand', params: { maxAge: '1 hour' } },
+      });
+      expect(res.status).toBe(202);
+
+      const first = await queryFDA('lazy_put_maxage');
+      expect(first.rows).toEqual([{ id: 1, fetch_number: 1 }]);
+
+      const refreshPolicy = {
+        type: 'onDemand',
+        params: { maxAge: '3 seconds' },
+      };
+      const update = await httpReq({
+        method: 'PUT',
+        url: `${getBaseUrl()}/${visibility}/fdas/lazy_put_maxage`,
+        headers,
+        body: { refreshPolicy },
+      });
+      expect(update.status).toBe(202);
+
+      const updated = await waitUntilCompleted('lazy_put_maxage');
+      expect(updated).toMatchObject({ refreshPolicy, lazy: true });
+      await expect(jobsOf('lazy_put_maxage')).resolves.toEqual([]);
+
+      // With the old maxAge of 1 hour this query would be answered from the cache
+      await wait(4000);
+      const refreshed = await queryFDA('lazy_put_maxage');
+      expect(refreshed.status).toBe(200);
+      expect(refreshed.rows).toEqual([{ id: 1, fetch_number: 3 }]);
+    });
   });
 }

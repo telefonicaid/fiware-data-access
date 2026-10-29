@@ -53,7 +53,7 @@ const fdaMocks = {
   executeFDAQueryStream: jest.fn(),
   createDA: jest.fn(),
   getFDA: jest.fn(),
-  updateFDA: jest.fn(),
+  putFDA: jest.fn(),
   deleteFDA: jest.fn(),
   getDAs: jest.fn(),
   getDA: jest.fn(),
@@ -144,7 +144,7 @@ function resetModuleMocks() {
     });
   fdaMocks.createDA.mockReset().mockResolvedValue(undefined);
   fdaMocks.getFDA.mockReset().mockResolvedValue({ fdaId: 'fda1' });
-  fdaMocks.updateFDA.mockReset().mockResolvedValue(undefined);
+  fdaMocks.putFDA.mockReset().mockResolvedValue({ regenerated: true });
   fdaMocks.deleteFDA.mockReset().mockResolvedValue(undefined);
   fdaMocks.getDAs.mockReset().mockResolvedValue([]);
   fdaMocks.getDA.mockReset().mockResolvedValue({ id: 'da1' });
@@ -314,7 +314,7 @@ async function loadIndexModule({
     uploadFDA: fdaMocks.uploadFDA,
     createDA: fdaMocks.createDA,
     getFDA: fdaMocks.getFDA,
-    updateFDA: fdaMocks.updateFDA,
+    putFDA: fdaMocks.putFDA,
     deleteFDA: fdaMocks.deleteFDA,
     getDAs: fdaMocks.getDAs,
     getDA: fdaMocks.getDA,
@@ -789,11 +789,12 @@ describe('index routes - validation and middleware branches', () => {
       },
       undefined,
     );
-    expect(fdaMocks.updateFDA).toHaveBeenCalledWith(
+    expect(fdaMocks.putFDA).toHaveBeenCalledWith(
       'svc',
       'fda1',
       'public',
       '/servicepath',
+      {},
     );
     expect(fdaMocks.deleteFDA).toHaveBeenCalledWith(
       'svc',
@@ -928,22 +929,78 @@ describe('index routes - validation and middleware branches', () => {
     ]);
   });
 
-  test('returns 400 when PUT /fdas receives a body payload', async () => {
+  test('passes the updatable body fields of PUT /fdas to putFDA', async () => {
+    const refreshPolicy = {
+      type: 'interval',
+      params: { refreshInterval: '1 hour' },
+    };
+
+    await request(app)
+      .put('/public/fdas/fda1')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .send({
+        description: 'desc',
+        timeColumn: 'observedAt',
+        validationMode: 'strict',
+        refreshPolicy,
+        objStgConf: { compression: true },
+      })
+      .expect(202);
+
+    expect(fdaMocks.putFDA).toHaveBeenCalledWith(
+      'svc',
+      'fda1',
+      'public',
+      '/servicepath',
+      {
+        description: 'desc',
+        timeColumn: 'observedAt',
+        validationMode: 'strict',
+        refreshPolicy,
+        objStgConf: { compression: true },
+      },
+    );
+  });
+
+  test('PUT /fdas only allows the updatable FDA fields in the body', async () => {
+    await request(app)
+      .put('/public/fdas/fda1')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .send({})
+      .expect(202);
+
+    expect(utilsMocks.validateAllowedFieldsBody).toHaveBeenCalledWith({}, [
+      'description',
+      'refreshPolicy',
+      'timeColumn',
+      'objStgConf',
+      'validationMode',
+      'maxDownloads',
+      'expirationDate',
+      'validityPeriod',
+    ]);
+  });
+
+  test('returns 200 with the current status when PUT /fdas only stores the values', async () => {
+    fdaMocks.putFDA.mockResolvedValueOnce({
+      regenerated: false,
+      status: 'completed',
+    });
+
     const res = await request(app)
       .put('/public/fdas/fda1')
       .set('Fiware-Service', 'svc')
       .set('Fiware-ServicePath', '/servicepath')
-      .send({ invalid: true })
-      .expect(400);
+      .send({ maxDownloads: 5 })
+      .expect(200);
 
-    expect(res.body).toEqual({
-      error: 'BadRequest',
-      description: 'PUT /fdas does not accept a request body',
-    });
+    expect(res.body).toEqual({ id: 'fda1', status: 'completed' });
   });
 
   test('returns 409 when PUT /fdas targets a fresh-only FDA', async () => {
-    fdaMocks.updateFDA.mockRejectedValueOnce(
+    fdaMocks.putFDA.mockRejectedValueOnce(
       new FDAError(
         409,
         'FDAOnlyFresh',
