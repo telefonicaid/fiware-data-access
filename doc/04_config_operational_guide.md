@@ -109,6 +109,10 @@ Important behavior:
 -   If a referenced datasource does not exist, FDA operations fail with `DatasourceNotFound`.
 -   `datasourceId` in FDA creation is optional; if omitted, FDA uses `default`.
 
+PostgreSQL connections opened by FDA use `application_name=fda`, which makes them identifiable in `pg_stat_activity`.
+`pg_stat_statements` does not track `application_name`; to distinguish FDA query statistics there, configure the FDA
+datasource with a dedicated PostgreSQL user.
+
 #### Operational note about DatasourceNotFound
 
 -   In normal API-only operation, datasource deletion is protected by `DatasourceInUse`, so referenced datasources
