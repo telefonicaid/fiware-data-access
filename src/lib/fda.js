@@ -250,7 +250,7 @@ function validateWindowTimeColumnIsRawField(
     throw new FDAError(
       400,
       'InvalidMongoFDAContract',
-      'Mongo window FDA timeColumn must be a raw field projected with 1, not an alias or expression',
+      'Mongo window FDA timeColumn must be a raw field projected with 1 or true, not an alias or expression',
     );
   }
 }

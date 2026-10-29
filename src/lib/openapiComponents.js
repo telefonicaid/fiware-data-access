@@ -485,7 +485,7 @@
  *             when the data was received. In `strict` validation mode it must be explicitly projected in the
  *             query's SELECT clause (`postgres`) or projection/final `$project` (`mongodb`). For `mongodb`
  *             queries with a `window` refresh policy, it must additionally be a raw field of the source
- *             collection (in a `projection`, projected with `1`, not an alias), readable before any projection
+ *             collection (in a `projection`, projected with `1` or `true`, not an alias), readable before any projection
  *             or pipeline stage runs, and hold BSON `Date` values — the window's time-range condition is
  *             evaluated on the stored documents.
  *         objStgConf:
