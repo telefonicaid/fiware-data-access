@@ -153,6 +153,8 @@ All error responses follow this structure:
 | 409  | Conflict               | `FDAUnavailable`                 | FDA `exampleId` is not queryable yet because the first fetch has not completed, or a lazy/`onDemand` FDA is still being fetched after `FDA_ON_DEMAND_WAIT_TIMEOUT_MS`.                                                                                                                                             |
 | 409  | Conflict               | `FDAProcessing`                  | Attempted to delete an FDA while it is being processed (status other than `completed` or `failed`). Retry once the fetch finishes.                                                                                                                                                                                 |
 | 409  | Conflict               | `FDAOnlyFresh`                   | The FDA was created with `cached=false` and does not support the operation: Parquet regeneration, custom DAs on a MongoDB FDA, or changing its fixed `defaultDataAccess`.                                                                                                                                          |
+| 409  | Conflict               | `FDAOnlyFresh`                   | The FDA was created with `cached=false`, so it does not allow DAs nor cached DA queries.                                                                                                                                                                                                                           |
+| 409  | Conflict               | `FDAUploadNotRegenerable`        | The FDA was created from an uploaded file, so it has no source query to regenerate it from. `PUT /{visibility}/fdas/{fdaId}` on it only stores the body values.                                                                                                                                                    |
 | 409  | Conflict               | `RequestStyleConflict`           | The request mixes query-style context (`service`, `servicePath` in query params) with legacy `Fiware-Service`/`Fiware-ServicePath` headers in the same data-query URL. Use only one style per request.                                                                                                             |
 | 409  | Conflict               | `DatasourceInUse`                | Attempted to delete a datasource that is currently referenced by one or more FDAs in the same `Fiware-Service`.                                                                                                                                                                                                    |
 | 429  | Too Many Requests      | `TooManyFreshQueries`            | The number of concurrent direct fresh FDA queries exceeded `FDA_MAX_CONCURRENT_FRESH_QUERIES`.                                                                                                                                                                                                                     |
@@ -917,6 +919,9 @@ Datasource-specific constraints:
     fixed `defaultDataAccess`.
 -   MongoDB FDAs datasources support `refreshPolicy.type=window`, enabling sliding-window refresh and partitioning. See
     [Sliding windows and partitioning](AdvancedTopics/sliding_windows_and_partitioning.md) for more details.
+-   With `refreshPolicy.type=window`, `timeColumn` must be a raw field of the collection, projected with `1` or `true`
+    (not an alias such as `"date_to": "$dateObservedTo"`), because the window condition is applied before the
+    projection.
 -   `filter` and `aggregation` are mutually exclusive. Exactly one of them must be provided.
 -   Cached MongoDB FDAs created in `strict` mode must declare their output columns: a `projection` listing the fields to
     include (`filter` queries), or a final `$project`/`$group` stage (`aggregation` queries). MongoDB is schemaless, so
@@ -1470,7 +1475,8 @@ _**Example Response:**_
 
 #### Regenerate FDA `PUT /{visibility}/fdas/{fdaId}`
 
-Regenerate the FDA, fetching again the source table from DB.
+Regenerate the FDA, fetching again the source table from DB. An optional body updates some FDA properties before
+regenerating it (see the request payload below); without a body the FDA is only regenerated.
 
 For PostgreSQL FDAs in `strict` mode, the source query is validated before regenerating. If it is no longer valid (for
 example, its `timeColumn` has been removed), the operation returns `400 InvalidParam` and the FDA is left untouched.
@@ -1488,6 +1494,8 @@ The operation may return `409 Conflict` in the following cases:
 -   If the FDA is currently being processed (`AlreadyFetching` for a lazy or `onDemand` FDA whose fetch is already
     requested).
 -   If the FDA is configured as _fresh-only_ (non-cached) and does not support manual regeneration.
+-   If the FDA was created from an uploaded file and no body is sent (`FDAUploadNotRegenerable`): it has no source
+    query, so it cannot be regenerated.
 
 _**Request path parameters**_
 
@@ -1500,10 +1508,6 @@ _**Request query parameters**_
 
 None so far
 
-_**Request payload**_
-
-None.
-
 _**Request headers**_
 
 | Header               | Optional | Description                                                          | Example        |
@@ -1513,16 +1517,48 @@ _**Request headers**_
 
 _**Request payload**_
 
-This endpoint does not accept a request body.
+The body is optional. Every field is optional and only the fields sent are updated; the rest keep their stored value.
+`query`, `datasourceId`, `cached` and `lazy` cannot be updated (any other field returns `400 BadRequest`), so the
+existing DAs keep working. On a lazy or `onDemand` FDA that has never been fetched, the new values are stored and its
+first fetch is enqueued, as without a body.
 
-If a body is provided, the API will return:
+| Parameter        | Type              | Description                                                                                                                                                                                                                                                |
+| ---------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `description`    | string            | New FDA description.                                                                                                                                                                                                                                       |
+| `timeColumn`     | string or `null`  | New time column. In `strict` mode it is validated against the source query. On a partitioned FDA the stored data is rebuilt from scratch.                                                                                                                  |
+| `validationMode` | string            | `strict` or `unchecked`.                                                                                                                                                                                                                                   |
+| `refreshPolicy`  | object            | Replaces the stored refresh policy, with the same rules as on creation (including `onDemand` and its `maxAge`). The scheduled refresh jobs are recreated. Setting `onDemand` makes the FDA lazy.                                                           |
+| `objStgConf`     | object            | Merged into the stored one (sending only `compression` keeps the partition). Only `partition` and `compression` are accepted. Changing `partition` deletes the stored data and rebuilds it, so the FDA cannot be queried until the regeneration completes. |
+| `maxDownloads`   | integer or `null` | New download limit. `null` removes it. Downloads already used are kept, so raising the limit re-enables an exhausted FDA.                                                                                                                                  |
+| `expirationDate` | string or `null`  | New download expiration. `null` removes it. Mutually exclusive with `validityPeriod`.                                                                                                                                                                      |
+| `validityPeriod` | string or `null`  | New download validity, counted from the update. `null` removes the expiration. Mutually exclusive with `expirationDate`.                                                                                                                                   |
 
--   **400 BadRequest**
--   `PUT /{visibility}/fdas/{fdaId} does not accept a request body`
+The new values are validated together with the stored ones, using the same rules as on creation (for example, a `window`
+refresh policy needs a `timeColumn`, and `fetchSize` must match the partition). Invalid values return
+`400 InvalidUpdateBody` and the FDA is left untouched. If the stored source query is no longer valid and the body does
+not change `timeColumn` or `validationMode`, the error is `400 InvalidParam`, the same as without a body.
+
+Example:
+
+```json
+{
+    "refreshPolicy": {
+        "type": "interval",
+        "params": { "refreshInterval": "1 hour", "fetchSize": "month" }
+    },
+    "objStgConf": { "partition": "month" },
+    "maxDownloads": 10,
+    "validityPeriod": "7 days"
+}
+```
 
 _**Response code**_
 
 -   Successful operation uses 202 Accepted (asynchronous regeneration)
+-   For FDAs created from an uploaded file, a body is only stored (there is no source to refetch from) and the operation
+    returns 200 OK with `{ "id": "...", "status": "<current status>" }`. These FDAs cannot change `objStgConf`, and
+    their `refreshPolicy` must stay `none`. As they cannot be regenerated, a request without a body returns
+    `409 FDAUploadNotRegenerable`.
 -   Errors use a non-2xx and (optionally) an error payload. See subsection on [Error Responses](#error-responses) for
     more details.
 

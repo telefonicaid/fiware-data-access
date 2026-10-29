@@ -126,7 +126,7 @@ export function registerFdaLifecycleIntegrationTests({
         headers: { 'Fiware-Service': service },
         body: {
           id: fdaIdSleep,
-          query: 'SELECT id, pg_sleep(1) FROM public.users',
+          query: 'SELECT id, pg_sleep(3) FROM public.users',
           description: 'Sleep FDA for testing concurrent fetches',
         },
       });
@@ -140,7 +140,12 @@ export function registerFdaLifecycleIntegrationTests({
       expect(put2.status).toBe(409);
       expect(put2.json.error).toBe('AlreadyFetching');
 
-      await waitUntilFDACompleted({ baseUrl, service, fdaId: fdaIdSleep });
+      await waitUntilFDACompleted({
+        baseUrl,
+        service,
+        fdaId: fdaIdSleep,
+        timeout: 30000,
+      });
     });
 
     test('PUT /fdas/:fdaId triggers AlreadyFetching if concurrent after refresh', async () => {
@@ -165,7 +170,12 @@ export function registerFdaLifecycleIntegrationTests({
       expect(conflict.json.error).toBe('AlreadyFetching');
       expect(accepted).toBeDefined();
 
-      await waitUntilFDACompleted({ baseUrl, service, fdaId: fdaIdSleep });
+      await waitUntilFDACompleted({
+        baseUrl,
+        service,
+        fdaId: fdaIdSleep,
+        timeout: 30000,
+      });
     });
 
     test('PUT /fdas/:fdaId throws InvalidState if FDA in unexpected status', async () => {

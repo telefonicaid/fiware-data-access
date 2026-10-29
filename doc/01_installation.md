@@ -6,8 +6,8 @@ This document describes how to install and run **FIWARE Data Access (FDA)** usin
 
 ## Requirements
 
-- Docker
-- Docker Compose (v2)
+-   Docker
+-   Docker Compose (v2)
 
 ---
 
@@ -15,11 +15,11 @@ This document describes how to install and run **FIWARE Data Access (FDA)** usin
 
 The easiest way to run FIWARE Data Access is using **Docker Compose**, which starts all required services:
 
-- FIWARE Data Access API
-- PostgreSQL (PostGIS)
-- MongoDB
-- MinIO (object storage)
-- MinIO client (`mc`, image `pgsty/mc`) to initialize the bucket
+-   FIWARE Data Access API
+-   PostgreSQL (PostGIS)
+-   MongoDB
+-   MinIO (object storage)
+-   MinIO client (`mc`, image `pgsty/mc`) to initialize the bucket
 
 ### Steps
 
@@ -58,10 +58,10 @@ If you need to run FDA in local development mode (Node.js process on host + depe
 
 The FDA Docker image is built using the following characteristics:
 
-- Base image: `node:24-slim`
-- Application code located in `/opt/fda/fda`
-- Production dependencies installed with `npm install --production`
-- Default command: `npm start`
+-   Base image: `node:24-slim`
+-   Application code located in `/opt/fda/fda`
+-   Production dependencies installed with `npm install --production`
+-   Default command: `npm start`
 
 The Dockerfile used is located at:
 
@@ -92,8 +92,8 @@ This section provides a step-by-step example to validate a complete FDA workflow
 
 ### Prerequisites
 
-- FDA service running (follow the [Running with Docker Compose](#running-with-docker-compose-recommended) section)
-- curl available in your terminal
+-   FDA service running (follow the [Running with Docker Compose](#running-with-docker-compose-recommended) section)
+-   curl available in your terminal
 
 ### 1. Verify the service is running
 
@@ -591,24 +591,24 @@ Example NDJSON streaming output (one JSON object per line):
 
 Notes:
 
-- Use the same `Fiware-Service` header when creating the DA and when querying.
-- The NDJSON response is useful for streaming large result sets; timestamps may be returned in a structured format
-  (e.g. micros).
+-   Use the same `Fiware-Service` header when creating the DA and when querying.
+-   The NDJSON response is useful for streaming large result sets; timestamps may be returned in a structured format
+    (e.g. micros).
 
 ---
 
 ## Common issues
 
-- **MinIO bucket not found** Ensure the bucket exists before creating FDAs. When using Docker Compose, this is handled
-  automatically by the `mc` service. For local development, create the bucket manually (see
-  [Complete Working Example](#complete-working-example-manual-verification)).
+-   **MinIO bucket not found** Ensure the bucket exists before creating FDAs. When using Docker Compose, this is handled
+    automatically by the `mc` service. For local development, create the bucket manually (see
+    [Complete Working Example](#complete-working-example-manual-verification)).
 
-- **PostgreSQL connection errors** Verify the datasource provisioning (`GET /datasources` with the same
-  `Fiware-Service`) and the datasource credentials (`host`, `port`, `database`, username, password).
+-   **PostgreSQL connection errors** Verify the datasource provisioning (`GET /datasources` with the same
+    `Fiware-Service`) and the datasource credentials (`host`, `port`, `database`, username, password).
 
-- **Wrong Node.js version** Ensure Node.js 24 is being used when running locally.
+-   **Wrong Node.js version** Ensure Node.js 24 is being used when running locally.
 
-- **FDA creation fails with 500 error** Ensure:
+-   **FDA creation fails with 500 error** Ensure:
     1. The MinIO bucket exists with the same name as the `fiware-service` header
     2. The PostgreSQL database exists with the same name as the `fiware-service` header
     3. The `fiware-service` header is provided in all FDA operations
@@ -617,6 +617,6 @@ Notes:
 
 ## 🧭 Navigation
 
-- [⬅️ Previous: Overview](/doc/00_overview.md)
-- [🏠 Main index](../README.md#documentation)
-- [➡️ Next: Architecture](/doc/02_architecture.md)
+-   [⬅️ Previous: Overview](/doc/00_overview.md)
+-   [🏠 Main index](../README.md#documentation)
+-   [➡️ Next: Architecture](/doc/02_architecture.md)
