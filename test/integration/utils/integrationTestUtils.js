@@ -289,11 +289,6 @@ export function buildDaDataUrl(baseUrl, servicePath, fdaId, daId, query = {}) {
   return url.toString();
 }
 
-export function buildFdaDataUrl(baseUrl, servicePath, fdaId) {
-  const scope = (servicePath || '/private').replace(/^\//, '');
-  return `${baseUrl}/${scope}/fdas/${encodeURIComponent(fdaId)}/data`;
-}
-
 export function buildQueryStyleDaDataUrl(
   baseUrl,
   { service, servicePath, visibility, fdaId, daId, outputType, params = {} },

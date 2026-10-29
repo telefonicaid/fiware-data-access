@@ -494,8 +494,10 @@
  *           type: boolean
  *           default: true
  *           description: >
- *             If `false`, the FDA is created as only-fresh: no Parquet snapshot is maintained, no DAs are allowed,
- *             and the FDA is queried through `GET /{visibility}/fdas/{fdaId}/data`.
+ *             If `false`, the FDA is created as only-fresh: no Parquet snapshot is maintained and every DA query
+ *             runs against the source datasource. A fixed `defaultDataAccess` returning the whole FDA query result
+ *             is always created (it cannot be updated or deleted). PostgreSQL only-fresh FDAs also accept custom
+ *             DAs, written in PostgreSQL dialect.
  *         datasourceId:
  *           type: string
  *           default: default

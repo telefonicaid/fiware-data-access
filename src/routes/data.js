@@ -24,12 +24,7 @@
 
 import express from 'express';
 
-import {
-  executeQuery,
-  executeFDAQuery,
-  executeQueryStream,
-  executeFDAQueryStream,
-} from '../lib/fda.js';
+import { executeQuery, executeQueryStream } from '../lib/fda.js';
 import { validateForbiddenFieldsQuery } from '../lib/utils/utils.js';
 import { toCdaJson } from '../lib/utils/outputFormat.js';
 import {
@@ -50,10 +45,20 @@ const router = express.Router();
  *     operationId: queryDaData
  *     summary: Run a Data Access (DA) query
  *     description: >
- *       Executes the stored parameterized query for the given DA against the FDA's Parquet snapshot. Query
- *       execution is blocked until the FDA's first successful fetch completes (`409 FDAUnavailable`); after
- *       that, execution is allowed even while a later regeneration is in progress (the last available snapshot
- *       is used).
+ *       Executes the stored parameterized query for the given DA. This is the only data endpoint, both for cached
+ *       and only-fresh FDAs.
+ *
+ *
+ *       For cached FDAs the query runs against the FDA's Parquet snapshot. Query execution is blocked until the
+ *       FDA's first successful fetch completes (`409 FDAUnavailable`); after that, execution is allowed even
+ *       while a later regeneration is in progress (the last available snapshot is used).
+ *
+ *
+ *       For only-fresh FDAs (`cached: false`) the query always runs against the source datasource. The fixed
+ *       `defaultDataAccess` runs the FDA query as is (PostgreSQL or MongoDB). Custom DAs (PostgreSQL only) wrap
+ *       the FDA query as `SELECT <projection> FROM (<FDA query>) AS fda_source <clauses>`, in PostgreSQL
+ *       dialect. Requires the API instance to run with `FDA_ROLE_SYNCQUERIES=true`, and is subject to the
+ *       `FDA_MAX_CONCURRENT_FRESH_QUERIES` limit.
 
 
  *       For `lazy` FDAs and FDAs with an `onDemand` refresh policy, a query that finds no data (or, for
@@ -99,20 +104,29 @@ const router = express.Router();
  *         $ref: '#/components/responses/NotAcceptable'
  *       '409':
  *         description: >
- *           `FDAUnavailable` (first fetch not completed, or on-demand fetch still running after the wait timeout)
- *           or `RequestStyleConflict` (mixed request styles).
+ *           `FDAUnavailable` (first fetch not completed, or on-demand fetch still running after the wait timeout),
+ *           `RequestStyleConflict` (mixed request styles) or `FDAOnlyFresh` (custom DA on an only-fresh MongoDB
+ *           FDA).
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
  *       '503':
- *         description: '`FDAMaterializationFailed`: the on-demand fetch of a lazy or `onDemand` FDA failed.'
+ *         description: >
+ *           `FDAMaterializationFailed` (the on-demand fetch of a lazy or `onDemand` FDA failed) or
+ *           `SyncQueriesDisabled` (only-fresh FDA queried on an API instance with `FDA_ROLE_SYNCQUERIES=false`).
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
  *       '410':
  *         description: '`FDAExpired` or `DownloadLimitReached`. No data is delivered.'
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '429':
+ *         description: '`TooManyFreshQueries`: `FDA_MAX_CONCURRENT_FRESH_QUERIES` exceeded (only-fresh FDAs).'
  *         content:
  *           application/json:
  *             schema:
@@ -170,138 +184,6 @@ router.get('/:visibility/fdas/:fdaId/das/:daId/data', async (req, res) => {
 
   const responseRows =
     outputType === 'cda' ? toCdaJson(rows, queryParams) : rows;
-
-  return sendRowsByOutputType(res, responseRows, outputType);
-});
-
-/**
- * @swagger
- * /{visibility}/fdas/{fdaId}/data:
- *   get:
- *     tags: [Data]
- *     operationId: queryFdaData
- *     summary: Run the FDA base query directly (always fresh)
- *     description: >
- *       Runs the FDA base query directly against the source datasource. Always fresh; does not use the Parquet
- *       cache. Requires the API instance to run with `FDA_ROLE_SYNCQUERIES=true`, and is subject to the
- *       `FDA_MAX_CONCURRENT_FRESH_QUERIES` limit.
- *
- *
- *       Supports the same two mutually exclusive request styles as the DA data endpoint (header-style via
- *       `Fiware-Service`/`Fiware-ServicePath`/`Accept`, or query-style via `service`/`servicePath`/`outputType`),
- *       but unlike the DA endpoint **no additional query parameters are allowed** in either style; any extra
- *       query parameter (including `fresh`) is rejected with `400 BadRequest`.
- *     parameters:
- *       - $ref: '#/components/parameters/VisibilityPath'
- *       - $ref: '#/components/parameters/FdaIdPath'
- *       - $ref: '#/components/parameters/FiwareServiceHeaderOptional'
- *       - $ref: '#/components/parameters/FiwareServicePathHeaderOptional'
- *       - $ref: '#/components/parameters/AcceptDataHeader'
- *       - $ref: '#/components/parameters/ServiceQueryOptional'
- *       - $ref: '#/components/parameters/ServicePathQueryOptional'
- *       - $ref: '#/components/parameters/OutputTypeQueryOptional'
- *     responses:
- *       '200':
- *         $ref: '#/components/responses/DataQueryResult'
- *       '400':
- *         $ref: '#/components/responses/BadRequest'
- *       '403':
- *         description: '`VisibilityMismatch`'
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *       '404':
- *         description: '`FDANotFound`'
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *       '406':
- *         $ref: '#/components/responses/NotAcceptable'
- *       '409':
- *         description: '`FDANotOnlyFresh`: the FDA is cached (`cached: true`); query it through a DA instead.'
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *       '410':
- *         description: '`FDAExpired` or `DownloadLimitReached`. No data is delivered.'
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *       '429':
- *         description: '`TooManyFreshQueries`: `FDA_MAX_CONCURRENT_FRESH_QUERIES` exceeded.'
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *       '503':
- *         description: '`SyncQueriesDisabled`: the API instance runs with `FDA_ROLE_SYNCQUERIES=false`.'
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- */
-router.get('/:visibility/fdas/:fdaId/data', async (req, res) => {
-  res.setHeader('Cache-Control', 'no-store');
-  const { visibility, fdaId } = req.params;
-  const { service, servicePath, style } = resolveServiceContextFromRequest(req);
-
-  let outputType;
-  if (style === 'query') {
-    validateForbiddenFieldsQuery(req.query, ['fresh']);
-    const rest = { ...req.query };
-    delete rest.service;
-    delete rest.servicePath;
-    delete rest.outputType;
-    if (Object.keys(rest).length > 0) {
-      return res.status(400).json({
-        error: 'BadRequest',
-        description: 'FDA fresh query does not accept query parameters',
-      });
-    }
-
-    outputType = getQueryStyleOutputType(req.query);
-  } else {
-    if (Object.keys(req.query).length > 0) {
-      return res.status(400).json({
-        error: 'BadRequest',
-        description: 'FDA fresh query does not accept query parameters',
-      });
-    }
-
-    outputType = getOutputTypeFromAcceptHeader(req);
-  }
-
-  if (!fdaId || !service || !servicePath || !visibility) {
-    return res.status(400).json({
-      error: 'BadRequest',
-      description: 'Missing params in the request',
-    });
-  }
-
-  if (outputType === 'ndjson' || outputType === 'csv') {
-    return executeFDAQueryStream({
-      service,
-      visibility,
-      servicePath,
-      fdaId,
-      req,
-      res,
-      format: outputType,
-    });
-  }
-
-  const rows = await executeFDAQuery({
-    service,
-    visibility,
-    servicePath,
-    fdaId,
-  });
-
-  const responseRows = outputType === 'cda' ? toCdaJson(rows) : rows;
 
   return sendRowsByOutputType(res, responseRows, outputType);
 });

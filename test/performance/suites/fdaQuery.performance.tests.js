@@ -23,7 +23,6 @@
 // criminal actions it may exercise to protect its rights.
 
 import { test, expect } from '@jest/globals';
-import { buildFdaDataUrl } from '../../integration/utils/integrationTestUtils';
 
 export function registerFdaQueryPerformanceTests({
   getBaseUrl,
@@ -282,7 +281,12 @@ export function registerFdaQueryPerformanceTests({
       performance.mark('query-start');
       const res = await httpReq({
         method: 'GET',
-        url: buildFdaDataUrl(baseUrl, servicePath, `${fdaId}-fresh`),
+        url: buildDaDataUrl(
+          baseUrl,
+          servicePath,
+          `${fdaId}-fresh`,
+          'defaultDataAccess',
+        ),
         headers: { 'Fiware-Service': service },
       });
 

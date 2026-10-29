@@ -35,7 +35,6 @@ export function registerQueryStyleDataIntegrationTests({
   httpReq,
   httpReqRaw,
   buildDaDataUrl,
-  buildFdaDataUrl,
   waitUntilFDACompleted,
 }) {
   describe('Query-style data endpoints', () => {
@@ -230,7 +229,7 @@ export function registerQueryStyleDataIntegrationTests({
 
       const freshRes = await httpReq({
         method: 'GET',
-        url: `${buildFdaDataUrl(baseUrl, servicePath, fdaQueryStyleId)}?service=${encodeURIComponent(service)}&servicePath=${encodeURIComponent(servicePath)}&outputType=json`,
+        url: `${buildDaDataUrl(baseUrl, servicePath, fdaQueryStyleId, 'defaultDataAccess')}?service=${encodeURIComponent(service)}&servicePath=${encodeURIComponent(servicePath)}&outputType=json`,
       });
 
       expect(freshRes.status).toBe(200);
@@ -262,7 +261,7 @@ export function registerQueryStyleDataIntegrationTests({
 
       const freshRes = await httpReqRaw({
         method: 'GET',
-        url: `${buildFdaDataUrl(baseUrl, servicePath, fdaQueryStyleCsvId)}?service=${encodeURIComponent(service)}&servicePath=${encodeURIComponent(servicePath)}&outputType=csv`,
+        url: `${buildDaDataUrl(baseUrl, servicePath, fdaQueryStyleCsvId, 'defaultDataAccess')}?service=${encodeURIComponent(service)}&servicePath=${encodeURIComponent(servicePath)}&outputType=csv`,
       });
 
       expect(freshRes.status).toBe(200);
@@ -294,7 +293,7 @@ export function registerQueryStyleDataIntegrationTests({
 
       const freshRes = await httpReq({
         method: 'GET',
-        url: `${buildFdaDataUrl(baseUrl, servicePath, fdaQueryStyleCDAJsonId)}?service=${encodeURIComponent(service)}&servicePath=${encodeURIComponent(servicePath)}&outputType=cda`,
+        url: `${buildDaDataUrl(baseUrl, servicePath, fdaQueryStyleCDAJsonId, 'defaultDataAccess')}?service=${encodeURIComponent(service)}&servicePath=${encodeURIComponent(servicePath)}&outputType=cda`,
       });
 
       expect(freshRes.status).toBe(200);
@@ -332,7 +331,7 @@ export function registerQueryStyleDataIntegrationTests({
 
       const freshRes = await httpReq({
         method: 'GET',
-        url: `${buildFdaDataUrl(baseUrl, servicePath, fdaConflictId)}?service=${encodeURIComponent(service)}&servicePath=${encodeURIComponent(servicePath)}`,
+        url: `${buildDaDataUrl(baseUrl, servicePath, fdaConflictId, 'defaultDataAccess')}?service=${encodeURIComponent(service)}&servicePath=${encodeURIComponent(servicePath)}`,
         headers: {
           'Fiware-Service': service,
         },
@@ -366,7 +365,7 @@ export function registerQueryStyleDataIntegrationTests({
 
       const freshRes = await httpReq({
         method: 'GET',
-        url: `${buildFdaDataUrl(baseUrl, servicePath, fdaInvalidOutputTypeId)}?service=${encodeURIComponent(service)}&servicePath=${encodeURIComponent(servicePath)}&outputType=html`,
+        url: `${buildDaDataUrl(baseUrl, servicePath, fdaInvalidOutputTypeId, 'defaultDataAccess')}?service=${encodeURIComponent(service)}&servicePath=${encodeURIComponent(servicePath)}&outputType=html`,
       });
 
       expect(freshRes.status).toBe(400);
