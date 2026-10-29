@@ -12,4 +12,4 @@
 - Fix: a failed fetch removes its staging CSV, and non partitioned FDAs publish through `tmp/`, so a failed refresh keeps the last good data (#325)
 - Fix: a failed PostgreSQL upload no longer returns its half-closed connection to the pool, which could hang the next fetch (#325)
 - Add: optional `timeRange` field in DAs (declared by default in `defaultDataAccess`) so queries by time range on partitioned FDAs read only the partitions overlapping the range instead of all of them (#328)
-- Fix: Mongo `find` FDAs with `refreshPolicy.type=window` now reject (400) a `timeColumn` that is an alias in the `projection`, which made the FDA complete with no rows; it must be a raw field projected with `1` (#363)
+- Fix: Mongo `find` FDAs with `refreshPolicy.type=window` now reject (400) a `timeColumn` that is an alias in the `projection`, which made the FDA complete with no rows; it must be a raw field projected with `1` or `true` (#363)
