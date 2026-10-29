@@ -123,9 +123,14 @@ Content-Type: application/json
 
 ## Architecture Overview
 
-![FIWARE Data Access architecture diagram](images/FDA_diagram.svg)
+The functional overview below focuses on the current execution paths and main responsibilities.
 
-The diagram source is maintained as Mermaid for easy editing:
+![FIWARE Data Access functional flows](images/FDA_functional_flows.svg)
+
+The [original architecture diagram](images/FDA_diagram.png) is preserved as a historical reference. It provides a more
+detailed view of the original components and numbered data flow, but does not reflect all current capabilities.
+
+A corresponding Mermaid overview is included for easy editing:
 
 <details>
 <summary>Editable Mermaid source</summary>

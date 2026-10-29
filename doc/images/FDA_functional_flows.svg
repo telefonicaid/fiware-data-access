@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="960" viewBox="0 0 1600 960" role="img" aria-labelledby="title description">
-  <title id="title">FIWARE Data Access - Architecture Overview</title>
+  <title id="title">FIWARE Data Access - Functional Flows</title>
   <desc id="description">Architecture showing clients, the FDA API and fetcher, Agenda jobs, DuckDB, PostgreSQL and MongoDB datasources, MongoDB metadata, uploads, and MinIO Parquet storage. Cached and only-fresh query paths are distinguished.</desc>
   <defs>
     <marker id="arrow-blue" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
@@ -37,7 +37,7 @@
   </defs>
 
   <rect width="1600" height="960" fill="#f8fafc"/>
-  <text x="800" y="52" text-anchor="middle" class="title">FIWARE DATA ACCESS — ARCHITECTURE OVERVIEW</text>
+  <text x="800" y="52" text-anchor="middle" class="title">FIWARE DATA ACCESS — FUNCTIONAL FLOWS</text>
   <text x="800" y="82" text-anchor="middle" class="subtitle">Cached datasets, direct source queries and asynchronous processing</text>
 
   <rect x="310" y="120" width="920" height="690" rx="22" fill="#fff" stroke="#2878c8" stroke-width="3"/>
