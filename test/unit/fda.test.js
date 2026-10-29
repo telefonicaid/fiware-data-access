@@ -6147,9 +6147,9 @@ describe('validateMongoFDAContract functions', () => {
         {
           collection: 'col',
           filter: {},
-          projection: { fecha_hasta: '$dateObservedTo' },
+          projection: { date_to: '$dateObservedTo' },
         },
-        'fecha_hasta',
+        'date_to',
         { type: 'window', params: { fetchSize: 'year' } },
       ),
     ).toThrow(
@@ -6178,9 +6178,9 @@ describe('validateMongoFDAContract functions', () => {
         {
           collection: 'col',
           filter: {},
-          projection: { fecha_hasta: '$dateObservedTo' },
+          projection: { date_to: '$dateObservedTo' },
         },
-        'fecha_hasta',
+        'date_to',
         { type: 'interval', params: { refreshInterval: '1 hour' } },
       ),
     ).not.toThrow();

@@ -35,8 +35,8 @@ applied to the source query, with the exact implementation depending on the data
 
     The same applies to `filter` queries with a `projection`: the time condition is evaluated on the stored documents
     before the projection is applied, so `timeColumn` cannot be an alias or expression created in the projection. An FDA
-    with `"projection": { "fecha_hasta": "$dateObservedTo" }` and `"timeColumn": "fecha_hasta"` would complete with no
-    rows, so it is rejected with `400 InvalidMongoFDAContract`. Project the raw field with `1` (or `true`) instead:
+    with `"projection": { "date_to": "$dateObservedTo" }` and `"timeColumn": "date_to"` would complete with no rows, so
+    it is rejected with `400 InvalidMongoFDAContract`. Project the raw field with `1` (or `true`) instead:
     `"projection": { "dateObservedTo": 1 }` and `"timeColumn": "dateObservedTo"`.
 
 In both datasources, the upper bound is evaluated at query execution time: Postgres uses `NOW()`, while MongoDB uses
