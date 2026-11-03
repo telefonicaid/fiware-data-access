@@ -1163,9 +1163,7 @@ export function registerSlidingWindowsIntegrationTests({
           name: 'refresh-fda-recurring',
           'data.fdaId': fdaId,
         });
-        expect(recurringJob.data.query).toContain(
-          `observed_at >= TIMESTAMP '${new Date(oldestMonthStart).toISOString()}'`,
-        );
+        expect(recurringJob.data).not.toHaveProperty('query');
 
         await insertRow(4, 'late_oldest_month');
         await forceWindowRefresh(agendaJobs, fdaId);
@@ -1186,6 +1184,95 @@ export function registerSlidingWindowsIntegrationTests({
         expect(new Set(readRes.json.map((r) => r.label))).toEqual(
           new Set(Object.keys(rows)),
         );
+      } finally {
+        await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
+        await pgClient.end();
+        await mongoClient.close();
+      }
+    });
+
+    test('a recurring job stored with an old query is refreshed with the current window', async () => {
+      const baseUrl = getBaseUrl();
+      const suffix = `${Date.now()}`;
+      const fixtureTable = `sw_stale_job_${suffix}`;
+      const fdaId = `fda_sw_stale_job_${suffix}`;
+
+      const pgClient = createPgClient();
+      await pgClient.connect();
+      const mongoClient = new MongoClient(getMongoUri());
+      await mongoClient.connect();
+      const agendaJobs = mongoClient.db('test-db').collection('agendaJobs');
+
+      try {
+        await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
+        await pgClient.query(`
+          CREATE TABLE public.${fixtureTable} (
+            id INT PRIMARY KEY,
+            label TEXT NOT NULL,
+            observed_at TIMESTAMPTZ NOT NULL
+          )
+        `);
+        await pgClient.query(`
+          INSERT INTO public.${fixtureTable} (id, label, observed_at)
+          VALUES
+            (1, 'outside_window', NOW() - INTERVAL '10 days'),
+            (2, 'inside_window', NOW() - INTERVAL '1 hour')
+        `);
+
+        const query = `SELECT id, label, observed_at FROM public.${fixtureTable}`;
+        const createFda = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: fdaId,
+            query,
+            description: 'stale recurring job test',
+            refreshPolicy: {
+              type: 'window',
+              params: {
+                refreshInterval: '1 day',
+                fetchSize: 'day',
+                windowSize: 'week',
+              },
+            },
+            objStgConf: { partition: 'day' },
+            timeColumn: 'observed_at',
+          },
+        });
+
+        expect(createFda.status).toBe(202);
+        await waitUntilFDACompleted({ baseUrl, service, fdaId });
+
+        const staleJob = await agendaJobs.updateOne(
+          { name: 'refresh-fda-recurring', 'data.fdaId': fdaId },
+          {
+            $set: {
+              'data.query': `SELECT * FROM (${query}) q WHERE observed_at >= TIMESTAMP '2000-01-01T00:00:00.000Z' AND observed_at < NOW()`,
+            },
+          },
+        );
+        expect(staleJob.modifiedCount).toBe(1);
+
+        await forceWindowRefresh(agendaJobs, fdaId);
+
+        const readRes = await httpReq({
+          method: 'GET',
+          url: buildDaDataUrl(
+            baseUrl,
+            servicePath,
+            fdaId,
+            'defaultDataAccess',
+            { pageSize: 100, pageStart: 0 },
+          ),
+          headers: { 'Fiware-Service': service },
+        });
+
+        expect(readRes.status).toBe(200);
+        expect(readRes.json.map((r) => r.label)).toEqual(['inside_window']);
       } finally {
         await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
         await pgClient.end();
