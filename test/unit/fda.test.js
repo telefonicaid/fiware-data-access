@@ -5976,6 +5976,76 @@ describe('fetchFDA with refresh policies', () => {
   });
 
   test.each([
+    ['3 months', 'month'],
+    ['2 weeks', '1 week'],
+    ['month', '3 weeks'],
+    ['2 years', '1 year'],
+  ])(
+    'fetchFDA rejects fetchSize "%s" greater than windowSize "%s"',
+    async (fetchSize, windowSize) => {
+      dbMocks.refreshIntervalPartitionCheck.mockReturnValue(true);
+      const partition = fetchSize.split(' ').pop().replace(/s$/, '');
+
+      await expect(
+        fetchFDA(
+          'fda1',
+          'SELECT 1',
+          'svc',
+          'public',
+          '/servicepath',
+          'desc',
+          {
+            type: 'window',
+            params: { refreshInterval: '1 day', fetchSize, windowSize },
+          },
+          'timeinstant',
+          { partition },
+        ),
+      ).rejects.toMatchObject({
+        status: 400,
+        type: 'InvalidParam',
+        message: `fetchSize "${fetchSize}" must not be greater than windowSize "${windowSize}".`,
+      });
+
+      expect(agenda.create).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each([
+    ['3 months', '3 months'],
+    ['3 months', '1 year'],
+    ['3 months', '90 days'],
+    ['week', '7 days'],
+    ['month', '30 days'],
+  ])(
+    'fetchFDA accepts fetchSize "%s" not greater than windowSize "%s"',
+    async (fetchSize, windowSize) => {
+      dbMocks.refreshIntervalPartitionCheck.mockReturnValue(true);
+      const partition = fetchSize.split(' ').pop().replace(/s$/, '');
+
+      await fetchFDA(
+        'fda1',
+        'SELECT 1',
+        'svc',
+        'public',
+        '/servicepath',
+        'desc',
+        {
+          type: 'window',
+          params: { refreshInterval: '1 day', fetchSize, windowSize },
+        },
+        'timeinstant',
+        { partition },
+      );
+
+      expect(agenda.create).toHaveBeenCalledWith(
+        'refresh-fda-recurring',
+        expect.anything(),
+      );
+    },
+  );
+
+  test.each([
     ['3 months', 'month', '2026-08-01T00:00:00.000Z'],
     ['month', 'month', '2026-10-01T00:00:00.000Z'],
     ['2 weeks', 'week', '2026-10-19T00:00:00.000Z'],

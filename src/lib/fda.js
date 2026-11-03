@@ -126,6 +126,7 @@ import {
   VALIDATION_MODES,
   VALID_REFRESH_POLICY_TYPES,
   VALID_WINDOW_FETCH_SIZES,
+  DURATION_UNITS_MS,
   PARTITION_TYPES,
   UNKNOWN_COLUMN_TYPE,
   FDA_REFRESH_IN_PROGRESS_STATUSES,
@@ -1369,6 +1370,7 @@ function validateScheduledOptions(refreshPolicy, objStgConf, timeColumn) {
   }
 
   validateWindowSize(windowSize);
+  validateFetchSizeWithinWindowSize(fetchSize, windowSize);
   validatePartitionType(objStgConf);
   validateConsistencyRefreshInterval(refreshPolicy);
   validatePartitionAlignment(refreshInterval, fetchSize, objStgConf);
@@ -1419,6 +1421,25 @@ function validateWindowSizeRequiresPartition(windowSize, objStgConf) {
       'windowSize requires objStgConf.partition.',
     );
   }
+}
+
+function validateFetchSizeWithinWindowSize(fetchSize, windowSize) {
+  if (!fetchSize || !windowSize) {
+    return;
+  }
+
+  if (getNominalSizeMs(fetchSize) > getNominalSizeMs(windowSize)) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `fetchSize "${fetchSize}" must not be greater than windowSize "${windowSize}".`,
+    );
+  }
+}
+
+function getNominalSizeMs(size) {
+  const { amount, unit } = processFetchSize(size);
+  return amount * DURATION_UNITS_MS[unit];
 }
 
 function validateWindowSize(windowSize) {

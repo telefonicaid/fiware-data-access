@@ -210,7 +210,7 @@ export function registerSlidingWindowsIntegrationTests({
             params: {
               refreshInterval: '0 0 * * 0',
               fetchSize: 'week',
-              windowSize: 'day',
+              windowSize: 'month',
             },
           },
           timeColumn: 'timeinstant',
@@ -285,7 +285,7 @@ export function registerSlidingWindowsIntegrationTests({
             params: {
               refreshInterval: '0 0 * * 0',
               fetchSize: 'week',
-              windowSize: 'day',
+              windowSize: 'month',
             },
           },
           timeColumn: 'timeinstant',
