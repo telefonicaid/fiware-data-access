@@ -43,6 +43,10 @@ In both datasources, the upper bound is evaluated at query execution time: Postg
 `$expr` with `$$NOW`. This ensures that the current time is determined by the database server when each scheduled
 refresh job runs.
 
+The lower bound is also computed every time a scheduled job runs, from the FDA configuration: the recurring refresh
+fetches from `fetchSize` ago (from the start of that partition in partitioned FDAs) and the consistency refresh from
+`windowSize` ago. Neither of them stores its query, so their time range moves with each run.
+
 ### Recurring refresh and consistency refresh overlap
 
 The recurring refresh and the consistency refresh are independent jobs, so their schedules can coincide (for example, an
