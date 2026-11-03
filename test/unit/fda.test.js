@@ -5940,7 +5940,36 @@ describe('fetchFDA with refresh policies', () => {
     ).rejects.toMatchObject({
       status: 400,
       type: 'InvalidParam',
-      message: 'Fetch size "week" must be equal to partition size "day".',
+      message:
+        'Fetch size "week" must use the partition unit "day" (e.g. "day" or "3 days").',
+    });
+
+    expect(agenda.create).not.toHaveBeenCalled();
+  });
+
+  test('fetchFDA rejects a multiple of another unit than the partition', async () => {
+    dbMocks.refreshIntervalPartitionCheck.mockReturnValue(true);
+
+    await expect(
+      fetchFDA(
+        'fda1',
+        'SELECT 1',
+        'svc',
+        'public',
+        '/servicepath',
+        'desc',
+        {
+          type: 'window',
+          params: { refreshInterval: '1 day', fetchSize: '3 weeks' },
+        },
+        'timeinstant',
+        { partition: 'month' },
+      ),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'InvalidParam',
+      message:
+        'Fetch size "3 weeks" must use the partition unit "month" (e.g. "month" or "3 months").',
     });
 
     expect(agenda.create).not.toHaveBeenCalled();
