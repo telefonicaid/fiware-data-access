@@ -1082,6 +1082,93 @@ export function registerSlidingWindowsIntegrationTests({
       }
     });
 
+    test('window refresh with a fetchSize of several partitions rewrites the oldest one from its start', async () => {
+      const baseUrl = getBaseUrl();
+      const suffix = `${Date.now()}`;
+      const fixtureTable = `sw_multi_fetch_${suffix}`;
+      const fdaId = `fda_sw_multi_fetch_${suffix}`;
+      const monthStart = (monthsAgo) =>
+        `date_trunc('month', (NOW() AT TIME ZONE 'UTC') - INTERVAL '${monthsAgo} months') AT TIME ZONE 'UTC'`;
+
+      const pgClient = createPgClient();
+      await pgClient.connect();
+      const mongoClient = new MongoClient(getMongoUri());
+      await mongoClient.connect();
+      const agendaJobs = mongoClient.db('test-db').collection('agendaJobs');
+
+      try {
+        await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
+        await pgClient.query(`
+          CREATE TABLE public.${fixtureTable} (
+            id INT PRIMARY KEY,
+            label TEXT NOT NULL,
+            observed_at TIMESTAMPTZ NOT NULL
+          )
+        `);
+        await pgClient.query(`
+          INSERT INTO public.${fixtureTable} (id, label, observed_at)
+          VALUES
+            (1, 'older_month', ${monthStart(4)} + INTERVAL '1 hour'),
+            (2, 'oldest_window_month', ${monthStart(3)} + INTERVAL '1 hour')
+        `);
+
+        const createFda = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: fdaId,
+            query: `SELECT id, label, observed_at FROM public.${fixtureTable}`,
+            description: 'fetchSize of several partitions test',
+            refreshPolicy: {
+              type: 'window',
+              params: { refreshInterval: '1 day', fetchSize: '3 months' },
+            },
+            objStgConf: { partition: 'month' },
+            timeColumn: 'observed_at',
+          },
+        });
+
+        expect(createFda.status).toBe(202);
+        await waitUntilFDACompleted({ baseUrl, service, fdaId });
+
+        await pgClient.query(`
+          INSERT INTO public.${fixtureTable} (id, label, observed_at)
+          VALUES (3, 'late_oldest_window_month', ${monthStart(3)} + INTERVAL '2 hours')
+        `);
+
+        await forceWindowRefresh(agendaJobs, fdaId);
+
+        const readRes = await httpReq({
+          method: 'GET',
+          url: buildDaDataUrl(
+            baseUrl,
+            servicePath,
+            fdaId,
+            'defaultDataAccess',
+            { pageSize: 100, pageStart: 0 },
+          ),
+          headers: { 'Fiware-Service': service },
+        });
+
+        expect(readRes.status).toBe(200);
+        expect(new Set(readRes.json.map((r) => r.label))).toEqual(
+          new Set([
+            'older_month',
+            'oldest_window_month',
+            'late_oldest_window_month',
+          ]),
+        );
+      } finally {
+        await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
+        await pgClient.end();
+        await mongoClient.close();
+      }
+    });
+
     test('POST /fdas/:fdaId/das Create DA for partitioned FDA', async () => {
       const baseUrl = getBaseUrl();
       const daQuery = `
