@@ -2207,8 +2207,9 @@ async function detectSourceSchemaChange(
   fdaId,
   servicePath,
   datasourceId,
+  storedFDA,
 ) {
-  const fda = await retrieveFDA(service, fdaId, servicePath);
+  const fda = storedFDA ?? (await retrieveFDA(service, fdaId, servicePath));
   const storedSchemaFields = normalizePersistedSchemaFields(fda?.schema);
   if (storedSchemaFields.length === 0) {
     return null;
@@ -2236,6 +2237,17 @@ async function detectSourceSchemaChange(
   };
 }
 
+function resolveScheduledRefreshQuery(datasource, fda, scheduledRefresh) {
+  const { firstQuery, recurringQuery } = resolveRefreshQueries(
+    datasource,
+    fda.refreshPolicy,
+    fda.query,
+    fda.timeColumn,
+    fda.objStgConf,
+  );
+  return scheduledRefresh === 'recurring' ? recurringQuery : firstQuery;
+}
+
 export async function processFDAAsync(
   fdaId,
   query,
@@ -2245,6 +2257,7 @@ export async function processFDAAsync(
   refreshPolicy,
   objStgConf,
   datasourceId = DEFAULT_DATASOURCE_ID,
+  scheduledRefresh,
 ) {
   const startedAt = Date.now();
   const storagePath = getFDAStoragePath(fdaId, servicePath);
@@ -2260,11 +2273,26 @@ export async function processFDAAsync(
   }
 
   try {
+    let storedFDA;
+    if (scheduledRefresh) {
+      storedFDA = await retrieveFDA(service, fdaId, servicePath);
+      datasourceId = storedFDA.datasourceId ?? datasourceId;
+      timeColumn = storedFDA.timeColumn;
+      refreshPolicy = storedFDA.refreshPolicy;
+      objStgConf = storedFDA.objStgConf;
+      query = resolveScheduledRefreshQuery(
+        await resolveDatasource(service, datasourceId),
+        storedFDA,
+        scheduledRefresh,
+      );
+    }
+
     const schemaChange = await detectSourceSchemaChange(
       service,
       fdaId,
       servicePath,
       datasourceId,
+      storedFDA,
     );
     let refreshQuery = query;
     if (schemaChange) {
@@ -3919,7 +3947,6 @@ async function scheduleFDAJobs(jobConf) {
 
 async function scheduleRecurringFDAJobs({
   fdaId,
-  query,
   service,
   servicePath,
   timeColumn,
@@ -3932,19 +3959,10 @@ async function scheduleRecurringFDAJobs({
 
   const agenda = getAgenda();
 
-  const { firstQuery, recurringQuery } = resolveRefreshQueries(
-    datasource,
-    refreshPolicy,
-    query,
-    timeColumn,
-    objStgConf,
-  );
-
   if (refreshPolicy?.type === 'interval' || refreshPolicy?.type === 'window') {
     // 1. Recurring fetch job (incremental fetches)
     const refreshJob = agenda.create('refresh-fda-recurring', {
       fdaId,
-      query: recurringQuery,
       service,
       servicePath,
       timeColumn,
@@ -3965,7 +3983,6 @@ async function scheduleRecurringFDAJobs({
         'consistency-refresh-fda-recurring',
         {
           fdaId,
-          query: firstQuery,
           service,
           servicePath,
           timeColumn,

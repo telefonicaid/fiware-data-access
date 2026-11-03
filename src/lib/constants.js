@@ -93,6 +93,12 @@ export const VALID_WINDOW_FETCH_SIZES = [
   'year',
 ];
 
+// Scheduled refresh job types
+export const SCHEDULED_REFRESHES = {
+  'refresh-fda-recurring': 'recurring',
+  'consistency-refresh-fda-recurring': 'consistency',
+};
+
 // Fixed-length duration units
 export const DURATION_UNITS_MS = Object.freeze({
   second: 1000,

@@ -38,6 +38,8 @@ import { v4 as uuidv4 } from 'uuid';
 
 const logger = getBasicLogger();
 
+import { SCHEDULED_REFRESHES } from './lib/constants.js';
+
 export async function startFetcher() {
   const agenda = getAgenda();
 
@@ -102,6 +104,7 @@ export async function startFetcher() {
           refreshPolicy,
           objStgConf,
           datasourceId,
+          SCHEDULED_REFRESHES[job.attrs.name],
         );
         jobLogger.info(
           { fdaId, durationMs: Date.now() - start },
