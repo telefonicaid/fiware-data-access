@@ -5975,6 +5975,71 @@ describe('fetchFDA with refresh policies', () => {
     expect(agenda.create).not.toHaveBeenCalled();
   });
 
+  test.each([
+    ['3 months', 'month', '2026-08-01T00:00:00.000Z'],
+    ['month', 'month', '2026-10-01T00:00:00.000Z'],
+    ['2 weeks', 'week', '2026-10-19T00:00:00.000Z'],
+    ['week', 'week', '2026-10-26T00:00:00.000Z'],
+    ['2 years', 'year', '2024-01-01T00:00:00.000Z'],
+    ['3 days', 'day', '2026-11-01T00:00:00.000Z'],
+  ])(
+    'fetchFDA with fetchSize "%s" and partition "%s" starts the recurring fetch at %s',
+    async (fetchSize, partition, expectedStart) => {
+      jest.useFakeTimers({ now: new Date('2026-11-04T10:30:00.000Z') });
+      dbMocks.refreshIntervalPartitionCheck.mockReturnValue(true);
+
+      await fetchFDA(
+        'fda1',
+        'SELECT 1',
+        'svc',
+        'public',
+        '/servicepath',
+        'desc',
+        {
+          type: 'window',
+          params: { refreshInterval: '1 day', fetchSize },
+        },
+        'timeinstant',
+        { partition },
+      );
+
+      expect(agenda.create).toHaveBeenCalledWith(
+        'refresh-fda-recurring',
+        expect.objectContaining({
+          query: `SELECT * FROM (SELECT 1) q WHERE timeinstant >= TIMESTAMP '${expectedStart}' AND timeinstant < NOW()`,
+        }),
+      );
+      jest.useRealTimers();
+    },
+  );
+
+  test('fetchFDA without partition does not align the recurring fetch start', async () => {
+    jest.useFakeTimers({ now: new Date('2026-11-04T10:30:00.000Z') });
+
+    await fetchFDA(
+      'fda1',
+      'SELECT 1',
+      'svc',
+      'public',
+      '/servicepath',
+      'desc',
+      {
+        type: 'window',
+        params: { refreshInterval: '1 day', fetchSize: '3 months' },
+      },
+      'timeinstant',
+    );
+
+    expect(agenda.create).toHaveBeenCalledWith(
+      'refresh-fda-recurring',
+      expect.objectContaining({
+        query:
+          "SELECT * FROM (SELECT 1) q WHERE timeinstant >= TIMESTAMP '2026-08-04T00:00:00.000Z' AND timeinstant < NOW()",
+      }),
+    );
+    jest.useRealTimers();
+  });
+
   test('fetchFDA rejects invalid refresh policy types', async () => {
     await expect(
       fetchFDA(
