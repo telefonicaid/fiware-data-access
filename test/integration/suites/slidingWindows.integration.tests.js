@@ -1087,14 +1087,41 @@ export function registerSlidingWindowsIntegrationTests({
       const suffix = `${Date.now()}`;
       const fixtureTable = `sw_multi_fetch_${suffix}`;
       const fdaId = `fda_sw_multi_fetch_${suffix}`;
-      const monthStart = (monthsAgo) =>
-        `date_trunc('month', (NOW() AT TIME ZONE 'UTC') - INTERVAL '${monthsAgo} months') AT TIME ZONE 'UTC'`;
+
+      const fetchStart = new Date();
+      fetchStart.setUTCMonth(fetchStart.getUTCMonth() - 3);
+      fetchStart.setUTCHours(0, 0, 0, 0);
+      const oldestMonthStart = Date.UTC(
+        fetchStart.getUTCFullYear(),
+        fetchStart.getUTCMonth(),
+        1,
+      );
+      const hours = (n) => n * 60 * 60 * 1000;
+      const rows = {
+        previous_month: new Date(
+          Date.UTC(
+            fetchStart.getUTCFullYear(),
+            fetchStart.getUTCMonth() - 1,
+            1,
+          ) + hours(1),
+        ),
+        oldest_month_before_fetch_start: new Date(oldestMonthStart + hours(1)),
+        oldest_month_after_fetch_start: new Date(
+          fetchStart.getTime() + hours(1),
+        ),
+        late_oldest_month: new Date(oldestMonthStart + hours(2)),
+      };
 
       const pgClient = createPgClient();
       await pgClient.connect();
       const mongoClient = new MongoClient(getMongoUri());
       await mongoClient.connect();
       const agendaJobs = mongoClient.db('test-db').collection('agendaJobs');
+      const insertRow = (id, label) =>
+        pgClient.query(
+          `INSERT INTO public.${fixtureTable} (id, label, observed_at) VALUES ($1, $2, $3)`,
+          [id, label, rows[label]],
+        );
 
       try {
         await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
@@ -1105,12 +1132,9 @@ export function registerSlidingWindowsIntegrationTests({
             observed_at TIMESTAMPTZ NOT NULL
           )
         `);
-        await pgClient.query(`
-          INSERT INTO public.${fixtureTable} (id, label, observed_at)
-          VALUES
-            (1, 'older_month', ${monthStart(4)} + INTERVAL '1 hour'),
-            (2, 'oldest_window_month', ${monthStart(3)} + INTERVAL '1 hour')
-        `);
+        await insertRow(1, 'previous_month');
+        await insertRow(2, 'oldest_month_before_fetch_start');
+        await insertRow(3, 'oldest_month_after_fetch_start');
 
         const createFda = await httpReq({
           method: 'POST',
@@ -1135,11 +1159,15 @@ export function registerSlidingWindowsIntegrationTests({
         expect(createFda.status).toBe(202);
         await waitUntilFDACompleted({ baseUrl, service, fdaId });
 
-        await pgClient.query(`
-          INSERT INTO public.${fixtureTable} (id, label, observed_at)
-          VALUES (3, 'late_oldest_window_month', ${monthStart(3)} + INTERVAL '2 hours')
-        `);
+        const recurringJob = await agendaJobs.findOne({
+          name: 'refresh-fda-recurring',
+          'data.fdaId': fdaId,
+        });
+        expect(recurringJob.data.query).toContain(
+          `observed_at >= TIMESTAMP '${new Date(oldestMonthStart).toISOString()}'`,
+        );
 
+        await insertRow(4, 'late_oldest_month');
         await forceWindowRefresh(agendaJobs, fdaId);
 
         const readRes = await httpReq({
@@ -1156,11 +1184,7 @@ export function registerSlidingWindowsIntegrationTests({
 
         expect(readRes.status).toBe(200);
         expect(new Set(readRes.json.map((r) => r.label))).toEqual(
-          new Set([
-            'older_month',
-            'oldest_window_month',
-            'late_oldest_window_month',
-          ]),
+          new Set(Object.keys(rows)),
         );
       } finally {
         await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
