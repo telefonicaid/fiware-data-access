@@ -1219,7 +1219,13 @@ async function prepareCachedFDA({
   });
 }
 
-function resolveRefreshQueries(datasource, refreshPolicy, query, timeColumn) {
+function resolveRefreshQueries(
+  datasource,
+  refreshPolicy,
+  query,
+  timeColumn,
+  objStgConf,
+) {
   const windowQueryFn =
     datasource.type === 'mongodb' ? getMongoWindowQuery : getWindowQuery;
 
@@ -1249,24 +1255,39 @@ function resolveRefreshQueries(datasource, refreshPolicy, query, timeColumn) {
       query,
       timeColumn,
       refreshPolicy.params.fetchSize,
+      objStgConf?.partition,
     ),
   };
 }
 
-function getWindowQuery(query, timeColumn, startDate) {
-  if (!startDate) {
+function getWindowQuery(query, timeColumn, size, partition) {
+  if (!size) {
     return query;
   }
-  const prevWindowStartDate = getPreviousWindowStartDate(startDate);
-  return getUpdateWindowQuery(query, timeColumn, prevWindowStartDate);
+  return getUpdateWindowQuery(
+    query,
+    timeColumn,
+    getWindowStartDate(size, partition),
+  );
 }
 
-function getMongoWindowQuery(query, timeColumn, startDate) {
-  if (!startDate) {
+function getMongoWindowQuery(query, timeColumn, size, partition) {
+  if (!size) {
     return query;
   }
-  const prevWindowStartDate = getPreviousWindowStartDate(startDate);
-  return getUpdateMongoWindowQuery(query, timeColumn, prevWindowStartDate);
+  return getUpdateMongoWindowQuery(
+    query,
+    timeColumn,
+    getWindowStartDate(size, partition),
+  );
+}
+
+function getWindowStartDate(size, partition) {
+  const start = getPreviousWindowStartDate(size);
+  if (!partition || partition === 'none') {
+    return start;
+  }
+  return getPartitionStart(new Date(start), partition).toISOString();
 }
 
 function validateOnDemandOptions(refreshPolicy, objStgConf, timeColumn) {
@@ -3895,6 +3916,7 @@ async function scheduleRecurringFDAJobs({
     refreshPolicy,
     query,
     timeColumn,
+    objStgConf,
   );
 
   if (refreshPolicy?.type === 'interval' || refreshPolicy?.type === 'window') {
