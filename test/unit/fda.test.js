@@ -2346,7 +2346,6 @@ describe('fetchFDA', () => {
     expect(agenda.create).toHaveBeenCalledWith('refresh-fda-recurring', {
       datasourceId: 'default',
       fdaId: 'fda1',
-      query: 'SELECT 1',
       service: 'svc',
       servicePath: '/servicepath',
       timeColumn: 'timeinstant',
@@ -2583,15 +2582,18 @@ describe('fetchFDA', () => {
           partition: 'day',
         }),
         datasourceId: 'default',
-        query:
-          "SELECT * FROM (SELECT 1) q WHERE timeinstant >= TIMESTAMP '2026-06-21T00:00:00.000Z' AND timeinstant < NOW()",
       }),
     );
 
     const consistencyJob = agenda.create.mock.results.find(
       ({ value }) => value.name === 'consistency-refresh-fda-recurring',
     ).value;
+    const refreshJob = agenda.create.mock.results.find(
+      ({ value }) => value.name === 'refresh-fda-recurring',
+    ).value;
 
+    expect(consistencyJob.data).not.toHaveProperty('query');
+    expect(refreshJob.data).not.toHaveProperty('query');
     expect(consistencyJob.unique).toHaveBeenCalledWith({
       name: 'consistency-refresh-fda-recurring',
       'data.service': 'svc',
@@ -3704,7 +3706,6 @@ describe('putFDA with update body', () => {
       expect.objectContaining({
         fdaId: 'fda42',
         refreshPolicy,
-        query: 'SELECT id, observedAt FROM users',
       }),
     );
     expect(agenda.now).toHaveBeenCalledWith(
@@ -5672,7 +5673,6 @@ describe('fetchFDA with refresh policies', () => {
       'refresh-fda-recurring',
       expect.objectContaining({
         fdaId: 'fda1',
-        query: 'SELECT 1',
         service: 'svc',
         timeColumn: 'timeinstant',
         objStgConf: undefined,
@@ -5823,14 +5823,12 @@ describe('fetchFDA with refresh policies', () => {
     expect(refreshCreateCalls[0][1]).toEqual(
       expect.objectContaining({
         fdaId: 'fda1',
-        query: 'SELECT 1',
         service: 'svc',
       }),
     );
     expect(refreshCreateCalls[1][1]).toEqual(
       expect.objectContaining({
         fdaId: 'fda2',
-        query: 'SELECT 1',
         service: 'svc',
       }),
     );
@@ -6045,46 +6043,8 @@ describe('fetchFDA with refresh policies', () => {
     },
   );
 
-  test.each([
-    ['3 months', 'month', '2026-08-01T00:00:00.000Z'],
-    ['month', 'month', '2026-10-01T00:00:00.000Z'],
-    ['2 weeks', 'week', '2026-10-19T00:00:00.000Z'],
-    ['week', 'week', '2026-10-26T00:00:00.000Z'],
-    ['2 years', 'year', '2024-01-01T00:00:00.000Z'],
-    ['3 days', 'day', '2026-11-01T00:00:00.000Z'],
-  ])(
-    'fetchFDA with fetchSize "%s" and partition "%s" starts the recurring fetch at %s',
-    async (fetchSize, partition, expectedStart) => {
-      jest.useFakeTimers({ now: new Date('2026-11-04T10:30:00.000Z') });
-      dbMocks.refreshIntervalPartitionCheck.mockReturnValue(true);
-
-      await fetchFDA(
-        'fda1',
-        'SELECT 1',
-        'svc',
-        'public',
-        '/servicepath',
-        'desc',
-        {
-          type: 'window',
-          params: { refreshInterval: '1 day', fetchSize },
-        },
-        'timeinstant',
-        { partition },
-      );
-
-      expect(agenda.create).toHaveBeenCalledWith(
-        'refresh-fda-recurring',
-        expect.objectContaining({
-          query: `SELECT * FROM (SELECT 1) q WHERE timeinstant >= TIMESTAMP '${expectedStart}' AND timeinstant < NOW()`,
-        }),
-      );
-      jest.useRealTimers();
-    },
-  );
-
-  test('fetchFDA without partition does not align the recurring fetch start', async () => {
-    jest.useFakeTimers({ now: new Date('2026-11-04T10:30:00.000Z') });
+  test('fetchFDA does not store the query in the recurring job', async () => {
+    dbMocks.refreshIntervalPartitionCheck.mockReturnValue(true);
 
     await fetchFDA(
       'fda1',
@@ -6098,16 +6058,13 @@ describe('fetchFDA with refresh policies', () => {
         params: { refreshInterval: '1 day', fetchSize: '3 months' },
       },
       'timeinstant',
+      { partition: 'month' },
     );
 
-    expect(agenda.create).toHaveBeenCalledWith(
-      'refresh-fda-recurring',
-      expect.objectContaining({
-        query:
-          "SELECT * FROM (SELECT 1) q WHERE timeinstant >= TIMESTAMP '2026-08-04T00:00:00.000Z' AND timeinstant < NOW()",
-      }),
-    );
-    jest.useRealTimers();
+    const refreshJob = agenda.create.mock.results.find(
+      ({ value }) => value.name === 'refresh-fda-recurring',
+    ).value;
+    expect(refreshJob.data).not.toHaveProperty('query');
   });
 
   test('fetchFDA rejects invalid refresh policy types', async () => {
@@ -6298,24 +6255,7 @@ describe('fetchFDA with Mongo window refresh policies', () => {
     const refreshJob = agenda.create.mock.results.find(
       ({ value }) => value.name === 'refresh-fda-recurring',
     ).value;
-    expect(refreshJob.data.query).toEqual({
-      collection: 'events',
-      filter: {
-        $and: [
-          { status: 'ok' },
-          {
-            $expr: {
-              $and: [
-                {
-                  $gte: ['$observedAt', new Date('2026-07-20T00:00:00.000Z')],
-                },
-                { $lt: ['$observedAt', '$$NOW'] },
-              ],
-            },
-          },
-        ],
-      },
-    });
+    expect(refreshJob.data).not.toHaveProperty('query');
     expect(refreshJob.repeatEvery).toHaveBeenCalledWith('1 day', {
       skipImmediate: true,
     });
@@ -6370,25 +6310,7 @@ describe('fetchFDA with Mongo window refresh policies', () => {
     const refreshJob = agenda.create.mock.results.find(
       ({ value }) => value.name === 'refresh-fda-recurring',
     ).value;
-    expect(refreshJob.data.query).toEqual({
-      collection: 'events',
-      aggregation: [
-        {
-          $match: {
-            $expr: {
-              $and: [
-                {
-                  $gte: ['$observedAt', new Date('2026-07-20T23:00:00.000Z')],
-                },
-                { $lt: ['$observedAt', '$$NOW'] },
-              ],
-            },
-          },
-        },
-        { $match: { site: 'lab' } },
-        { $project: { observedAt: 1, site: 1 } },
-      ],
-    });
+    expect(refreshJob.data).not.toHaveProperty('query');
 
     jest.useRealTimers();
   });
@@ -8152,5 +8074,291 @@ describe('lazy and onDemand FDAs', () => {
       'clean-partition',
       expect.objectContaining({ windowSize: '1 week' }),
     );
+  });
+});
+
+describe('processFDAAsync scheduled refreshes', () => {
+  const STOP_FETCH = 'stop after building the query';
+  const postgresDatasource = {
+    datasourceId: 'default',
+    type: 'postgres',
+    config: {},
+  };
+  const mongoDatasource = {
+    datasourceId: 'mongo-ds',
+    type: 'mongodb',
+    config: {},
+  };
+
+  function storedFDA(refreshPolicy, objStgConf, extra = {}) {
+    return {
+      fdaId: 'fda1',
+      service: 'svc',
+      servicePath: '/servicepath',
+      query: 'SELECT 1',
+      timeColumn: 'timeinstant',
+      refreshPolicy,
+      objStgConf,
+      ...extra,
+    };
+  }
+
+  async function runScheduledRefresh(
+    fda,
+    scheduledRefresh,
+    datasource = postgresDatasource,
+  ) {
+    mongoMocks.claimFDAForFetch.mockResolvedValue(true);
+    mongoMocks.retrieveFDA.mockResolvedValue(fda);
+    mongoMocks.retrieveDatasource.mockResolvedValue(datasource);
+    const isMongo = datasource.type === 'mongodb';
+    const fetchMock = isMongo
+      ? mongoMocks.createMongoCursorReader
+      : pgMocks.uploadTable;
+    fetchMock.mockRejectedValueOnce(new Error(STOP_FETCH));
+
+    await expect(
+      processFDAAsync(
+        fda.fdaId,
+        'SELECT stale',
+        fda.service,
+        fda.servicePath,
+        'stale_column',
+        { type: 'none' },
+        {},
+        'default',
+        scheduledRefresh,
+      ),
+    ).rejects.toThrow(STOP_FETCH);
+
+    return fetchMock.mock.calls.at(-1)[isMongo ? 1 : 3];
+  }
+
+  const windowQuery = (start) =>
+    `SELECT * FROM (SELECT 1) q WHERE timeinstant >= TIMESTAMP '${start}' AND timeinstant < NOW()`;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    awsMocks.getS3Client.mockReturnValue({});
+    awsMocks.dropFile.mockResolvedValue(undefined);
+    mongoMocks.updateFDAStatus.mockResolvedValue(undefined);
+    jest.useFakeTimers({ now: new Date('2026-11-04T10:30:00.000Z') });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  test.each([
+    ['3 months', 'month', '2026-08-01T00:00:00.000Z'],
+    ['month', 'month', '2026-10-01T00:00:00.000Z'],
+    ['2 weeks', 'week', '2026-10-19T00:00:00.000Z'],
+    ['week', 'week', '2026-10-26T00:00:00.000Z'],
+    ['2 years', 'year', '2024-01-01T00:00:00.000Z'],
+    ['3 days', 'day', '2026-11-01T00:00:00.000Z'],
+  ])(
+    'recurring refresh with fetchSize "%s" and partition "%s" starts at %s',
+    async (fetchSize, partition, expectedStart) => {
+      const query = await runScheduledRefresh(
+        storedFDA(
+          { type: 'window', params: { refreshInterval: '1 day', fetchSize } },
+          { partition },
+        ),
+        'recurring',
+      );
+
+      expect(query).toBe(windowQuery(expectedStart));
+    },
+  );
+
+  test('recurring refresh without partition does not align its start', async () => {
+    const query = await runScheduledRefresh(
+      storedFDA({
+        type: 'window',
+        params: { refreshInterval: '1 day', fetchSize: '3 months' },
+      }),
+      'recurring',
+    );
+
+    expect(query).toBe(windowQuery('2026-08-04T00:00:00.000Z'));
+  });
+
+  test('recurring refresh computes its start when it runs, not when it was scheduled', async () => {
+    const fda = storedFDA(
+      {
+        type: 'window',
+        params: { refreshInterval: '1 day', fetchSize: 'day' },
+      },
+      { partition: 'day' },
+    );
+
+    expect(await runScheduledRefresh(fda, 'recurring')).toBe(
+      windowQuery('2026-11-03T00:00:00.000Z'),
+    );
+
+    jest.setSystemTime(new Date('2026-11-14T10:30:00.000Z'));
+
+    expect(await runScheduledRefresh(fda, 'recurring')).toBe(
+      windowQuery('2026-11-13T00:00:00.000Z'),
+    );
+  });
+
+  test('consistency refresh fetches the windowSize computed when it runs', async () => {
+    jest.setSystemTime(new Date('2026-11-14T10:30:00.000Z'));
+
+    const query = await runScheduledRefresh(
+      storedFDA(
+        {
+          type: 'window',
+          params: {
+            refreshInterval: '1 day',
+            consistencyRefreshInterval: '1 week',
+            fetchSize: 'day',
+            windowSize: '1 week',
+          },
+        },
+        { partition: 'day' },
+      ),
+      'consistency',
+    );
+
+    expect(query).toBe(windowQuery('2026-11-07T00:00:00.000Z'));
+  });
+
+  test('consistency refresh without windowSize fetches the whole query', async () => {
+    const query = await runScheduledRefresh(
+      storedFDA({
+        type: 'window',
+        params: {
+          refreshInterval: '1 hour',
+          consistencyRefreshInterval: '1 day',
+          fetchSize: 'day',
+        },
+      }),
+      'consistency',
+    );
+
+    expect(query).toBe('SELECT 1');
+  });
+
+  test('recurring refresh of an interval FDA fetches the stored query, not the job one', async () => {
+    const query = await runScheduledRefresh(
+      storedFDA({ type: 'interval', params: { refreshInterval: '1 hour' } }),
+      'recurring',
+    );
+
+    expect(query).toBe('SELECT 1');
+  });
+
+  test('recurring refresh uses the configuration of the stored FDA', async () => {
+    await runScheduledRefresh(
+      storedFDA(
+        {
+          type: 'window',
+          params: { refreshInterval: '1 day', fetchSize: 'day' },
+        },
+        { partition: 'day' },
+        { datasourceId: 'pg-ds' },
+      ),
+      'recurring',
+    );
+
+    expect(mongoMocks.retrieveFDA).toHaveBeenCalledWith(
+      'svc',
+      'fda1',
+      '/servicepath',
+    );
+    expect(mongoMocks.retrieveDatasource).toHaveBeenCalledWith('svc', 'pg-ds');
+  });
+
+  test('recurring refresh of a Mongo filter query is bounded by fetchSize', async () => {
+    jest.setSystemTime(new Date('2026-07-21T00:00:00.000Z'));
+
+    const query = await runScheduledRefresh(
+      storedFDA(
+        {
+          type: 'window',
+          params: {
+            refreshInterval: '1 day',
+            fetchSize: 'day',
+            windowSize: 'week',
+          },
+        },
+        { partition: 'day' },
+        {
+          query: { collection: 'events', filter: { status: 'ok' } },
+          timeColumn: 'observedAt',
+          datasourceId: 'mongo-ds',
+        },
+      ),
+      'recurring',
+      mongoDatasource,
+    );
+
+    expect(query).toEqual({
+      collection: 'events',
+      filter: {
+        $and: [
+          { status: 'ok' },
+          {
+            $expr: {
+              $and: [
+                {
+                  $gte: ['$observedAt', new Date('2026-07-20T00:00:00.000Z')],
+                },
+                { $lt: ['$observedAt', '$$NOW'] },
+              ],
+            },
+          },
+        ],
+      },
+    });
+  });
+
+  test('recurring refresh of a Mongo aggregation prepends a $match stage', async () => {
+    jest.setSystemTime(new Date('2026-07-21T00:00:00.000Z'));
+
+    const query = await runScheduledRefresh(
+      storedFDA(
+        {
+          type: 'window',
+          params: { refreshInterval: '1 hour', fetchSize: 'hour' },
+        },
+        undefined,
+        {
+          query: {
+            collection: 'events',
+            aggregation: [
+              { $match: { site: 'lab' } },
+              { $project: { observedAt: 1, site: 1 } },
+            ],
+          },
+          timeColumn: 'observedAt',
+          datasourceId: 'mongo-ds',
+        },
+      ),
+      'recurring',
+      mongoDatasource,
+    );
+
+    expect(query).toEqual({
+      collection: 'events',
+      aggregation: [
+        {
+          $match: {
+            $expr: {
+              $and: [
+                {
+                  $gte: ['$observedAt', new Date('2026-07-20T23:00:00.000Z')],
+                },
+                { $lt: ['$observedAt', '$$NOW'] },
+              ],
+            },
+          },
+        },
+        { $match: { site: 'lab' } },
+        { $project: { observedAt: 1, site: 1 } },
+      ],
+    });
   });
 });
