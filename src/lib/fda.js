@@ -1468,12 +1468,15 @@ function validatePartitionAlignment(refreshInterval, fetchSize, objStgConf) {
     );
   }
 
-  // fetched data size must be equal than partition size (if both presents).
-  if (objStgConf?.partition && fetchSize !== objStgConf?.partition) {
+  const partition = objStgConf?.partition;
+  if (
+    partition &&
+    (!fetchSize || processFetchSize(fetchSize).unit !== partition)
+  ) {
     throw new FDAError(
       400,
       'InvalidParam',
-      `Fetch size "${fetchSize}" must be equal to partition size "${objStgConf?.partition}".`,
+      `Fetch size "${fetchSize}" must use the partition unit "${partition}" (e.g. "${partition}" or "3 ${partition}s").`,
     );
   }
 }
