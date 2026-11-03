@@ -655,8 +655,8 @@ unrealistically small Parquet files produced by repeated constant strings. This 
 claim about the actual size or compressibility of production traffic descriptions.
 
 A monthly-partition control uses the same fixture and initial window. Its `fetchSize` is also `month`, because the API
-requires fetch size and partition size to match. The control verifies creation and cached contents; the daily scenario
-additionally verifies recurring refreshes.
+requires the fetch size unit to match the partition. The control verifies creation and cached contents; the daily
+scenario additionally verifies recurring refreshes.
 
 The number of source rows is controlled by `PERFORMANCE_TABLE_ROWS`. The performance harness defaults explicitly to
 `1GB`, one DuckDB thread and `preserve_insertion_order=false`, while allowing overrides through the corresponding
