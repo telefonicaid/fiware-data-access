@@ -8225,7 +8225,7 @@ describe('processFDAAsync scheduled refreshes', () => {
     expect(query).toBe(windowQuery('2026-11-07T00:00:00.000Z'));
   });
 
-  test('consistency refresh with month partitions fetches windowSize ago, not from the start of the month', async () => {
+  test('consistency refresh with month partitions starts at the oldest partition boundary', async () => {
     jest.setSystemTime(new Date('2026-11-14T10:30:00.000Z'));
 
     const query = await runScheduledRefresh(
@@ -8244,7 +8244,7 @@ describe('processFDAAsync scheduled refreshes', () => {
       'consistency',
     );
 
-    expect(query).toBe(windowQuery('2026-08-14T00:00:00.000Z'));
+    expect(query).toBe(windowQuery('2026-08-01T00:00:00.000Z'));
   });
 
   test('consistency refresh without windowSize fetches the whole query', async () => {
