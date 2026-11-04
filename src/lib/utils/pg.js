@@ -103,6 +103,7 @@ export function getPgPool(username, password, host, port, database) {
     host,
     port,
     database,
+    application_name: 'fda',
     max: config.pg.pool.max,
     min: 0,
     idleTimeoutMillis: config.pg.pool.idleTimeoutMillis,
@@ -212,6 +213,7 @@ export function getPgClient(username, password, host, port, database) {
     host,
     port,
     database,
+    application_name: 'fda',
   });
 }
 

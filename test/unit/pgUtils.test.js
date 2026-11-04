@@ -167,6 +167,7 @@ describe('pg utils', () => {
       host: 'h1',
       port: 15432,
       database: 'db1',
+      application_name: 'fda',
     });
     expect(client).toBe(currentClient);
   });
@@ -509,6 +510,18 @@ describe('pg utils', () => {
     };
     await uploadTable({}, 'bucketA', creds, 'SELECT * FROM t', 'path/file');
 
+    expect(poolCtorMock).toHaveBeenCalledWith({
+      user: 'u',
+      password: 'p',
+      host: 'h',
+      port: 5432,
+      database: 'svc_db',
+      application_name: 'fda',
+      max: config.pg.pool.max,
+      min: 0,
+      idleTimeoutMillis: config.pg.pool.idleTimeoutMillis,
+      connectionTimeoutMillis: config.pg.pool.connectionTimeoutMillis,
+    });
     expect(loggerMock.debug).toHaveBeenCalledWith(
       'Upload completed successfully',
     );
