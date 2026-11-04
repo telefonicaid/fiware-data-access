@@ -8225,6 +8225,28 @@ describe('processFDAAsync scheduled refreshes', () => {
     expect(query).toBe(windowQuery('2026-11-07T00:00:00.000Z'));
   });
 
+  test('consistency refresh with month partitions fetches windowSize ago, not from the start of the month', async () => {
+    jest.setSystemTime(new Date('2026-11-14T10:30:00.000Z'));
+
+    const query = await runScheduledRefresh(
+      storedFDA(
+        {
+          type: 'window',
+          params: {
+            refreshInterval: '1 day',
+            consistencyRefreshInterval: '1 week',
+            fetchSize: 'month',
+            windowSize: '3 months',
+          },
+        },
+        { partition: 'month' },
+      ),
+      'consistency',
+    );
+
+    expect(query).toBe(windowQuery('2026-08-14T00:00:00.000Z'));
+  });
+
   test('consistency refresh without windowSize fetches the whole query', async () => {
     const query = await runScheduledRefresh(
       storedFDA({
