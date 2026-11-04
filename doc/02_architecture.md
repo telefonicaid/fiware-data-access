@@ -138,10 +138,11 @@ Data flow:
 
 Fresh mode:
 
--   DAs are always executed on the cached parquet snapshot.
--   For use cases that require real-time data, `GET /{visibility}/fdas/{fdaId}/data` executes the FDA directly on
-    PostgreSQL.
--   FDAs can be created with `cached=false` to disable parquet generation and operate as only-fresh resources.
+-   Data is always read through a DA, `GET /{visibility}/fdas/{fdaId}/das/{daId}/data`, whatever the FDA type.
+-   DAs of cached FDAs are executed on the cached parquet snapshot.
+-   FDAs can be created with `cached=false` to disable parquet generation and operate as only-fresh resources. Their DAs
+    run directly against the datasource: a fixed `defaultDataAccess` returning the FDA query result, plus custom DAs in
+    PostgreSQL dialect for PostgreSQL FDAs.
 -   Fresh mode is controlled per instance with `FDA_ROLE_SYNCQUERIES`.
 
 ---

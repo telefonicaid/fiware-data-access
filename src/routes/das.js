@@ -87,7 +87,9 @@ router.get('/:visibility/fdas/:fdaId/das', async (req, res) => {
  *     description: >
  *       Creates a new DA on the given FDA. Allowed even while the FDA is still processing its first fetch (an
  *       internal one-row synchronous snapshot is used to validate query compatibility); execution of the DA
- *       itself is blocked until the first fetch completes. Not allowed for only-fresh FDAs (`cached: false`).
+ *       itself is blocked until the first fetch completes. On only-fresh FDAs (`cached: false`) the query is
+ *       not run on DuckDB but in PostgreSQL dialect over the FDA query (`SELECT <projection> [clauses]`, no
+ *       `FROM`); MongoDB only-fresh FDAs only have the fixed `defaultDataAccess`.
  *     parameters:
  *       - $ref: '#/components/parameters/VisibilityPath'
  *       - $ref: '#/components/parameters/FdaIdPath'
@@ -119,7 +121,9 @@ router.get('/:visibility/fdas/:fdaId/das', async (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/Error'
  *       '409':
- *         description: '`DuplicatedKey`, or `FDAOnlyFresh` when the FDA was created with `cached: false`.'
+ *         description: >
+ *           `DuplicatedKey`, or `FDAOnlyFresh` when the FDA is an only-fresh MongoDB FDA or the id is the fixed
+ *           `defaultDataAccess` of an only-fresh FDA.
  *         content:
  *           application/json:
  *             schema:
@@ -215,7 +219,9 @@ router.get('/:visibility/fdas/:fdaId/das/:daId', async (req, res) => {
  *     tags: [DAs]
  *     operationId: updateDa
  *     summary: Update DA
- *     description: Updates an existing DA. `id` must not be included in the body.
+ *     description: >
+ *       Updates an existing DA. `id` must not be included in the body. The fixed `defaultDataAccess` of an
+ *       only-fresh FDA (`cached: false`) cannot be updated.
  *     parameters:
  *       - $ref: '#/components/parameters/VisibilityPath'
  *       - $ref: '#/components/parameters/FdaIdPath'
@@ -242,6 +248,12 @@ router.get('/:visibility/fdas/:fdaId/das/:daId', async (req, res) => {
  *               $ref: '#/components/schemas/Error'
  *       '404':
  *         description: '`FDANotFound` or `DaNotFound`.'
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '409':
+ *         description: '`FDAOnlyFresh`: the DA is the fixed `defaultDataAccess` of an only-fresh FDA.'
  *         content:
  *           application/json:
  *             schema:
@@ -302,6 +314,12 @@ router.put('/:visibility/fdas/:fdaId/das/:daId', async (req, res) => {
  *         $ref: '#/components/responses/BadRequest'
  *       '404':
  *         description: '`FDANotFound` or `DaNotFound`.'
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '409':
+ *         description: '`FDAOnlyFresh`: the DA is the fixed `defaultDataAccess` of an only-fresh FDA.'
  *         content:
  *           application/json:
  *             schema:
