@@ -90,12 +90,12 @@ A cached FDA can be shared using its DA URL, for example:
 /public/fdas/audit/das/defaultDataAccess/data?service=trantor&servicePath=%2Fpublic&outputType=csv
 ```
 
-Only-fresh FDAs use `/public/fdas/audit/data` with the same context query parameters. No authentication headers are
-required by FDA itself. In deployments with a gateway, explicitly allow anonymous access only to the intended public
-data routes. Keep creation, updates, deletion, listing, datasources and FDA/DA metadata protected: metadata can contain
-query definitions and storage configuration. Do not expose private routes, or enable anonymous CDA compatibility routes
-without validating their resolved visibility and tenant. Public links are not secret or signed tokens, and FDA
-identifiers are not an authorization mechanism.
+Only-fresh FDAs are shared the same way, through the DA URL. No authentication headers are required by FDA itself. In
+deployments with a gateway, explicitly allow anonymous access only to the intended public data routes. Keep creation,
+updates, deletion, listing, datasources and FDA/DA metadata protected: metadata can contain query definitions and
+storage configuration. Do not expose private routes, or enable anonymous CDA compatibility routes without validating
+their resolved visibility and tenant. Public links are not secret or signed tokens, and FDA identifiers are not an
+authorization mechanism.
 
 ### Quota and expiration semantics
 

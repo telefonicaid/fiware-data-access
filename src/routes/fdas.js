@@ -98,7 +98,8 @@ router.get('/:visibility/fdas', async (req, res) => {
  *     description: >
  *       Creates a new FDA. Processing is asynchronous: the response only confirms the request was accepted.
  *       `validationMode: "unchecked"` skips synchronous schema validation and automatic `defaultDataAccess`
- *       creation, useful for heavy queries.
+ *       creation, useful for heavy queries. Only-fresh FDAs (`cached: false`) always get the fixed
+ *       `defaultDataAccess`.
  *     parameters:
  *       - $ref: '#/components/parameters/VisibilityPath'
  *       - $ref: '#/components/parameters/FiwareServiceHeader'
@@ -109,7 +110,7 @@ router.get('/:visibility/fdas', async (req, res) => {
  *         description: >
  *           Overrides the instance default (`FDA_CREATE_DEFAULT_DATA_ACCESS`, itself defaulting to `true`) and
  *           enables/disables automatic `defaultDataAccess` creation for this FDA. Ignored when the body's
- *           `validationMode` is `unchecked`.
+ *           `validationMode` is `unchecked` or `cached` is `false`.
  *         schema:
  *           type: boolean
  *         example: false
@@ -152,7 +153,7 @@ router.get('/:visibility/fdas', async (req, res) => {
  *                     refreshInterval: 1 hour
  *                 lazy: true
  *             onlyFresh:
- *               summary: Only-fresh FDA (no parquet snapshot, no DAs)
+ *               summary: Only-fresh FDA (no parquet snapshot, always queried against the datasource)
  *               value:
  *                 id: fda_live_alarms
  *                 query: SELECT * FROM public.alarms

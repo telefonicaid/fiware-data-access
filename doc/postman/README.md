@@ -48,8 +48,8 @@ For `GET /{visibility}/fdas/{fdaId}/das/{daId}/data`, response format is selecte
 -   `text/csv` returns CSV stream.
 -   `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` returns XLSX.
 
-The same content negotiation rules apply to `GET /{visibility}/fdas/{fdaId}/data`, which is the direct fresh FDA query
-endpoint.
+The same rules apply to only-fresh FDAs (`cached=false`), which are also queried through their DAs (for example
+`defaultDataAccess`).
 
 ---
 

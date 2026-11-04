@@ -34,7 +34,6 @@ export function registerDownloadLimitsIntegrationTests({
   httpFormReq,
   waitUntilFDACompleted,
   buildDaDataUrl,
-  buildFdaDataUrl,
   getPgHost,
   getPgPort,
 }) {
@@ -186,7 +185,12 @@ export function registerDownloadLimitsIntegrationTests({
 
       expect(createFda.status).toBe(202);
 
-      const dataUrl = buildFdaDataUrl(baseUrl, servicePath, freshFdaId);
+      const dataUrl = buildDaDataUrl(
+        baseUrl,
+        servicePath,
+        freshFdaId,
+        'defaultDataAccess',
+      );
 
       const firstRes = await httpReq({
         method: 'GET',

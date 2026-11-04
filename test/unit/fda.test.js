@@ -210,8 +210,6 @@ await jest.unstable_mockModule('../../src/lib/fdaConfig.js', () => ({
 
 const {
   executeQuery,
-  executeFDAQuery,
-  executeFDAQueryStream,
   executeQueryStream,
   createDA,
   createDatasourceForService,
@@ -267,10 +265,10 @@ async function loadFdaModule() {
 
 describe('FDA download restrictions', () => {
   const variants = [
-    ['fresh DA JSON', executeQuery, true, false],
-    ['fresh DA stream', executeQueryStream, true, false],
-    ['fresh FDA JSON', executeFDAQuery, false, true],
-    ['fresh FDA stream', executeFDAQueryStream, false, true],
+    ['fresh DA JSON', executeQuery, 'da1'],
+    ['fresh DA stream', executeQueryStream, 'da1'],
+    ['fresh defaultDataAccess JSON', executeQuery, 'defaultDataAccess'],
+    ['fresh defaultDataAccess stream', executeQueryStream, 'defaultDataAccess'],
   ];
   let fda;
 
@@ -315,23 +313,21 @@ describe('FDA download restrictions', () => {
     dbMocks.resolveDAParams.mockReset();
   });
 
-  function queryArgs(fresh) {
+  function queryArgs(daId = 'da1') {
     return {
       service: 'svc',
       visibility: 'public',
       servicePath: '/servicepath',
-      fdaId: 'limited',
-      params: { fdaId: 'limited', daId: 'da1' },
-      fresh,
+      params: { fdaId: 'limited', daId },
       ...createReqRes(),
     };
   }
 
   test.each(variants)(
     '%s reserves exactly once',
-    async (name, execute, fresh, direct) => {
-      fda.cached = !direct;
-      await execute(queryArgs(fresh));
+    async (name, execute, daId) => {
+      fda.cached = false;
+      await execute(queryArgs(daId));
       expect(mongoMocks.claimFDADownload).toHaveBeenCalledTimes(1);
       expect(mongoMocks.claimFDADownload).toHaveBeenCalledWith(fda);
     },
@@ -339,12 +335,12 @@ describe('FDA download restrictions', () => {
 
   test.each(variants)(
     '%s rejects before executing when the quota is exhausted',
-    async (name, execute, fresh, direct) => {
-      fda.cached = !direct;
+    async (name, execute, daId) => {
+      fda.cached = false;
       mongoMocks.claimFDADownload.mockRejectedValue(
         new FDAError(410, 'DownloadLimitReached', 'exhausted'),
       );
-      const args = queryArgs(fresh);
+      const args = queryArgs(daId);
       await expect(execute(args)).rejects.toMatchObject({
         status: 410,
         type: 'DownloadLimitReached',
@@ -363,7 +359,7 @@ describe('FDA download restrictions', () => {
   ])(
     '%s delegates restrictions without duplicate reads',
     async (name, execute, method) => {
-      await execute(queryArgs(false));
+      await execute(queryArgs());
 
       expect(dbMocks[method]).toHaveBeenCalledTimes(1);
       expect(mongoMocks.retrieveFDA).toHaveBeenCalledTimes(1);
@@ -377,7 +373,8 @@ describe('FDA download restrictions', () => {
     dbMocks.resolveDAParams.mockImplementation(() => {
       throw new FDAError(400, 'InvalidParam', 'invalid');
     });
-    await expect(executeQuery(queryArgs(true))).rejects.toMatchObject({
+    fda.cached = false;
+    await expect(executeQuery(queryArgs())).rejects.toMatchObject({
       status: 400,
     });
     expect(mongoMocks.claimFDADownload).not.toHaveBeenCalled();
@@ -431,6 +428,7 @@ describe('fda fresh query execution', () => {
       query: 'SELECT 1 AS id;',
       visibility: 'private',
       servicePath: '/servicepath',
+      cached: false,
       datasourceId: 'default',
     });
     mongoMocks.retrieveDatasource.mockResolvedValue({
@@ -458,6 +456,7 @@ describe('fda fresh query execution', () => {
       query: 'SELECT 7::bigint AS id;',
       visibility: 'private',
       servicePath: '/servicepath',
+      cached: false,
       datasourceId: 'default',
     });
     dbMocks.resolveDAParams.mockReturnValue({ id: 7 });
@@ -468,7 +467,6 @@ describe('fda fresh query execution', () => {
       visibility: 'private',
       servicePath: '/servicepath',
       params: { fdaId: 'fdaA', daId: 'daA', id: 7 },
-      fresh: true,
     });
 
     expect(pgMocks.runPgQuery).toHaveBeenCalledWith(
@@ -500,7 +498,6 @@ describe('fda fresh query execution', () => {
       visibility: 'private',
       servicePath: '/servicepath',
       params: { fdaId: 'fdaA', daId: 'daA' },
-      fresh: true,
     });
 
     expect(rows).toEqual([{ date: '2026-04-08T10:11:12.000Z', count: 1 }]);
@@ -516,11 +513,11 @@ describe('fda fresh query execution', () => {
     });
     pgMocks.runPgQuery.mockResolvedValue([{ id: 7n }]);
 
-    const rows = await executeFDAQuery({
+    const rows = await executeQuery({
       service: 'svc',
       visibility: 'private',
       servicePath: '/servicepath',
-      fdaId: 'fdaA',
+      params: { fdaId: 'fdaA', daId: 'defaultDataAccess' },
     });
 
     expect(pgMocks.runPgQuery).toHaveBeenCalledWith(
@@ -554,11 +551,11 @@ describe('fda fresh query execution', () => {
       { device: 'sensor-a', reading: 21.5 },
     ]);
 
-    const rows = await executeFDAQuery({
+    const rows = await executeQuery({
       service: 'svc',
       visibility: 'private',
       servicePath: '/servicepath',
-      fdaId: 'fdaMongo',
+      params: { fdaId: 'fdaMongo', daId: 'defaultDataAccess' },
     });
 
     expect(mongoMocks.runMongoQuery).toHaveBeenCalledWith(
@@ -569,23 +566,52 @@ describe('fda fresh query execution', () => {
     expect(rows).toEqual([{ device: 'sensor-a', reading: 21.5 }]);
   });
 
-  test('rejects direct FDA query when FDA is cached (not only-fresh)', async () => {
+  test('rejects custom DAs on only-fresh MongoDB FDAs', async () => {
     mongoMocks.retrieveFDA.mockResolvedValue({
-      query: 'SELECT 1',
-      visibility: 'public',
+      query: { collection: 'events', filter: { site: 'lab' } },
+      visibility: 'private',
       servicePath: '/servicepath',
-      cached: true,
-      datasourceId: 'default',
+      cached: false,
+      datasourceId: 'mongo-ds',
+    });
+    mongoMocks.retrieveDatasource.mockResolvedValue({
+      datasourceId: 'mongo-ds',
+      type: 'mongodb',
+      config: { uri: 'mongodb://mongo:27017', database: 'svc' },
     });
 
     await expect(
-      executeFDAQuery({
+      executeQuery({
         service: 'svc',
-        visibility: 'public',
+        visibility: 'private',
         servicePath: '/servicepath',
-        fdaId: 'fdaA',
+        params: { fdaId: 'fdaMongo', daId: 'daA' },
       }),
-    ).rejects.toMatchObject({ status: 409, type: 'FDANotOnlyFresh' });
+    ).rejects.toMatchObject({ status: 409, type: 'FDAOnlyFresh' });
+    expect(mongoMocks.runMongoQuery).not.toHaveBeenCalled();
+  });
+
+  test('runs cached FDAs through DuckDB even for defaultDataAccess', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      query: 'SELECT 1',
+      visibility: 'private',
+      servicePath: '/servicepath',
+      cached: true,
+      lastFetch: new Date(),
+      datasourceId: 'default',
+    });
+    dbMocks.getDBConnection.mockResolvedValue({});
+    dbMocks.runPreparedStatement.mockResolvedValue([{ id: 1 }]);
+
+    const rows = await executeQuery({
+      service: 'svc',
+      visibility: 'private',
+      servicePath: '/servicepath',
+      params: { fdaId: 'fdaA', daId: 'defaultDataAccess' },
+    });
+
+    expect(rows).toEqual([{ id: 1 }]);
+    expect(pgMocks.runPgQuery).not.toHaveBeenCalled();
   });
 
   test('streams FDA direct fresh query rows and handles backpressure', async () => {
@@ -608,11 +634,11 @@ describe('fda fresh query execution', () => {
 
     res.write.mockReturnValueOnce(false).mockReturnValueOnce(true);
 
-    await executeFDAQueryStream({
+    await executeQueryStream({
       service: 'svc',
       visibility: 'private',
       servicePath: '/servicepath',
-      fdaId: 'fdaA',
+      params: { fdaId: 'fdaA', daId: 'defaultDataAccess' },
       req,
       res,
       format: 'ndjson',
@@ -659,11 +685,11 @@ describe('fda fresh query execution', () => {
     });
     mongoMocks.createMongoCursorReader.mockResolvedValue(cursorReader);
 
-    await executeFDAQueryStream({
+    await executeQueryStream({
       service: 'svc',
       visibility: 'private',
       servicePath: '/servicepath',
-      fdaId: 'fdaMongo',
+      params: { fdaId: 'fdaMongo', daId: 'defaultDataAccess' },
       req,
       res,
       format: 'ndjson',
@@ -680,7 +706,7 @@ describe('fda fresh query execution', () => {
     );
   });
 
-  test('releases fresh slot when createFreshFDARowSource fails to create cursor', async () => {
+  test('releases fresh slot when createFreshRowSource fails to create cursor', async () => {
     mongoMocks.retrieveFDA.mockResolvedValue({
       query: 'SELECT 1',
       visibility: 'private',
@@ -694,11 +720,11 @@ describe('fda fresh query execution', () => {
     const { req, res } = createReqRes();
 
     await expect(
-      executeFDAQueryStream({
+      executeQueryStream({
         service: 'svc',
         visibility: 'private',
         servicePath: '/servicepath',
-        fdaId: 'fdaA',
+        params: { fdaId: 'fdaA', daId: 'defaultDataAccess' },
         req,
         res,
         format: 'ndjson',
@@ -721,11 +747,11 @@ describe('fda fresh query execution', () => {
     });
 
     await expect(
-      executeFDAQuery({
+      executeQuery({
         service: 'svc',
         visibility: 'private',
         servicePath: '/servicepath',
-        fdaId: 'fdaA',
+        params: { fdaId: 'fdaA', daId: 'defaultDataAccess' },
       }),
     ).rejects.toMatchObject({
       status: 400,
@@ -751,11 +777,11 @@ describe('fda fresh query execution', () => {
     });
     pgMocks.createPgCursorReader.mockResolvedValue(cursorReader);
 
-    await executeFDAQueryStream({
+    await executeQueryStream({
       service: 'svc',
       visibility: 'private',
       servicePath: '/servicepath',
-      fdaId: 'fdaA',
+      params: { fdaId: 'fdaA', daId: 'defaultDataAccess' },
       req,
       res,
       format: 'ndjson',
@@ -775,7 +801,6 @@ describe('fda fresh query execution', () => {
         visibility: 'private',
         servicePath: '/servicepath',
         params: { fdaId: 'fdaA', daId: 'missing' },
-        fresh: true,
       }),
     ).rejects.toMatchObject({ status: 404, type: 'DaNotFound' });
   });
@@ -790,7 +815,6 @@ describe('fda fresh query execution', () => {
         visibility: 'private',
         servicePath: '/servicepath',
         params: { fdaId: 'missing', daId: 'daA' },
-        fresh: true,
       }),
     ).rejects.toMatchObject({ status: 404, type: 'FDANotFound' });
   });
@@ -807,7 +831,6 @@ describe('fda fresh query execution', () => {
         visibility: 'private',
         servicePath: '/servicepath',
         params: { fdaId: 'fdaA', daId: 'daA' },
-        fresh: true,
       }),
     ).rejects.toThrow('DA query must not include FROM clause at start');
   });
@@ -824,7 +847,6 @@ describe('fda fresh query execution', () => {
         visibility: 'private',
         servicePath: '/servicepath',
         params: { fdaId: 'fdaA', daId: 'daA' },
-        fresh: true,
       }),
     ).rejects.toThrow(
       'Fresh query mode requires DA query to start with SELECT',
@@ -843,7 +865,6 @@ describe('fda fresh query execution', () => {
         visibility: 'private',
         servicePath: '/servicepath',
         params: { fdaId: 'fdaA', daId: 'daA' },
-        fresh: true,
       }),
     ).rejects.toThrow('DA query must contain a SELECT projection');
   });
@@ -860,7 +881,6 @@ describe('fda fresh query execution', () => {
         visibility: 'private',
         servicePath: '/servicepath',
         params: { fdaId: 'fdaA', daId: 'daA' },
-        fresh: true,
       }),
     ).rejects.toThrow(
       'DA query must not include FROM clause. It is managed internally',
@@ -880,7 +900,6 @@ describe('fda fresh query execution', () => {
         visibility: 'private',
         servicePath: '/servicepath',
         params: { fdaId: 'fdaA', daId: 'daA', id: 1 },
-        fresh: true,
       }),
     ).rejects.toMatchObject({ status: 400, type: 'InvalidQueryParam' });
   });
@@ -895,7 +914,6 @@ describe('fda fresh query execution', () => {
         visibility: 'private',
         servicePath: '/servicepath',
         params: { fdaId: 'fdaA', daId: 'daA', id: 1 },
-        fresh: true,
       }),
     ).rejects.toBe(pgError);
   });
@@ -913,7 +931,6 @@ describe('fda fresh query execution', () => {
         visibility: 'private',
         servicePath: '/servicepath',
         params: { fdaId: 'fdaA', daId: 'daA' },
-        fresh: true,
       }),
     ).rejects.toMatchObject({ status: 403, type: 'VisibilityMismatch' });
   });
@@ -938,7 +955,6 @@ describe('fda fresh query execution', () => {
       params: { fdaId: 'fdaA', daId: 'daA', id: 1 },
       req,
       res,
-      fresh: true,
     });
 
     expect(res.setHeader).toHaveBeenCalledWith(
@@ -971,7 +987,6 @@ describe('fda fresh query execution', () => {
       params: { fdaId: 'fdaA', daId: 'daA', id: 1 },
       req,
       res,
-      fresh: true,
     });
 
     expect(res.write).toHaveBeenCalledWith(
@@ -1000,7 +1015,6 @@ describe('fda fresh query execution', () => {
       params: { fdaId: 'fdaA', daId: 'daA', id: 1 },
       req,
       res,
-      fresh: true,
       format: 'csv',
     });
 
@@ -1047,7 +1061,6 @@ describe('fda fresh query execution', () => {
       params: { fdaId: 'fdaA', daId: 'daA' },
       req,
       res,
-      fresh: false,
       format: 'csv',
     });
 
@@ -1089,7 +1102,6 @@ describe('fda fresh query execution', () => {
       params: { fdaId: 'fdaA', daId: 'daA' },
       req,
       res,
-      fresh: false,
       format: 'csv',
     });
 
@@ -1121,7 +1133,6 @@ describe('fda fresh query execution', () => {
         params: { fdaId: 'fdaA', daId: 'daA' },
         req,
         res,
-        fresh: false,
         format: 'csv',
       }),
     ).rejects.toThrow('stream init failed');
@@ -1144,7 +1155,6 @@ describe('fda fresh query execution', () => {
       params: { fdaId: 'fdaA', daId: 'daA', id: 1 },
       req,
       res,
-      fresh: true,
     });
 
     reqHandlers.close();
@@ -1170,7 +1180,6 @@ describe('fda fresh query execution', () => {
         params: { fdaId: 'fdaA', daId: 'daA', id: 1 },
         req,
         res,
-        fresh: true,
       }),
     ).rejects.toBe(streamError);
   });
@@ -1206,7 +1215,6 @@ describe('fda fresh query execution', () => {
       params: { fdaId: 'fdaA', daId: 'daA' },
       req,
       res,
-      fresh: false,
     });
 
     expect(res.write).toHaveBeenCalledWith(
@@ -1247,7 +1255,6 @@ describe('fda fresh query execution', () => {
       params: { fdaId: 'fdaA', daId: 'daA' },
       req,
       res,
-      fresh: false,
       format: 'csv',
     });
 
@@ -1274,7 +1281,6 @@ describe('fda fresh query execution', () => {
       visibility: 'private',
       servicePath: '/servicepath',
       params: { fdaId: 'fdaA', daId: 'daA' },
-      fresh: false,
     });
 
     expect(rows).toEqual([{ date: '2023-11-21T00:00:00.000Z', count: 1 }]);
@@ -2238,15 +2244,56 @@ describe('fetchFDA', () => {
 
     expect(pgMocks.uploadTable).not.toHaveBeenCalled();
     expect(dbMocks.toParquet).not.toHaveBeenCalled();
-    expect(mongoMocks.storeDA).not.toHaveBeenCalled();
+    expect(mongoMocks.storeDA).toHaveBeenCalledTimes(1);
+    expect(mongoMocks.storeDA).toHaveBeenCalledWith(
+      'svc',
+      'fda1',
+      '/servicepath',
+      'defaultDataAccess',
+      expect.any(String),
+      'SELECT *',
+      [],
+    );
     expect(agenda.now).not.toHaveBeenCalled();
   });
 
-  test('rejects DA creation for only-fresh FDAs', async () => {
-    mongoMocks.retrieveFDA.mockResolvedValue({
+  test('creates custom DAs on only-fresh PostgreSQL FDAs without DuckDB validation', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValueOnce({
+      query: 'SELECT id FROM users',
       visibility: 'public',
       servicePath: '/servicepath',
       cached: false,
+    });
+    mongoMocks.retrieveDatasource.mockResolvedValueOnce({
+      type: 'postgres',
+      config: {},
+    });
+
+    await createDA(
+      'svc',
+      'fda1',
+      'da1',
+      'desc',
+      'SELECT id WHERE id = $id',
+      [{ name: 'id' }],
+      'public',
+      '/servicepath',
+    );
+
+    expect(dbMocks.validateDAQuery).not.toHaveBeenCalled();
+    expect(mongoMocks.storeDA).toHaveBeenCalledTimes(1);
+  });
+
+  test('rejects only-fresh DA queries that are not a FROM-less SELECT', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValueOnce({
+      query: 'SELECT id FROM users',
+      visibility: 'public',
+      servicePath: '/servicepath',
+      cached: false,
+    });
+    mongoMocks.retrieveDatasource.mockResolvedValueOnce({
+      type: 'postgres',
+      config: {},
     });
 
     await expect(
@@ -2255,19 +2302,96 @@ describe('fetchFDA', () => {
         'fda1',
         'da1',
         'desc',
-        'SELECT id',
+        'SELECT id FROM users',
         [],
         'public',
         '/servicepath',
       ),
-    ).rejects.toMatchObject({
-      status: 409,
-      type: 'FDAOnlyFresh',
-    });
-
-    expect(dbMocks.validateDAQuery).not.toHaveBeenCalled();
+    ).rejects.toMatchObject({ status: 400, type: 'InvalidDAQuery' });
     expect(mongoMocks.storeDA).not.toHaveBeenCalled();
   });
+
+  test('rejects custom DA creation on only-fresh MongoDB FDAs', async () => {
+    mongoMocks.retrieveFDA.mockResolvedValueOnce({
+      query: { collection: 'events' },
+      visibility: 'public',
+      servicePath: '/servicepath',
+      cached: false,
+      datasourceId: 'mongo-ds',
+    });
+    mongoMocks.retrieveDatasource.mockResolvedValueOnce({
+      type: 'mongodb',
+      config: {},
+    });
+
+    await expect(
+      createDA(
+        'svc',
+        'fda1',
+        'da1',
+        'desc',
+        'SELECT device',
+        [],
+        'public',
+        '/servicepath',
+      ),
+    ).rejects.toMatchObject({ status: 409, type: 'FDAOnlyFresh' });
+    expect(mongoMocks.storeDA).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    [
+      'created',
+      () =>
+        createDA(
+          'svc',
+          'fda1',
+          'defaultDataAccess',
+          'desc',
+          'SELECT id',
+          [],
+          'public',
+          '/servicepath',
+        ),
+    ],
+    [
+      'updated',
+      () =>
+        putDA(
+          'svc',
+          'fda1',
+          'defaultDataAccess',
+          'desc',
+          'SELECT id',
+          [],
+          'public',
+          '/servicepath',
+        ),
+    ],
+    [
+      'deleted',
+      () =>
+        deleteDA('svc', 'fda1', 'defaultDataAccess', 'public', '/servicepath'),
+    ],
+  ])(
+    'fixed defaultDataAccess of only-fresh FDAs cannot be %s',
+    async (name, operation) => {
+      mongoMocks.retrieveFDA.mockResolvedValueOnce({
+        query: 'SELECT id FROM users',
+        visibility: 'public',
+        servicePath: '/servicepath',
+        cached: false,
+      });
+
+      await expect(operation()).rejects.toMatchObject({
+        status: 409,
+        type: 'FDAOnlyFresh',
+      });
+      expect(mongoMocks.storeDA).not.toHaveBeenCalled();
+      expect(mongoMocks.updateDA).not.toHaveBeenCalled();
+      expect(mongoMocks.removeDA).not.toHaveBeenCalled();
+    },
+  );
 
   test('rolls back FDA provisioning when default DA creation fails', async () => {
     const describeRun = jest.fn().mockResolvedValue({

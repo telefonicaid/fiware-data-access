@@ -120,6 +120,7 @@ import { normalizeDownloadPolicy } from './utils/downloadPolicy.js';
 import { getBasicLogger } from './utils/logger.js';
 import {
   DEFAULT_DATASOURCE_ID,
+  DEFAULT_DATA_ACCESS_ID,
   SUPPORTED_DATASOURCE_TYPES,
   FDA_VALIDATION_MODE_STRICT,
   FDA_VALIDATION_MODE_UNCHECKED,
@@ -321,11 +322,6 @@ async function resolveDatasource(service, datasourceId) {
   return ds;
 }
 
-async function resolveDatasourceCredentials(service, datasourceId) {
-  const ds = await resolveDatasource(service, datasourceId);
-  return ds.config;
-}
-
 async function validateDatasourceConnection(type, dsConfig) {
   assertSupportedDatasourceType(type);
 
@@ -435,15 +431,22 @@ export async function executeQuery({
   visibility,
   servicePath,
   params,
-  fresh = false,
 }) {
-  if (fresh) {
-    return executeFreshQuery({ service, visibility, servicePath, params });
+  const { fdaId, daId, ...rest } = params;
+  const fda = await getAccessibleFDA(service, fdaId, visibility, servicePath);
+
+  if (fda.cached === false) {
+    return executeFreshQuery({
+      fda,
+      service,
+      servicePath,
+      fdaId,
+      daId,
+      params: rest,
+    });
   }
 
-  const { fdaId, daId, ...rest } = params;
-
-  await ensureFDAReadyForQuery(service, fdaId, daId, visibility, servicePath);
+  await ensureFDAReadyForQuery(fda, daId, service);
 
   const conn = await getDBConnection();
 
@@ -463,39 +466,6 @@ export async function executeQuery({
   }
 }
 
-export async function executeFDAQuery({
-  service,
-  visibility,
-  servicePath,
-  fdaId,
-}) {
-  assertFreshQueriesEnabled(config.roles.syncQueries);
-
-  const releaseFreshSlot = acquireFreshQuerySlot(
-    config.freshQueries.maxConcurrent,
-  );
-  try {
-    const { fda, datasource } = await resolveFreshFDAAndDatasource(
-      service,
-      visibility,
-      servicePath,
-      fdaId,
-    );
-
-    await claimFDADownload(fda);
-    if (datasource.type === 'mongodb') {
-      const rows = await runMongoQuery(datasource.config, fda.query);
-      return normalizeForSerialization(rows);
-    }
-
-    const query = buildFreshQueryFromFDA(fda);
-    const rows = await runPgQuery(datasource.config, query, []);
-    return normalizeForSerialization(rows);
-  } finally {
-    releaseFreshSlot();
-  }
-}
-
 export async function executeQueryStream({
   service,
   visibility,
@@ -503,24 +473,30 @@ export async function executeQueryStream({
   params,
   req,
   res,
-  fresh = false,
   format = 'ndjson',
 }) {
-  const source = fresh
-    ? await createFreshRowSource({
-        service,
-        visibility,
-        servicePath,
-        params,
-        req,
-      })
-    : await createCachedRowSource({
-        service,
-        visibility,
-        servicePath,
-        params,
-        req,
-      });
+  const { fdaId, daId, ...rest } = params;
+  const fda = await getAccessibleFDA(service, fdaId, visibility, servicePath);
+
+  const source =
+    fda.cached === false
+      ? await createFreshRowSource({
+          fda,
+          service,
+          servicePath,
+          fdaId,
+          daId,
+          params: rest,
+          req,
+        })
+      : await createCachedRowSource({
+          fda,
+          service,
+          servicePath,
+          daId,
+          params: rest,
+          req,
+        });
 
   if (format === 'ndjson') {
     res.setHeader('Content-Type', 'application/x-ndjson');
@@ -567,74 +543,15 @@ export async function executeQueryStream({
   return res.end();
 }
 
-export async function executeFDAQueryStream({
-  service,
-  visibility,
-  servicePath,
-  fdaId,
-  req,
-  res,
-  format = 'ndjson',
-}) {
-  const source = await createFreshFDARowSource({
-    service,
-    visibility,
-    servicePath,
-    fdaId,
-    req,
-  });
-
-  if (format === 'ndjson') {
-    res.setHeader('Content-Type', 'application/x-ndjson');
-  } else {
-    res.setHeader('Content-Type', CSV_CONTENT_TYPE);
-    res.setHeader('Content-Disposition', 'attachment; filename="results.csv"');
-  }
-
-  let csvColumns;
-
-  try {
-    for (
-      let rows = await source.readNextRows();
-      rows.length > 0;
-      rows = await source.readNextRows()
-    ) {
-      if (format === 'ndjson') {
-        for (const row of rows) {
-          await writeNdjsonLine(res, row);
-        }
-        continue;
-      }
-
-      if (!csvColumns) {
-        csvColumns = Object.keys(rows[0] ?? {});
-        await writeCsvHeader(res, csvColumns);
-      }
-
-      for (const row of rows) {
-        const csvLine =
-          csvColumns.map((column) => escapeCsvValue(row[column])).join(',') +
-          '\n';
-        await writeCsvLine(res, csvLine);
-      }
-    }
-  } finally {
-    await source.close();
-  }
-
-  return res.end();
-}
-
 async function createCachedRowSource({
+  fda,
   service,
-  visibility,
   servicePath,
+  daId,
   params,
   req,
 }) {
-  const { fdaId, daId, ...rest } = params;
-
-  await ensureFDAReadyForQuery(service, fdaId, daId, visibility, servicePath);
+  await ensureFDAReadyForQuery(fda, daId, service);
 
   const conn = await getDBConnection();
 
@@ -645,9 +562,9 @@ async function createCachedRowSource({
     const result = await runPreparedStatementStream(
       conn,
       service,
-      fdaId,
+      fda.fdaId,
       daId,
-      rest,
+      params,
       servicePath,
     );
 
@@ -687,9 +604,11 @@ async function createCachedRowSource({
 }
 
 async function createFreshRowSource({
+  fda,
   service,
-  visibility,
   servicePath,
+  fdaId,
+  daId,
   params,
   req,
 }) {
@@ -701,64 +620,14 @@ async function createFreshRowSource({
   let cursorReader;
 
   try {
-    const { text, values, fda } = await buildFreshQueryStatement(
+    const { datasource, text, values } = await buildFreshQueryStatement({
+      fda,
       service,
-      visibility,
-      servicePath,
-      params,
-    );
-    const pgCredentials = await resolveDatasourceCredentials(
-      service,
-      fda.datasourceId ?? DEFAULT_DATASOURCE_ID,
-    );
-
-    await claimFDADownload(fda);
-    cursorReader = await createPgCursorReader(
-      pgCredentials,
-      text,
-      values,
-      FRESH_CURSOR_BATCH_SIZE,
-    );
-
-    req.on('close', () => {
-      cursorReader?.close().catch(() => {});
-    });
-
-    return {
-      columnNames: null,
-      readNextRows: () => cursorReader.readNextChunk(),
-      close: async () => {
-        await cursorReader?.close();
-        releaseFreshSlot();
-      },
-    };
-  } catch (e) {
-    releaseFreshSlot();
-    throw e;
-  }
-}
-
-async function createFreshFDARowSource({
-  service,
-  visibility,
-  servicePath,
-  fdaId,
-  req,
-}) {
-  assertFreshQueriesEnabled(config.roles.syncQueries);
-
-  const releaseFreshSlot = acquireFreshQuerySlot(
-    config.freshQueries.maxConcurrent,
-  );
-  let cursorReader;
-
-  try {
-    const { fda, datasource } = await resolveFreshFDAAndDatasource(
-      service,
-      visibility,
       servicePath,
       fdaId,
-    );
+      daId,
+      params,
+    });
 
     await claimFDADownload(fda);
     cursorReader =
@@ -766,8 +635,8 @@ async function createFreshFDARowSource({
         ? await createMongoCursorReader(datasource.config, fda.query)
         : await createPgCursorReader(
             datasource.config,
-            buildFreshQueryFromFDA(fda),
-            [],
+            text,
+            values,
             FRESH_CURSOR_BATCH_SIZE,
           );
 
@@ -789,44 +658,58 @@ async function createFreshFDARowSource({
   }
 }
 
-async function executeFreshQuery({ service, visibility, servicePath, params }) {
+async function executeFreshQuery({
+  fda,
+  service,
+  servicePath,
+  fdaId,
+  daId,
+  params,
+}) {
   assertFreshQueriesEnabled(config.roles.syncQueries);
 
   const releaseFreshSlot = acquireFreshQuerySlot(
     config.freshQueries.maxConcurrent,
   );
   try {
-    const { text, values, fda } = await buildFreshQueryStatement(
+    const { datasource, text, values } = await buildFreshQueryStatement({
+      fda,
       service,
-      visibility,
       servicePath,
+      fdaId,
+      daId,
       params,
-    );
-    const pgCredentials = await resolveDatasourceCredentials(
-      service,
-      fda.datasourceId ?? DEFAULT_DATASOURCE_ID,
-    );
-    await claimFDADownload(fda);
-    const rows = await runPgQuery(pgCredentials, text, values);
-    return normalizeForSerialization(rows);
-  } catch (e) {
-    if (e instanceof FDAError) {
-      throw e;
-    }
+    });
 
-    throw e;
+    await claimFDADownload(fda);
+    const rows =
+      datasource.type === 'mongodb'
+        ? await runMongoQuery(datasource.config, fda.query)
+        : await runPgQuery(datasource.config, text, values);
+    return normalizeForSerialization(rows);
   } finally {
     releaseFreshSlot();
   }
 }
 
-async function buildFreshQueryStatement(
+async function buildFreshQueryStatement({
+  fda,
   service,
-  visibility,
   servicePath,
+  fdaId,
+  daId,
   params,
-) {
-  const { fdaId, daId, ...rest } = params;
+}) {
+  const datasource = await resolveDatasource(
+    service,
+    fda.datasourceId ?? DEFAULT_DATASOURCE_ID,
+  );
+
+  if (daId === DEFAULT_DATA_ACCESS_ID) {
+    const text =
+      datasource.type === 'mongodb' ? null : buildFreshQueryFromFDA(fda);
+    return { datasource, text, values: [] };
+  }
 
   const da = await retrieveDA(service, fdaId, daId, servicePath);
   if (!da?.query) {
@@ -836,43 +719,54 @@ async function buildFreshQueryStatement(
       `DA ${daId} does not exist in FDA ${fdaId} with service ${service}.`,
     );
   }
+  assertFreshDAsSupported(fdaId, datasource);
 
-  const fda = await getAccessibleFDA(service, fdaId, visibility, servicePath);
-
-  const validatedParams = resolveDAParams(rest || {}, da.params);
+  const validatedParams = resolveDAParams(params || {}, da.params);
   const freshBaseQuery = buildFreshDAQuery(fda.query, da.query);
 
   return {
+    datasource,
     ...replaceNamedParamsWithPositional(freshBaseQuery, validatedParams),
-    fda,
   };
 }
 
-function assertFDAIsOnlyFresh(fda, fdaId) {
-  if (fda.cached !== false) {
+function assertFreshDAsSupported(fdaId, datasource) {
+  if (datasource.type === 'mongodb') {
     throw new FDAError(
       409,
-      'FDANotOnlyFresh',
-      `FDA ${fdaId} is a cached FDA and cannot be queried directly. Use a Data Access instead.`,
+      'FDAOnlyFresh',
+      `FDA ${fdaId} is an only-fresh MongoDB FDA and only supports the fixed ${DEFAULT_DATA_ACCESS_ID}.`,
     );
   }
 }
 
-async function resolveFreshFDAAndDatasource(
-  service,
-  visibility,
-  servicePath,
-  fdaId,
+function assertFixedDANotModified(fda, daId) {
+  if (fda?.cached === false && daId === DEFAULT_DATA_ACCESS_ID) {
+    throw new FDAError(
+      409,
+      'FDAOnlyFresh',
+      `${DEFAULT_DATA_ACCESS_ID} of an only-fresh FDA is fixed and cannot be created, modified or deleted.`,
+    );
+  }
+}
+
+async function validateDAQueryForFDA(
+  conn,
+  { fda, service, fdaId, userQuery, servicePath },
 ) {
-  const fda = await getAccessibleFDA(service, fdaId, visibility, servicePath);
-  assertFDAIsOnlyFresh(fda, fdaId);
+  if (fda?.cached === false) {
+    const datasource = await resolveDatasource(
+      service,
+      fda.datasourceId ?? DEFAULT_DATASOURCE_ID,
+    );
+    assertFreshDAsSupported(fdaId, datasource);
+    buildFreshDAQuery(fda.query, userQuery);
+    return;
+  }
 
-  const datasource = await resolveDatasource(
-    service,
-    fda.datasourceId ?? DEFAULT_DATASOURCE_ID,
-  );
-
-  return { fda, datasource };
+  if (shouldValidateDACompatibility(fda)) {
+    await validateDAQuery(conn, service, fdaId, userQuery, servicePath);
+  }
 }
 
 function buildFreshQueryFromFDA(fda) {
@@ -975,13 +869,13 @@ export async function createDA(
     let fda;
     if (visibility !== undefined || servicePath !== undefined) {
       fda = await getAccessibleFDA(service, fdaId, visibility, servicePath);
-      assertFDAIsCached(fda, fdaId);
     }
 
     if (!fda) {
       fda = await retrieveFDA(service, fdaId, servicePath);
     }
 
+    assertFixedDANotModified(fda, daId);
     const existing = await retrieveDA(service, fdaId, daId, servicePath);
 
     if (existing) {
@@ -995,9 +889,13 @@ export async function createDA(
     const normalizedParams = checkParams(params);
     const normalizedTimeRange = checkTimeRange(timeRange, normalizedParams);
     validateDAParamBindings(userQuery, normalizedParams || []);
-    if (shouldValidateDACompatibility(fda)) {
-      await validateDAQuery(conn, service, fdaId, userQuery, servicePath);
-    }
+    await validateDAQueryForFDA(conn, {
+      fda,
+      service,
+      fdaId,
+      userQuery,
+      servicePath,
+    });
     await storeDA(
       service,
       fdaId,
@@ -1085,6 +983,11 @@ export async function fetchFDA(
   }
 
   if (!cached) {
+    await storeFixedDA({
+      service,
+      fdaId,
+      servicePath: normalizedServicePath,
+    });
     return { status: 'pending' };
   }
 
@@ -1105,6 +1008,23 @@ export async function fetchFDA(
   });
 
   return { status: 'pending' };
+}
+
+async function storeFixedDA({ service, fdaId, servicePath }) {
+  try {
+    await storeDA(
+      service,
+      fdaId,
+      servicePath,
+      DEFAULT_DATA_ACCESS_ID,
+      'Fixed Data Access returning the whole FDA query result. Always fresh.',
+      'SELECT *',
+      [],
+    );
+  } catch (err) {
+    await rollbackFDAProvisioning(service, fdaId, servicePath);
+    throw err;
+  }
 }
 
 function resolveLazy(lazy, refreshPolicy, cached) {
@@ -2705,12 +2625,17 @@ export async function putDA(
       fda = await retrieveFDA(service, fdaId, servicePath);
     }
 
+    assertFixedDANotModified(fda, daId);
     const normalizedParams = checkParams(params);
     const normalizedTimeRange = checkTimeRange(timeRange, normalizedParams);
     validateDAParamBindings(userQuery, normalizedParams || []);
-    if (shouldValidateDACompatibility(fda)) {
-      await validateDAQuery(conn, service, fdaId, userQuery, servicePath);
-    }
+    await validateDAQueryForFDA(conn, {
+      fda,
+      service,
+      fdaId,
+      userQuery,
+      servicePath,
+    });
     await updateDA(
       service,
       fdaId,
@@ -2728,7 +2653,8 @@ export async function putDA(
 
 export async function deleteDA(service, fdaId, daId, visibility, servicePath) {
   if (visibility !== undefined || servicePath !== undefined) {
-    await getAccessibleFDA(service, fdaId, visibility, servicePath);
+    const fda = await getAccessibleFDA(service, fdaId, visibility, servicePath);
+    assertFixedDANotModified(fda, daId);
   }
 
   await removeDA(service, fdaId, daId, servicePath);
@@ -2974,16 +2900,7 @@ async function uploadTableToObjStg(
   return bytesFetched ?? 0;
 }
 
-async function ensureFDAReadyForQuery(
-  service,
-  fdaId,
-  daId,
-  visibility,
-  servicePath,
-) {
-  const fda = await getAccessibleFDA(service, fdaId, visibility, servicePath);
-  assertFDAIsCached(fda, fdaId);
-
+function ensureFDAReadyForQuery(fda, daId, service) {
   if (isMaterializedOnDemand(fda)) {
     assertDAExists(fda, daId, service);
     return waitForOnDemandData(fda);
@@ -2994,7 +2911,7 @@ async function ensureFDAReadyForQuery(
     throw new FDAError(
       409,
       'FDAUnavailable',
-      `FDA ${fdaId} is not queryable yet because the first fetch has not completed`,
+      `FDA ${fda.fdaId} is not queryable yet because the first fetch has not completed`,
     );
   }
   return fda;
@@ -3996,7 +3913,7 @@ async function createDefaultDAIfNeeded({
     await createDA(
       service,
       fdaId,
-      'defaultDataAccess',
+      DEFAULT_DATA_ACCESS_ID,
       'Default Data Access providing access to whole FDA data. It has parameters for all columns in the FDA.',
       defaultDA.query,
       defaultDA.params,
@@ -4212,7 +4129,7 @@ export async function processUploadFDAJob({
       await createDA(
         service,
         fdaId,
-        'defaultDataAccess',
+        DEFAULT_DATA_ACCESS_ID,
         'Default Data Access for uploaded data',
         daDefinition.query,
         daDefinition.params,
