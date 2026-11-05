@@ -47,8 +47,8 @@ Complete documentation is available in the [`doc/`](./doc/) directory:
 -   [`05_advanced_topics.md`](./doc/05_advanced_topics.md) – Advanced topics
 -   [`06_testing.md`](./doc/06_testing.md) – Test strategy and execution
 -   [`07_performance.md`](./doc/07_performance.md) – Performance measurement utilities
--   [`08_developers_guide.md`](./doc/08_developers_guide.md) – Local development, npm scripts and documentation
-    conventions
+-   [`08_developers_guide.md`](./doc/08_developers_guide.md) – Local development, npm scripts, internal flows and
+    documentation conventions
 
 ---
 
