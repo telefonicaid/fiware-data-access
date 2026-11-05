@@ -123,72 +123,84 @@ Content-Type: application/json
 
 ## Architecture Overview
 
-The functional overview below focuses on the current execution paths and main responsibilities.
-
-![FIWARE Data Access functional flows](images/FDA_functional_flows.svg)
-
-The [original architecture diagram](images/FDA_diagram.png) is preserved as a historical reference. It provides a more
-detailed view of the original components and numbered data flow, but does not reflect all current capabilities.
-
-A corresponding Mermaid overview is included for easy editing:
-
-<details>
-<summary>Editable Mermaid source</summary>
+FDA runs as two independent roles of the same Node.js service: the **API** and the **Fetcher**. They never call each
+other: the API persists FDA metadata and enqueues background jobs in MongoDB, and Fetchers poll, lock and run those
+jobs. Both roles share the same MongoDB and object storage.
 
 ```mermaid
 flowchart LR
-    Clients["Dashboards · applications · services"]
+    Clients["Clients<br/>dashboards · applications · legacy CDA clients"]
 
-    subgraph FDA["FIWARE Data Access · Node.js"]
-        API["REST API<br/>FDA / DA / datasource management<br/>legacy CDA compatibility"]
-        Worker["Fetcher role<br/>asynchronous fetch, refresh and upload jobs"]
-        DuckDB["DuckDB embedded in FDA processes<br/>Parquet transformation and DA queries"]
-        Agenda["Agenda job scheduler"]
+    subgraph APIRole["API role · one or more instances"]
+        API["REST API<br/>FDAs · DAs · datasources<br/>DA queries · legacy CDA<br/>health · metrics · usage"]
+        DuckAPI[("Embedded DuckDB<br/>DA queries over Parquet")]
     end
 
-    Postgres["PostgreSQL datasource"]
-    MongoSource["MongoDB datasource"]
-    Upload["CSV / XLS / XLSX upload"]
-    MongoMeta["MongoDB persistence<br/>FDA / DA / datasource metadata<br/>Agenda jobs and locks"]
-    MinIO["MinIO / S3-compatible object storage<br/>Parquet snapshots, per-service buckets"]
+    subgraph FetcherRole["Fetcher role · one or more instances"]
+        Worker["Agenda worker<br/>fetch · refresh · clean · upload jobs"]
+        DuckFetch[("Embedded DuckDB<br/>source data to Parquet")]
+    end
 
-    Clients -->|"HTTP / HTTPS"| API
-    API -->|"JSON · CSV · XLSX · NDJSON · CDA format"| Clients
-    API -->|"Schedule fetch / refresh / upload"| Agenda
-    Agenda <-->|"Persist jobs and distributed locks"| MongoMeta
-    Worker <-->|"Claim and execute jobs"| Agenda
-    API <-->|"Metadata, status and usage accounting"| MongoMeta
-    Worker -->|"Fetch status and metrics"| MongoMeta
+    subgraph Mongo["MongoDB · shared state"]
+        Meta[("fdas · datasources<br/>metadata and status")]
+        Jobs[("agendaJobs<br/>job queue and locks")]
+    end
 
-    Postgres -->|"Source query"| Worker
-    MongoSource -->|"Filter / aggregation query"| Worker
-    Upload -->|"File upload"| API
-    API -->|"Upload processing job"| Agenda
-    Worker -->|"Rows / uploaded tabular data"| DuckDB
-    DuckDB -->|"Write Parquet"| MinIO
+    UploadDir[("Upload temp dir")]
+    MinIO[("MinIO / S3<br/>Parquet · one bucket per service")]
 
-    API -->|"Execute DA query"| DuckDB
-    MinIO -->|"Read cached Parquet via S3"| DuckDB
-    API -->|"Only-fresh query (no cache or DA)"| Postgres
-    API -->|"Only-fresh query (no cache or DA)"| MongoSource
+    subgraph Sources["Source systems"]
+        PG[("PostgreSQL")]
+        MS[("MongoDB")]
+    end
+
+    Clients <-->|"HTTP"| API
+    API --- DuckAPI
+    Worker --- DuckFetch
+
+    API <-->|"metadata · status"| Meta
+    API -->|"enqueue jobs"| Jobs
+    Jobs -->|"poll · lock · run"| Worker
+    Worker -->|"status · schema · storage"| Meta
+
+    API -->|"uploaded files"| UploadDir
+    UploadDir --> Worker
+
+    Sources -->|"fetch rows"| Worker
+    DuckFetch -->|"write Parquet"| MinIO
+    MinIO -->|"read Parquet"| DuckAPI
+    API -.->|"query validation · only-fresh DAs"| Sources
 ```
 
-</details>
+-   **API role** (`FDA_ROLE_APISERVER`): serves the HTTP API, validates requests, persists metadata and enqueues jobs.
+    It runs DA queries of cached FDAs with its embedded DuckDB over the Parquet files in object storage. It also talks
+    to source systems for synchronous work only: validating queries at creation time (`strict` mode) and running DAs of
+    only-fresh FDAs when `FDA_ROLE_SYNCQUERIES` is enabled.
+-   **Fetcher role** (`FDA_ROLE_FETCHER`): runs the Agenda worker. It executes every fetch, refresh, partition cleaning
+    and upload job: reads the source (or the uploaded file), converts it to Parquet with its embedded DuckDB and
+    publishes it in object storage. It exposes no HTTP port.
+-   **Shared state**: MongoDB stores FDA, DA and datasource metadata and the Agenda job queue; object storage (MinIO or
+    any S3-compatible service) stores the Parquet files, in a bucket named after the `Fiware-Service`. Datasource
+    credentials are resolved from MongoDB using `service + datasourceId`.
 
-The diagram distinguishes the two execution paths:
+Both roles run from the same image. By default one process runs both, but they can be deployed as separate instances and
+scaled independently (for example, 2 API instances and 5 Fetchers), since they only coordinate through MongoDB and
+object storage. DuckDB is an embedded library inside each process, not a separate service. When the roles run on
+different hosts, `FDA_UPLOAD_TMP_DIR` must be a volume shared by API and Fetcher instances, because the API stores
+uploaded files there and the Fetcher reads them when it processes the upload job.
 
--   **Cached FDA:** the API schedules work through Agenda; a fetcher reads from PostgreSQL or MongoDB (or processes an
-    uploaded CSV/XLSX file), DuckDB materializes Parquet in MinIO, and DA queries read that snapshot. Refreshes can be
-    scheduled (`interval` or `window`), lazy, or triggered on demand. Partitioning and window retention are optional.
--   **Only-fresh FDA:** `GET /{visibility}/fdas/{fdaId}/data` executes directly against its PostgreSQL or MongoDB
-    source. It has no Parquet snapshot and does not support DAs.
--   **Persistence and operations:** MongoDB stores FDA, DA and datasource metadata as well as Agenda jobs and locks. The
-    API also exposes health, Prometheus/OpenMetrics and usage-accounting endpoints. FDA does not enforce storage quotas;
-    MinIO bucket quotas are configured by operators.
+Data is always read through a DA, `GET /{visibility}/fdas/{fdaId}/das/{daId}/data`, whatever the FDA type:
 
-DuckDB is an embedded library used by FDA processes, not a separately deployed query service. MinIO stores cached
-Parquet objects; it is not the source database. Datasource credentials are resolved from MongoDB using
-`service + datasourceId`.
+-   **Cached FDAs** (default) are materialized as Parquet by the Fetcher, and their DAs run on that snapshot. The
+    snapshot is refreshed according to the `refreshPolicy` (`none`, `interval`, `window` or `onDemand`); a `lazy` FDA is
+    not fetched until its first query.
+-   **Only-fresh FDAs** (`cached=false`) have no snapshot. Their DAs run directly against the datasource: a fixed
+    `defaultDataAccess` returning the FDA query result, plus custom DAs in PostgreSQL dialect for PostgreSQL FDAs.
+
+The detailed flows (FDA lifecycle, creation, fetch jobs and data queries) are described in the
+[Developers Guide](/doc/08_developers_guide.md#internal-flows). Deployment and scaling of the roles are covered in
+[Async Processing & Jobs](/doc/AdvancedTopics/async_processing_and_jobs.md) and
+[Multi-instance coverage](/doc/AdvancedTopics/multi_instance_coverage.md).
 
 ---
 
