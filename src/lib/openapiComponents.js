@@ -313,10 +313,13 @@
  *           example: 1 day
  *         fetchSize:
  *           type: string
- *           enum: [hour, day, week, month, year]
  *           description: >
- *             Only for type `window`. Time range fetched on each scheduled run. Must equal the partition size when
- *             `objStgConf.partition` is set; `hour` is only valid without partitioning.
+ *             Only for type `window`. Time range fetched on each scheduled run, as a number and a unit (`hour`,
+ *             `day`, `week`, `month` or `year`), e.g. "3 days" or "3 months"; a unit without a number counts as
+ *             amount 1. When `objStgConf.partition` is set, the unit must be the partition one and each run fetches
+ *             from the start of the oldest partition it covers; `hour` is only valid without partitioning.
+ *             It must not be greater than `windowSize` (months count as 30 days and years as 365 days).
+ *           example: 3 months
  *         windowSize:
  *           type: string
  *           description: >

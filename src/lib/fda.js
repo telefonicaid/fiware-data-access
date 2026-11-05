@@ -127,6 +127,7 @@ import {
   VALIDATION_MODES,
   VALID_REFRESH_POLICY_TYPES,
   VALID_WINDOW_FETCH_SIZES,
+  DURATION_UNITS_MS,
   PARTITION_TYPES,
   UNKNOWN_COLUMN_TYPE,
   FDA_REFRESH_IN_PROGRESS_STATUSES,
@@ -1139,7 +1140,13 @@ async function prepareCachedFDA({
   });
 }
 
-function resolveRefreshQueries(datasource, refreshPolicy, query, timeColumn) {
+function resolveRefreshQueries(
+  datasource,
+  refreshPolicy,
+  query,
+  timeColumn,
+  objStgConf,
+) {
   const windowQueryFn =
     datasource.type === 'mongodb' ? getMongoWindowQuery : getWindowQuery;
 
@@ -1169,24 +1176,39 @@ function resolveRefreshQueries(datasource, refreshPolicy, query, timeColumn) {
       query,
       timeColumn,
       refreshPolicy.params.fetchSize,
+      objStgConf?.partition,
     ),
   };
 }
 
-function getWindowQuery(query, timeColumn, startDate) {
-  if (!startDate) {
+function getWindowQuery(query, timeColumn, size, partition) {
+  if (!size) {
     return query;
   }
-  const prevWindowStartDate = getPreviousWindowStartDate(startDate);
-  return getUpdateWindowQuery(query, timeColumn, prevWindowStartDate);
+  return getUpdateWindowQuery(
+    query,
+    timeColumn,
+    getWindowStartDate(size, partition),
+  );
 }
 
-function getMongoWindowQuery(query, timeColumn, startDate) {
-  if (!startDate) {
+function getMongoWindowQuery(query, timeColumn, size, partition) {
+  if (!size) {
     return query;
   }
-  const prevWindowStartDate = getPreviousWindowStartDate(startDate);
-  return getUpdateMongoWindowQuery(query, timeColumn, prevWindowStartDate);
+  return getUpdateMongoWindowQuery(
+    query,
+    timeColumn,
+    getWindowStartDate(size, partition),
+  );
+}
+
+function getWindowStartDate(size, partition) {
+  const start = getPreviousWindowStartDate(size);
+  if (!partition || partition === 'none') {
+    return start;
+  }
+  return getPartitionStart(new Date(start), partition).toISOString();
 }
 
 function validateOnDemandOptions(refreshPolicy, objStgConf, timeColumn) {
@@ -1268,6 +1290,7 @@ function validateScheduledOptions(refreshPolicy, objStgConf, timeColumn) {
   }
 
   validateWindowSize(windowSize);
+  validateFetchSizeWithinWindowSize(fetchSize, windowSize);
   validatePartitionType(objStgConf);
   validateConsistencyRefreshInterval(refreshPolicy);
   validatePartitionAlignment(refreshInterval, fetchSize, objStgConf);
@@ -1318,6 +1341,25 @@ function validateWindowSizeRequiresPartition(windowSize, objStgConf) {
       'windowSize requires objStgConf.partition.',
     );
   }
+}
+
+function validateFetchSizeWithinWindowSize(fetchSize, windowSize) {
+  if (!fetchSize || !windowSize) {
+    return;
+  }
+
+  if (getNominalSizeMs(fetchSize) > getNominalSizeMs(windowSize)) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `fetchSize "${fetchSize}" must not be greater than windowSize "${windowSize}".`,
+    );
+  }
+}
+
+function getNominalSizeMs(size) {
+  const { amount, unit } = processFetchSize(size);
+  return amount * DURATION_UNITS_MS[unit];
 }
 
 function validateWindowSize(windowSize) {
@@ -1388,12 +1430,15 @@ function validatePartitionAlignment(refreshInterval, fetchSize, objStgConf) {
     );
   }
 
-  // fetched data size must be equal than partition size (if both presents).
-  if (objStgConf?.partition && fetchSize !== objStgConf?.partition) {
+  const partition = objStgConf?.partition;
+  if (
+    partition &&
+    (!fetchSize || processFetchSize(fetchSize).unit !== partition)
+  ) {
     throw new FDAError(
       400,
       'InvalidParam',
-      `Fetch size "${fetchSize}" must be equal to partition size "${objStgConf?.partition}".`,
+      `Fetch size "${fetchSize}" must use the partition unit "${partition}" (e.g. "${partition}" or "3 ${partition}s").`,
     );
   }
 }
@@ -2082,8 +2127,9 @@ async function detectSourceSchemaChange(
   fdaId,
   servicePath,
   datasourceId,
+  storedFDA,
 ) {
-  const fda = await retrieveFDA(service, fdaId, servicePath);
+  const fda = storedFDA ?? (await retrieveFDA(service, fdaId, servicePath));
   const storedSchemaFields = normalizePersistedSchemaFields(fda?.schema);
   if (storedSchemaFields.length === 0) {
     return null;
@@ -2111,6 +2157,17 @@ async function detectSourceSchemaChange(
   };
 }
 
+function resolveScheduledRefreshQuery(datasource, fda, scheduledRefresh) {
+  const { firstQuery, recurringQuery } = resolveRefreshQueries(
+    datasource,
+    fda.refreshPolicy,
+    fda.query,
+    fda.timeColumn,
+    fda.objStgConf,
+  );
+  return scheduledRefresh === 'recurring' ? recurringQuery : firstQuery;
+}
+
 export async function processFDAAsync(
   fdaId,
   query,
@@ -2120,6 +2177,7 @@ export async function processFDAAsync(
   refreshPolicy,
   objStgConf,
   datasourceId = DEFAULT_DATASOURCE_ID,
+  scheduledRefresh,
 ) {
   const startedAt = Date.now();
   const storagePath = getFDAStoragePath(fdaId, servicePath);
@@ -2135,11 +2193,26 @@ export async function processFDAAsync(
   }
 
   try {
+    let storedFDA;
+    if (scheduledRefresh) {
+      storedFDA = await retrieveFDA(service, fdaId, servicePath);
+      datasourceId = storedFDA.datasourceId ?? datasourceId;
+      timeColumn = storedFDA.timeColumn;
+      refreshPolicy = storedFDA.refreshPolicy;
+      objStgConf = storedFDA.objStgConf;
+      query = resolveScheduledRefreshQuery(
+        await resolveDatasource(service, datasourceId),
+        storedFDA,
+        scheduledRefresh,
+      );
+    }
+
     const schemaChange = await detectSourceSchemaChange(
       service,
       fdaId,
       servicePath,
       datasourceId,
+      storedFDA,
     );
     let refreshQuery = query;
     if (schemaChange) {
@@ -3791,7 +3864,6 @@ async function scheduleFDAJobs(jobConf) {
 
 async function scheduleRecurringFDAJobs({
   fdaId,
-  query,
   service,
   servicePath,
   timeColumn,
@@ -3804,18 +3876,10 @@ async function scheduleRecurringFDAJobs({
 
   const agenda = getAgenda();
 
-  const { firstQuery, recurringQuery } = resolveRefreshQueries(
-    datasource,
-    refreshPolicy,
-    query,
-    timeColumn,
-  );
-
   if (refreshPolicy?.type === 'interval' || refreshPolicy?.type === 'window') {
     // 1. Recurring fetch job (incremental fetches)
     const refreshJob = agenda.create('refresh-fda-recurring', {
       fdaId,
-      query: recurringQuery,
       service,
       servicePath,
       timeColumn,
@@ -3836,7 +3900,6 @@ async function scheduleRecurringFDAJobs({
         'consistency-refresh-fda-recurring',
         {
           fdaId,
-          query: firstQuery,
           service,
           servicePath,
           timeColumn,

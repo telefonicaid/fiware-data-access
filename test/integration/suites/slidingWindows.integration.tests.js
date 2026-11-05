@@ -210,7 +210,7 @@ export function registerSlidingWindowsIntegrationTests({
             params: {
               refreshInterval: '0 0 * * 0',
               fetchSize: 'week',
-              windowSize: 'day',
+              windowSize: 'month',
             },
           },
           timeColumn: 'timeinstant',
@@ -285,7 +285,7 @@ export function registerSlidingWindowsIntegrationTests({
             params: {
               refreshInterval: '0 0 * * 0',
               fetchSize: 'week',
-              windowSize: 'day',
+              windowSize: 'month',
             },
           },
           timeColumn: 'timeinstant',
@@ -1079,6 +1079,204 @@ export function registerSlidingWindowsIntegrationTests({
       } finally {
         await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
         await pgClient.end();
+      }
+    });
+
+    test('window refresh with a fetchSize of several partitions rewrites the oldest one from its start', async () => {
+      const baseUrl = getBaseUrl();
+      const suffix = `${Date.now()}`;
+      const fixtureTable = `sw_multi_fetch_${suffix}`;
+      const fdaId = `fda_sw_multi_fetch_${suffix}`;
+
+      const fetchStart = new Date();
+      fetchStart.setUTCMonth(fetchStart.getUTCMonth() - 3);
+      fetchStart.setUTCHours(0, 0, 0, 0);
+      const oldestMonthStart = Date.UTC(
+        fetchStart.getUTCFullYear(),
+        fetchStart.getUTCMonth(),
+        1,
+      );
+      const hours = (n) => n * 60 * 60 * 1000;
+      const rows = {
+        previous_month: new Date(
+          Date.UTC(
+            fetchStart.getUTCFullYear(),
+            fetchStart.getUTCMonth() - 1,
+            1,
+          ) + hours(1),
+        ),
+        oldest_month_before_fetch_start: new Date(oldestMonthStart + hours(1)),
+        oldest_month_after_fetch_start: new Date(
+          fetchStart.getTime() + hours(1),
+        ),
+        late_oldest_month: new Date(oldestMonthStart + hours(2)),
+      };
+
+      const pgClient = createPgClient();
+      await pgClient.connect();
+      const mongoClient = new MongoClient(getMongoUri());
+      await mongoClient.connect();
+      const agendaJobs = mongoClient.db('test-db').collection('agendaJobs');
+      const insertRow = (id, label) =>
+        pgClient.query(
+          `INSERT INTO public.${fixtureTable} (id, label, observed_at) VALUES ($1, $2, $3)`,
+          [id, label, rows[label]],
+        );
+
+      try {
+        await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
+        await pgClient.query(`
+          CREATE TABLE public.${fixtureTable} (
+            id INT PRIMARY KEY,
+            label TEXT NOT NULL,
+            observed_at TIMESTAMPTZ NOT NULL
+          )
+        `);
+        await insertRow(1, 'previous_month');
+        await insertRow(2, 'oldest_month_before_fetch_start');
+        await insertRow(3, 'oldest_month_after_fetch_start');
+
+        const createFda = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: fdaId,
+            query: `SELECT id, label, observed_at FROM public.${fixtureTable}`,
+            description: 'fetchSize of several partitions test',
+            refreshPolicy: {
+              type: 'window',
+              params: { refreshInterval: '1 day', fetchSize: '3 months' },
+            },
+            objStgConf: { partition: 'month' },
+            timeColumn: 'observed_at',
+          },
+        });
+
+        expect(createFda.status).toBe(202);
+        await waitUntilFDACompleted({ baseUrl, service, fdaId });
+
+        const recurringJob = await agendaJobs.findOne({
+          name: 'refresh-fda-recurring',
+          'data.fdaId': fdaId,
+        });
+        expect(recurringJob.data).not.toHaveProperty('query');
+
+        await insertRow(4, 'late_oldest_month');
+        await forceWindowRefresh(agendaJobs, fdaId);
+
+        const readRes = await httpReq({
+          method: 'GET',
+          url: buildDaDataUrl(
+            baseUrl,
+            servicePath,
+            fdaId,
+            'defaultDataAccess',
+            { pageSize: 100, pageStart: 0 },
+          ),
+          headers: { 'Fiware-Service': service },
+        });
+
+        expect(readRes.status).toBe(200);
+        expect(new Set(readRes.json.map((r) => r.label))).toEqual(
+          new Set(Object.keys(rows)),
+        );
+      } finally {
+        await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
+        await pgClient.end();
+        await mongoClient.close();
+      }
+    });
+
+    test('a recurring job stored with an old query is refreshed with the current window', async () => {
+      const baseUrl = getBaseUrl();
+      const suffix = `${Date.now()}`;
+      const fixtureTable = `sw_stale_job_${suffix}`;
+      const fdaId = `fda_sw_stale_job_${suffix}`;
+
+      const pgClient = createPgClient();
+      await pgClient.connect();
+      const mongoClient = new MongoClient(getMongoUri());
+      await mongoClient.connect();
+      const agendaJobs = mongoClient.db('test-db').collection('agendaJobs');
+
+      try {
+        await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
+        await pgClient.query(`
+          CREATE TABLE public.${fixtureTable} (
+            id INT PRIMARY KEY,
+            label TEXT NOT NULL,
+            observed_at TIMESTAMPTZ NOT NULL
+          )
+        `);
+        await pgClient.query(`
+          INSERT INTO public.${fixtureTable} (id, label, observed_at)
+          VALUES
+            (1, 'outside_window', NOW() - INTERVAL '10 days'),
+            (2, 'inside_window', NOW() - INTERVAL '1 hour')
+        `);
+
+        const query = `SELECT id, label, observed_at FROM public.${fixtureTable}`;
+        const createFda = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: fdaId,
+            query,
+            description: 'stale recurring job test',
+            refreshPolicy: {
+              type: 'window',
+              params: {
+                refreshInterval: '1 day',
+                fetchSize: 'day',
+                windowSize: 'week',
+              },
+            },
+            objStgConf: { partition: 'day' },
+            timeColumn: 'observed_at',
+          },
+        });
+
+        expect(createFda.status).toBe(202);
+        await waitUntilFDACompleted({ baseUrl, service, fdaId });
+
+        const staleJob = await agendaJobs.updateOne(
+          { name: 'refresh-fda-recurring', 'data.fdaId': fdaId },
+          {
+            $set: {
+              'data.query': `SELECT * FROM (${query}) q WHERE observed_at >= TIMESTAMP '2000-01-01T00:00:00.000Z' AND observed_at < NOW()`,
+            },
+          },
+        );
+        expect(staleJob.modifiedCount).toBe(1);
+
+        await forceWindowRefresh(agendaJobs, fdaId);
+
+        const readRes = await httpReq({
+          method: 'GET',
+          url: buildDaDataUrl(
+            baseUrl,
+            servicePath,
+            fdaId,
+            'defaultDataAccess',
+            { pageSize: 100, pageStart: 0 },
+          ),
+          headers: { 'Fiware-Service': service },
+        });
+
+        expect(readRes.status).toBe(200);
+        expect(readRes.json.map((r) => r.label)).toEqual(['inside_window']);
+      } finally {
+        await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
+        await pgClient.end();
+        await mongoClient.close();
       }
     });
 

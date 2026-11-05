@@ -276,7 +276,7 @@ export function registerFdaUpdateIntegrationTests({
         expect(invalid.status).toBe(400);
         expect(invalid.json.error).toBe('InvalidUpdateBody');
         expect(invalid.json.description).toContain(
-          'must be equal to partition size',
+          'must use the partition unit "month"',
         );
 
         expect(await getFda(fdaId)).toMatchObject({
