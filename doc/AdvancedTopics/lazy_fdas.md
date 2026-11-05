@@ -98,8 +98,9 @@ As with `window`, rows that change in partitions older than the last fetch are n
 A manual refresh (`PUT /{visibility}/fdas/{fdaId}`) rebuilds the whole FDA, or only its window when `windowSize` is set,
 like the first fetch.
 
-For MongoDB `aggregation` queries the same rule as for `window` applies: `timeColumn` must be a raw field of the
-collection holding BSON `Date` values, because the time condition is injected as the first `$match` stage.
+For MongoDB queries the same rule as for `window` applies: `timeColumn` must be a raw field of the collection holding
+BSON `Date` values (not an alias created in a `projection`), because the time condition is evaluated before any
+projection or pipeline stage.
 
 ## Failures
 
@@ -113,6 +114,9 @@ queried again on every request. After the backoff, the next query tries again. A
 -   `PUT /{visibility}/fdas/{fdaId}` on an FDA that has never been fetched enqueues its first fetch without waiting for
     it, and also creates the recurring jobs of a `lazy` + `interval` FDA. If a fetch is already requested or running it
     returns `409 AlreadyFetching`. On an FDA that already has data it works as for any other FDA.
+-   A body in that `PUT` updates the FDA as described in [the API](../03_api.md#regenerate-fda-put-visibilityfdasfdaid).
+    On an FDA never fetched the new values are stored and its first fetch is enqueued. `refreshPolicy` can switch to or
+    from `onDemand` and change `maxAge`; `lazy` cannot be updated.
 -   An `idle` FDA can be deleted.
 
 ## Configuration

@@ -313,10 +313,13 @@
  *           example: 1 day
  *         fetchSize:
  *           type: string
- *           enum: [hour, day, week, month, year]
  *           description: >
- *             Only for type `window`. Time range fetched on each scheduled run. Must equal the partition size when
- *             `objStgConf.partition` is set; `hour` is only valid without partitioning.
+ *             Only for type `window`. Time range fetched on each scheduled run, as a number and a unit (`hour`,
+ *             `day`, `week`, `month` or `year`), e.g. "3 days" or "3 months"; a unit without a number counts as
+ *             amount 1. When `objStgConf.partition` is set, the unit must be the partition one and each run fetches
+ *             from the start of the oldest partition it covers; `hour` is only valid without partitioning.
+ *             It must not be greater than `windowSize` (months count as 30 days and years as 365 days).
+ *           example: 3 months
  *         windowSize:
  *           type: string
  *           description: >
@@ -484,17 +487,20 @@
  *             Required when `refreshPolicy.type` is `window` or `objStgConf.partition` is set. Column indicating
  *             when the data was received. In `strict` validation mode it must be explicitly projected in the
  *             query's SELECT clause (`postgres`) or projection/final `$project` (`mongodb`). For `mongodb`
- *             `aggregation` queries with a `window` refresh policy, it must additionally be a raw field of the
- *             source collection, readable before any pipeline stage runs, and hold BSON `Date` values — the
- *             window's time-range condition is injected as the first `$match` stage.
+ *             queries with a `window` refresh policy, it must additionally be a raw field of the source
+ *             collection (in a `projection`, projected with `1` or `true`, not an alias), readable before any projection
+ *             or pipeline stage runs, and hold BSON `Date` values — the window's time-range condition is
+ *             evaluated on the stored documents.
  *         objStgConf:
  *           $ref: '#/components/schemas/ObjStgConf'
  *         cached:
  *           type: boolean
  *           default: true
  *           description: >
- *             If `false`, the FDA is created as only-fresh: no Parquet snapshot is maintained, no DAs are allowed,
- *             and the FDA is queried through `GET /{visibility}/fdas/{fdaId}/data`.
+ *             If `false`, the FDA is created as only-fresh: no Parquet snapshot is maintained and every DA query
+ *             runs against the source datasource. A fixed `defaultDataAccess` returning the whole FDA query result
+ *             is always created (it cannot be updated or deleted). PostgreSQL only-fresh FDAs also accept custom
+ *             DAs, written in PostgreSQL dialect.
  *         datasourceId:
  *           type: string
  *           default: default

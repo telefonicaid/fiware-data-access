@@ -14,13 +14,13 @@ reprocessing the entire dataset, only the most recent slice of data is fetched a
 Each configuration parameter is described in detail in the [API documentation](../03_api.md/#refresh-policy-object), but
 the key fields are summarized below:
 
-| Field                        | Description                                                                                                                                                                                         |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `type`                       | Must be set to `window` to enable sliding window behavior.                                                                                                                                          |
-| `refreshInterval`            | Defines how often the window refresh runs. It accepts either a human interval such as `1 hour` or a cron expression.                                                                                |
-| `consistencyRefreshInterval` | Optional lower-frequency schedule for a full FDA rebuild that helps recover delayed historical data. It must be greater than `refreshInterval`, otherwise `InvalidParam` error response will be got |
-| `fetchSize`                  | Defines the **time range** of data to fetch on each refresh. For example, `week` fetches data from the last week.                                                                                   |
-| `windowSize`                 | Specifies the total retention window (e.g., data from last month), defining which data should be preserved and which should be discarded.                                                           |
+| Field                        | Description                                                                                                                                                                                                                                                                      |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`                       | Must be set to `window` to enable sliding window behavior.                                                                                                                                                                                                                       |
+| `refreshInterval`            | Defines how often the window refresh runs. It accepts either a human interval such as `1 hour` or a cron expression.                                                                                                                                                             |
+| `consistencyRefreshInterval` | Optional lower-frequency schedule for a full FDA rebuild that helps recover delayed historical data. It must be greater than `refreshInterval`, otherwise `InvalidParam` error response will be got                                                                              |
+| `fetchSize`                  | Defines the **time range** of data to fetch on each refresh, as a number and a unit. For example, `week` fetches data from the last week and `3 months` from the last three months. With partitions, its unit must be the partition one. It cannot be greater than `windowSize`. |
+| `windowSize`                 | Specifies the total retention window (e.g., data from last month), defining which data should be preserved and which should be discarded.                                                                                                                                        |
 
 Both `postgres` and `mongodb` datasources support sliding-window refresh. In both cases, the configured time range is
 applied to the source query, with the exact implementation depending on the datasource.
@@ -33,9 +33,19 @@ applied to the source query, with the exact implementation depending on the data
     must be a raw field of the source collection, available before any other pipeline stage, and contain BSON `Date`
     values.
 
+    The same applies to `filter` queries with a `projection`: the time condition is evaluated on the stored documents
+    before the projection is applied, so `timeColumn` cannot be an alias or expression created in the projection. An FDA
+    with `"projection": { "date_to": "$dateObservedTo" }` and `"timeColumn": "date_to"` would complete with no rows, so
+    it is rejected with `400 InvalidMongoFDAContract`. Project the raw field with `1` (or `true`) instead:
+    `"projection": { "dateObservedTo": 1 }` and `"timeColumn": "dateObservedTo"`.
+
 In both datasources, the upper bound is evaluated at query execution time: Postgres uses `NOW()`, while MongoDB uses
 `$expr` with `$$NOW`. This ensures that the current time is determined by the database server when each scheduled
 refresh job runs.
+
+The lower bound is also computed every time a scheduled job runs, from the FDA configuration: the recurring refresh
+fetches from `fetchSize` ago (from the start of that partition in partitioned FDAs) and the consistency refresh from
+`windowSize` ago. Neither of them stores its query, so their time range moves with each run.
 
 ### Recurring refresh and consistency refresh overlap
 
@@ -139,6 +149,17 @@ While both features are independent in configuration, they are tightly coupled i
 
 This separation provides flexibility, but also introduces potential misconfigurations.
 
+### Fetching several partitions on each refresh
+
+A refresh replaces every partition it writes. So, in a partitioned FDA, the recurring refresh starts at the beginning of
+the oldest partition it covers instead of exactly `fetchSize` ago. For example, with `month` partitions, a refresh on
+November 4th with `fetchSize` `month` fetches from October 1st, and with `3 months` from August 1st. Otherwise the
+oldest partition would be rewritten with only part of its rows.
+
+A `fetchSize` of several partitions (e.g. `3 months` with `month` partitions) is useful when the source publishes data
+late but within a known delay: every refresh fetches the whole delay again, so late rows show up in the next refresh
+without waiting for a consistency refresh.
+
 ### ⚠️ Common Pitfalls
 
 -   **Partition granularity larger than refresh frequency** If partitions are coarser than the refresh interval (e.g.,
@@ -220,11 +241,13 @@ By combining sliding window ingestion with partition-aware storage, the system a
 The integration suite includes real PostgreSQL-based scenarios to validate sliding-window behavior end-to-end:
 
 -   Sliding window with daily partitioning (`fetchSize=day`, `partition=day`)
+-   Sliding window fetching several partitions (`fetchSize=3 months`, `partition=month`), where a late row in the oldest
+    month is fetched by the next refresh without losing the rows already stored in that partition
 -   Sliding window with refresh intervals smaller than the partition (`refreshInterval=12 hours`, `partition=week`)
 -   Manual FDA update (`PUT /fdas/:fdaId`) after creation, validating that rows outside the configured window are
     excluded after refresh
 -   Validation errors for common misconfigurations:
--   `fetchSize` different from `partition`
+-   `fetchSize` with a unit different from `partition`
 -   partition configured without `timeColumn`
 -   invalid partition type
 

@@ -210,6 +210,7 @@ describe('fetcher', () => {
       {},
       {},
       undefined,
+      undefined,
     );
   });
 
@@ -295,6 +296,31 @@ describe('fetcher', () => {
       expect(agendaMock.queryJobs).not.toHaveBeenCalled();
       expect(processFDAAsyncMock).toHaveBeenCalledTimes(1);
     });
+
+    test.each([
+      ['refresh-fda-recurring', 'recurring'],
+      ['consistency-refresh-fda-recurring', 'consistency'],
+    ])(
+      '%s asks processFDAAsync to build its query when it runs',
+      async (jobName, scheduledRefresh) => {
+        const { startFetcher } = await loadFetcherModule();
+        await startFetcher();
+
+        await getHandler(jobName)(buildJob(jobName));
+
+        expect(processFDAAsyncMock).toHaveBeenCalledWith(
+          'fdaA',
+          'SELECT 1',
+          'svcA',
+          '/public',
+          'timeinstant',
+          {},
+          {},
+          undefined,
+          scheduledRefresh,
+        );
+      },
+    );
   });
 
   test('registered clean partition handler delegates to cleanPartition', async () => {

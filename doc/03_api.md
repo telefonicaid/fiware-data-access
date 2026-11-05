@@ -34,7 +34,6 @@
         -   [Update DA](#update-da-put-visibilityfdasfdaiddasdaid)
         -   [Delete DA](#delete-da-delete-visibilityfdasfdaiddasdaid)
     -   [Data operations](#data-operations)
-        -   [FDA data query](#fda-data-query-get-visibilityfdasfdaiddata)
         -   [Data Access query](#data-access-query-get-visibilityfdasfdaiddasdaiddata)
         -   [Query (Pentaho CDA legacy support)](#query-plugincdaapidoquery-pentaho-cda-legacy-support)
 -   [Navigation](#-navigation)
@@ -138,7 +137,7 @@ All error responses follow this structure:
 | Code | Status                 | Error Code                       | Cause                                                                                                                                                                                                                                                                                                              |
 | ---- | ---------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 400  | Bad Request            | `BadRequest`                     | Missing or invalid values in request body, headers, or query parameters. `Fiware-Service`, `Fiware-ServicePath`, and `visibility` (path segment) are required for all operations.                                                                                                                                  |
-| 400  | Bad Request            | `BadRequest`                     | Invalid or unsupported query fields were provided (for example, using `fresh` in `GET /{visibility}/fdas/{fdaId}/das/{daId}/data` or any query string in `GET /{visibility}/fdas/{fdaId}/data`).                                                                                                                   |
+| 400  | Bad Request            | `BadRequest`                     | Invalid or unsupported query fields were provided (for example, using `fresh` in `GET /{visibility}/fdas/{fdaId}/das/{daId}/data`).                                                                                                                                                                                |
 | 400  | Bad Request            | `InvalidVisibility`              | The `visibility` path segment is not one of the allowed values (`public`, `private`).                                                                                                                                                                                                                              |
 | 400  | Bad Request            | `InvalidServicePath`             | The `Fiware-ServicePath` header value is not a valid non-root absolute path (e.g. `/servicePath/site`). The root path `/` is not allowed.                                                                                                                                                                          |
 | 400  | Bad Request            | `InvalidQueryParam`              | Some of the params in the request don't comply with the [params](#params) array restrictions.                                                                                                                                                                                                                      |
@@ -153,8 +152,9 @@ All error responses follow this structure:
 | 409  | Conflict               | `DuplicatedKey`                  | The resource already exists in the database. Attempting to create a duplicate resource.                                                                                                                                                                                                                            |
 | 409  | Conflict               | `FDAUnavailable`                 | FDA `exampleId` is not queryable yet because the first fetch has not completed, or a lazy/`onDemand` FDA is still being fetched after `FDA_ON_DEMAND_WAIT_TIMEOUT_MS`.                                                                                                                                             |
 | 409  | Conflict               | `FDAProcessing`                  | Attempted to delete an FDA while it is being processed (status other than `completed` or `failed`). Retry once the fetch finishes.                                                                                                                                                                                 |
-| 409  | Conflict               | `FDANotOnlyFresh`                | The FDA is cached (`cached=true`) and cannot be queried through `GET /{visibility}/fdas/{fdaId}/data`; use a DA instead.                                                                                                                                                                                           |
+| 409  | Conflict               | `FDAOnlyFresh`                   | The FDA was created with `cached=false` and does not support the operation: Parquet regeneration, custom DAs on a MongoDB FDA, or changing its fixed `defaultDataAccess`.                                                                                                                                          |
 | 409  | Conflict               | `FDAOnlyFresh`                   | The FDA was created with `cached=false`, so it does not allow DAs nor cached DA queries.                                                                                                                                                                                                                           |
+| 409  | Conflict               | `FDAUploadNotRegenerable`        | The FDA was created from an uploaded file, so it has no source query to regenerate it from. `PUT /{visibility}/fdas/{fdaId}` on it only stores the body values.                                                                                                                                                    |
 | 409  | Conflict               | `RequestStyleConflict`           | The request mixes query-style context (`service`, `servicePath` in query params) with legacy `Fiware-Service`/`Fiware-ServicePath` headers in the same data-query URL. Use only one style per request.                                                                                                             |
 | 409  | Conflict               | `DatasourceInUse`                | Attempted to delete a datasource that is currently referenced by one or more FDAs in the same `Fiware-Service`.                                                                                                                                                                                                    |
 | 429  | Too Many Requests      | `TooManyFreshQueries`            | The number of concurrent direct fresh FDA queries exceeded `FDA_MAX_CONCURRENT_FRESH_QUERIES`.                                                                                                                                                                                                                     |
@@ -865,7 +865,7 @@ A FDA is represented by a JSON object with the following fields:
 | [`refreshPolicy`](#refresh-policy-object)                | ✓        | object                  | Optional policy for automatic refresh.                                                                                                                                                                                                                                                                                          |
 | [`objStgConf`](#object-storage-configuration-objstgconf) | ✓        | object                  | Various options to configure the FDA uploaded in the object storage app.                                                                                                                                                                                                                                                        |
 | `timeColumn`                                             | ✓        | string                  | Required with `refreshPolicy` of type `window` and `partition`. Column in the table indicating when the data was received (date). In `strict` validation mode, this column must be explicitly projected in the SELECT clause. See [Advanced Topics - Time Column](/doc/05_advanced_topics.md#time-column-behavior) for details. |
-| `cached`                                                 | ✓        | boolean                 | If `false`, the FDA is created as only-fresh: no parquet snapshot is maintained, no DAs are allowed, and the FDA is queried through `GET /{visibility}/fdas/{fdaId}/data`. Default `true`.                                                                                                                                      |
+| `cached`                                                 | ✓        | boolean                 | If `false`, the FDA is created as only-fresh: no parquet snapshot is maintained and every DA query runs against the datasource. A fixed `defaultDataAccess` is always created; PostgreSQL FDAs also accept custom DAs. See [Only-fresh FDAs](#only-fresh-fdas). Default `true`.                                                 |
 | `datasourceId`                                           | ✓        | string                  | Datasource id used to resolve DB credentials for this FDA. If omitted, FDA uses `default`.                                                                                                                                                                                                                                      |
 | `validationMode`                                         | ✓        | string                  | Controls synchronous validation during creation. Allowed values: `strict` and `unchecked`. Default `strict`.                                                                                                                                                                                                                    |
 | `maxDownloads`                                           | ✓        | integer                 | Optional positive safe integer limiting downloads across the FDA. Omit for unlimited downloads.                                                                                                                                                                                                                                 |
@@ -915,9 +915,13 @@ Example Mongo aggregation query:
 Datasource-specific constraints:
 
 -   Mongo datasource FDAs support both cached (`cached=true`, the default) and only-fresh (`cached=false`) mode. See
-    [`cached`](#fda-payload-datamodel) and [FDA data query](#fda-data-query-get-visibilityfdasfdaiddata).
+    [`cached`](#fda-payload-datamodel) and [Only-fresh FDAs](#only-fresh-fdas). Only-fresh Mongo FDAs only have the
+    fixed `defaultDataAccess`.
 -   MongoDB FDAs datasources support `refreshPolicy.type=window`, enabling sliding-window refresh and partitioning. See
     [Sliding windows and partitioning](AdvancedTopics/sliding_windows_and_partitioning.md) for more details.
+-   With `refreshPolicy.type=window`, `timeColumn` must be a raw field of the collection, projected with `1` or `true`
+    (not an alias such as `"date_to": "$dateObservedTo"`), because the window condition is applied before the
+    projection.
 -   `filter` and `aggregation` are mutually exclusive. Exactly one of them must be provided.
 -   Cached MongoDB FDAs created in `strict` mode must declare their output columns: a `projection` listing the fields to
     include (`filter` queries), or a final `$project`/`$group` stage (`aggregation` queries). MongoDB is schemaless, so
@@ -960,13 +964,13 @@ If omitted, the default policy is:
 
 ##### Params
 
-| Field                        | Optional | Type   | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ---------------------------- | -------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `maxAge`                     |          | string | **Only for type `onDemand`**, mandatory there. Human interval (e.g. `15 minutes`) after which the data is expired. `onDemand` accepts `maxAge` and `windowSize` only.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `refreshInterval`            |          | string | Not for type `onDemand`. It represents a human interval (e.g. `1 hour`) or a cron expression. The frequency for the scheduled refresh and clean jobs. Must be minor or equal to partition size (if existing) (value of the field [`objstgconf.partition`](#object-storage-configuration-objstgconf)).                                                                                                                                                                                                                                                                                                                                                   |
-| `consistencyRefreshInterval` | ✓        | string | **Only for type `window`**, it represents a human interval or cron expression used to schedule a periodic full rebuild of the FDA through the manual refresh flow. This helps recover delayed historical data while keeping the incremental sliding-window refresh active. It must be greater than `refreshInterval`, otherwise `InvalidParam` error response will be got                                                                                                                                                                                                                                                                               |
-| `fetchSize`                  |          | string | **Only for type `window`**, it can take the values `hour`, `day`, `week`, `month` and `year`. Represents the time range of data to fetch in the scheduled fetchs (e.g. last hour/month data). If [`objStgConf.partition`](#object-storage-configuration-objstgconf) is set, it must be equal to partition size; in practice `hour` is only valid when no partitioning is configured.                                                                                                                                                                                                                                                                    |
-| `windowSize`                 | ✓        | string | Temporal interval of data we are gonna keep in storage (e.g. only the data of the last month). This value also affects the first fetch of a window FDA and the manual refresh. Possible values are formed using a number and an allowed unit, e.g.: `3 days`, `6 weeks`, `1 month` and `2 years`. Units without number count as amount 1 (`year` = `1 year`). If omitted, then all data is kept forever, no clean partition is done and the first fetch retrieves all the data (i.e. an "infinite" window). With type `onDemand` it requires `objStgConf.partition`: data older than the window is never fetched, and it is cleaned after each refresh. |
+| Field                        | Optional | Type   | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ---------------------------- | -------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `maxAge`                     |          | string | **Only for type `onDemand`**, mandatory there. Human interval (e.g. `15 minutes`) after which the data is expired. `onDemand` accepts `maxAge` and `windowSize` only.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `refreshInterval`            |          | string | Not for type `onDemand`. It represents a human interval (e.g. `1 hour`) or a cron expression. The frequency for the scheduled refresh and clean jobs. Must be minor or equal to partition size (if existing) (value of the field [`objstgconf.partition`](#object-storage-configuration-objstgconf)).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `consistencyRefreshInterval` | ✓        | string | **Only for type `window`**, it represents a human interval or cron expression used to schedule a periodic full rebuild of the FDA through the manual refresh flow. This helps recover delayed historical data while keeping the incremental sliding-window refresh active. It must be greater than `refreshInterval`, otherwise `InvalidParam` error response will be got                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `fetchSize`                  |          | string | **Only for type `window`**, mandatory there. Time range of data fetched in each scheduled refresh (e.g. last hour/month data). It is formed by a number and a unit (`hour`, `day`, `week`, `month` or `year`), e.g. `3 days`, `2 weeks` or `3 months`; a unit without number counts as amount 1 (`month` = `1 month`). If [`objStgConf.partition`](#object-storage-configuration-objstgconf) is set, the unit must be the partition one (e.g. `month` or `3 months` with `month` partitions), so `hour` is only valid without partitioning. With partitions, each refresh fetches from the start of the oldest partition it covers (e.g. `3 months` on November 4th fetches from August 1st), so the partitions it rewrites are complete. If `windowSize` is set, `fetchSize` must not be greater than it (compared with months of 30 days and years of 365 days, e.g. `3 months` fits in `90 days`). |
+| `windowSize`                 | ✓        | string | Temporal interval of data we are gonna keep in storage (e.g. only the data of the last month). This value also affects the first fetch of a window FDA and the manual refresh. Possible values are formed using a number and an allowed unit, e.g.: `3 days`, `6 weeks`, `1 month` and `2 years`. Units without number count as amount 1 (`year` = `1 year`). If omitted, then all data is kept forever, no clean partition is done and the first fetch retrieves all the data (i.e. an "infinite" window). With type `onDemand` it requires `objStgConf.partition`: data older than the window is never fetched, and it is cleaned after each refresh.                                                                                                                                                                                                                                               |
 
 ##### Object storage configuration (objstgconf)
 
@@ -1237,8 +1241,9 @@ curl -i -X POST http://localhost:8080/public/fdas \
     }'
 ```
 
-The FDA created above is queried directly against MongoDB through `GET /{visibility}/fdas/fda_mongo_live_events/data`
-(see [FDA data query](#fda-data-query-get-visibilityfdasfdaiddata)), the same way an only-fresh PostgreSQL FDA is.
+The FDA created above is queried directly against MongoDB through its fixed DA,
+`GET /{visibility}/fdas/fda_mongo_live_events/das/defaultDataAccess/data` (see [Only-fresh FDAs](#only-fresh-fdas)), the
+same way an only-fresh PostgreSQL FDA is.
 
 _**Response code**_
 
@@ -1470,7 +1475,8 @@ _**Example Response:**_
 
 #### Regenerate FDA `PUT /{visibility}/fdas/{fdaId}`
 
-Regenerate the FDA, fetching again the source table from DB.
+Regenerate the FDA, fetching again the source table from DB. An optional body updates some FDA properties before
+regenerating it (see the request payload below); without a body the FDA is only regenerated.
 
 For PostgreSQL FDAs in `strict` mode, the source query is validated before regenerating. If it is no longer valid (for
 example, its `timeColumn` has been removed), the operation returns `400 InvalidParam` and the FDA is left untouched.
@@ -1488,6 +1494,8 @@ The operation may return `409 Conflict` in the following cases:
 -   If the FDA is currently being processed (`AlreadyFetching` for a lazy or `onDemand` FDA whose fetch is already
     requested).
 -   If the FDA is configured as _fresh-only_ (non-cached) and does not support manual regeneration.
+-   If the FDA was created from an uploaded file and no body is sent (`FDAUploadNotRegenerable`): it has no source
+    query, so it cannot be regenerated.
 
 _**Request path parameters**_
 
@@ -1500,10 +1508,6 @@ _**Request query parameters**_
 
 None so far
 
-_**Request payload**_
-
-None.
-
 _**Request headers**_
 
 | Header               | Optional | Description                                                          | Example        |
@@ -1513,16 +1517,48 @@ _**Request headers**_
 
 _**Request payload**_
 
-This endpoint does not accept a request body.
+The body is optional. Every field is optional and only the fields sent are updated; the rest keep their stored value.
+`query`, `datasourceId`, `cached` and `lazy` cannot be updated (any other field returns `400 BadRequest`), so the
+existing DAs keep working. On a lazy or `onDemand` FDA that has never been fetched, the new values are stored and its
+first fetch is enqueued, as without a body.
 
-If a body is provided, the API will return:
+| Parameter        | Type              | Description                                                                                                                                                                                                                                                |
+| ---------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `description`    | string            | New FDA description.                                                                                                                                                                                                                                       |
+| `timeColumn`     | string or `null`  | New time column. In `strict` mode it is validated against the source query. On a partitioned FDA the stored data is rebuilt from scratch.                                                                                                                  |
+| `validationMode` | string            | `strict` or `unchecked`.                                                                                                                                                                                                                                   |
+| `refreshPolicy`  | object            | Replaces the stored refresh policy, with the same rules as on creation (including `onDemand` and its `maxAge`). The scheduled refresh jobs are recreated. Setting `onDemand` makes the FDA lazy.                                                           |
+| `objStgConf`     | object            | Merged into the stored one (sending only `compression` keeps the partition). Only `partition` and `compression` are accepted. Changing `partition` deletes the stored data and rebuilds it, so the FDA cannot be queried until the regeneration completes. |
+| `maxDownloads`   | integer or `null` | New download limit. `null` removes it. Downloads already used are kept, so raising the limit re-enables an exhausted FDA.                                                                                                                                  |
+| `expirationDate` | string or `null`  | New download expiration. `null` removes it. Mutually exclusive with `validityPeriod`.                                                                                                                                                                      |
+| `validityPeriod` | string or `null`  | New download validity, counted from the update. `null` removes the expiration. Mutually exclusive with `expirationDate`.                                                                                                                                   |
 
--   **400 BadRequest**
--   `PUT /{visibility}/fdas/{fdaId} does not accept a request body`
+The new values are validated together with the stored ones, using the same rules as on creation (for example, a `window`
+refresh policy needs a `timeColumn`, and the unit of `fetchSize` must match the partition). Invalid values return
+`400 InvalidUpdateBody` and the FDA is left untouched. If the stored source query is no longer valid and the body does
+not change `timeColumn` or `validationMode`, the error is `400 InvalidParam`, the same as without a body.
+
+Example:
+
+```json
+{
+    "refreshPolicy": {
+        "type": "interval",
+        "params": { "refreshInterval": "1 hour", "fetchSize": "month" }
+    },
+    "objStgConf": { "partition": "month" },
+    "maxDownloads": 10,
+    "validityPeriod": "7 days"
+}
+```
 
 _**Response code**_
 
 -   Successful operation uses 202 Accepted (asynchronous regeneration)
+-   For FDAs created from an uploaded file, a body is only stored (there is no source to refetch from) and the operation
+    returns 200 OK with `{ "id": "...", "status": "<current status>" }`. These FDAs cannot change `objStgConf`, and
+    their `refreshPolicy` must stay `none`. As they cannot be regenerated, a request without a body returns
+    `409 FDAUploadNotRegenerable`.
 -   Errors use a non-2xx and (optionally) an error payload. See subsection on [Error Responses](#error-responses) for
     more details.
 
@@ -1597,8 +1633,9 @@ A DA is represented by a JSON object with the following fields:
 
 (\*) The `id` field is mandatory when creating a DA (`POST`) and must not be included when updating a DA (`PUT`).
 
-> Note: `query` is plain SQL, so it can use any SQL clause supported by the underlying engine, including `LIKE` with
-> wildcards. This is standard SQL, not a built-in FDA capability — see
+> Note: `query` is plain SQL, so it can use any SQL clause supported by the underlying engine (DuckDB for cached FDAs,
+> PostgreSQL for [only-fresh FDAs](#only-fresh-fdas)), including `LIKE` with wildcards. This is standard SQL, not a
+> built-in FDA capability — see
 > [SQL Pattern Matching in DA Queries](/doc/05_advanced_topics.md#sql-pattern-matching-in-da-queries) for details.
 
 #### Params
@@ -1762,7 +1799,8 @@ _**Example Response:**_
 
 #### Create DA `POST /{visibility}/fdas/{fdaId}/das`
 
-Create a new DA on a given FDA.
+Create a new DA on a given FDA. On only-fresh FDAs (`cached=false`) the DA query is written in PostgreSQL dialect and
+MongoDB FDAs do not accept custom DAs; see [Only-fresh FDAs](#only-fresh-fdas).
 
 _**Request path parameters**_
 
@@ -1885,7 +1923,7 @@ _**Example Response:**_
 
 #### Update DA `PUT /{visibility}/fdas/{fdaId}/das/{daId}`
 
-Update an existing DA.
+Update an existing DA. The fixed `defaultDataAccess` of an only-fresh FDA cannot be updated (`409 FDAOnlyFresh`).
 
 _**Request path parameters**_
 
@@ -1941,7 +1979,7 @@ None
 
 #### Delete DA `DELETE /{visibility}/fdas/{fdaId}/das/{daId}`
 
-Delete DA.
+Delete DA. The fixed `defaultDataAccess` of an only-fresh FDA cannot be deleted (`409 FDAOnlyFresh`).
 
 _**Request path parameters**_
 
@@ -1996,123 +2034,6 @@ None
 >
 > Moreover, `outputType=json` could be discontinued in the future, so you can have backward compatibility issues is you
 > still use it.
-
-#### FDA data query `GET /{visibility}/fdas/{fdaId}/data`
-
-Runs the FDA base query directly against its configured datasource (PostgreSQL or MongoDB). This endpoint is always
-fresh and does not use the parquet cache. It is only available for only-fresh FDAs (`cached=false`); calling it on a
-cached FDA returns `409 FDANotOnlyFresh`.
-
-_**Request path parameters**_
-
-| Parameter    | Optional | Description                                                          | Example  |
-| ------------ | -------- | -------------------------------------------------------------------- | -------- |
-| `visibility` |          | FDA access visibility. Allowed values: `public`, `private`           | `public` |
-| `fdaId`      |          | Id of the `fda`. Must be unique in combination with `Fiware-Service` | `fda1`   |
-
-_**Request query parameters**_
-
-The endpoint supports two request styles:
-
-| Parameter     | Optional | Description                                                                                                      | Example        |
-| ------------- | -------- | ---------------------------------------------------------------------------------------------------------------- | -------------- |
-| `service`     | ✓        | Tenant or service. Required when using query-style context (instead of FIWARE headers).                          | `trantor`      |
-| `servicePath` | ✓        | NGSI hierarchical service path. Required when using query-style context (instead of FIWARE headers).             | `/servicePath` |
-| `outputType`  | ✓        | Output format for query-style context. Allowed values: `json`, `ndjson`, `csv`, `xls`, `cda`. Default: `ndjson`. | `csv`          |
-
-When using header-style context, any query string parameter is rejected with `400 BadRequest`.
-
-_**Request headers**_
-
-| Header               | Optional | Description                                                                                                                                                                                                                                                                                                 | Example            |
-| -------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
-| `Fiware-Service`     | ✓        | Tenant or service for header-style context.                                                                                                                                                                                                                                                                 | `trantor`          |
-| `Fiware-ServicePath` | ✓        | NGSI hierarchical service path for header-style context.                                                                                                                                                                                                                                                    | `/servicePath`     |
-| `Accept`             | ✓        | Response format for header-style context, negotiated via standard HTTP content negotiation. Allowed values: `application/json`, `application/x-ndjson`, `text/csv`, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` (or `application/vnd.ms-excel`), `application/vnd.fiware.cda+json`. | `application/json` |
-
-See "Content negotiation and serialization notes" below for the request-style mixing and precedence rules.
-
-_**Request payload**_
-
-None.
-
-_**Response code**_
-
--   Successful operation uses 200 OK
--   Errors use a non-2xx and (optionally) an error payload. See subsection on [Error Responses](#error-responses) for
-    more details.
-
-_**Response headers**_
-
-| `outputType` (query-style) | `Accept` (header-style)                                                                           | `Content-Type`                                                      | `Content-Disposition`                 |
-| -------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------- |
-| `json`                     | `application/json`, missing, or `*/*`                                                             | `application/json`                                                  | —                                     |
-| `ndjson` (default)         | `application/x-ndjson`                                                                            | `application/x-ndjson`                                              | —                                     |
-| `csv`                      | `text/csv`                                                                                        | `text/csv; charset=utf-8`                                           | `attachment; filename="results.csv"`  |
-| `xls`                      | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` or `application/vnd.ms-excel` | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` | `attachment; filename="results.xlsx"` |
-| `cda`                      | `application/vnd.fiware.cda+json`                                                                 | `application/json`                                                  | —                                     |
-
-> Note: for `cda`, the response body follows the CDA-compatible JSON structure shown below, but the actual
-> `Content-Type` response header is `application/json`, not `application/vnd.fiware.cda+json`.
-
-_**Response payload**_
-
-Depends on the resolved output format:
-
--   `json` (or default in header-style context): array of JSON objects, each one being a record of the FDA base query
-    result.
--   `application/x-ndjson`: one JSON object per line (streamed response).
--   `text/csv`: comma-separated values file. The first row contains column names. Values containing commas,
-    double-quotes or newlines are quoted.
--   spreadsheet MIME types: Excel workbook (`.xlsx` format, Office Open XML). The first row contains column names.
--   `cda`: CDA-compatible JSON structure:
-
-```json
-{
-    "metadata": [{ "colIndex": 0, "colName": "column1" }, ...],
-    "resultset": [["value1", "value2", ...]],
-    "queryInfo": {
-        "pageStart": 0,
-        "pageSize": 10,
-        "totalRows": 120
-    }
-}
-```
-
-_**Content negotiation and serialization notes**_
-
--   In header-style context, response format is negotiated through the `Accept` header (using the
-    [standard HTTP content negotiation mechanism](https://datatracker.ietf.org/doc/html/rfc2616#section-12)).
--   In query-style context, response format is controlled by `outputType` query parameter.
--   `Fiware-Service`/`Fiware-ServicePath` headers cannot be mixed with `service`/`servicePath` query parameters; if both
-    are present, the API returns `409 RequestStyleConflict`.
--   Precedence: within query-style context, `outputType` always determines the response format, and an `Accept` header
-    sent alongside it is ignored. Header-style context does not accept `outputType` (nor any other query parameter, see
-    below) — it is rejected with `400 BadRequest` rather than being ignored in favor of `Accept`.
--   This endpoint requires `FDA_ROLE_SYNCQUERIES=true` in the API instance.
--   In query-style context, no additional query parameters are allowed besides `service`, `servicePath`, and
-    `outputType`; if the client attempts to send any other query parameter, the API returns `400 BadRequest` with
-    `FDA fresh query does not accept query parameters`.
--   Date values are normalized to strings (ISO 8601) before JSON/NDJSON/CSV serialization.
--   Numeric database values are returned as JSON numbers, including 64-bit and 128-bit integers beyond
-    `Number.MAX_SAFE_INTEGER`, which keep all their digits. `DECIMAL` / `NUMERIC` values are returned as strings to
-    preserve their exact scale. See [Numeric Precision](/doc/05_advanced_topics.md#numeric-precision).
--   With `Accept: application/x-ndjson` and `Accept: text/csv`, results are streamed incrementally from the datasource
-    using a cursor (PostgreSQL) or a chunked collection cursor (MongoDB).
-
-_**Example Request:**_
-
-```bash
-curl -i -X GET "http://localhost:8080/public/fdas/fda_live_alarms/data" \
-    -H "Fiware-Service: trantor" \
-    -H "Fiware-ServicePath: /servicePath"
-```
-
-_**Example Request (query-style context):**_
-
-```bash
-curl -i -X GET "http://localhost:8080/public/fdas/fda_live_alarms/data?service=trantor&servicePath=%2FservicePath"
-```
 
 #### Data Access query `GET /{visibility}/fdas/{fdaId}/das/{daId}/data`
 
@@ -2169,6 +2090,32 @@ _**Behavior note**_
 -   Query execution is blocked until the first successful fetch is completed (`lastFetch` available).
 -   After that first completion, query execution is allowed even if a later regeneration is in progress, returning the
     last available parquet snapshot.
+-   For only-fresh FDAs (`cached=false`) none of the above applies: the query always runs against the datasource. See
+    [Only-fresh FDAs](#only-fresh-fdas).
+
+##### Only-fresh FDAs
+
+This endpoint is the only way to read data from any FDA, cached or not. For an FDA created with `cached=false`:
+
+-   The fixed `defaultDataAccess` runs the FDA query as is against its datasource (PostgreSQL or MongoDB), with no
+    params. It is created with the FDA whatever `defaultDataAccess`/`FDA_CREATE_DEFAULT_DATA_ACCESS` say, and it cannot
+    be created again, updated or deleted (`409 FDAOnlyFresh`).
+-   On PostgreSQL FDAs, custom DAs can also be created. Their query is written in **PostgreSQL** dialect and must be a
+    `SELECT` without `FROM`: it is run as `SELECT <projection> FROM (<FDA query>) AS fda_source <rest of the DA query>`.
+    It is checked when the DA is created (`400 InvalidDAQuery`), but not run against the database, so SQL errors show up
+    on the first query. PostgreSQL must be able to infer each param type from its use: a param only compared with
+    `IS NULL` needs a cast (`$name::text IS NULL`).
+-   On MongoDB FDAs, custom DAs are rejected with `409 FDAOnlyFresh`.
+-   Queries require `FDA_ROLE_SYNCQUERIES=true` in the API instance (`503 SyncQueriesDisabled` otherwise) and are
+    limited by `FDA_MAX_CONCURRENT_FRESH_QUERIES` (`429 TooManyFreshQueries`).
+-   With `Accept: application/x-ndjson` and `Accept: text/csv`, results are streamed from the datasource using a cursor
+    (PostgreSQL) or a chunked collection cursor (MongoDB).
+
+```bash
+curl -i -X GET "http://localhost:8080/public/fdas/fda_live_alarms/das/defaultDataAccess/data" \
+    -H "Fiware-Service: trantor" \
+    -H "Fiware-ServicePath: /servicePath"
+```
 
 _**Response headers**_
 

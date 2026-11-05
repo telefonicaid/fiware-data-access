@@ -28,6 +28,9 @@
 export const DEFAULT_DATASOURCE_ID = 'default';
 export const SUPPORTED_DATASOURCE_TYPES = new Set(['postgres', 'mongodb']);
 
+// Data Accesses
+export const DEFAULT_DATA_ACCESS_ID = 'defaultDataAccess';
+
 // Allowlist of read-only MongoDB aggregation pipeline stages
 export const ALLOWED_MONGO_AGGREGATION_STAGES = new Set([
   '$match',
@@ -92,6 +95,12 @@ export const VALID_WINDOW_FETCH_SIZES = [
   'month',
   'year',
 ];
+
+// Scheduled refresh job types
+export const SCHEDULED_REFRESHES = {
+  'refresh-fda-recurring': 'recurring',
+  'consistency-refresh-fda-recurring': 'consistency',
+};
 
 // Fixed-length duration units
 export const DURATION_UNITS_MS = Object.freeze({

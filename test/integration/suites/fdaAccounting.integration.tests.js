@@ -185,6 +185,14 @@ export function registerFdaAccoutingIntegrationTests({
           fdaId === 'account_cda'
             ? { 'Fiware-Service': service, 'Fiware-ServicePath': '/public' }
             : headers;
+        // A refresh still running (e.g. after a PUT) makes the DELETE return 409,
+        // leaving an FDA that keeps the default datasource in use for later suites
+        await waitForFDA(
+          fdaId,
+          (fda) => fda.status === undefined || hasFinished(fda),
+          120_000,
+          scopedHeaders,
+        );
         await httpReq({
           method: 'DELETE',
           url: `${getBaseUrl()}/${visibility}/fdas/${fdaId}`,

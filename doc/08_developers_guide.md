@@ -13,9 +13,9 @@ Docker.
 
 You can start only the required services using Docker:
 
-- PostgreSQL (PostGIS)
-- MongoDB
-- MinIO
+-   PostgreSQL (PostGIS)
+-   MongoDB
+-   MinIO
 
 For example, using Docker Compose:
 
@@ -25,9 +25,9 @@ docker compose -f docker/docker-compose.yml up minio mongo postgis
 
 Ensure that:
 
-- PostgreSQL is reachable on port `5432`
-- MongoDB is reachable on port `27017`
-- MinIO is reachable on port `9000`
+-   PostgreSQL is reachable on port `5432`
+-   MongoDB is reachable on port `27017`
+-   MinIO is reachable on port `9000`
 
 ---
 
@@ -147,8 +147,8 @@ The following scripts are defined in `package.json` and can be executed with `np
 | `lint:fix`  | Runs ESLint over `src/lib/` and `src/routes/` applying automatic fixes. Test files are not fixed by this script.                              |
 | `prettier`  | Formats all JavaScript files of the repository with Prettier using `.prettierrc.json`. Modifies files in place, so review the resulting diff. |
 
-ESLint scripts use `--cache`, storing results in `.eslintcache` (ignored by git). Additionally, a `husky` pre-commit hook
-runs `lint-staged`, which formats staged `*.js` and `*.md` files with Prettier automatically.
+ESLint scripts use `--cache`, storing results in `.eslintcache` (ignored by git). Additionally, a `husky` pre-commit
+hook runs `lint-staged`, which formats staged `*.js` and `*.md` files with Prettier automatically.
 
 ### Tests
 
@@ -186,16 +186,16 @@ Coverage is collected with `c8` over `src/**/*.js` and written in `lcov` and tex
 
 ## Documentation conventions
 
-- Every new or changed environment variable must be documented in
-  [`04_config_operational_guide.md`](./04_config_operational_guide.md).
-- Every API change must be reflected in [`03_api.md`](./03_api.md).
-- OpenAPI/Swagger annotations must be kept in sync with API changes and validated with:
-    - `npm run openapi:generate`
-    - `npm run openapi:validate`
+-   Every new or changed environment variable must be documented in
+    [`04_config_operational_guide.md`](./04_config_operational_guide.md).
+-   Every API change must be reflected in [`03_api.md`](./03_api.md).
+-   OpenAPI/Swagger annotations must be kept in sync with API changes and validated with:
+    -   `npm run openapi:generate`
+    -   `npm run openapi:validate`
 
 ---
 
 ## 🧭 Navigation
 
-- [⬅️ Previous: Performance](/doc/07_performance.md)
-- [🏠 Main index](../README.md#documentation)
+-   [⬅️ Previous: Performance](/doc/07_performance.md)
+-   [🏠 Main index](../README.md#documentation)

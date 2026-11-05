@@ -4,21 +4,21 @@
 
 This project uses a **mixed testing strategy**:
 
-- unit tests for isolated query-building, validation and error-path logic
-- end-to-end integration tests for real cross-system behavior
+-   unit tests for isolated query-building, validation and error-path logic
+-   end-to-end integration tests for real cross-system behavior
 
 The goal is to validate both:
 
-- deterministic internal logic close to the source of change
-- the full data flow across external dependencies as it runs in production
+-   deterministic internal logic close to the source of change
+-   the full data flow across external dependencies as it runs in production
 
 ---
 
 ### Approach
 
-- Tests are written using **Jest**
-- Unit tests use targeted mocks for isolated modules and edge cases
-- Integration tests exercise the API using **real HTTP requests**
+-   Tests are written using **Jest**
+-   Unit tests use targeted mocks for isolated modules and edge cases
+-   Integration tests exercise the API using **real HTTP requests**
 
 Integration tests start **real service instances** using Docker.
 
@@ -28,21 +28,21 @@ Integration tests start **real service instances** using Docker.
 
 All external dependencies are started dynamically using **Testcontainers**:
 
-- **PostgreSQL / PostGIS**
-- **MongoDB**
-- **MinIO (S3-compatible object storage)**
+-   **PostgreSQL / PostGIS**
+-   **MongoDB**
+-   **MinIO (S3-compatible object storage)**
 
 Each test run:
 
-- Starts isolated containers
-- Uses random host ports
-- Cleans up automatically after execution
+-   Starts isolated containers
+-   Uses random host ports
+-   Cleans up automatically after execution
 
 This guarantees:
 
-- No shared state between test runs
-- No dependency on local services
-- Reproducible results in CI and locally
+-   No shared state between test runs
+-   No dependency on local services
+-   Reproducible results in CI and locally
 
 ---
 
@@ -52,8 +52,8 @@ The FDA application is started as a **separate Node.js child process** during te
 
 This mirrors real deployment behavior and avoids:
 
-- Shared module state with the test runner
-- False positives caused by in-process mocks
+-   Shared module state with the test runner
+-   False positives caused by in-process mocks
 
 The test flow is:
 
@@ -71,21 +71,21 @@ The test flow is:
 
 Unit tests validate, among others:
 
-- parameter validation and coercion
-- DA/FDA query composition
-- error propagation and cleanup behavior
-- API route wiring and request validation
-- multipart upload endpoint validation (`/fdas/upload`) including file-type, size and form-field checks
+-   parameter validation and coercion
+-   DA/FDA query composition
+-   error propagation and cleanup behavior
+-   API route wiring and request validation
+-   multipart upload endpoint validation (`/fdas/upload`) including file-type, size and form-field checks
 
 Integration tests validate:
 
-- FDA creation (PostgreSQL → CSV → Parquet → MinIO)
-- Metadata persistence in MongoDB
-- DuckDB query execution over Parquet files
-- End-to-end API behavior using real data
-- direct FDA fresh execution over PostgreSQL
-- default DA behavior including automatic creation and optional filters
-- multipart upload flow (CSV/XLS/XLSX) from API ingestion to parquet generation and queryability
+-   FDA creation (PostgreSQL → CSV → Parquet → MinIO)
+-   Metadata persistence in MongoDB
+-   DuckDB query execution over Parquet files
+-   End-to-end API behavior using real data
+-   direct FDA fresh execution over PostgreSQL
+-   default DA behavior including automatic creation and optional filters
+-   multipart upload flow (CSV/XLS/XLSX) from API ingestion to parquet generation and queryability
 
 ---
 
@@ -93,27 +93,27 @@ Integration tests validate:
 
 Coverage in this repository is collected with `c8` in two independent runs:
 
-- unit suite (`coverage/unit/lcov.info`)
-- integration suite (`coverage/integration/lcov.info`)
+-   unit suite (`coverage/unit/lcov.info`)
+-   integration suite (`coverage/integration/lcov.info`)
 
 Then both reports are merged into `coverage/lcov.info`, which is the file uploaded to Coveralls in CI. This flow avoids
 ambiguity when reading coverage locally and matches exactly what CI publishes. The merge is additive for the same
 file/line in both reports.
 
-- If a line is covered only by unit tests, it remains covered in the merged report.
-- If a line is covered only by integration tests, it remains covered in the merged report.
-- A line is not covered in the final report only if it is uncovered in both reports.
+-   If a line is covered only by unit tests, it remains covered in the merged report.
+-   If a line is covered only by integration tests, it remains covered in the merged report.
+-   A line is not covered in the final report only if it is uncovered in both reports.
 
 ### Integration Suite Organization
 
 Current integration structure:
 
-- `test/integration/fda.proc.int.test.js`: entrypoint that runs the same suite in both execution modes
-- `test/integration/fda.integration.shared.js`: shared runtime/bootstrap and suite registration
-- `test/integration/suites/platform.integration.tests.js`: platform endpoints (`/health`, `/metrics`)
-- `test/integration/suites/fdaCreation.integration.tests.js`: FDA creation and basic lifecycle creation checks
-- `test/integration/suites/slidingWindows.integration.tests.js`: sliding-window and partitioning checks
-- `test/integration/suites/uploadFdas.integration.tests.js`: multipart upload endpoint and upload-processing scenarios
+-   `test/integration/fda.proc.int.test.js`: entrypoint that runs the same suite in both execution modes
+-   `test/integration/fda.integration.shared.js`: shared runtime/bootstrap and suite registration
+-   `test/integration/suites/platform.integration.tests.js`: platform endpoints (`/health`, `/metrics`)
+-   `test/integration/suites/fdaCreation.integration.tests.js`: FDA creation and basic lifecycle creation checks
+-   `test/integration/suites/slidingWindows.integration.tests.js`: sliding-window and partitioning checks
+-   `test/integration/suites/uploadFdas.integration.tests.js`: multipart upload endpoint and upload-processing scenarios
 
 ---
 
@@ -121,8 +121,8 @@ Current integration structure:
 
 Requirements:
 
-- Docker
-- Node.js >= 24
+-   Docker
+-   Node.js >= 24
 
 Run locally:
 
@@ -157,6 +157,6 @@ For the complete list of project npm commands (development, linting, tests, cove
 
 ## 🧭 Navigation
 
-- [⬅️ Previous: Advanced Topics](/doc/05_advanced_topics.md)
-- [🏠 Main index](../README.md#documentation)
-- [➡️ Next: Performance](/doc/07_performance.md)
+-   [⬅️ Previous: Advanced Topics](/doc/05_advanced_topics.md)
+-   [🏠 Main index](../README.md#documentation)
+-   [➡️ Next: Performance](/doc/07_performance.md)

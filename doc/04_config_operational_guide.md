@@ -67,7 +67,7 @@ Variables that define which components of the application are executed by this i
 | ----------------------------------- | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `FDA_ROLE_APISERVER`                | ✓        | boolean | If `true`, the instance runs the API server to handle HTTP requests. Default `true`.                                                                                            |
 | `FDA_ROLE_FETCHER`                  | ✓        | boolean | If `true`, the instance runs the fetcher responsible for regenerating and updating FDAs. Default `true`.                                                                        |
-| `FDA_ROLE_SYNCQUERIES`              | ✓        | boolean | If `true`, the API instance accepts creation of fresh queries, `GET /{visibility}/fdas/{fdaId}/data` and executes FDAs directly against PostgreSQL. Default `false`.            |
+| `FDA_ROLE_SYNCQUERIES`              | ✓        | boolean | If `true`, the API instance accepts DA queries on only-fresh FDAs (`cached=false`), executed directly against the datasource. Default `false`.                                  |
 | `FDA_MAX_CONCURRENT_FRESH_QUERIES`  | ✓        | number  | Maximum number of concurrent direct fresh FDA queries accepted by the API instance. Additional requests return `429 TooManyFreshQueries`. Default `5`.                          |
 | `FDA_CREATE_DEFAULT_DATA_ACCESS`    | ✓        | boolean | If `true`, FDA creation also creates a built-in `defaultDataAccess` DA unless the request overrides it. Default `true`.                                                         |
 | `FDA_FETCHER_HEARTBEAT_INTERVAL_MS` | ✓        | number  | Interval in milliseconds between Fetcher heartbeat logs. Each heartbeat is logged at `INFO` with the DuckDB memory state. Default `60000`. Set to `0` to disable the heartbeat. |
@@ -108,6 +108,10 @@ Important behavior:
 
 -   If a referenced datasource does not exist, FDA operations fail with `DatasourceNotFound`.
 -   `datasourceId` in FDA creation is optional; if omitted, FDA uses `default`.
+
+PostgreSQL connections opened by FDA use `application_name=fda`, which makes them identifiable in `pg_stat_activity`.
+`pg_stat_statements` does not track `application_name`; to distinguish FDA query statistics there, configure the FDA
+datasource with a dedicated PostgreSQL user.
 
 #### Operational note about DatasourceNotFound
 
