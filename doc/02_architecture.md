@@ -34,10 +34,11 @@ An **FDA** represents a data resource in the system. A cached FDA:
 -   Supports optional `refreshPolicy` types `none`, `interval`, `window`, and `onDemand`; cached FDAs can also be lazy
 -   Window-based FDAs can also schedule a periodic consistency refresh that triggers the manual rebuild flow and helps
     recover historical gaps.
--   Can use a generated `defaultDataAccess`; upload FDAs and source-backed FDAs can also have custom DAs
+-   Can have a generated `defaultDataAccess` and any number of custom DAs
 
-An only-fresh FDA instead queries its PostgreSQL or MongoDB source directly. It does not create a Parquet snapshot or
-support DAs.
+An only-fresh FDA (`cached=false`) instead queries its PostgreSQL or MongoDB source directly, without a Parquet
+snapshot. It has a fixed `defaultDataAccess` returning the FDA query result and, for PostgreSQL FDAs, custom DAs that
+run against the datasource.
 
 In simple terms:
 
@@ -51,7 +52,7 @@ Key characteristics:
 -   Cached data is stored as Parquet inside a bucket named after the `Fiware-Service`
 -   Associated with a `visibility` level (`public` or `private`) that controls access authorization
 -   Can be regenerated (manually or configured) to refresh the data
--   Cached FDAs can be the parent resource of one or more DAs
+-   Parent resource of one or more DAs
 -   Has status, progress, initFetch and lastFetch fields, and an optional refreshPolicy.
 
 #### Example FDA
@@ -224,7 +225,8 @@ Each document corresponds to one FDA:
 -   **query**: SQL query used to generate the Parquet file
 -   **das**: keymap of DAs associated with the FDA
 -   **refreshPolicy**: object defining refresh behaviour (`none`, `interval`, `window`, or `onDemand`)
--   **status**: current execution status (`fetching`, `transforming`, `uploading`, `completed`, `failed`, `deleting`)
+-   **status**: current execution status (`idle`, `pending`, `fetching`, `transforming`, `uploading`, `completed`,
+    `failed`, `deleting`)
 -   **progress**: execution progress percentage (0–100)
 -   **initFetch**: timestamp of the current/last fetch start (ISO date)
 -   **lastFetch**: timestamp of the last successful fetch completion (ISO date)
@@ -391,7 +393,7 @@ Each document represents one scheduled or running job and includes:
 
 -   The **bucket name** in MinIO must match the `fiware-service` of the FDA
 -   FDA creation **does not create buckets automatically**; they must exist beforehand
--   DAs query the FDA Parquet files directly via DuckDB
+-   DAs of cached FDAs query the FDA Parquet files via DuckDB; DAs of only-fresh FDAs query the datasource
 -   Metadata in MongoDB ensures unique combination of `fdaId` and `service`
 -   Datasources are managed per `Fiware-Service`; deleting a datasource referenced by at least one FDA is blocked with
     `DatasourceInUse`
