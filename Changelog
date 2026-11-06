@@ -1,3 +1,33 @@
+1.8.0 (November 6th, 2026)
+
+- Add: only-fresh FDAs (`cached=false`) are queried through `GET /{visibility}/fdas/{fdaId}/das/{daId}/data` like cached ones. They always get a fixed `defaultDataAccess` (the FDA query as is, cannot be updated or deleted) and PostgreSQL only-fresh FDAs accept custom DAs, written in PostgreSQL dialect and run against the datasource (#360)
+- Add: Set the PostgreSQL connection application_name to fda for pooled and direct connections (visible in pg_stat_activity)
+- Add: PUT FDA action now can take a body to update some FDA parameters (#196)
+- Add: optional `timeRange` field in DAs (declared by default in `defaultDataAccess`) so queries by time range on partitioned FDAs read only the partitions overlapping the range instead of all of them (#328)
+- Add: DuckDB memory usage in the Fetcher heartbeat (now `INFO`), in an `INFO` dump of `duckdb_memory()` before every Parquet export and in the memory peak sampled during it (`INFO` on success, `WARN` on failure, interval set with `FDA_DUCKDB_MEMORY_SAMPLE_INTERVAL_MS`, default `250`), in `GET /health` (`duckdb` block) and as Prometheus gauges (`fda_duckdb_*`) to diagnose Out of Memory errors; `INFO` log when the temporary Parquet files of an FDA are cleaned, after a failed fetch or on deletion (#351)
+- Add: `FDA_DUCKDB_S3_UPLOADER_MAX_FILESIZE` (default `50GB`) and `FDA_DUCKDB_PARTITIONED_WRITE_MAX_OPEN_FILES` (default `8`) to reduce the non-spillable `httpfs` upload memory of partitioned Parquet exports, which caused Out of Memory errors (#355)
+- Add: `FDA_DUCKDB_SORT_PARTITIONED_EXPORTS` (default `true`) sorts the rows of partitioned Parquet exports by `timeColumn` so each partition is written in as few files as possible; the sort may spill to `FDA_DUCKDB_TEMP_DIR` (#355)
+- Add: logs about remove duckdb tmp files (size and number)
+- Add: optional lifetime download quotas and expiration dates/validity periods for public FDA links, enforced atomically across instances, with remaining-download metadata and HTTP 410 rejection after expiration or exhaustion (#338)
+- Add: persisted FDA resource accounting: creation time, Parquet storage measurements, buffered FDA/DA query counters, queries since the last successful refresh and refresh cost. Expose service/servicePath accounting through GET /usage and Prometheus gauges. Configure the access-counter flush interval with `FDA_ACCESS_FLUSH_INTERVAL_MS` (default `10000`). (#324)
+- Add: a fetch that exceeds the MinIO bucket quota now ends `failed` with an explicit `StorageQuotaExceeded` error (HTTP 507), and the quota is documented for operators (#325)
+- Add: `lazy` field on FDA creation. A lazy FDA is created `idle`: it is not fetched and no refresh is scheduled until its first query, which waits for the fetch. Then it follows its refresh policy (`none`, `interval` or `window`) (#326)
+- Add: `onDemand` refresh policy (`maxAge`), a cache that is fetched on the first query and only refreshed when a query finds it older than `maxAge`. Partitioned onDemand FDAs refresh incrementally from the partition of the last fetch and can keep a window (`windowSize`). Concurrent queries share a single fetch (#326)
+- Add: `FDA_ON_DEMAND_WAIT_TIMEOUT_MS` (default `30000`), `FDA_ON_DEMAND_POLL_INTERVAL_MS` (default `500`) and `FDA_ON_DEMAND_RETRY_BACKOFF_MS` (default `60000`) env vars to configure how queries wait for lazy and onDemand fetches (#326)
+- Fix: recurring FDA refresh consistency check to use the Agenda 6 API, restoring detection of active consistency refreshes and preventing agenda.jobs is not a function warnings (introduced in 1.7.0 version) (#346)
+- Fix: a failed fetch removes its staging CSV, and non partitioned FDAs publish through `tmp/`, so a failed refresh keeps the last good data (#325)
+- Fix: a failed PostgreSQL upload no longer returns its half-closed connection to the pool, which could hang the next fetch (#325)
+- Fix: a refresh removes the files of the partitions it rewrites that the new export did not write again, so a partition written as several files no longer keeps stale rows (#355)
+- Fix: PUT FDA without a body on an uploaded FDA now returns 409 `FDAUploadNotRegenerable` and properly releases the PostgreSQL client        
+- Fix: Mongo `find` FDAs with `refreshPolicy.type=window` now reject (400) a `timeColumn` that is an alias in the `projection`, which made the FDA complete with no rows; it must be a raw field projected with `1` or `true` (#363)
+- Fix: `fetchSize` of window FDAs accepts several partitions (e.g. `3 months` with `month` partitions), and must not be greater than `windowSize` (#368)
+- Fix: with partitions, the recurring refresh of window FDAs now fetches from the start of the oldest partition it covers, so that partition is no longer rewritten with only part of its rows (#348)
+- Fix: the recurring and consistency refreshes of window FDAs compute their time range when each job runs instead of when the jobs were scheduled, so they no longer fetch more data on every run; the jobs of existing FDAs are fixed without recreating them (#348)
+- (!) Fix: remove `GET /{visibility}/fdas/{fdaId}/data` endpoint and `FDANotOnlyFresh` error; use `GET /{visibility}/fdas/{fdaId}/das/defaultDataAccess/data` instead (#360)
+- Upgrade: PostGIS image from `postgis/postgis:15-3.3` to `postgis/postgis:16-3.4` (docker-compose and integration tests). Existing `docker/postgis-data` volumes created with PostgreSQL 15 must be recreated or migrated (#334)
+- Upgrade: MinIO client image in docker-compose replaced from `minio/mc` to `pgsty/mc` (#302)
+- Update: @duckdb/node-api dependency version from 1.5.6-r1 to 1.5.6-r2
+
 1.7.0 (October 7th, 2026)
 
 - Replace MinIO docker image by PGsty image (#302)
