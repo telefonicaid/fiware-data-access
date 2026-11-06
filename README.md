@@ -6,7 +6,7 @@
 
 **FIWARE Data Access** is part of the FIWARE ecosystem and designed to expose analytical data through reusable and
 parameterized APIs. It provides an efficient, open-source solution for storing and querying datasets in object storage,
-replacing the legacy Pentaho CDA extension in smart city stacks.
+with a compatibility endpoint for selected legacy Pentaho CDA clients.
 
 > Every dataset tells a story. Some are just stored in Parquet.
 
@@ -29,7 +29,7 @@ replacing the legacy Pentaho CDA extension in smart city stacks.
 
 ## 🚀 Purpose
 
--   Replace Pentaho CDAs in FIWARE smart city stacks.
+-   Provide native analytical APIs, with a compatibility endpoint for selected legacy Pentaho CDA clients.
 -   Provide an efficient, modern data access layer for analytical queries.
 
 ---
@@ -47,8 +47,8 @@ Complete documentation is available in the [`doc/`](./doc/) directory:
 -   [`05_advanced_topics.md`](./doc/05_advanced_topics.md) – Advanced topics
 -   [`06_testing.md`](./doc/06_testing.md) – Test strategy and execution
 -   [`07_performance.md`](./doc/07_performance.md) – Performance measurement utilities
--   [`08_developers_guide.md`](./doc/08_developers_guide.md) – Local development, npm scripts and documentation
-    conventions
+-   [`08_developers_guide.md`](./doc/08_developers_guide.md) – Local development, npm scripts, internal flows and
+    documentation conventions
 
 ---
 
