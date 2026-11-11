@@ -4543,6 +4543,69 @@ describe('processFDAAsync', () => {
       mongoMocks.retrieveFDA.mockReset();
     });
 
+    test('reproduces CSV column mismatch when the first quoted comma is outside the dialect sample', async () => {
+      const { DuckDBInstance } = await import('@duckdb/node-api');
+      const schema = [
+        ...storedFDA.schema,
+        { name: 'description', type: 'VARCHAR' },
+      ];
+      mongoMocks.retrieveFDA.mockResolvedValue({ ...storedFDA, schema });
+      mockSourceFields(
+        schema.map(({ name, type }) => ({ name, duckdbType: type })),
+      );
+
+      await processFDAAsync(
+        'fda1',
+        'SELECT incremental',
+        'svc',
+        '/servicepath',
+        'observed_at',
+        windowPolicy,
+      );
+
+      const sourceQuery = dbMocks.copyQueryToParquet.mock.calls[0][1];
+      expect(sourceQuery).toContain('read_csv(');
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fda-csv-sample-'));
+      const csvPath = path.join(tmpDir, 'source.csv');
+      const plainRowCount = 100000;
+      const description = 'Modo Calidad Aire, gas CO2';
+      const instance = await DuckDBInstance.create(':memory:');
+      const connection = await instance.connect();
+
+      try {
+        fs.writeFileSync(
+          csvPath,
+          'id,observed_at,description\n' +
+            '1,2026-06-19 09:00:00+02,plain text\n'.repeat(plainRowCount) +
+            `2,2026-06-19 09:00:00+02,"${description}"\n`,
+        );
+        const localQuery = sourceQuery.replace(
+          /'s3:\/\/[^']*'/,
+          `'${csvPath.replaceAll("'", "''")}'`,
+        );
+
+        const read = connection.runAndReadAll(localQuery);
+        await expect(read).rejects.toThrow(
+          /Expected Number of Columns: 3 Found: 4/,
+        );
+        await expect(read).rejects.toThrow('quote = (empty) (Auto-Detected)');
+        await expect(read).rejects.toThrow('sample_size = 20480');
+
+        const explicitDialectQuery = localQuery.replace(
+          'header = true',
+          `header = true, delim = ',', quote = '"', escape = '"'`,
+        );
+        const result = await connection.runAndReadAll(explicitDialectQuery);
+        const rows = result.getRowObjects();
+        expect(rows).toHaveLength(plainRowCount + 1);
+        expect(rows.at(-1)).toMatchObject({ id: 2, description });
+      } finally {
+        connection.closeSync();
+        instance.closeSync();
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    });
+
     test('keeps the incremental refresh when the source schema only differs in type aliases', async () => {
       mockSourceFields([
         { name: 'id', duckdbType: 'INTEGER' },
