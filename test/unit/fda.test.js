@@ -4543,7 +4543,7 @@ describe('processFDAAsync', () => {
       mongoMocks.retrieveFDA.mockReset();
     });
 
-    test('reproduces CSV column mismatch when the first quoted comma is outside the dialect sample', async () => {
+    test('reads CSV text containing commas when the first quoted value is outside the dialect sample', async () => {
       const { DuckDBInstance } = await import('@duckdb/node-api');
       const schema = [
         ...storedFDA.schema,
@@ -4584,18 +4584,7 @@ describe('processFDAAsync', () => {
           `'${csvPath.replaceAll("'", "''")}'`,
         );
 
-        const read = connection.runAndReadAll(localQuery);
-        await expect(read).rejects.toThrow(
-          /Expected Number of Columns: 3 Found: 4/,
-        );
-        await expect(read).rejects.toThrow('quote = (empty) (Auto-Detected)');
-        await expect(read).rejects.toThrow('sample_size = 20480');
-
-        const explicitDialectQuery = localQuery.replace(
-          'header = true',
-          `header = true, delim = ',', quote = '"', escape = '"'`,
-        );
-        const result = await connection.runAndReadAll(explicitDialectQuery);
+        const result = await connection.runAndReadAll(localQuery);
         const rows = result.getRowObjects();
         expect(rows).toHaveLength(plainRowCount + 1);
         expect(rows.at(-1)).toMatchObject({ id: 2, description });
