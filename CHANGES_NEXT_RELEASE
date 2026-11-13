@@ -25,3 +25,4 @@
 - Fix: the recurring and consistency refreshes of window FDAs compute their time range when each job runs instead of when the jobs were scheduled, so they no longer fetch more data on every run; the jobs of existing FDAs are fixed without recreating them (#348)
 - (!) Fix: remove `GET /{visibility}/fdas/{fdaId}/data` endpoint and `FDANotOnlyFresh` error; use `GET /{visibility}/fdas/{fdaId}/das/defaultDataAccess/data` instead (#360)
 - Update: @duckdb/node-api dependency version from 1.5.6-r1 to 1.5.6-r2
+- Fix: legacy `/plugin/cda/api/doQuery` with `outputType=ndjson` returns the CDA-compatible structure as documented (same as `json`) instead of a plain JSON array (#372)
