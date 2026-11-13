@@ -1,0 +1,1 @@
+- Fix: PostgreSQL-backed FDAs read CSV files with an explicit dialect so text fields containing commas are parsed correctly even when dialect autodetection does not sample a quoted value (#378)
