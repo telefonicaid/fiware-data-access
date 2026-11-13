@@ -2086,6 +2086,35 @@ describe('index upload route - direct validation coverage', () => {
     });
     expect(fdaMocks.uploadFDA).not.toHaveBeenCalled();
   });
+
+  test('validateUploadRequest returns 400 and removes the temp file when defaultDataAccess is invalid', async () => {
+    utilsMocks.parseBooleanQueryParam.mockImplementationOnce(() => {
+      const err = new Error(
+        'Query param "defaultDataAccess" must be a boolean.',
+      );
+      err.status = 400;
+      err.type = 'BadRequest';
+      throw err;
+    });
+
+    const res = await request(app)
+      .post('/public/fdas/upload')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .field('id', 'csv_upload_demo')
+      .field('defaultDataAccess', 'maybe')
+      .attach('file', Buffer.from('id,value\n1,10\n'), 'data.csv')
+      .expect(400);
+
+    expect(res.body).toEqual({
+      error: 'BadRequest',
+      description: 'Query param "defaultDataAccess" must be a boolean.',
+    });
+    expect(utilsMocks.deleteTempFile).toHaveBeenCalledWith(
+      expect.objectContaining({ originalname: 'data.csv' }),
+    );
+    expect(fdaMocks.uploadFDA).not.toHaveBeenCalled();
+  });
 });
 
 describe('index upload route file size limit', () => {

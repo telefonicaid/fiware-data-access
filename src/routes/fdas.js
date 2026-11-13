@@ -354,10 +354,16 @@ function validateUploadRequest(req, res) {
     return null;
   }
 
-  const defaultDataAccessBool =
-    defaultDataAccess === undefined
-      ? config.defaultDataAccess?.enabled ?? true
-      : parseBooleanQueryParam(defaultDataAccess, 'defaultDataAccess', true);
+  let defaultDataAccessBool;
+  try {
+    defaultDataAccessBool =
+      defaultDataAccess === undefined
+        ? config.defaultDataAccess?.enabled ?? true
+        : parseBooleanQueryParam(defaultDataAccess, 'defaultDataAccess', true);
+  } catch (error) {
+    badRequest(res, req, error.message);
+    return null;
+  }
 
   let objStgConfParsed;
   try {
