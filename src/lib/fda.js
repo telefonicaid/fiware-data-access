@@ -3470,7 +3470,7 @@ function buildTypedCsvSourceQuery(csvPath, schemaFields) {
     )
     .join(', ');
 
-  return `SELECT * FROM read_csv('s3://${csvPath}', header = true, columns = {${columnsConf}})`;
+  return `SELECT * FROM read_csv('s3://${csvPath}', header = true, delim = ',', quote = '"', escape = '"', columns = {${columnsConf}})`;
 }
 
 async function buildDefaultDataAccessDefinition(

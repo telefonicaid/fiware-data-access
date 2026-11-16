@@ -1397,6 +1397,56 @@ describe('fetchFDA', () => {
     expect(agenda.create).not.toHaveBeenCalled();
   });
 
+  test('uses a zero-row PostgreSQL query when source types are unavailable', async () => {
+    const datasource = {
+      datasourceId: 'default',
+      type: 'postgres',
+      config: {
+        username: 'u',
+        password: 'p',
+        host: 'h',
+        port: 5432,
+        database: 'svc',
+      },
+    };
+    mongoMocks.retrieveDatasource
+      .mockResolvedValueOnce(datasource)
+      .mockResolvedValueOnce(datasource);
+    pgMocks.validatePostgresQuery.mockResolvedValueOnce({
+      columns: ['id'],
+      fields: [],
+    });
+
+    await fetchFDA(
+      'fda1',
+      '  SELECT id FROM users;;;  ',
+      'svc',
+      'public',
+      '/servicepath',
+      'test FDA',
+      { type: 'none' },
+      undefined,
+      undefined,
+      false,
+    );
+
+    expect(pgMocks.uploadTable).toHaveBeenCalledWith(
+      {},
+      'svc',
+      expect.any(Object),
+      'SELECT * FROM (SELECT id FROM users) AS fda_one_row LIMIT 0',
+      'servicepath/fda1',
+    );
+    expect(dbMocks.toParquet).toHaveBeenCalledWith(
+      {},
+      'svc/servicepath/fda1.csv',
+      'svc/servicepath/fda1.parquet',
+      undefined,
+      undefined,
+      undefined,
+    );
+  });
+
   test('validationMode set to unchecked skips strict bootstrap path and default DA creation', async () => {
     await fetchFDA(
       'fda1',
@@ -4541,6 +4591,58 @@ describe('processFDAAsync', () => {
 
     afterEach(() => {
       mongoMocks.retrieveFDA.mockReset();
+    });
+
+    test('reads CSV text containing commas when the first quoted value is outside the dialect sample', async () => {
+      const { DuckDBInstance } = await import('@duckdb/node-api');
+      const schema = [
+        ...storedFDA.schema,
+        { name: 'description', type: 'VARCHAR' },
+      ];
+      mongoMocks.retrieveFDA.mockResolvedValue({ ...storedFDA, schema });
+      mockSourceFields(
+        schema.map(({ name, type }) => ({ name, duckdbType: type })),
+      );
+
+      await processFDAAsync(
+        'fda1',
+        'SELECT incremental',
+        'svc',
+        '/servicepath',
+        'observed_at',
+        windowPolicy,
+      );
+
+      const sourceQuery = dbMocks.copyQueryToParquet.mock.calls[0][1];
+      expect(sourceQuery).toContain('read_csv(');
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fda-csv-sample-'));
+      const csvPath = path.join(tmpDir, 'source.csv');
+      const plainRowCount = 100000;
+      const description = 'Modo Calidad Aire, gas CO2';
+      const instance = await DuckDBInstance.create(':memory:');
+      const connection = await instance.connect();
+
+      try {
+        fs.writeFileSync(
+          csvPath,
+          'id,observed_at,description\n' +
+            '1,2026-06-19 09:00:00+02,plain text\n'.repeat(plainRowCount) +
+            `2,2026-06-19 09:00:00+02,"${description}"\n`,
+        );
+        const localQuery = sourceQuery.replace(
+          /'s3:\/\/[^']*'/,
+          `'${csvPath.replaceAll("'", "''")}'`,
+        );
+
+        const result = await connection.runAndReadAll(localQuery);
+        const rows = result.getRowObjects();
+        expect(rows).toHaveLength(plainRowCount + 1);
+        expect(rows.at(-1)).toMatchObject({ id: 2, description });
+      } finally {
+        connection.closeSync();
+        instance.closeSync();
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
     });
 
     test('keeps the incremental refresh when the source schema only differs in type aliases', async () => {

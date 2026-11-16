@@ -103,6 +103,29 @@ describe('partitioned Parquet export with real DuckDB', () => {
     };
   }
 
+  test('read_csv_auto parses a quoted comma outside its sample with the explicit dialect', async () => {
+    const csvPath = path.join(tmpDir, 'quoted-comma.csv');
+    const plainRowCount = 100000;
+    const description = 'Modo Calidad Aire, gas CO2';
+    fs.writeFileSync(
+      csvPath,
+      'id,description\n' +
+        '1,plain text\n'.repeat(plainRowCount) +
+        `2,"${description}"\n`,
+    );
+
+    const result = await queryOne(`
+      SELECT count(*) AS rows,
+        last(description ORDER BY id) AS description
+      FROM read_csv_auto('${csvPath.replaceAll("'", "''")}', delim = ',', quote = '"', escape = '"')
+    `);
+
+    expect(result).toEqual({
+      rows: BigInt(plainRowCount + 1),
+      description,
+    });
+  });
+
   test('sorting unordered rows writes far fewer files with the same content', async () => {
     const source = await queryOne(`
       SELECT count(*) AS rows,
