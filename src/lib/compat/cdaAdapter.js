@@ -41,8 +41,7 @@ export async function handleCdaQuery({ body, outputType = 'json' }) {
     },
   });
 
-  // For non-JSON output types return raw rows; the caller handles serialization.
-  if (outputType !== 'json') {
+  if (outputType === 'csv' || outputType === 'xls') {
     return rows;
   }
 

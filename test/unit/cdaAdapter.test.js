@@ -122,6 +122,33 @@ describe('cda adapter', () => {
     );
   });
 
+  test('returns the CDA structure when outputType is ndjson', async () => {
+    const { handleCdaQuery } = await loadCdaAdapterModule();
+
+    executeQueryMock.mockResolvedValueOnce([{ col1: 'a', col2: 'b' }]);
+
+    const result = await handleCdaQuery({
+      body: {
+        path: '/public/svc/fdaID',
+        dataAccessId: 'daA',
+      },
+      outputType: 'ndjson',
+    });
+
+    expect(result).toEqual({
+      metadata: [
+        { colIndex: 0, colName: 'col1' },
+        { colIndex: 1, colName: 'col2' },
+      ],
+      resultset: [['a', 'b']],
+      queryInfo: {
+        pageStart: 0,
+        pageSize: 0,
+        totalRows: 1,
+      },
+    });
+  });
+
   test('maps param* fields into DA query params', async () => {
     const { handleCdaQuery } = await loadCdaAdapterModule();
 
