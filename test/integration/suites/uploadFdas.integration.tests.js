@@ -417,6 +417,35 @@ export function registerUploadFdasIntegrationTests({
       });
     });
 
+    test('POST /{visibility}/fdas/upload rejects an invalid defaultDataAccess with 400', async () => {
+      const baseUrl = getBaseUrl();
+      const fdaId = `upload_bad_default_da_${Date.now()}`;
+      const uploadRes = await httpMultipartReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas/upload`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        fields: {
+          id: fdaId,
+          defaultDataAccess: 'maybe',
+        },
+        file: {
+          fieldName: 'file',
+          filename: 'upload.csv',
+          contentType: 'text/csv',
+          content: Buffer.from('device,status\nsensor-a,ok\n'),
+        },
+      });
+
+      expect(uploadRes.status).toBe(400);
+      expect(uploadRes.json).toEqual({
+        error: 'BadRequest',
+        description: 'Query param "defaultDataAccess" must be a boolean.',
+      });
+    });
+
     test('PUT /{visibility}/fdas/{fdaId} stores the new values of an uploaded FDA without regenerating it', async () => {
       const baseUrl = getBaseUrl();
       const fdaId = `upload_put_${Date.now()}`;
