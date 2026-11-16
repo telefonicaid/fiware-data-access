@@ -26,21 +26,25 @@ Integration tests start **real service instances** using Docker.
 
 ### Testcontainers
 
-All external dependencies are started dynamically using **Testcontainers**:
+External dependencies are started dynamically using **Testcontainers**:
 
 -   **PostgreSQL / PostGIS**
 -   **MongoDB**
 -   **MinIO (S3-compatible object storage)**
 
-Each test run:
+The integration entrypoint runs the shared suite twice: once with the app and fetcher in combined roles, and once with
+them in separate processes. Each mode gets its own containers and application processes; tests within a mode reuse that
+environment and must clean up resources they create.
 
--   Starts isolated containers
+Each mode:
+
+-   Starts dedicated containers
 -   Uses random host ports
--   Cleans up automatically after execution
+-   Stops the containers and application processes after execution
 
 This guarantees:
 
--   No shared state between test runs
+-   No dependency on services running on fixed local ports
 -   No dependency on local services
 -   Reproducible results in CI and locally
 
@@ -75,11 +79,14 @@ Unit tests validate, among others:
 -   DA/FDA query composition
 -   error propagation and cleanup behavior
 -   API route wiring and request validation
+-   PostgreSQL FDA bootstrap SQL, including zero-row queries when the source schema has no usable types
+-   CSV parsing with DuckDB, including quoted commas beyond the dialect-sniffing sample
 -   multipart upload endpoint validation (`/fdas/upload`) including file-type, size and form-field checks
 
 Integration tests validate:
 
 -   FDA creation (PostgreSQL → CSV → Parquet → MinIO)
+-   PostgreSQL FDA creation when the query returns zero columns, exercising the `buildZeroRowQuery` bootstrap path
 -   Metadata persistence in MongoDB
 -   DuckDB query execution over Parquet files
 -   End-to-end API behavior using real data
@@ -110,10 +117,22 @@ Current integration structure:
 
 -   `test/integration/fda.proc.int.test.js`: entrypoint that runs the same suite in both execution modes
 -   `test/integration/fda.integration.shared.js`: shared runtime/bootstrap and suite registration
--   `test/integration/suites/platform.integration.tests.js`: platform endpoints (`/health`, `/metrics`)
--   `test/integration/suites/fdaCreation.integration.tests.js`: FDA creation and basic lifecycle creation checks
--   `test/integration/suites/slidingWindows.integration.tests.js`: sliding-window and partitioning checks
--   `test/integration/suites/uploadFdas.integration.tests.js`: multipart upload endpoint and upload-processing scenarios
+-   `test/integration/suites/platform.integration.tests.js` and `datasources.integration.tests.js`: platform endpoints
+    and datasource management
+-   `test/integration/suites/fdaCreation.integration.tests.js`, `fdaVariants.integration.tests.js`,
+    `fdaTimeColumn.integration.tests.js`, `fdaLifecycle.integration.tests.js`, `fdaUpdate.integration.tests.js` and
+    `lazyFdas.integration.tests.js`: FDA creation, configuration, updates and lifecycle
+-   `test/integration/suites/defaultDataAccess.integration.tests.js`, `daDataQueries.integration.tests.js`,
+    `daParams.integration.tests.js`, `daCrud.integration.tests.js`, `queryStyleData.integration.tests.js` and
+    `freshQueries.integration.tests.js`: DA behavior and query execution
+-   `test/integration/suites/slidingWindows.integration.tests.js`, `mongoSlidingWindows.integration.tests.js`,
+    `mongoFdas.integration.tests.js` and `complexCases.integration.tests.js`: PostgreSQL/MongoDB materialization,
+    windows and combined scenarios
+-   `test/integration/suites/uploadFdas.integration.tests.js`, `storageCleanup.integration.tests.js` and
+    `storageQuota.integration.tests.js`: uploads and object-storage behavior
+-   `test/integration/suites/visibilityConstraints.integration.tests.js`, `cdaCompatibility.integration.tests.js`,
+    `downloadLimits.integration.tests.js` and `fdaAccounting.integration.tests.js`: API compatibility and
+    resource/accounting constraints
 
 ---
 
@@ -136,11 +155,45 @@ Filter by name or describe:
 npm run test -- -t "Complex FDA queries"
 ```
 
-You can also run coverage this way:
+Run only the unit or integration suite:
+
+```bash
+npm test -- test/unit
+npm test -- test/integration
+npm run test:performance
+```
+
+The unit suite does not require Docker. The integration suite requires Docker and runs the shared API scenarios in both
+combined and separated application/fetcher modes. The performance suite is run separately from the default test command.
+
+Run the PostgreSQL zero-column bootstrap integration case in both execution modes:
+
+```bash
+npm test -- test/integration/fda.proc.int.test.js -t "bootstraps a PostgreSQL query with no output columns"
+```
+
+Run the focused unit tests for the PostgreSQL zero-row query builder and the real-DuckDB CSV dialect case:
+
+```bash
+npm test -- test/unit/fda.test.js -t "zero-row PostgreSQL query"
+npm test -- test/unit/parquetExport.test.js -t "read_csv_auto parses a quoted comma"
+```
+
+Collect coverage for all test suites:
 
 ```bash
 npm run test:coverage
 ```
+
+Collect unit and integration coverage separately, then merge the LCOV reports:
+
+```bash
+npm run test:coverage:unit
+npm run test:coverage:integration
+npm run test:coverage:merge
+```
+
+The unit coverage command does not require Docker; integration coverage does.
 
 To reproduce the CI coverage flow locally (unit + integration + merged lcov for Coveralls):
 
