@@ -9,6 +9,7 @@ export default {
   // Ensure polyfills run before test files import modules that need Web APIs
   setupFiles: ['./jest.setup.js'],
   testPathIgnorePatterns: ['/node_modules/'],
+  transform: {},
   globals: {
     'ts-jest': {
       useESM: true,
