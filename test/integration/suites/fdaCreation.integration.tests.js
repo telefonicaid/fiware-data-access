@@ -73,6 +73,80 @@ export function registerFdaCreationIntegrationTests({
       expect(completedFDA.schema.length).toBeGreaterThan(0);
     });
 
+    test('POST /fdas bootstraps a PostgreSQL query with no output columns', async () => {
+      const baseUrl = getBaseUrl();
+      const zeroColumnFdaId = 'fda_zero_column_query';
+      const datasourceId = 'fda_zero_column_datasource';
+
+      try {
+        const datasourceRes = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/datasources`,
+          headers: {
+            'Fiware-Service': service,
+          },
+          body: {
+            datasourceId,
+            type: 'postgres',
+            config: {
+              username: 'postgres',
+              password: 'postgres',
+              host: getPgHost(),
+              port: getPgPort(),
+              database: service,
+            },
+          },
+        });
+        expect(datasourceRes.status).toBe(204);
+
+        const res = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+          body: {
+            id: zeroColumnFdaId,
+            query: 'SELECT FROM public.users',
+            description: 'PostgreSQL zero-column bootstrap test',
+            datasourceId,
+          },
+        });
+
+        if (res.status >= 400) {
+          console.error(
+            'POST /fdas failed for zero-column FDA:',
+            res.status,
+            res.json ?? res.text,
+          );
+        }
+        expect(res.status).toBe(202);
+        const completedFDA = await waitUntilFDACompleted({
+          baseUrl,
+          service,
+          fdaId: zeroColumnFdaId,
+        });
+        expect(completedFDA.status).toBe('completed');
+      } finally {
+        await httpReq({
+          method: 'DELETE',
+          url: `${baseUrl}/${visibility}/fdas/${zeroColumnFdaId}`,
+          headers: {
+            'Fiware-Service': service,
+            'Fiware-ServicePath': servicePath,
+          },
+        });
+        await httpReq({
+          method: 'DELETE',
+          url: `${baseUrl}/datasources/${datasourceId}`,
+          headers: {
+            'Fiware-Service': service,
+          },
+        });
+      }
+    });
+
     test('POST /fdas creates an FDA and defaultDataAccess on an empty source query (includes timeColumn and partition case)', async () => {
       const baseUrl = getBaseUrl();
       const emptySourceFdaId = 'fda_empty_source_default_da';
