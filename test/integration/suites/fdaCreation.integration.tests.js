@@ -24,6 +24,10 @@
 
 import { describe, test, expect } from '@jest/globals';
 import { MongoClient } from 'mongodb';
+import pg from 'pg';
+import { ensureDefaultDatasource } from '../utils/integrationTestUtils.js';
+
+const { Client } = pg;
 
 export function registerFdaCreationIntegrationTests({
   getBaseUrl,
@@ -144,6 +148,120 @@ export function registerFdaCreationIntegrationTests({
             'Fiware-Service': service,
           },
         });
+      }
+    });
+
+    test('POST /fdas parses PostgreSQL text with commas that appear after the CSV dialect sample (#378)', async () => {
+      const baseUrl = getBaseUrl();
+      const commaFdaId = 'fda_text_with_commas';
+      const commaDaId = 'da_text_with_commas';
+      const fixtureTable = 'csv_text_with_commas';
+      const plainRowCount = 30000;
+      const commaDescription = 'Modo Calidad Aire, gas CO2';
+      const headers = {
+        'Fiware-Service': service,
+        'Fiware-ServicePath': servicePath,
+      };
+
+      const pgClient = new Client({
+        host: getPgHost(),
+        port: getPgPort(),
+        user: 'postgres',
+        password: 'postgres',
+        database: service,
+      });
+      await pgClient.connect();
+
+      try {
+        await ensureDefaultDatasource({
+          httpReq,
+          baseUrl,
+          service,
+          getPgHost,
+          getPgPort,
+        });
+        await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
+        await pgClient.query(`
+          CREATE TABLE public.${fixtureTable} (
+            id INT PRIMARY KEY,
+            timeinstant TIMESTAMPTZ NOT NULL,
+            co2 DOUBLE PRECISION,
+            description TEXT
+          )
+        `);
+        await pgClient.query(`
+          INSERT INTO public.${fixtureTable} (id, timeinstant, co2, description)
+          SELECT g,
+                 TIMESTAMPTZ '2026-06-19 09:00:00+02' + (g || ' seconds')::interval,
+                 NULL,
+                 'Patrimonio cultural'
+          FROM generate_series(1, ${plainRowCount}) g
+        `);
+        await pgClient.query(
+          `INSERT INTO public.${fixtureTable} (id, timeinstant, co2, description)
+           VALUES ($1, TIMESTAMPTZ '2026-06-20 09:00:00+02', 180, $2)`,
+          [plainRowCount + 1, commaDescription],
+        );
+
+        const res = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas`,
+          headers,
+          body: {
+            id: commaFdaId,
+            query: `SELECT id, timeinstant, co2, description FROM public.${fixtureTable} ORDER BY id`,
+            description: 'text fields with commas outside the CSV sample',
+          },
+        });
+        expect(res.status).toBe(202);
+
+        const completedFDA = await waitUntilFDACompleted({
+          baseUrl,
+          service,
+          fdaId: commaFdaId,
+          timeout: 60000,
+        });
+        expect(completedFDA.error).toBeUndefined();
+        expect(completedFDA.status).toBe('completed');
+
+        const createDaRes = await httpReq({
+          method: 'POST',
+          url: `${baseUrl}/${visibility}/fdas/${commaFdaId}/das`,
+          headers,
+          body: {
+            id: commaDaId,
+            description: 'rows whose description contains a comma',
+            query: `
+              SELECT id, co2, description, COUNT(*) OVER () AS total
+              WHERE description LIKE '%,%'
+            `,
+            params: [],
+          },
+        });
+        expect(createDaRes.status).toBe(204);
+
+        const dataRes = await httpReq({
+          method: 'GET',
+          url: buildDaDataUrl(baseUrl, servicePath, commaFdaId, commaDaId),
+          headers: { 'Fiware-Service': service },
+        });
+        expect(dataRes.status).toBe(200);
+        expect(dataRes.json).toEqual([
+          {
+            id: plainRowCount + 1,
+            co2: 180,
+            description: commaDescription,
+            total: 1,
+          },
+        ]);
+      } finally {
+        await httpReq({
+          method: 'DELETE',
+          url: `${baseUrl}/${visibility}/fdas/${commaFdaId}`,
+          headers,
+        });
+        await pgClient.query(`DROP TABLE IF EXISTS public.${fixtureTable}`);
+        await pgClient.end();
       }
     });
 
