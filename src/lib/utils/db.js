@@ -1109,7 +1109,7 @@ export async function toParquet(
   try {
     return await copyQueryToParquet(
       conn,
-      `SELECT * FROM read_csv_auto('s3://${originPath}')`,
+      `SELECT * FROM read_csv_auto('s3://${originPath}', delim = ',', quote = '"', escape = '"')`,
       resultPath,
       timeColumn,
       partitionType,

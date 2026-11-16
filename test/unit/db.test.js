@@ -1195,7 +1195,9 @@ describe('db utils', () => {
 
     expect(conn.run).toHaveBeenCalledTimes(1);
     const sql = conn.run.mock.calls[0][0];
-    expect(sql).toContain("FROM read_csv_auto('s3://test-bucket/source')");
+    expect(sql).toContain(
+      "FROM read_csv_auto('s3://test-bucket/source', delim = ',', quote = '\"', escape = '\"')",
+    );
     expect(sql).toContain("TO 's3://test-bucket/target'");
     expect(sql).toContain('FORMAT PARQUET');
     expect(sql).not.toContain('PARTITION_BY');
