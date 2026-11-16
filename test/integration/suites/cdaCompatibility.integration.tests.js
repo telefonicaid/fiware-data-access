@@ -128,6 +128,7 @@ export function registerCdaCompatibilityIntegrationTests({
         form: {
           path: `/public/${service}/verticals/sql/${cdaFdaId}`,
           dataAccessId: cdaDaId,
+          paramminAge: '0',
           pageSize: '2',
           pageStart: '0',
           outputType: 'ndjson',
@@ -135,9 +136,10 @@ export function registerCdaCompatibilityIntegrationTests({
       });
 
       expect(ndjsonAttempt.status).toBe(200);
-      expect(ndjsonAttempt.text.includes('\n')).toBe(false);
-      expect(Array.isArray(ndjsonAttempt.json)).toBe(true);
-      expect(ndjsonAttempt.json.length).toBeGreaterThan(0);
+      expect(ndjsonAttempt.headers['content-type']).toMatch(
+        /application\/json/,
+      );
+      expect(ndjsonAttempt.json).toEqual(res.json);
     });
 
     test('GET /plugin/cda/api/doQuery supports query params without FIWARE headers', async () => {
