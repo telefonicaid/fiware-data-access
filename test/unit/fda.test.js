@@ -1397,6 +1397,56 @@ describe('fetchFDA', () => {
     expect(agenda.create).not.toHaveBeenCalled();
   });
 
+  test('uses a zero-row PostgreSQL query when source types are unavailable', async () => {
+    const datasource = {
+      datasourceId: 'default',
+      type: 'postgres',
+      config: {
+        username: 'u',
+        password: 'p',
+        host: 'h',
+        port: 5432,
+        database: 'svc',
+      },
+    };
+    mongoMocks.retrieveDatasource
+      .mockResolvedValueOnce(datasource)
+      .mockResolvedValueOnce(datasource);
+    pgMocks.validatePostgresQuery.mockResolvedValueOnce({
+      columns: ['id'],
+      fields: [],
+    });
+
+    await fetchFDA(
+      'fda1',
+      '  SELECT id FROM users;;;  ',
+      'svc',
+      'public',
+      '/servicepath',
+      'test FDA',
+      { type: 'none' },
+      undefined,
+      undefined,
+      false,
+    );
+
+    expect(pgMocks.uploadTable).toHaveBeenCalledWith(
+      {},
+      'svc',
+      expect.any(Object),
+      'SELECT * FROM (SELECT id FROM users) AS fda_one_row LIMIT 0',
+      'servicepath/fda1',
+    );
+    expect(dbMocks.toParquet).toHaveBeenCalledWith(
+      {},
+      'svc/servicepath/fda1.csv',
+      'svc/servicepath/fda1.parquet',
+      undefined,
+      undefined,
+      undefined,
+    );
+  });
+
   test('validationMode set to unchecked skips strict bootstrap path and default DA creation', async () => {
     await fetchFDA(
       'fda1',
