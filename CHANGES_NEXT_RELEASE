@@ -1,1 +1,2 @@
 - Fix: POST /{visibility}/fdas/upload with an invalid `defaultDataAccess` value now returns 400 `BadRequest` and removes the uploaded temp file instead of leaving the request hanging (#373)
+- Fix: legacy `/plugin/cda/api/doQuery` with `outputType=ndjson` returns the CDA-compatible structure as documented (same as `json`) instead of a plain JSON array (#372)
