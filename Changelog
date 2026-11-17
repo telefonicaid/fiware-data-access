@@ -3,7 +3,6 @@
 - Fix: POST /{visibility}/fdas/upload with an invalid `defaultDataAccess` value now returns 400 `BadRequest` and removes the uploaded temp file instead of leaving the request hanging (#373)
 - Fix: legacy `/plugin/cda/api/doQuery` with `outputType=ndjson` returns the CDA-compatible structure as documented (same as `json`) instead of a plain JSON array (#372)
 - Fix: PostgreSQL-backed FDAs read CSV files with an explicit dialect so text fields containing commas are parsed correctly even when dialect autodetection does not sample a quoted value (#378)
-- Fix: legacy `/plugin/cda/api/doQuery` with `outputType=ndjson` returns the CDA-compatible structure as documented (same as `json`) instead of a plain JSON array (#372)
 
 1.8.0 (November 6th, 2026)
 
