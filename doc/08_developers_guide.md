@@ -184,11 +184,204 @@ Coverage is collected with `c8` over `src/**/*.js` and written in `lcov` and tex
 
 ---
 
+## Internal flows
+
+This section describes how the main operations flow through the API and Fetcher roles introduced in the
+[Architecture Overview](/doc/02_architecture.md#architecture-overview). The diagrams show the decisions that shape each
+flow; the full list of validations and error responses of every endpoint is in the [API reference](/doc/03_api.md).
+
+### FDA lifecycle
+
+The `status` field of an FDA moves through these states:
+
+```mermaid
+stateDiagram-v2
+    state "Fetch in progress" as Fetch {
+        [*] --> fetching
+        fetching --> transforming
+        transforming --> uploading
+        uploading --> [*]
+    }
+    [*] --> idle: create lazy or onDemand FDA
+    [*] --> Fetch: create cached FDA
+    [*] --> completed: create only-fresh FDA
+    idle --> pending: first query or PUT
+    completed --> pending: onDemand query with stale data
+    failed --> pending: onDemand query after retry backoff
+    pending --> Fetch: Fetcher runs the job
+    completed --> Fetch: PUT or scheduled refresh
+    failed --> Fetch: PUT or scheduled refresh
+    Fetch --> completed: success
+    Fetch --> failed: error
+    idle --> deleting: DELETE
+    completed --> deleting: DELETE
+    failed --> deleting: DELETE
+    deleting --> [*]
+```
+
+DAs of a cached FDA can be queried as soon as its first fetch has completed (`lastFetch` is set). From then on, a
+running refresh or a failed one does not block queries: they keep reading the last published snapshot.
+
+### FDA creation
+
+FDAs are created from a datasource query (`POST /{visibility}/fdas`) or from an uploaded file
+(`POST /{visibility}/fdas/upload`). The API does all the synchronous work and returns `202 Accepted`; data is always
+fetched later by a Fetcher.
+
+```mermaid
+flowchart TD
+    Create(["POST /{visibility}/fdas"]) --> Valid{"Valid body, scope,<br/>datasource and refreshPolicy?"}
+    Valid -- no --> Err4xx["4xx error"]
+    Valid -- yes --> Type{"Datasource type"}
+    Type -- postgres --> Mode
+    Type -- mongodb --> Contract{"Valid MongoDB<br/>query contract?"}
+    Contract -- no --> Err4xx
+    Contract -- yes --> Mode{"validationMode"}
+    Mode -- strict --> Source{"Query runs on the source<br/>and timeColumn is valid?"}
+    Source -- no --> Err4xx
+    Source -- "yes: source schema" --> Persist
+    Mode -- unchecked --> Persist["Persist FDA in MongoDB"]
+    Persist -- "duplicated id" --> Err409["409 DuplicatedKey"]
+    Persist --> Cached{"cached?"}
+
+    Cached -- "false (only-fresh)" --> Fixed["Store fixed defaultDataAccess<br/>status: completed, no jobs"]
+    Fixed --> Pending202
+
+    Cached -- true --> Strict{"strict?"}
+    Strict -- yes --> Bootstrap["Write empty Parquet with the source schema<br/>and create defaultDataAccess if enabled"]
+    Bootstrap -- failure --> Rollback["Remove FDA and its storage<br/>and return the error"]
+    Bootstrap --> Lazy
+    Strict -- no --> Lazy{"lazy or onDemand?"}
+    Lazy -- yes --> Idle["status: idle<br/>no jobs until the first query"]
+    Idle --> Idle202["202 Accepted · idle"]
+    Lazy -- no --> Now["Enqueue immediate fetch job"]
+    Now --> Recurring["Schedule recurring jobs<br/>according to refreshPolicy"]
+    Recurring --> Pending202["202 Accepted · pending"]
+
+    Upload(["POST /{visibility}/fdas/upload"]) --> UploadValid{"Valid file, scope<br/>and options?"}
+    UploadValid -- no --> Err4xx
+    UploadValid -- yes --> UploadPersist["Persist FDA in MongoDB<br/>without datasource, refreshPolicy none"]
+    UploadPersist --> UploadJob["Enqueue upload job"]
+    UploadJob --> Pending202
+```
+
+The jobs scheduled for a cached FDA depend on its `refreshPolicy`:
+
+| `refreshPolicy` | First fetch                                               | Recurring jobs                                                                                                                                    |
+| --------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `none`          | Full query, at creation                                   | None                                                                                                                                              |
+| `interval`      | Full query, at creation                                   | Full refresh every `refreshInterval`; partition cleaning when `windowSize` is set                                                                 |
+| `window`        | Last `windowSize` (or full query), at creation            | Incremental refresh of the last `fetchSize` every `refreshInterval`; optional full rebuild every `consistencyRefreshInterval`; partition cleaning |
+| `onDemand`      | On the first query, and again when a query finds it stale | None: each stale query triggers a refresh, incremental from the last fetched partition when partitioned                                           |
+
+A lazy `interval` or `window` FDA schedules its recurring jobs when its first query triggers the first fetch. See
+[Lazy FDAs](/doc/AdvancedTopics/lazy_fdas.md) and
+[Sliding windows and partitioning](/doc/AdvancedTopics/sliding_windows_and_partitioning.md) for details.
+
+### Fetch and refresh jobs
+
+The API and the Fetcher only communicate through MongoDB: the API (or Agenda, for recurring jobs) leaves a job in the
+`agendaJobs` collection, and any Fetcher instance locks and runs it.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant API
+    participant Jobs as MongoDB · agendaJobs
+    participant Meta as MongoDB · fdas
+    participant Fetcher
+    participant Source as Source database
+    participant S3 as Object storage
+    participant DuckDB as DuckDB (Fetcher)
+
+    API->>Jobs: enqueue refresh-fda (creation, PUT, onDemand query)
+    Note over Jobs: recurring refresh, consistency refresh and<br/>partition cleaning jobs repeat on their own schedule
+    Fetcher->>Jobs: poll and lock a job
+    Fetcher->>Meta: claim FDA · status fetching
+    Fetcher->>Source: run the query (full or time window)
+    Source-->>Fetcher: rows (streamed)
+    Fetcher->>S3: write staging CSV
+    Fetcher->>Meta: status transforming
+    Fetcher->>DuckDB: convert staging CSV to Parquet
+    DuckDB->>S3: write Parquet under tmp/ (partitioned if configured)
+    Fetcher->>Meta: status uploading
+    Fetcher->>S3: publish Parquet to the final path, drop staging files
+    alt success
+        Fetcher->>Meta: schema, storage, lastFetch · status completed
+    else any step fails
+        Fetcher->>S3: drop staging and tmp/ files, keep the last published Parquet
+        Fetcher->>Meta: status failed · error
+    end
+```
+
+The upload job follows the same pattern, but reads the uploaded file from the upload temporary directory instead of
+querying a source. Partition cleaning jobs only delete the partitions older than `windowSize`. See
+[Async Processing & Jobs](/doc/AdvancedTopics/async_processing_and_jobs.md) for job persistence, locking and
+concurrency.
+
+### Data queries
+
+Data is always read through a DA. The legacy CDA endpoint is an adapter that maps its parameters onto the same flow.
+
+```mermaid
+flowchart TD
+    Query(["GET /{visibility}/fdas/{fdaId}/das/{daId}/data"]) --> Context{"Valid service context<br/>and output format?"}
+    Context -- no --> Err400["400 / 406 / 409"]
+    Context -- yes --> Access
+    CDA(["GET / POST /plugin/cda/api/doQuery"]) --> Adapter["CDA adapter maps path and params<br/>to service, FDA, DA and DA params"]
+    Adapter --> Access{"FDA exists with this<br/>visibility and servicePath?"}
+    Access -- no --> Err404["404 / 403"]
+    Access -- yes --> Cached{"cached?"}
+
+    Cached -- "false (only-fresh)" --> Sync{"FDA_ROLE_SYNCQUERIES<br/>enabled?"}
+    Sync -- no --> Err503s["503 SyncQueriesDisabled"]
+    Sync -- yes --> Slot{"Free fresh-query slot<br/>in this instance?"}
+    Slot -- no --> Err429["429 TooManyFreshQueries"]
+    Slot -- yes --> FreshDA{"Which DA?"}
+    FreshDA -- defaultDataAccess --> AsIs["FDA query as is"]
+    FreshDA -- "custom DA (PostgreSQL only)" --> Wrapped["DA applied over the FDA query<br/>with validated params"]
+    AsIs --> FreshQuota{"Download policy<br/>allows it?"}
+    Wrapped --> FreshQuota
+    FreshQuota -- no --> Err410["410 expired or limit reached"]
+    FreshQuota -- yes --> RunSource["Run on the datasource"]
+    RunSource --> Output
+
+    Cached -- true --> OnDemand{"lazy or onDemand?"}
+    OnDemand -- yes --> Fresh{"Snapshot exists and<br/>is not older than maxAge?"}
+    Fresh -- yes --> DA
+    Fresh -- no --> Claim["Claim the refresh: the first request<br/>enqueues the fetch, the others wait"]
+    Claim --> Wait{"Fresh data before<br/>the wait timeout?"}
+    Wait -- yes --> DA
+    Wait -- timeout --> Err409["409 FDAUnavailable"]
+    Wait -- "fetch failed" --> Err503m["503 FDAMaterializationFailed"]
+    OnDemand -- no --> Fetched{"Fetched at least once?"}
+    Fetched -- no --> Err409
+    Fetched -- yes --> DA{"DA exists and<br/>params are valid?"}
+    DA -- no --> Err404b["404 / 400"]
+    DA -- yes --> Quota{"Download policy<br/>allows it?"}
+    Quota -- no --> Err410
+    Quota -- yes --> Prune["Partitioned FDA with a DA timeRange:<br/>keep only overlapping partitions"]
+    Prune --> Read["DuckDB reads the Parquet<br/>from object storage"]
+    Read --> Count["Count the access<br/>for usage accounting"]
+    Count --> Output{"Output format"}
+    Output -- "NDJSON · CSV" --> Stream["Streamed response"]
+    Output -- "JSON · XLSX · CDA" --> Buffer["Buffered response"]
+```
+
+A lazy or onDemand query never triggers more than one fetch: concurrent queries share it and poll the FDA status until
+the data is available. The fresh-query slots and the access counters are kept per API instance. See
+[CDA legacy compatibility](/doc/AdvancedTopics/cda_legacy_compatibility.md) for the CDA mapping and
+[Default Data Access](/doc/AdvancedTopics/default_data_access.md) for the generated DA and its `timeRange`.
+
+---
+
 ## Documentation conventions
 
 -   Every new or changed environment variable must be documented in
     [`04_config_operational_guide.md`](./04_config_operational_guide.md).
 -   Every API change must be reflected in [`03_api.md`](./03_api.md).
+-   Diagrams are written in Mermaid inside the Markdown files, not as images. Update them only when a change adds,
+    removes or reorders a branch of a flow, not for changes in validations, defaults or error details.
 -   OpenAPI/Swagger annotations must be kept in sync with API changes and validated with:
     -   `npm run openapi:generate`
     -   `npm run openapi:validate`
