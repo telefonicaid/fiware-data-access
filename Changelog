@@ -1,3 +1,10 @@
+1.9.0 (November 17th, 2026)
+
+- Fix: POST /{visibility}/fdas/upload with an invalid `defaultDataAccess` value now returns 400 `BadRequest` and removes the uploaded temp file instead of leaving the request hanging (#373)
+- Fix: legacy `/plugin/cda/api/doQuery` with `outputType=ndjson` returns the CDA-compatible structure as documented (same as `json`) instead of a plain JSON array (#372)
+- Fix: PostgreSQL-backed FDAs read CSV files with an explicit dialect so text fields containing commas are parsed correctly even when dialect autodetection does not sample a quoted value (#378)
+- Fix: legacy `/plugin/cda/api/doQuery` with `outputType=ndjson` returns the CDA-compatible structure as documented (same as `json`) instead of a plain JSON array (#372)
+
 1.8.0 (November 6th, 2026)
 
 - Add: only-fresh FDAs (`cached=false`) are queried through `GET /{visibility}/fdas/{fdaId}/das/{daId}/data` like cached ones. They always get a fixed `defaultDataAccess` (the FDA query as is, cannot be updated or deleted) and PostgreSQL only-fresh FDAs accept custom DAs, written in PostgreSQL dialect and run against the datasource (#360)
