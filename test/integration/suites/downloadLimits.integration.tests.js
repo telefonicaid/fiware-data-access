@@ -216,5 +216,142 @@ export function registerDownloadLimitsIntegrationTests({
         downloadStatus: 'exhausted',
       });
     });
+
+    test('cached FDA does not consume a download when the DA query fails', async () => {
+      const baseUrl = getBaseUrl();
+      const fdaId = 'fda_download_limit_failed_query';
+      const failingDaId = 'da_failing_cast';
+
+      const createFda = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers,
+        body: {
+          id: fdaId,
+          query: 'SELECT id, name, age FROM public.users ORDER BY id',
+          maxDownloads: 1,
+        },
+      });
+
+      expect(createFda.status).toBe(202);
+      await waitUntilFDACompleted({ baseUrl, service, fdaId });
+
+      const createDa = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}/das`,
+        headers,
+        body: {
+          id: failingDaId,
+          query: 'SELECT CAST(name AS INTEGER) AS name_as_int',
+        },
+      });
+
+      expect(createDa.status).toBe(204);
+
+      const failedRes = await httpReq({
+        method: 'GET',
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, failingDaId),
+        headers: { 'Fiware-Service': service },
+      });
+      expect(failedRes.status).toBe(500);
+
+      expect(await getFda(baseUrl, fdaId)).toMatchObject({
+        maxDownloads: 1,
+        downloadsUsed: 0,
+        remainingDownloads: 1,
+        downloadStatus: 'available',
+      });
+
+      const dataUrl = buildDaDataUrl(
+        baseUrl,
+        servicePath,
+        fdaId,
+        'defaultDataAccess',
+      );
+
+      const okRes = await httpReq({
+        method: 'GET',
+        url: dataUrl,
+        headers: { 'Fiware-Service': service },
+      });
+      expect(okRes.status).toBe(200);
+
+      const exhaustedRes = await httpReq({
+        method: 'GET',
+        url: dataUrl,
+        headers: { 'Fiware-Service': service },
+      });
+      expect(exhaustedRes.status).toBe(410);
+      expect(exhaustedRes.json.error).toBe('DownloadLimitReached');
+    });
+
+    test('only-fresh FDA does not consume a download when the DA query fails', async () => {
+      const baseUrl = getBaseUrl();
+      const fdaId = 'fda_download_limit_fresh_failed_query';
+      const failingDaId = 'da_fresh_failing_cast';
+
+      const createFda = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers,
+        body: {
+          id: fdaId,
+          query: 'SELECT id, name FROM public.users ORDER BY id',
+          cached: false,
+          maxDownloads: 1,
+        },
+      });
+
+      expect(createFda.status).toBe(202);
+
+      const createDa = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}/das`,
+        headers,
+        body: {
+          id: failingDaId,
+          query: 'SELECT CAST(name AS INTEGER) AS name_as_int',
+        },
+      });
+
+      expect(createDa.status).toBe(204);
+
+      const failedRes = await httpReq({
+        method: 'GET',
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, failingDaId),
+        headers: { 'Fiware-Service': service },
+      });
+      expect(failedRes.status).toBe(500);
+      expect(failedRes.json.error).toBe('PostgresServerError');
+
+      expect(await getFda(baseUrl, fdaId)).toMatchObject({
+        maxDownloads: 1,
+        downloadsUsed: 0,
+        remainingDownloads: 1,
+        downloadStatus: 'available',
+      });
+
+      const dataUrl = buildDaDataUrl(
+        baseUrl,
+        servicePath,
+        fdaId,
+        'defaultDataAccess',
+      );
+
+      const okRes = await httpReq({
+        method: 'GET',
+        url: dataUrl,
+        headers: { 'Fiware-Service': service },
+      });
+      expect(okRes.status).toBe(200);
+
+      const exhaustedRes = await httpReq({
+        method: 'GET',
+        url: dataUrl,
+        headers: { 'Fiware-Service': service },
+      });
+      expect(exhaustedRes.status).toBe(410);
+      expect(exhaustedRes.json.error).toBe('DownloadLimitReached');
+    });
   });
 }
