@@ -1,1 +1,1 @@
-
+- Fix: a query that fails before sending any data on an FDA with a download policy (cached or only-fresh) no longer consumes a download; downloads interrupted mid-stream still count (#375)
