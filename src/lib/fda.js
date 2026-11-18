@@ -538,6 +538,11 @@ export async function executeQueryStream({
         await writeCsvLine(res, csvLine);
       }
     }
+  } catch (e) {
+    if (!res.headersSent) {
+      await releaseFDADownload(fda);
+    }
+    throw e;
   } finally {
     await source.close();
   }
