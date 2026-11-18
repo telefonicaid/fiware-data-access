@@ -255,6 +255,16 @@ export function registerDownloadLimitsIntegrationTests({
       });
       expect(failedRes.status).toBe(500);
 
+      const failedNdjsonRes = await httpReq({
+        method: 'GET',
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, failingDaId),
+        headers: {
+          'Fiware-Service': service,
+          Accept: 'application/x-ndjson',
+        },
+      });
+      expect(failedNdjsonRes.status).toBe(500);
+
       expect(await getFda(baseUrl, fdaId)).toMatchObject({
         maxDownloads: 1,
         downloadsUsed: 0,
@@ -323,6 +333,16 @@ export function registerDownloadLimitsIntegrationTests({
       });
       expect(failedRes.status).toBe(500);
       expect(failedRes.json.error).toBe('PostgresServerError');
+
+      const failedNdjsonRes = await httpReq({
+        method: 'GET',
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, failingDaId),
+        headers: {
+          'Fiware-Service': service,
+          Accept: 'application/x-ndjson',
+        },
+      });
+      expect(failedNdjsonRes.status).toBe(500);
 
       expect(await getFda(baseUrl, fdaId)).toMatchObject({
         maxDownloads: 1,
