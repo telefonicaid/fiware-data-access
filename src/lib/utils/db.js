@@ -22,7 +22,12 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
-import { retrieveDA, retrieveFDA, claimFDADownload } from './mongo.js';
+import {
+  retrieveDA,
+  retrieveFDA,
+  claimFDADownload,
+  releaseFDADownload,
+} from './mongo.js';
 import { FDAError, storageQuotaErrorFor } from '../fdaError.js';
 import { recordAccess } from '../accessTracker.js';
 import { getBasicLogger } from './logger.js';
@@ -597,12 +602,14 @@ export async function runPreparedStatement(
   const fdaServicePath = storedServicePath ?? servicePath;
 
   let stmt;
+  let downloadClaimed = false;
 
   try {
     validateDAParamBindings(da.query, da.params || []);
     const resolvedParams = applyParams(paramValues || {}, da.params);
     if (fda.downloadPolicy) {
       await claimFDADownload(fda);
+      downloadClaimed = true;
     }
     const boundParams = normalizeParamsForDuckDB(resolvedParams);
     const fallbackQuery = buildStoredSchemaQuery(schema, da.query);
@@ -647,6 +654,10 @@ export async function runPreparedStatement(
   } catch (e) {
     if (streaming) {
       await closePreparedStatement(stmt);
+    }
+
+    if (downloadClaimed) {
+      await releaseFDADownload(fda);
     }
 
     if (e instanceof FDAError) {

@@ -75,6 +75,7 @@ import {
   claimFDAForFetch,
   claimFDAForDeletion,
   claimFDADownload,
+  releaseFDADownload,
   claimOnDemandRefresh,
   releaseOnDemandRefresh,
   createDatasource,
@@ -619,6 +620,7 @@ async function createFreshRowSource({
     config.freshQueries.maxConcurrent,
   );
   let cursorReader;
+  let downloadClaimed = false;
 
   try {
     const { datasource, text, values } = await buildFreshQueryStatement({
@@ -631,6 +633,7 @@ async function createFreshRowSource({
     });
 
     await claimFDADownload(fda);
+    downloadClaimed = true;
     cursorReader =
       datasource.type === 'mongodb'
         ? await createMongoCursorReader(datasource.config, fda.query)
@@ -655,6 +658,9 @@ async function createFreshRowSource({
     };
   } catch (e) {
     releaseFreshSlot();
+    if (downloadClaimed) {
+      await releaseFDADownload(fda);
+    }
     throw e;
   }
 }
@@ -683,10 +689,16 @@ async function executeFreshQuery({
     });
 
     await claimFDADownload(fda);
-    const rows =
-      datasource.type === 'mongodb'
-        ? await runMongoQuery(datasource.config, fda.query)
-        : await runPgQuery(datasource.config, text, values);
+    let rows;
+    try {
+      rows =
+        datasource.type === 'mongodb'
+          ? await runMongoQuery(datasource.config, fda.query)
+          : await runPgQuery(datasource.config, text, values);
+    } catch (e) {
+      await releaseFDADownload(fda);
+      throw e;
+    }
     return normalizeForSerialization(rows);
   } finally {
     releaseFreshSlot();

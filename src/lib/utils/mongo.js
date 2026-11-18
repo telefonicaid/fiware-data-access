@@ -621,18 +621,22 @@ function resolveInitialStatus(cached, lazy) {
   return lazy ? 'idle' : 'fetching';
 }
 
-export async function claimFDADownload(fda) {
-  if (!fda.downloadPolicy) {
-    return;
-  }
-  const collection = await getCollection();
-  const scope = {
+function buildDownloadScope(fda) {
+  return {
     service: fda.service,
     servicePath: fda.servicePath ?? '/',
     fdaId: fda.fdaId,
     visibility: fda.visibility,
     ...(fda._id && { _id: fda._id }),
   };
+}
+
+export async function claimFDADownload(fda) {
+  if (!fda.downloadPolicy) {
+    return;
+  }
+  const collection = await getCollection();
+  const scope = buildDownloadScope(fda);
   const expirationDate = { $ifNull: ['$downloadPolicy.expirationDate', null] };
   const maxDownloads = { $ifNull: ['$downloadPolicy.maxDownloads', null] };
   try {
@@ -700,6 +704,24 @@ export async function claimFDADownload(fda) {
       503,
       'DownloadAuthorizationUnavailable',
       'Cannot reserve an FDA download',
+    );
+  }
+}
+
+export async function releaseFDADownload(fda) {
+  if (!fda.downloadPolicy) {
+    return;
+  }
+  try {
+    const collection = await getCollection();
+    await collection.updateOne(
+      { ...buildDownloadScope(fda), downloadsUsed: { $gt: 0 } },
+      { $inc: { downloadsUsed: -1 } },
+    );
+  } catch (error) {
+    logger.warn(
+      { fdaId: fda.fdaId, service: fda.service, err: error },
+      'Cannot release an FDA download after a failed query',
     );
   }
 }
