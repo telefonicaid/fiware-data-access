@@ -354,6 +354,67 @@ describe('FDA download restrictions', () => {
     },
   );
 
+  function mockStreamChunks(kind, firstChunk) {
+    const error = new Error('conversion failed');
+    if (kind === 'fresh') {
+      fda.cached = false;
+      const readNextChunk = jest.fn();
+      if (firstChunk) {
+        readNextChunk.mockResolvedValueOnce(firstChunk);
+      }
+      readNextChunk.mockRejectedValue(error);
+      pgMocks.createPgCursorReader.mockResolvedValue({
+        readNextChunk,
+        close: jest.fn(),
+      });
+      return error;
+    }
+    const fetchChunk = jest.fn();
+    if (firstChunk) {
+      fetchChunk.mockResolvedValueOnce({
+        rowCount: firstChunk.length,
+        getRows: () => firstChunk.map((row) => [row.id]),
+      });
+    }
+    fetchChunk.mockRejectedValue(error);
+    dbMocks.runPreparedStatementStream.mockResolvedValue({
+      stream: { columnNames: () => ['id'], fetchChunk },
+      close: jest.fn(),
+    });
+    return error;
+  }
+
+  test.each(['cached', 'fresh'])(
+    '%s stream gives the download back when it fails before sending data',
+    async (kind) => {
+      const error = mockStreamChunks(kind);
+      const args = queryArgs();
+
+      await expect(executeQueryStream(args)).rejects.toBe(error);
+
+      expect(mongoMocks.releaseFDADownload).toHaveBeenCalledTimes(1);
+      expect(mongoMocks.releaseFDADownload).toHaveBeenCalledWith(fda);
+      expect(args.res.write).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each(['cached', 'fresh'])(
+    '%s stream keeps the download when it fails after sending data',
+    async (kind) => {
+      const error = mockStreamChunks(kind, [{ id: 1 }]);
+      const args = queryArgs();
+      args.res.write.mockImplementation(() => {
+        args.res.headersSent = true;
+        return true;
+      });
+
+      await expect(executeQueryStream(args)).rejects.toBe(error);
+
+      expect(args.res.write).toHaveBeenCalled();
+      expect(mongoMocks.releaseFDADownload).not.toHaveBeenCalled();
+    },
+  );
+
   test.each(variants)(
     '%s rejects before executing when the quota is exhausted',
     async (name, execute, daId) => {

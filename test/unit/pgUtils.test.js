@@ -404,6 +404,41 @@ describe('pg utils', () => {
     expect(cursorCtorMock).toHaveBeenCalledWith('SELECT id', [9]);
     expect(cursorObject.close).toHaveBeenCalledTimes(1);
     expect(currentClient.release).toHaveBeenCalledTimes(1);
+    expect(currentClient.release).toHaveBeenCalledWith(false);
+  });
+
+  test('createPgCursorReader discards the client without closing a failed cursor', async () => {
+    const cursorObject = {
+      state: 'idle',
+      read: jest.fn((size, callback) => {
+        cursorObject.state = 'error';
+        callback(new Error('invalid input syntax for type integer'));
+      }),
+      close: jest.fn(),
+    };
+    currentClient.query.mockReturnValue(cursorObject);
+
+    const reader = await createPgCursorReader(
+      {
+        username: 'u',
+        password: 'p',
+        host: 'h',
+        port: 5432,
+        database: 'svc_db',
+      },
+      'SELECT CAST(name AS INTEGER)',
+      [],
+      100,
+    );
+
+    await expect(reader.readNextChunk()).rejects.toThrow(
+      'invalid input syntax',
+    );
+    await reader.close();
+
+    expect(cursorObject.close).not.toHaveBeenCalled();
+    expect(currentClient.release).toHaveBeenCalledTimes(1);
+    expect(currentClient.release).toHaveBeenCalledWith(true);
   });
 
   test('createPgCursorReader wraps non-FDA errors', async () => {
