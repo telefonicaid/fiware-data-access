@@ -417,13 +417,15 @@ export async function createPgCursorReader(
 
     cleaned = true;
 
+    const failed = cursor?.state === 'error';
+
     try {
-      if (cursor) {
+      if (cursor && !failed) {
         const closeCursor = promisify(cursor.close.bind(cursor));
         await closeCursor().catch(() => {});
       }
     } finally {
-      releasePgClient(key, pgClient);
+      releasePgClient(key, pgClient, failed);
     }
   };
 
