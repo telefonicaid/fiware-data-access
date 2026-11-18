@@ -101,11 +101,12 @@ authorization mechanism.
 
 Each admitted data request consumes one download, including empty results, individual pagination requests and client
 retries. The quota is shared by all DAs, formats, cached/fresh query paths and CDA compatibility access for the FDA.
-Invalid request parameters, missing DAs and unavailable snapshots do not consume quota. Once reserved, a download is not
-refunded if execution fails or the connection is interrupted. Reservations are atomic in MongoDB, so multiple API
-instances cannot exceed the configured quota. If MongoDB is unavailable, the request fails without delivering data.
-Download responses carry `Cache-Control: no-store`; configure proxies and CDNs to respect it, disable cache overrides
-and purge any previously cached public responses.
+Invalid request parameters, missing DAs and unavailable snapshots do not consume quota. If the query fails before any
+data is sent (for example, a DuckDB or datasource error), the reserved download is given back. A download is not given
+back if the stream fails or the connection is interrupted after data has started to be sent. Reservations are atomic in
+MongoDB, so multiple API instances cannot exceed the configured quota. If MongoDB is unavailable, the request fails
+without delivering data. Download responses carry `Cache-Control: no-store`; configure proxies and CDNs to respect it,
+disable cache overrides and purge any previously cached public responses.
 
 At or after expiration, new downloads return `410 FDAExpired`. Exhausted quotas return `410 DownloadLimitReached`.
 Expiration takes precedence when both conditions hold. Already admitted streams can finish. Neither condition deletes
