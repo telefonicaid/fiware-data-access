@@ -206,6 +206,32 @@ describe('Accounting persistence', () => {
     ).toEqual(fda.downloadPolicy);
   });
 
+  test('releases a claimed download without going below zero', async () => {
+    const collection = client.db().collection('fdas');
+    const fda = {
+      ...scope,
+      fdaId: 'released',
+      visibility: 'public',
+      downloadPolicy: { maxDownloads: 1 },
+      downloadsUsed: 0,
+    };
+    await collection.insertOne(fda);
+    await mongo.claimFDADownload(fda);
+    await expect(mongo.claimFDADownload(fda)).rejects.toMatchObject({
+      type: 'DownloadLimitReached',
+    });
+    await mongo.releaseFDADownload(fda);
+    expect(
+      (await collection.findOne({ ...scope, fdaId: 'released' })).downloadsUsed,
+    ).toBe(0);
+    await mongo.claimFDADownload(fda);
+    await mongo.releaseFDADownload(fda);
+    await mongo.releaseFDADownload(fda);
+    expect(
+      (await collection.findOne({ ...scope, fdaId: 'released' })).downloadsUsed,
+    ).toBe(0);
+  });
+
   test('enforces database-time expiration even with unlimited downloads', async () => {
     const fda = {
       ...scope,

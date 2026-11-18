@@ -28,6 +28,7 @@ import { FDAError } from '../../src/lib/fdaError.js';
 const retrieveDAMock = jest.fn();
 const retrieveFDAMock = jest.fn();
 const claimFDADownloadMock = jest.fn();
+const releaseFDADownloadMock = jest.fn();
 const duckCreateMock = jest.fn();
 const listObjectsMock = jest.fn();
 const loggerMock = {
@@ -82,6 +83,7 @@ async function loadDbModule({
   );
   retrieveFDAMock.mockReset().mockResolvedValue({});
   claimFDADownloadMock.mockReset().mockResolvedValue(undefined);
+  releaseFDADownloadMock.mockReset().mockResolvedValue(undefined);
   duckCreateMock.mockReset();
   listObjectsMock.mockReset().mockResolvedValue([]);
   loggerMock.debug.mockReset();
@@ -94,6 +96,7 @@ async function loadDbModule({
     retrieveDA: retrieveDAMock,
     retrieveFDA: retrieveFDAMock,
     claimFDADownload: claimFDADownloadMock,
+    releaseFDADownload: releaseFDADownloadMock,
   }));
 
   await jest.unstable_mockModule('../../src/lib/utils/aws.js', () => ({
@@ -258,6 +261,7 @@ describe('db utils', () => {
       );
 
       expect(claimFDADownloadMock).toHaveBeenCalledWith(fda);
+      expect(releaseFDADownloadMock).not.toHaveBeenCalled();
       expect(retrieveDAMock).toHaveBeenCalledTimes(1);
       expect(retrieveFDAMock).toHaveBeenCalledTimes(1);
       if (streaming) {
@@ -293,6 +297,34 @@ describe('db utils', () => {
       ).rejects.toMatchObject({ status: 410, type: 'DownloadLimitReached' });
 
       expect(runtimeConn.prepare).not.toHaveBeenCalled();
+      expect(recordAccessMock).not.toHaveBeenCalled();
+      expect(releaseFDADownloadMock).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each([false, true])(
+    'cached query gives the download back when execution fails (streaming=%s)',
+    async (streaming) => {
+      const { runPreparedStatement, runtimeConn } = await loadDbModule();
+      const fda = { downloadPolicy: { maxDownloads: 5 } };
+      retrieveFDAMock.mockResolvedValue(fda);
+      runtimeConn.prepare.mockRejectedValue(new Error('boom'));
+
+      await expect(
+        runPreparedStatement(
+          runtimeConn,
+          'svc',
+          'fdaA',
+          'daA',
+          { id: 7 },
+          '/sp',
+          streaming,
+        ),
+      ).rejects.toMatchObject({ status: 500, type: 'DuckDBServerError' });
+
+      expect(claimFDADownloadMock).toHaveBeenCalledTimes(1);
+      expect(releaseFDADownloadMock).toHaveBeenCalledTimes(1);
+      expect(releaseFDADownloadMock).toHaveBeenCalledWith(fda);
       expect(recordAccessMock).not.toHaveBeenCalled();
     },
   );

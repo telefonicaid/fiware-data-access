@@ -91,6 +91,7 @@ const mongoMocks = {
   claimFDAForFetch: jest.fn(),
   claimFDAForDeletion: jest.fn(),
   claimFDADownload: jest.fn(),
+  releaseFDADownload: jest.fn(),
   claimOnDemandRefresh: jest.fn(),
   releaseOnDemandRefresh: jest.fn(),
   createDatasource: jest.fn(),
@@ -170,6 +171,7 @@ await jest.unstable_mockModule('../../src/lib/utils/mongo.js', () => ({
   claimFDAForFetch: mongoMocks.claimFDAForFetch,
   claimFDAForDeletion: mongoMocks.claimFDAForDeletion,
   claimFDADownload: mongoMocks.claimFDADownload,
+  releaseFDADownload: mongoMocks.releaseFDADownload,
   claimOnDemandRefresh: mongoMocks.claimOnDemandRefresh,
   releaseOnDemandRefresh: mongoMocks.releaseOnDemandRefresh,
   createDatasource: mongoMocks.createDatasource,
@@ -275,6 +277,7 @@ describe('FDA download restrictions', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mongoMocks.claimFDADownload.mockReset().mockResolvedValue(undefined);
+    mongoMocks.releaseFDADownload.mockReset().mockResolvedValue(undefined);
     dbMocks.resolveDAParams.mockReset().mockImplementation((params) => params);
     fda = {
       service: 'svc',
@@ -330,6 +333,24 @@ describe('FDA download restrictions', () => {
       await execute(queryArgs(daId));
       expect(mongoMocks.claimFDADownload).toHaveBeenCalledTimes(1);
       expect(mongoMocks.claimFDADownload).toHaveBeenCalledWith(fda);
+      expect(mongoMocks.releaseFDADownload).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each(variants)(
+    '%s gives the download back when the datasource query fails',
+    async (name, execute, daId) => {
+      fda.cached = false;
+      pgMocks.runPgQuery.mockRejectedValue(new Error('pg down'));
+      pgMocks.createPgCursorReader.mockRejectedValue(new Error('pg down'));
+      const args = queryArgs(daId);
+
+      await expect(execute(args)).rejects.toThrow('pg down');
+
+      expect(mongoMocks.claimFDADownload).toHaveBeenCalledTimes(1);
+      expect(mongoMocks.releaseFDADownload).toHaveBeenCalledTimes(1);
+      expect(mongoMocks.releaseFDADownload).toHaveBeenCalledWith(fda);
+      expect(args.res.write).not.toHaveBeenCalled();
     },
   );
 
@@ -350,6 +371,7 @@ describe('FDA download restrictions', () => {
       expect(pgMocks.runPgQuery).not.toHaveBeenCalled();
       expect(pgMocks.createPgCursorReader).not.toHaveBeenCalled();
       expect(args.res.write).not.toHaveBeenCalled();
+      expect(mongoMocks.releaseFDADownload).not.toHaveBeenCalled();
     },
   );
 
