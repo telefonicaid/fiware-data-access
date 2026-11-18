@@ -601,16 +601,21 @@ export async function runPreparedStatement(
   const { objStgConf, servicePath: storedServicePath, schema, lastFetch } = fda;
   const fdaServicePath = storedServicePath ?? servicePath;
 
-  let stmt;
-  let downloadClaimed = false;
-
+  let resolvedParams;
   try {
     validateDAParamBindings(da.query, da.params || []);
-    const resolvedParams = applyParams(paramValues || {}, da.params);
-    if (fda.downloadPolicy) {
-      await claimFDADownload(fda);
-      downloadClaimed = true;
-    }
+    resolvedParams = applyParams(paramValues || {}, da.params);
+  } catch (e) {
+    throw toPreparedStatementError(e, streaming);
+  }
+
+  if (fda.downloadPolicy) {
+    await claimFDADownload(fda);
+  }
+
+  let stmt;
+
+  try {
     const boundParams = normalizeParamsForDuckDB(resolvedParams);
     const fallbackQuery = buildStoredSchemaQuery(schema, da.query);
     const files = await listPrunedPartitionFiles(
@@ -655,26 +660,25 @@ export async function runPreparedStatement(
     if (streaming) {
       await closePreparedStatement(stmt);
     }
-
-    if (downloadClaimed) {
-      await releaseFDADownload(fda);
-    }
-
-    if (e instanceof FDAError) {
-      throw e;
-    }
-
-    const action = streaming ? 'streaming' : 'running';
-    throw new FDAError(
-      500,
-      'DuckDBServerError',
-      `Error ${action} the prepared statement: ${e}`,
-    );
+    await releaseFDADownload(fda);
+    throw toPreparedStatementError(e, streaming);
   } finally {
     if (!streaming) {
       await closePreparedStatement(stmt);
     }
   }
+}
+
+function toPreparedStatementError(error, streaming) {
+  if (error instanceof FDAError) {
+    return error;
+  }
+  const action = streaming ? 'streaming' : 'running';
+  return new FDAError(
+    500,
+    'DuckDBServerError',
+    `Error ${action} the prepared statement: ${error}`,
+  );
 }
 
 export async function runPreparedStatementStream(
