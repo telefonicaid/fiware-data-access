@@ -75,6 +75,7 @@ import {
   claimFDAForFetch,
   claimFDAForDeletion,
   claimFDADownload,
+  releaseFDADownload,
   claimOnDemandRefresh,
   releaseOnDemandRefresh,
   createDatasource,
@@ -506,42 +507,57 @@ export async function executeQueryStream({
     res.setHeader('Content-Disposition', 'attachment; filename="results.csv"');
   }
 
-  let csvColumns;
-
   try {
-    for (
-      let rows = await source.readNextRows();
-      rows.length > 0;
-      rows = await source.readNextRows()
-    ) {
-      if (format === 'ndjson') {
-        for (const row of rows) {
-          const rowObj = source.columnNames
-            ? toRowObject(row, source.columnNames)
-            : row;
-          await writeNdjsonLine(res, rowObj);
-        }
-        continue;
-      }
-
-      if (!csvColumns) {
-        csvColumns = source.columnNames ?? Object.keys(rows[0] ?? {});
-        await writeCsvHeader(res, csvColumns);
-      }
-
-      for (const row of rows) {
-        const csvLine = source.columnNames
-          ? row.map((cell) => escapeCsvValue(cell)).join(',') + '\n'
-          : csvColumns.map((column) => escapeCsvValue(row[column])).join(',') +
-            '\n';
-        await writeCsvLine(res, csvLine);
-      }
+    await (format === 'ndjson'
+      ? writeNdjsonRows(res, source)
+      : writeCsvRows(res, source));
+  } catch (e) {
+    if (!res.headersSent) {
+      await releaseFDADownload(fda);
     }
+    throw e;
   } finally {
     await source.close();
   }
 
   return res.end();
+}
+
+async function writeNdjsonRows(res, source) {
+  for (
+    let rows = await source.readNextRows();
+    rows.length > 0;
+    rows = await source.readNextRows()
+  ) {
+    for (const row of rows) {
+      const rowObj = source.columnNames
+        ? toRowObject(row, source.columnNames)
+        : row;
+      await writeNdjsonLine(res, rowObj);
+    }
+  }
+}
+
+async function writeCsvRows(res, source) {
+  let csvColumns;
+  for (
+    let rows = await source.readNextRows();
+    rows.length > 0;
+    rows = await source.readNextRows()
+  ) {
+    if (!csvColumns) {
+      csvColumns = source.columnNames ?? Object.keys(rows[0] ?? {});
+      await writeCsvHeader(res, csvColumns);
+    }
+
+    for (const row of rows) {
+      const csvLine = source.columnNames
+        ? row.map((cell) => escapeCsvValue(cell)).join(',') + '\n'
+        : csvColumns.map((column) => escapeCsvValue(row[column])).join(',') +
+          '\n';
+      await writeCsvLine(res, csvLine);
+    }
+  }
 }
 
 async function createCachedRowSource({
@@ -631,15 +647,20 @@ async function createFreshRowSource({
     });
 
     await claimFDADownload(fda);
-    cursorReader =
-      datasource.type === 'mongodb'
-        ? await createMongoCursorReader(datasource.config, fda.query)
-        : await createPgCursorReader(
-            datasource.config,
-            text,
-            values,
-            FRESH_CURSOR_BATCH_SIZE,
-          );
+    try {
+      cursorReader =
+        datasource.type === 'mongodb'
+          ? await createMongoCursorReader(datasource.config, fda.query)
+          : await createPgCursorReader(
+              datasource.config,
+              text,
+              values,
+              FRESH_CURSOR_BATCH_SIZE,
+            );
+    } catch (e) {
+      await releaseFDADownload(fda);
+      throw e;
+    }
 
     req.on('close', () => {
       cursorReader?.close().catch(() => {});
@@ -683,10 +704,16 @@ async function executeFreshQuery({
     });
 
     await claimFDADownload(fda);
-    const rows =
-      datasource.type === 'mongodb'
-        ? await runMongoQuery(datasource.config, fda.query)
-        : await runPgQuery(datasource.config, text, values);
+    let rows;
+    try {
+      rows =
+        datasource.type === 'mongodb'
+          ? await runMongoQuery(datasource.config, fda.query)
+          : await runPgQuery(datasource.config, text, values);
+    } catch (e) {
+      await releaseFDADownload(fda);
+      throw e;
+    }
     return normalizeForSerialization(rows);
   } finally {
     releaseFreshSlot();

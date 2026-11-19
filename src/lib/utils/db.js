@@ -22,7 +22,12 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
-import { retrieveDA, retrieveFDA, claimFDADownload } from './mongo.js';
+import {
+  retrieveDA,
+  retrieveFDA,
+  claimFDADownload,
+  releaseFDADownload,
+} from './mongo.js';
 import { FDAError, storageQuotaErrorFor } from '../fdaError.js';
 import { recordAccess } from '../accessTracker.js';
 import { getBasicLogger } from './logger.js';
@@ -596,14 +601,21 @@ export async function runPreparedStatement(
   const { objStgConf, servicePath: storedServicePath, schema, lastFetch } = fda;
   const fdaServicePath = storedServicePath ?? servicePath;
 
+  let resolvedParams;
+  try {
+    validateDAParamBindings(da.query, da.params || []);
+    resolvedParams = applyParams(paramValues || {}, da.params);
+  } catch (e) {
+    throw toPreparedStatementError(e, streaming);
+  }
+
+  if (fda.downloadPolicy) {
+    await claimFDADownload(fda);
+  }
+
   let stmt;
 
   try {
-    validateDAParamBindings(da.query, da.params || []);
-    const resolvedParams = applyParams(paramValues || {}, da.params);
-    if (fda.downloadPolicy) {
-      await claimFDADownload(fda);
-    }
     const boundParams = normalizeParamsForDuckDB(resolvedParams);
     const fallbackQuery = buildStoredSchemaQuery(schema, da.query);
     const files = await listPrunedPartitionFiles(
@@ -648,22 +660,25 @@ export async function runPreparedStatement(
     if (streaming) {
       await closePreparedStatement(stmt);
     }
-
-    if (e instanceof FDAError) {
-      throw e;
-    }
-
-    const action = streaming ? 'streaming' : 'running';
-    throw new FDAError(
-      500,
-      'DuckDBServerError',
-      `Error ${action} the prepared statement: ${e}`,
-    );
+    await releaseFDADownload(fda);
+    throw toPreparedStatementError(e, streaming);
   } finally {
     if (!streaming) {
       await closePreparedStatement(stmt);
     }
   }
+}
+
+function toPreparedStatementError(error, streaming) {
+  if (error instanceof FDAError) {
+    return error;
+  }
+  const action = streaming ? 'streaming' : 'running';
+  return new FDAError(
+    500,
+    'DuckDBServerError',
+    `Error ${action} the prepared statement: ${error}`,
+  );
 }
 
 export async function runPreparedStatementStream(

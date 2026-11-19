@@ -1,1 +1,2 @@
-
+- Fix: a query that fails before sending any data on an FDA with a download policy (cached or only-fresh) no longer consumes a download; downloads interrupted mid-stream still count (#375)
+- Fix: a fresh NDJSON/CSV query that fails in PostgreSQL no longer hangs the request or leaks its pool connection (#386)
