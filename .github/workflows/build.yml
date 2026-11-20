@@ -5,7 +5,7 @@ on:
     branches:
       - main
     tags:
-      - 'v*'
+      - '[0-9.]+'
   pull_request:
     types: [opened, synchronize, reopened]
 
@@ -35,7 +35,7 @@ jobs:
           push: ${{ github.event_name == 'push' }}
           tags: |
             ${{ github.event_name == 'pull_request' && 'telefonicaiot/fiware-data-access:ci' || github.ref == 'refs/heads/main' && 'telefonicaiot/fiware-data-access:latest' || '' }}
-            ${{ startsWith(github.ref, 'refs/tags/v') && format('telefonicaiot/fiware-data-access:{0}', github.ref_name) || '' }}
+            ${{ startsWith(github.ref, 'refs/tags/') && format('telefonicaiot/fiware-data-access:{0}', github.ref_name) || '' }}
 
   lint-dockerfile:
     name: Lint Dockerfile

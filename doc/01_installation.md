@@ -70,8 +70,9 @@ docker/Dockerfile
 ```
 
 The GitHub Actions build workflow publishes `telefonicaiot/fiware-data-access:latest` on pushes to `main` and publishes
-the matching version tag on pushes of tags named `v*`. Pull requests build the image without publishing it. Publishing
-requires the repository secrets `DOCKER_HUB_USERNAME` and `DOCKER_HUB_TOKEN`.
+the matching version tag for tags consisting only of digits and dots (the Docker Hub pattern `^[0-9.]+$`). Pull requests
+build the image without publishing it. Publishing requires the repository secrets `DOCKER_HUB_USERNAME` and
+`DOCKER_HUB_TOKEN`.
 
 ---
 
