@@ -27,6 +27,7 @@ import express from 'express';
 import { executeQuery, executeQueryStream } from '../lib/fda.js';
 import { validateForbiddenFieldsQuery } from '../lib/utils/utils.js';
 import { toCdaJson } from '../lib/utils/outputFormat.js';
+import { splitSqlDumpQueryParams } from '../lib/utils/sqlDump.js';
 import {
   resolveServiceContextFromRequest,
   getOutputTypeFromAcceptHeader,
@@ -36,6 +37,8 @@ import {
 } from '../lib/utils/routeHelpers.js';
 
 const router = express.Router();
+
+const STREAMED_OUTPUT_TYPES = new Set(['ndjson', 'csv', 'sql']);
 
 /**
  * @swagger
@@ -138,17 +141,22 @@ router.get('/:visibility/fdas/:fdaId/das/:daId/data', async (req, res) => {
   const { service, servicePath, style } = resolveServiceContextFromRequest(req);
 
   let outputType;
-  let queryParams;
+  let requestParams;
 
   if (style === 'query') {
     validateForbiddenFieldsQuery(req.query, ['fresh']);
     outputType = getQueryStyleOutputType(req.query);
-    queryParams = splitDaQueryStyleParams(req.query);
+    requestParams = splitDaQueryStyleParams(req.query);
   } else {
     validateForbiddenFieldsQuery(req.query, ['outputType', 'fresh']);
     outputType = getOutputTypeFromAcceptHeader(req);
-    queryParams = { ...req.query };
+    requestParams = { ...req.query };
   }
+
+  const { queryParams, sqlOptions } = splitSqlDumpQueryParams(
+    requestParams,
+    outputType,
+  );
 
   if (!fdaId || !daId || !service || !servicePath || !visibility) {
     return res.status(400).json({
@@ -163,7 +171,7 @@ router.get('/:visibility/fdas/:fdaId/das/:daId/data', async (req, res) => {
     ...queryParams,
   };
 
-  if (outputType === 'ndjson' || outputType === 'csv') {
+  if (STREAMED_OUTPUT_TYPES.has(outputType)) {
     return executeQueryStream({
       service,
       visibility,
@@ -172,6 +180,7 @@ router.get('/:visibility/fdas/:fdaId/das/:daId/data', async (req, res) => {
       req,
       res,
       format: outputType,
+      sqlOptions,
     });
   }
 
