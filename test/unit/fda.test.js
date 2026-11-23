@@ -738,11 +738,239 @@ describe('fda fresh query execution', () => {
       'SELECT 12::bigint AS total',
       [],
       250,
+      { sqlDump: false },
     );
     expect(res.setHeader).toHaveBeenCalledWith(
       'Content-Type',
       'application/x-ndjson',
     );
+  });
+
+  test('streams a fresh PostgreSQL query as a SQL dump with the described column types', async () => {
+    const { req, res } = createReqRes();
+    const cursorReader = {
+      columns: [
+        { name: 'id', type: 'integer' },
+        { name: 'ts', type: 'timestamp with time zone' },
+      ],
+      readNextChunk: jest
+        .fn()
+        .mockResolvedValueOnce([['1', '2020-08-17 18:25:28+00']])
+        .mockResolvedValueOnce([['2', null]])
+        .mockResolvedValueOnce([]),
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      query: 'SELECT id, ts FROM events',
+      visibility: 'private',
+      servicePath: '/servicepath',
+      cached: false,
+      datasourceId: 'default',
+    });
+    pgMocks.createPgCursorReader.mockResolvedValue(cursorReader);
+
+    await executeQueryStream({
+      service: 'svc',
+      visibility: 'private',
+      servicePath: '/servicepath',
+      params: { fdaId: 'fdaA', daId: 'defaultDataAccess' },
+      req,
+      res,
+      format: 'sql',
+      sqlOptions: { hypertableColumn: 'ts', format: 'insert' },
+    });
+
+    expect(pgMocks.createPgCursorReader).toHaveBeenCalledWith(
+      expect.any(Object),
+      'SELECT id, ts FROM events',
+      [],
+      250,
+      { sqlDump: true },
+    );
+    expect(res.setHeader).toHaveBeenCalledWith(
+      'Content-Type',
+      'application/sql; charset=utf-8',
+    );
+    expect(res.setHeader).toHaveBeenCalledWith(
+      'Content-Disposition',
+      'attachment; filename="results.sql"',
+    );
+
+    const dump = res.write.mock.calls.map(([chunk]) => chunk).join('');
+    expect(dump).toContain(
+      'CREATE TABLE "fdaA" (\n    "id" integer,\n    "ts" timestamp with time zone\n);',
+    );
+    expect(dump).toContain(
+      `SELECT create_hypertable('"fdaA"', by_range('ts'));`,
+    );
+    expect(dump).toContain(
+      `INSERT INTO "fdaA" ("id", "ts") VALUES\n('1', '2020-08-17 18:25:28+00');\n`,
+    );
+    expect(dump).toContain(
+      `INSERT INTO "fdaA" ("id", "ts") VALUES\n('2', NULL);\n`,
+    );
+    expect(dump.endsWith('\nCOMMIT;\n')).toBe(true);
+    expect(mongoMocks.claimFDADownload).toHaveBeenCalledTimes(1);
+    expect(mongoMocks.releaseFDADownload).not.toHaveBeenCalled();
+    expect(cursorReader.close).toHaveBeenCalled();
+  });
+
+  test('names the SQL dump table after the FDA and DA unless sqlTable and sqlSchema are given', async () => {
+    const cursorReader = () => ({
+      columns: [{ name: 'id', type: 'integer' }],
+      readNextChunk: jest
+        .fn()
+        .mockResolvedValueOnce([['1']])
+        .mockResolvedValue([]),
+      close: jest.fn().mockResolvedValue(undefined),
+    });
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      query: 'SELECT id FROM events',
+      visibility: 'private',
+      servicePath: '/servicepath',
+      cached: false,
+      datasourceId: 'default',
+    });
+    mongoMocks.retrieveDA.mockResolvedValue({
+      query: 'SELECT id',
+      params: [],
+    });
+
+    const defaultNamed = createReqRes();
+    pgMocks.createPgCursorReader.mockResolvedValueOnce(cursorReader());
+    await executeQueryStream({
+      service: 'svc',
+      visibility: 'private',
+      servicePath: '/servicepath',
+      params: { fdaId: 'fdaA', daId: 'daB' },
+      req: defaultNamed.req,
+      res: defaultNamed.res,
+      format: 'sql',
+      sqlOptions: { format: 'copy' },
+    });
+    const defaultDump = defaultNamed.res.write.mock.calls
+      .map(([chunk]) => chunk)
+      .join('');
+    expect(defaultDump).toContain(
+      'COPY "fdaA_daB" ("id") FROM stdin;\n1\n\\.\n\nCOMMIT;\n',
+    );
+
+    const customNamed = createReqRes();
+    pgMocks.createPgCursorReader.mockResolvedValueOnce(cursorReader());
+    await executeQueryStream({
+      service: 'svc',
+      visibility: 'private',
+      servicePath: '/servicepath',
+      params: { fdaId: 'fdaA', daId: 'daB' },
+      req: customNamed.req,
+      res: customNamed.res,
+      format: 'sql',
+      sqlOptions: { table: 'backup', schema: 'archive', format: 'copy' },
+    });
+    const customDump = customNamed.res.write.mock.calls
+      .map(([chunk]) => chunk)
+      .join('');
+    expect(customDump).toContain('CREATE SCHEMA IF NOT EXISTS "archive";');
+    expect(customDump).toContain('COPY "archive"."backup" ("id") FROM stdin;');
+  });
+
+  test('rejects SQL output for cached FDAs without opening a source or claiming a download', async () => {
+    const { req, res } = createReqRes();
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      query: 'SELECT 1',
+      visibility: 'private',
+      servicePath: '/servicepath',
+      cached: true,
+      lastFetch: new Date(),
+      datasourceId: 'default',
+    });
+
+    await expect(
+      executeQueryStream({
+        service: 'svc',
+        visibility: 'private',
+        servicePath: '/servicepath',
+        params: { fdaId: 'fdaA', daId: 'defaultDataAccess' },
+        req,
+        res,
+        format: 'sql',
+        sqlOptions: { format: 'insert' },
+      }),
+    ).rejects.toMatchObject({ status: 400, type: 'UnsupportedOutputType' });
+
+    expect(dbMocks.getDBConnection).not.toHaveBeenCalled();
+    expect(mongoMocks.claimFDADownload).not.toHaveBeenCalled();
+    expect(res.write).not.toHaveBeenCalled();
+  });
+
+  test('rejects SQL output for only-fresh MongoDB FDAs before claiming a download', async () => {
+    const { req, res } = createReqRes();
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      query: { collection: 'events', filter: {} },
+      visibility: 'private',
+      servicePath: '/servicepath',
+      cached: false,
+      datasourceId: 'mongo-ds',
+    });
+    mongoMocks.retrieveDatasource.mockResolvedValue({
+      datasourceId: 'mongo-ds',
+      type: 'mongodb',
+      config: { uri: 'mongodb://mongo:27017', database: 'svc' },
+    });
+
+    await expect(
+      executeQueryStream({
+        service: 'svc',
+        visibility: 'private',
+        servicePath: '/servicepath',
+        params: { fdaId: 'fdaMongo', daId: 'defaultDataAccess' },
+        req,
+        res,
+        format: 'sql',
+        sqlOptions: { format: 'insert' },
+      }),
+    ).rejects.toMatchObject({ status: 400, type: 'UnsupportedOutputType' });
+
+    expect(mongoMocks.claimFDADownload).not.toHaveBeenCalled();
+    expect(mongoMocks.createMongoCursorReader).not.toHaveBeenCalled();
+  });
+
+  test('gives the download back when the sqlHypertable column is not returned by the query', async () => {
+    const { req, res } = createReqRes();
+    const cursorReader = {
+      columns: [{ name: 'id', type: 'integer' }],
+      readNextChunk: jest.fn(),
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      query: 'SELECT id FROM events',
+      visibility: 'private',
+      servicePath: '/servicepath',
+      cached: false,
+      datasourceId: 'default',
+    });
+    pgMocks.createPgCursorReader.mockResolvedValue(cursorReader);
+
+    await expect(
+      executeQueryStream({
+        service: 'svc',
+        visibility: 'private',
+        servicePath: '/servicepath',
+        params: { fdaId: 'fdaA', daId: 'defaultDataAccess' },
+        req,
+        res,
+        format: 'sql',
+        sqlOptions: { hypertableColumn: 'ts', format: 'insert' },
+      }),
+    ).rejects.toMatchObject({
+      status: 400,
+      type: 'BadRequest',
+      message: 'sqlHypertable column "ts" is not returned by the query.',
+    });
+
+    expect(res.write).not.toHaveBeenCalled();
+    expect(mongoMocks.releaseFDADownload).toHaveBeenCalledTimes(1);
+    expect(cursorReader.close).toHaveBeenCalled();
   });
 
   test('streams FDA direct fresh query rows from MongoDB', async () => {
