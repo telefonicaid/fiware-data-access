@@ -99,7 +99,6 @@ import {
   convertRefreshIntervalToMs,
   parseUploadedFile,
   escapeCsvValue,
-  writeCsvLine,
   writeNdjsonLine,
   writeTextChunk,
   writeCsvHeader,
@@ -549,12 +548,18 @@ export async function executeQueryStream({
   return res.end();
 }
 
-async function writeNdjsonRows(res, source) {
+async function* readRowChunks(source) {
   for (
     let rows = await source.readNextRows();
     rows.length > 0;
     rows = await source.readNextRows()
   ) {
+    yield rows;
+  }
+}
+
+async function writeNdjsonRows(res, source) {
+  for await (const rows of readRowChunks(source)) {
     for (const row of rows) {
       const rowObj = source.columnNames
         ? toRowObject(row, source.columnNames)
@@ -566,11 +571,7 @@ async function writeNdjsonRows(res, source) {
 
 async function writeCsvRows(res, source) {
   let csvColumns;
-  for (
-    let rows = await source.readNextRows();
-    rows.length > 0;
-    rows = await source.readNextRows()
-  ) {
+  for await (const rows of readRowChunks(source)) {
     if (!csvColumns) {
       csvColumns = source.columnNames ?? Object.keys(rows[0] ?? {});
       await writeCsvHeader(res, csvColumns);
@@ -581,7 +582,7 @@ async function writeCsvRows(res, source) {
         ? row.map((cell) => escapeCsvValue(cell)).join(',') + '\n'
         : csvColumns.map((column) => escapeCsvValue(row[column])).join(',') +
           '\n';
-      await writeCsvLine(res, csvLine);
+      await writeTextChunk(res, csvLine);
     }
   }
 }
@@ -592,19 +593,13 @@ function defaultSqlDumpTable(fdaId, daId) {
 
 async function writeSqlRows(res, source, { fdaId, daId, sqlOptions }) {
   const dump = createSqlDump({
+    ...sqlOptions,
     columns: source.columns,
     table: sqlOptions?.table ?? defaultSqlDumpTable(fdaId, daId),
-    schema: sqlOptions?.schema,
-    hypertableColumn: sqlOptions?.hypertableColumn,
-    format: sqlOptions?.format,
   });
 
   await writeTextChunk(res, dump.preamble);
-  for (
-    let rows = await source.readNextRows();
-    rows.length > 0;
-    rows = await source.readNextRows()
-  ) {
+  for await (const rows of readRowChunks(source)) {
     await writeTextChunk(res, dump.rows(rows));
   }
   await writeTextChunk(res, dump.epilogue);
@@ -2571,7 +2566,7 @@ async function uploadMongoCursorContentToObjectStorage(
         const csvLine = columns
           .map((column) => escapeCsvValue(row[column]))
           .join(',');
-        await writeCsvLine(uploadBody, `${csvLine}\n`);
+        await writeTextChunk(uploadBody, `${csvLine}\n`);
       }
 
       rows = await reader.readNextChunk();

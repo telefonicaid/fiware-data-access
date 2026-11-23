@@ -373,16 +373,11 @@ export async function writeTextChunk(res, text) {
   }
 }
 
-export async function writeCsvLine(res, line) {
-  await writeTextChunk(res, line);
-}
-
 export async function writeNdjsonLine(res, row) {
-  const safeObj = normalizeForSerialization(row);
-  const ok = res.write(JSON.stringify(safeObj) + '\n');
-  if (!ok) {
-    await new Promise((resolve) => res.once('drain', resolve));
-  }
+  await writeTextChunk(
+    res,
+    JSON.stringify(normalizeForSerialization(row)) + '\n',
+  );
 }
 
 export async function writeCsvHeader(res, columnNames) {
@@ -390,7 +385,7 @@ export async function writeCsvHeader(res, columnNames) {
     return;
   }
 
-  await writeCsvLine(
+  await writeTextChunk(
     res,
     columnNames.map((columnName) => escapeCsvValue(columnName)).join(',') +
       '\n',

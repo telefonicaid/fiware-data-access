@@ -24,8 +24,8 @@
 
 import { FDAError } from '../fdaError.js';
 
-export const SQL_DUMP_FORMATS = ['insert', 'copy'];
-export const SQL_DUMP_QUERY_PARAMS = [
+const SQL_DUMP_FORMATS = ['insert', 'copy'];
+const SQL_DUMP_QUERY_PARAMS = [
   'sqlTable',
   'sqlSchema',
   'sqlHypertable',
