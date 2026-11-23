@@ -140,7 +140,7 @@ All error responses follow this structure:
 | 400  | Bad Request            | `BadRequest`                     | Invalid or unsupported query fields were provided (for example, using `fresh` in `GET /{visibility}/fdas/{fdaId}/das/{daId}/data`).                                                                                                                                                                                |
 | 400  | Bad Request            | `InvalidVisibility`              | The `visibility` path segment is not one of the allowed values (`public`, `private`).                                                                                                                                                                                                                              |
 | 400  | Bad Request            | `InvalidServicePath`             | The `Fiware-ServicePath` header value is not a valid non-root absolute path (e.g. `/servicePath/site`). The root path `/` is not allowed.                                                                                                                                                                          |
-| 400  | Bad Request            | `InvalidQueryParam`              | Some of the params in the request don't comply with the [params](#params) array restrictions.                                                                                                                                                                                                                      |
+| 400  | Bad Request            | `InvalidQueryParam`              | Some of the params in the request don't comply with the [params](#da-params) array restrictions.                                                                                                                                                                                                                   |
 | 400  | Bad Request            | `PartitionError`                 | Some of the params related to the creation of the parquet partition don't comply with the [object storage configuration](#object-storage-configuration-objstgconf) requirements.                                                                                                                                   |
 | 400  | Bad Request            | `CleaningError`                  | Trying to remove a non partitioned FDA or incorrect value in the [delete interval key](#refresh-policy-object).                                                                                                                                                                                                    |
 | 400  | Bad Request            | `InvalidParam`                   | [Time column is not present](/doc/05_advanced_topics.md#time-column-behavior) in the SELECT clause of the FDA query.                                                                                                                                                                                               |
@@ -944,10 +944,10 @@ Datasource-specific constraints:
 
 Defines how and when the FDA should be automatically refreshed.
 
-| Field               | Optional | Type   | Description                                                         |
-| ------------------- | -------- | ------ | ------------------------------------------------------------------- |
-| `type`              |          | string | Refresh strategy. One of: `none`, `interval`, `window`, `onDemand`. |
-| [`params`](#params) | (\*)     | object | Object with the parameters for the refresh policy type.             |
+| Field                              | Optional | Type   | Description                                                         |
+| ---------------------------------- | -------- | ------ | ------------------------------------------------------------------- |
+| `type`                             |          | string | Refresh strategy. One of: `none`, `interval`, `window`, `onDemand`. |
+| [`params`](#refresh-policy-params) | (\*)     | object | Object with the parameters for the refresh policy type.             |
 
 (\*) Not used when `type` is `none`, mandatory otherwise
 
@@ -962,7 +962,7 @@ If omitted, the default policy is:
 { "type": "none" }
 ```
 
-##### Params
+##### Refresh policy params
 
 | Field                        | Optional | Type   | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | ---------------------------- | -------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1628,7 +1628,7 @@ A DA is represented by a JSON object with the following fields:
 | `id`          | (\*)     | string | DA identifier, unique within the associated FDA.                                                                                         |
 | `description` | ✓        | string | A free text used by the client to describe the DA. If omitted, no description is stored.                                                 |
 | `query`       |          | string | Query string, without **FROM**, clause to run over the FDA when invoking the DA                                                          |
-| `params`      | ✓        | array  | Array of [param objects](#params) to control param values. If omitted, the DA has no query parameters.                                   |
+| `params`      | ✓        | array  | Array of [param objects](#da-params) to control param values. If omitted, the DA has no query parameters.                                |
 | `timeRange`   | ✓        | object | [Time range object](#time-range) naming the params that bound the FDA `timeColumn`. If omitted, queries read every partition of the FDA. |
 
 (\*) The `id` field is mandatory when creating a DA (`POST`) and must not be included when updating a DA (`PUT`).
@@ -1638,7 +1638,7 @@ A DA is represented by a JSON object with the following fields:
 > built-in FDA capability — see
 > [SQL Pattern Matching in DA Queries](/doc/05_advanced_topics.md#sql-pattern-matching-in-da-queries) for details.
 
-#### Params
+#### DA Params
 
 Each object in the array `params` can have the following keys:
 
