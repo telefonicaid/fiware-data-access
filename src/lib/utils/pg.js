@@ -407,9 +407,8 @@ const SQL_DUMP_CURSOR_CONFIG = {
 };
 
 async function describePgQueryColumns(pgClient, text, values) {
-  const normalizedQuery = text.trim().replace(/;+\s*$/, '');
   const { fields } = await pgClient.query({
-    text: `SELECT * FROM (${normalizedQuery}) AS fda_sql_dump LIMIT 0`,
+    text: `SELECT * FROM (${text}) AS fda_sql_dump LIMIT 0`,
     values,
     rowMode: 'array',
   });

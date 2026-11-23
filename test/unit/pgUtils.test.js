@@ -469,7 +469,7 @@ describe('pg utils', () => {
     };
     const reader = await createPgCursorReader(
       creds,
-      'SELECT id, label FROM t WHERE id > $1;',
+      'SELECT id, label FROM t WHERE id > $1',
       [5],
       100,
       { sqlDump: true },
@@ -495,7 +495,7 @@ describe('pg utils', () => {
 
     const [cursorText, cursorValues, cursorConfig] =
       cursorCtorMock.mock.calls[0];
-    expect(cursorText).toBe('SELECT id, label FROM t WHERE id > $1;');
+    expect(cursorText).toBe('SELECT id, label FROM t WHERE id > $1');
     expect(cursorValues).toEqual([5]);
     expect(cursorConfig.rowMode).toBe('array');
     expect(cursorConfig.types.getTypeParser(1114)('2020-08-17 18:25:28')).toBe(
