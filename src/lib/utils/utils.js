@@ -366,11 +366,15 @@ export function stringifyCsvValue(value) {
   return String(normalizedValue);
 }
 
-export async function writeCsvLine(res, line) {
-  const ok = res.write(line);
+export async function writeTextChunk(res, text) {
+  const ok = res.write(text);
   if (!ok) {
     await new Promise((resolve) => res.once('drain', resolve));
   }
+}
+
+export async function writeCsvLine(res, line) {
+  await writeTextChunk(res, line);
 }
 
 export async function writeNdjsonLine(res, row) {

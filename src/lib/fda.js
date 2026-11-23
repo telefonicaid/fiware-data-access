@@ -101,12 +101,14 @@ import {
   escapeCsvValue,
   writeCsvLine,
   writeNdjsonLine,
+  writeTextChunk,
   writeCsvHeader,
   toRowObject,
   normalizeVisibility,
   toFDAApiResponse,
   processFetchSize,
 } from './utils/utils.js';
+import { createSqlDump, unsupportedSqlOutputError } from './utils/sqlDump.js';
 import {
   buildFDAJobFilter,
   buildFDAJobCancelFilter,
@@ -392,6 +394,27 @@ export async function deleteDatasourceForService(service, datasourceId) {
 
 const CSV_CONTENT_TYPE = 'text/csv; charset=utf-8';
 
+const STREAM_FORMATS = {
+  ndjson: {
+    headers: { 'Content-Type': 'application/x-ndjson' },
+    writeRows: writeNdjsonRows,
+  },
+  csv: {
+    headers: {
+      'Content-Type': CSV_CONTENT_TYPE,
+      'Content-Disposition': 'attachment; filename="results.csv"',
+    },
+    writeRows: writeCsvRows,
+  },
+  sql: {
+    headers: {
+      'Content-Type': 'application/sql; charset=utf-8',
+      'Content-Disposition': 'attachment; filename="results.sql"',
+    },
+    writeRows: writeSqlRows,
+  },
+};
+
 export async function getFDAs(service, visibility, servicePath) {
   const fdas = await retrieveFDAs(service);
   const normalizedServicePath = normalizeServicePath(servicePath);
@@ -476,9 +499,15 @@ export async function executeQueryStream({
   req,
   res,
   format = 'ndjson',
+  sqlOptions,
 }) {
   const { fdaId, daId, ...rest } = params;
   const fda = await getAccessibleFDA(service, fdaId, visibility, servicePath);
+  const sqlDump = format === 'sql';
+
+  if (sqlDump && fda.cached !== false) {
+    throw unsupportedSqlOutputError();
+  }
 
   const source =
     fda.cached === false
@@ -490,6 +519,7 @@ export async function executeQueryStream({
           daId,
           params: rest,
           req,
+          sqlDump,
         })
       : await createCachedRowSource({
           fda,
@@ -500,17 +530,13 @@ export async function executeQueryStream({
           req,
         });
 
-  if (format === 'ndjson') {
-    res.setHeader('Content-Type', 'application/x-ndjson');
-  } else {
-    res.setHeader('Content-Type', CSV_CONTENT_TYPE);
-    res.setHeader('Content-Disposition', 'attachment; filename="results.csv"');
+  const { headers, writeRows } = STREAM_FORMATS[format];
+  for (const [name, value] of Object.entries(headers)) {
+    res.setHeader(name, value);
   }
 
   try {
-    await (format === 'ndjson'
-      ? writeNdjsonRows(res, source)
-      : writeCsvRows(res, source));
+    await writeRows(res, source, { fdaId, daId, sqlOptions });
   } catch (e) {
     if (!res.headersSent) {
       await releaseFDADownload(fda);
@@ -558,6 +584,30 @@ async function writeCsvRows(res, source) {
       await writeCsvLine(res, csvLine);
     }
   }
+}
+
+function defaultSqlDumpTable(fdaId, daId) {
+  return daId === DEFAULT_DATA_ACCESS_ID ? fdaId : `${fdaId}_${daId}`;
+}
+
+async function writeSqlRows(res, source, { fdaId, daId, sqlOptions }) {
+  const dump = createSqlDump({
+    columns: source.columns,
+    table: sqlOptions?.table ?? defaultSqlDumpTable(fdaId, daId),
+    schema: sqlOptions?.schema,
+    hypertableColumn: sqlOptions?.hypertableColumn,
+    format: sqlOptions?.format,
+  });
+
+  await writeTextChunk(res, dump.preamble);
+  for (
+    let rows = await source.readNextRows();
+    rows.length > 0;
+    rows = await source.readNextRows()
+  ) {
+    await writeTextChunk(res, dump.rows(rows));
+  }
+  await writeTextChunk(res, dump.epilogue);
 }
 
 async function createCachedRowSource({
@@ -628,6 +678,7 @@ async function createFreshRowSource({
   daId,
   params,
   req,
+  sqlDump = false,
 }) {
   assertFreshQueriesEnabled(config.roles.syncQueries);
 
@@ -646,6 +697,10 @@ async function createFreshRowSource({
       params,
     });
 
+    if (sqlDump && datasource.type === 'mongodb') {
+      throw unsupportedSqlOutputError();
+    }
+
     await claimFDADownload(fda);
     try {
       cursorReader =
@@ -656,6 +711,7 @@ async function createFreshRowSource({
               text,
               values,
               FRESH_CURSOR_BATCH_SIZE,
+              { sqlDump },
             );
     } catch (e) {
       await releaseFDADownload(fda);
@@ -668,6 +724,7 @@ async function createFreshRowSource({
 
     return {
       columnNames: null,
+      columns: cursorReader.columns,
       readNextRows: () => cursorReader.readNextChunk(),
       close: async () => {
         await cursorReader?.close();
