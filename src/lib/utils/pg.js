@@ -396,11 +396,45 @@ export async function validatePostgresQuery(
   }
 }
 
+const SQL_DUMP_COLUMN_TYPES_QUERY =
+  'SELECT format_type(t.oid, t.typmod) AS type ' +
+  'FROM unnest($1::oid[], $2::int[]) WITH ORDINALITY AS t(oid, typmod, ord) ' +
+  'ORDER BY t.ord';
+
+const SQL_DUMP_CURSOR_CONFIG = {
+  rowMode: 'array',
+  types: { getTypeParser: () => (value) => value },
+};
+
+async function describePgQueryColumns(pgClient, text, values) {
+  const normalizedQuery = text.trim().replace(/;+\s*$/, '');
+  const { fields } = await pgClient.query({
+    text: `SELECT * FROM (${normalizedQuery}) AS fda_sql_dump LIMIT 0`,
+    values,
+    rowMode: 'array',
+  });
+
+  if (fields.length === 0) {
+    return [];
+  }
+
+  const { rows } = await pgClient.query(SQL_DUMP_COLUMN_TYPES_QUERY, [
+    fields.map((field) => field.dataTypeID),
+    fields.map((field) => field.dataTypeModifier),
+  ]);
+
+  return fields.map((field, index) => ({
+    name: field.name,
+    type: rows[index].type,
+  }));
+}
+
 export async function createPgCursorReader(
   pgCredentials,
   text,
   values,
   batchSize,
+  { sqlDump = false } = {},
 ) {
   const { username, password, host, port, database } = pgCredentials;
   const key = getPoolKey(username, password, host, port, database);
@@ -431,10 +465,18 @@ export async function createPgCursorReader(
 
   try {
     pgClient = await pgPool.connect();
-    cursor = pgClient.query(new Cursor(text, values));
+    const columns = sqlDump
+      ? await describePgQueryColumns(pgClient, text, values)
+      : null;
+    cursor = pgClient.query(
+      sqlDump
+        ? new Cursor(text, values, SQL_DUMP_CURSOR_CONFIG)
+        : new Cursor(text, values),
+    );
     const readCursor = promisify(cursor.read.bind(cursor));
 
     return {
+      columns,
       readNextChunk: () => readCursor(batchSize),
       close,
     };
