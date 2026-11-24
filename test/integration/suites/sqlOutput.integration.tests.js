@@ -320,6 +320,234 @@ export function registerSqlOutputIntegrationTests({
       expect(badTable.json.error).toBe('BadRequest');
     });
 
+    test('a query failing in its first rows returns an error instead of a truncated dump', async () => {
+      const failingFdaId = 'fda_sql_dump_failing';
+      const createFda = await httpReq({
+        method: 'POST',
+        url: `${getBaseUrl()}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: failingFdaId,
+          description: 'fails at runtime on the second row',
+          query: `SELECT id, 1 / (id - 2) AS ratio FROM ${SOURCE_TABLE}`,
+          cached: false,
+        },
+      });
+      expect(createFda.status).toBe(202);
+
+      const res = await httpReqRaw({
+        method: 'GET',
+        url: buildDaDataUrl(
+          getBaseUrl(),
+          servicePath,
+          failingFdaId,
+          'defaultDataAccess',
+        ),
+        headers: { 'Fiware-Service': service, Accept: 'application/sql' },
+      });
+
+      expect(res.status).toBe(500);
+      expect(res.headers['content-type']).toContain('application/json');
+      expect(res.text).not.toContain('BEGIN;');
+    });
+
+    describe('user-defined types and source session settings', () => {
+      const typesSchema = 'sql_dump_types';
+      const typedTable = 'public.sql_dump_typed';
+      const typedFdaId = 'fda_sql_dump_typed';
+      const stylesRole = 'sql_dump_styles';
+      const stylesTable = 'public.sql_dump_styles';
+      const stylesFdaId = 'fda_sql_dump_styles';
+
+      const dropStylesRole = async () => {
+        await pgClient.query(
+          'SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename = $1',
+          [stylesRole],
+        );
+        await pgClient.query(`DROP ROLE IF EXISTS ${stylesRole}`);
+      };
+
+      beforeAll(async () => {
+        await pgClient.query(`DROP TABLE IF EXISTS ${typedTable}`);
+        await pgClient.query(`DROP SCHEMA IF EXISTS ${typesSchema} CASCADE`);
+        await pgClient.query(`
+          CREATE SCHEMA ${typesSchema};
+          CREATE TYPE ${typesSchema}.mood AS ENUM ('ok', 'sad');
+          CREATE DOMAIN ${typesSchema}.positive_int AS integer CHECK (VALUE > 0);
+          CREATE TABLE ${typedTable} (
+            id integer,
+            mood ${typesSchema}.mood,
+            amount ${typesSchema}.positive_int,
+            moods ${typesSchema}.mood[]
+          );
+          INSERT INTO ${typedTable} VALUES (1, 'ok', 3, '{ok,sad}'), (2, 'sad', NULL, NULL)`);
+
+        await pgClient.query(`DROP TABLE IF EXISTS ${stylesTable}`);
+        await dropStylesRole();
+        await pgClient.query(`
+          CREATE ROLE ${stylesRole} LOGIN PASSWORD 'styles';
+          ALTER ROLE ${stylesRole} SET datestyle = 'SQL, DMY';
+          ALTER ROLE ${stylesRole} SET intervalstyle = 'sql_standard';
+          ALTER ROLE ${stylesRole} SET extra_float_digits = 0;
+          CREATE TABLE ${stylesTable} (
+            id integer,
+            day date,
+            local_at timestamp,
+            span interval,
+            ratio double precision
+          );
+          INSERT INTO ${stylesTable} VALUES
+            (1, '2026-02-01', '2026-02-01 13:45:00', '-1 days +02:00:00', 0.30000000000000004),
+            (2, '2026-12-31', '2026-03-04 23:59:59.5', '1 year 2 mons -3 days 04:05:06', 1 / 3::double precision);
+          GRANT SELECT ON ${stylesTable} TO ${stylesRole}`);
+
+        const headers = {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        };
+        await httpReq({
+          method: 'DELETE',
+          url: `${getBaseUrl()}/datasources/${stylesRole}`,
+          headers: { 'Fiware-Service': service },
+        });
+        const createDatasource = await httpReq({
+          method: 'POST',
+          url: `${getBaseUrl()}/datasources`,
+          headers: { 'Fiware-Service': service },
+          body: {
+            datasourceId: stylesRole,
+            type: 'postgres',
+            config: {
+              username: stylesRole,
+              password: 'styles',
+              host: getPgHost(),
+              port: getPgPort(),
+              database: service,
+            },
+          },
+        });
+        expect(createDatasource.status).toBe(204);
+
+        for (const body of [
+          { id: typedFdaId, query: `SELECT * FROM ${typedTable}` },
+          {
+            id: stylesFdaId,
+            query: `SELECT * FROM ${stylesTable}`,
+            datasourceId: stylesRole,
+          },
+        ]) {
+          const createFda = await httpReq({
+            method: 'POST',
+            url: `${getBaseUrl()}/${visibility}/fdas`,
+            headers,
+            body: {
+              description: 'SQL output test fda',
+              cached: false,
+              ...body,
+            },
+          });
+          expect(createFda.status).toBe(202);
+        }
+      });
+
+      afterAll(async () => {
+        for (const fdaId of [typedFdaId, stylesFdaId]) {
+          await httpReq({
+            method: 'DELETE',
+            url: `${getBaseUrl()}/${visibility}/fdas/${fdaId}`,
+            headers: {
+              'Fiware-Service': service,
+              'Fiware-ServicePath': servicePath,
+            },
+          });
+        }
+        await httpReq({
+          method: 'DELETE',
+          url: `${getBaseUrl()}/datasources/${stylesRole}`,
+          headers: { 'Fiware-Service': service },
+        });
+        await pgClient.query(`DROP TABLE IF EXISTS ${stylesTable}`);
+        await dropStylesRole();
+        await pgClient.query(`DROP TABLE IF EXISTS ${typedTable}`);
+        await pgClient.query(`DROP SCHEMA IF EXISTS ${typesSchema} CASCADE`);
+      });
+
+      test('keeps enums and domains from another schema, constraints included', async () => {
+        const res = await httpReqRaw({
+          method: 'GET',
+          url: buildDaDataUrl(
+            getBaseUrl(),
+            servicePath,
+            typedFdaId,
+            'defaultDataAccess',
+            { sqlSchema: RESTORE_SCHEMA },
+          ),
+          headers: { 'Fiware-Service': service, Accept: 'application/sql' },
+        });
+
+        expect(res.status).toBe(200);
+        expect(res.text).toContain(`"mood" ${typesSchema}.mood,`);
+        expect(res.text).toContain(`"amount" ${typesSchema}.positive_int,`);
+        expect(res.text).toContain(`"moods" ${typesSchema}.mood[]`);
+
+        await pgClient.query(res.text);
+
+        const restoredTable = `${RESTORE_SCHEMA}.${typedFdaId}`;
+        const source = await snapshot(pgClient, typedTable);
+        const restored = await snapshot(pgClient, restoredTable);
+        expect(restored.types).toEqual(source.types);
+        expect(restored.rows).toEqual(source.rows);
+        await expect(
+          pgClient.query(`INSERT INTO ${restoredTable} (amount) VALUES (-1)`),
+        ).rejects.toThrow('violates check constraint');
+      });
+
+      test.each(['insert', 'copy'])(
+        '%s dump restores the same dates, intervals and floats whatever the source and target styles',
+        async (sqlFormat) => {
+          const table = `styles_${sqlFormat}`;
+          const res = await httpReqRaw({
+            method: 'GET',
+            url: buildDaDataUrl(
+              getBaseUrl(),
+              servicePath,
+              stylesFdaId,
+              'defaultDataAccess',
+              { sqlSchema: RESTORE_SCHEMA, sqlTable: table, sqlFormat },
+            ),
+            headers: { 'Fiware-Service': service, Accept: 'application/sql' },
+          });
+
+          expect(res.status).toBe(200);
+          expect(res.text).toContain('2026-02-01');
+          expect(res.text).toContain('0.30000000000000004');
+          expect(res.text).not.toContain('01/02/2026');
+
+          await pgClient.query(
+            "SET datestyle = 'SQL, MDY'; SET intervalstyle = 'sql_standard'",
+          );
+          try {
+            await (sqlFormat === 'copy'
+              ? restoreCopyDump(pgClient, res.text)
+              : pgClient.query(res.text));
+          } finally {
+            await pgClient.query('RESET datestyle; RESET intervalstyle');
+          }
+
+          const source = await snapshot(pgClient, stylesTable);
+          const restored = await snapshot(
+            pgClient,
+            `${RESTORE_SCHEMA}.${table}`,
+          );
+          expect(restored.types).toEqual(source.types);
+          expect(restored.rows).toEqual(source.rows);
+        },
+      );
+    });
+
     describe('restored on TimescaleDB', () => {
       let timescale;
       let timescaleClient;
