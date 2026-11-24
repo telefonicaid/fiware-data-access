@@ -538,6 +538,7 @@ export async function executeQueryStream({
     await writeRows(res, source, { fdaId, daId, sqlOptions });
   } catch (e) {
     if (!res.headersSent) {
+      Object.keys(headers).forEach((name) => res.removeHeader(name));
       await releaseFDADownload(fda);
     }
     throw e;
@@ -598,8 +599,9 @@ async function writeSqlRows(res, source, { fdaId, daId, sqlOptions }) {
     table: sqlOptions?.table ?? defaultSqlDumpTable(fdaId, daId),
   });
 
+  let rows = await source.readNextRows();
   await writeTextChunk(res, dump.preamble);
-  for await (const rows of readRowChunks(source)) {
+  for (; rows.length > 0; rows = await source.readNextRows()) {
     await writeTextChunk(res, dump.rows(rows));
   }
   await writeTextChunk(res, dump.epilogue);
