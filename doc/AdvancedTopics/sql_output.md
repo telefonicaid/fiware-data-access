@@ -77,10 +77,15 @@ COMMIT;
 ```
 
 -   **Column types** are the exact ones PostgreSQL reports for the query: `numeric(10,2)`, `varchar(50)`,
-    `timestamp(3)`, arrays, `jsonb`, types from extensions such as PostGIS... User-defined types and extensions must
-    exist in the target database.
+    `timestamp(3)`, arrays, `jsonb`, enums, types from extensions such as PostGIS... Columns taken straight from a table
+    keep their declared type, domains included, while computed columns get the type of the expression. Types outside the
+    source `search_path` are written schema-qualified (`other_schema.mood`). User-defined types, domains and extensions
+    must exist in the target database.
 -   **Values** are written as PostgreSQL itself prints them as text, so dates, `numeric` scale, JSON, arrays, `bytea`
-    and 64-bit integers are restored exactly.
+    and 64-bit integers are restored exactly. The source session is read with `DateStyle = 'ISO, YMD'`,
+    `IntervalStyle = 'postgres'` and `extra_float_digits = 3`, whatever the source database or user has configured, so
+    `2026-02-01` is never written as `01/02/2026` and floats keep every digit. Those formats are read the same whatever
+    `DateStyle` or `IntervalStyle` the target session uses.
 -   **Rows** are written as one multi-row `INSERT` per chunk read from the source (250 rows), or as a single
     `COPY ... FROM stdin` block closed by `\.`.
 -   Column names returned by the query must be unique (`400 BadRequest` otherwise).
@@ -117,6 +122,8 @@ The whole script runs in one `BEGIN` / `COMMIT` transaction:
 
 -   If any statement fails while restoring (missing extension, missing type, existing table...), the transaction is
     rolled back and the target database is left as it was.
+-   If the query fails before returning its first rows, nothing is written: the response is a JSON error and the
+    download is not counted.
 -   If the query fails in the middle of the stream, the response is cut off and the file has no `COMMIT`. Restoring it
     rolls everything back, so a truncated dump never restores half the rows.
 -   The script never drops or empties anything. It uses `CREATE TABLE` without `IF NOT EXISTS`, so restoring a dump into
