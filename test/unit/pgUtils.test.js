@@ -449,10 +449,24 @@ describe('pg utils', () => {
       close: jest.fn((callback) => callback(null)),
     };
     currentClient.query
+      .mockResolvedValue({})
+      .mockResolvedValueOnce({})
       .mockResolvedValueOnce({
         fields: [
-          { name: 'id', dataTypeID: 23, dataTypeModifier: -1 },
-          { name: 'label', dataTypeID: 1043, dataTypeModifier: 54 },
+          {
+            name: 'id',
+            dataTypeID: 23,
+            dataTypeModifier: -1,
+            tableID: 0,
+            columnID: 0,
+          },
+          {
+            name: 'label',
+            dataTypeID: 1043,
+            dataTypeModifier: 54,
+            tableID: 16400,
+            columnID: 2,
+          },
         ],
       })
       .mockResolvedValueOnce({
@@ -479,17 +493,25 @@ describe('pg utils', () => {
       { name: 'id', type: 'integer' },
       { name: 'label', type: 'character varying(50)' },
     ]);
-    expect(currentClient.query).toHaveBeenNthCalledWith(1, {
+    expect(currentClient.query).toHaveBeenNthCalledWith(
+      1,
+      expect.stringMatching(
+        /^BEGIN; SET LOCAL datestyle = 'ISO, YMD'; .*extra_float_digits = 3$/,
+      ),
+    );
+    expect(currentClient.query).toHaveBeenNthCalledWith(2, {
       text: 'SELECT * FROM (SELECT id, label FROM t WHERE id > $1) AS fda_sql_dump LIMIT 0',
       values: [5],
       rowMode: 'array',
     });
     expect(currentClient.query).toHaveBeenNthCalledWith(
-      2,
-      expect.stringContaining('format_type'),
+      3,
+      expect.stringContaining('LEFT JOIN pg_attribute'),
       [
         [23, 1043],
         [-1, 54],
+        [0, 16400],
+        [0, 2],
       ],
     );
 
@@ -506,6 +528,7 @@ describe('pg utils', () => {
       ['7', '2020-08-17 18:25:28.332'],
     ]);
     await reader.close();
+    expect(currentClient.query).toHaveBeenLastCalledWith('ROLLBACK');
     expect(currentClient.release).toHaveBeenCalledWith(false);
   });
 
@@ -515,6 +538,8 @@ describe('pg utils', () => {
       close: jest.fn((callback) => callback(null)),
     };
     currentClient.query
+      .mockResolvedValue({})
+      .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ fields: [] })
       .mockReturnValueOnce(cursorObject);
 
@@ -533,14 +558,15 @@ describe('pg utils', () => {
     );
 
     expect(reader.columns).toEqual([]);
-    expect(currentClient.query).toHaveBeenCalledTimes(2);
+    expect(currentClient.query).toHaveBeenCalledTimes(3);
     await reader.close();
   });
 
-  test('createPgCursorReader in SQL dump mode releases the client when describing the columns fails', async () => {
-    currentClient.query.mockRejectedValueOnce(
-      new Error('relation "missing" does not exist'),
-    );
+  test('createPgCursorReader in SQL dump mode rolls back and releases the client when describing the columns fails', async () => {
+    currentClient.query
+      .mockResolvedValue({})
+      .mockResolvedValueOnce({})
+      .mockRejectedValueOnce(new Error('relation "missing" does not exist'));
 
     await expect(
       createPgCursorReader(
@@ -563,7 +589,34 @@ describe('pg utils', () => {
     });
 
     expect(cursorCtorMock).not.toHaveBeenCalled();
+    expect(currentClient.query).toHaveBeenLastCalledWith('ROLLBACK');
     expect(currentClient.release).toHaveBeenCalledTimes(1);
+    expect(currentClient.release).toHaveBeenCalledWith(false);
+  });
+
+  test('createPgCursorReader in SQL dump mode discards the client when the rollback fails', async () => {
+    currentClient.query
+      .mockRejectedValue(new Error('connection lost'))
+      .mockResolvedValueOnce({})
+      .mockRejectedValueOnce(new Error('relation "missing" does not exist'));
+
+    await expect(
+      createPgCursorReader(
+        {
+          username: 'u',
+          password: 'p',
+          host: 'h',
+          port: 5432,
+          database: 'svc_db',
+        },
+        'SELECT * FROM missing',
+        [],
+        100,
+        { sqlDump: true },
+      ),
+    ).rejects.toMatchObject({ type: 'PostgresServerError' });
+
+    expect(currentClient.release).toHaveBeenCalledWith(true);
   });
 
   test('createPgCursorReader wraps non-FDA errors', async () => {

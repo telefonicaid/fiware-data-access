@@ -246,6 +246,7 @@ function createReqRes() {
 
   const res = {
     setHeader: jest.fn(),
+    removeHeader: jest.fn(),
     write: jest.fn().mockReturnValue(true),
     once: jest.fn((event, callback) => {
       if (event === 'drain') {
@@ -969,6 +970,43 @@ describe('fda fresh query execution', () => {
     });
 
     expect(res.write).not.toHaveBeenCalled();
+    expect(mongoMocks.releaseFDADownload).toHaveBeenCalledTimes(1);
+    expect(cursorReader.close).toHaveBeenCalled();
+  });
+
+  test('writes nothing and gives the download back when the first SQL dump chunk fails', async () => {
+    const { req, res } = createReqRes();
+    const error = new Error('division by zero');
+    const cursorReader = {
+      columns: [{ name: 'id', type: 'integer' }],
+      readNextChunk: jest.fn().mockRejectedValue(error),
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+    mongoMocks.retrieveFDA.mockResolvedValue({
+      query: 'SELECT 1 / 0 AS id',
+      visibility: 'private',
+      servicePath: '/servicepath',
+      cached: false,
+      datasourceId: 'default',
+    });
+    pgMocks.createPgCursorReader.mockResolvedValue(cursorReader);
+
+    await expect(
+      executeQueryStream({
+        service: 'svc',
+        visibility: 'private',
+        servicePath: '/servicepath',
+        params: { fdaId: 'fdaA', daId: 'defaultDataAccess' },
+        req,
+        res,
+        format: 'sql',
+        sqlOptions: { format: 'insert' },
+      }),
+    ).rejects.toBe(error);
+
+    expect(res.write).not.toHaveBeenCalled();
+    expect(res.removeHeader).toHaveBeenCalledWith('Content-Type');
+    expect(res.removeHeader).toHaveBeenCalledWith('Content-Disposition');
     expect(mongoMocks.releaseFDADownload).toHaveBeenCalledTimes(1);
     expect(cursorReader.close).toHaveBeenCalled();
   });
