@@ -29,6 +29,7 @@
 -   [DuckDB memory management](AdvancedTopics/duckdb_memory_management.md)
     -   [Automated window-memory regression scenarios](AdvancedTopics/duckdb_memory_management.md#automated-window-memory-regression-scenarios)
 -   [SQL Pattern Matching in DA Queries](#sql-pattern-matching-in-da-queries)
+-   [SQL Output for Only-Fresh FDAs](#sql-output-for-only-fresh-fdas)
 -   [Numeric Precision](#numeric-precision)
     -   [Integers beyond 2^53 on the client side](#integers-beyond-253-on-the-client-side)
     -   [DA params](#da-params)
@@ -338,6 +339,17 @@ SQL, evaluated by the underlying query engine exactly as written in the `query` 
 `params` into the query text; it does not interpret, validate, or add any special meaning to the pattern itself. Whether
 a value like `%value%` performs a "contains" match, a prefix match, or something else depends entirely on how the SQL
 clause is written and on the value supplied for the parameter, whether via its `default` or at query time.
+
+---
+
+## SQL Output for Only-Fresh FDAs
+
+Only-fresh PostgreSQL FDAs can return any DA result as a plain-text SQL script, similar to `pg_dump` plain output, that
+recreates it as a table in another PostgreSQL or TimescaleDB database (`outputType=sql` or `Accept: application/sql`).
+The script runs in a single transaction, keeps the exact source column types, writes the rows as `INSERT` statements or
+as a `COPY ... FROM stdin` block, and can turn the table into a TimescaleDB hypertable.
+
+👉 Full documentation available at: [`SQL output`](/doc/AdvancedTopics/sql_output.md)
 
 ---
 

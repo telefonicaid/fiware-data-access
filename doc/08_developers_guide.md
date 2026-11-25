@@ -332,6 +332,7 @@ flowchart TD
     Adapter --> Access{"FDA exists with this<br/>visibility and servicePath?"}
     Access -- no --> Err404["404 / 403"]
     Access -- yes --> Cached{"cached?"}
+    Cached -- "true · SQL output" --> Err400o["400 UnsupportedOutputType"]
 
     Cached -- "false (only-fresh)" --> Sync{"FDA_ROLE_SYNCQUERIES<br/>enabled?"}
     Sync -- no --> Err503s["503 SyncQueriesDisabled"]
@@ -340,8 +341,10 @@ flowchart TD
     Slot -- yes --> FreshDA{"Which DA?"}
     FreshDA -- defaultDataAccess --> AsIs["FDA query as is"]
     FreshDA -- "custom DA (PostgreSQL only)" --> Wrapped["DA applied over the FDA query<br/>with validated params"]
-    AsIs --> FreshQuota{"Download policy<br/>allows it?"}
-    Wrapped --> FreshQuota
+    AsIs --> SqlMongo{"SQL output on<br/>a MongoDB FDA?"}
+    Wrapped --> SqlMongo
+    SqlMongo -- yes --> Err400o
+    SqlMongo -- no --> FreshQuota{"Download policy<br/>allows it?"}
     FreshQuota -- no --> Err410["410 expired or limit reached"]
     FreshQuota -- yes --> RunSource["Run on the datasource"]
     RunSource --> Output
@@ -364,12 +367,13 @@ flowchart TD
     Prune --> Read["DuckDB reads the Parquet<br/>from object storage"]
     Read --> Count["Count the access<br/>for usage accounting"]
     Count --> Output{"Output format"}
-    Output -- "NDJSON · CSV" --> Stream["Streamed response"]
+    Output -- "NDJSON · CSV · SQL" --> Stream["Streamed response"]
     Output -- "JSON · XLSX · CDA" --> Buffer["Buffered response"]
 ```
 
 A lazy or onDemand query never triggers more than one fetch: concurrent queries share it and poll the FDA status until
-the data is available. The fresh-query slots and the access counters are kept per API instance. See
+the data is available. The fresh-query slots and the access counters are kept per API instance. SQL output is only
+available for only-fresh PostgreSQL FDAs, see [SQL output](/doc/AdvancedTopics/sql_output.md). See
 [CDA legacy compatibility](/doc/AdvancedTopics/cda_legacy_compatibility.md) for the CDA mapping and
 [Default Data Access](/doc/AdvancedTopics/default_data_access.md) for the generated DA and its `timeRange`.
 

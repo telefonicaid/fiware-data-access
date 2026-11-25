@@ -120,9 +120,53 @@
  *       description: Output format used in **query-style** context. Ignored (and rejected) in header-style context.
  *       schema:
  *         type: string
- *         enum: [json, ndjson, csv, xls, cda]
+ *         enum: [json, ndjson, csv, xls, cda, sql]
  *         default: ndjson
  *       example: csv
+ *     SqlTableQuery:
+ *       name: sqlTable
+ *       in: query
+ *       required: false
+ *       description: >
+ *         Only with SQL output (`outputType=sql` or `Accept: application/sql`). Name of the table created by the
+ *         dump. Default: `<fdaId>_<daId>`, or `<fdaId>` for `defaultDataAccess`.
+ *       schema:
+ *         type: string
+ *         pattern: '^[A-Za-z0-9_-]{1,63}$'
+ *       example: measures_backup
+ *     SqlSchemaQuery:
+ *       name: sqlSchema
+ *       in: query
+ *       required: false
+ *       description: >
+ *         Only with SQL output. Schema of the table, created by the dump if it does not exist. Without it the table
+ *         is created in the restore session `search_path`.
+ *       schema:
+ *         type: string
+ *         pattern: '^[A-Za-z0-9_-]{1,63}$'
+ *       example: backups
+ *     SqlHypertableQuery:
+ *       name: sqlHypertable
+ *       in: query
+ *       required: false
+ *       description: >
+ *         Only with SQL output. Column returned by the query used as time dimension of a TimescaleDB hypertable
+ *         (`create_hypertable` with `by_range`, TimescaleDB 2.13 or later). Without it no hypertable is created.
+ *       schema:
+ *         type: string
+ *       example: timeinstant
+ *     SqlFormatQuery:
+ *       name: sqlFormat
+ *       in: query
+ *       required: false
+ *       description: >
+ *         Only with SQL output. `insert` writes multi-row `INSERT` statements that any client can run; `copy`
+ *         writes a `COPY ... FROM stdin` block, smaller and faster to load, that only `psql` can run.
+ *       schema:
+ *         type: string
+ *         enum: [insert, copy]
+ *         default: insert
+ *       example: copy
  *     AcceptDataHeader:
  *       name: Accept
  *       in: header
@@ -139,6 +183,7 @@
  *           - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
  *           - application/vnd.ms-excel
  *           - application/vnd.fiware.cda+json
+ *           - application/sql
  *       example: application/json
  *     CdaPathQuery:
  *       name: path
@@ -206,8 +251,8 @@
  *     DataQueryResult:
  *       description: >
  *         Query results. In header-style context the format is chosen via content negotiation (`Accept`); in
- *         query-style context it is chosen via `outputType` (default `ndjson`). `ndjson` and `csv` responses are
- *         streamed incrementally. Values are serialized the same way in every format and for both cached and fresh
+ *         query-style context it is chosen via `outputType` (default `ndjson`). `ndjson`, `csv` and `sql` responses
+ *         are streamed incrementally. Values are serialized the same way in every format and for both cached and fresh
  *         queries: dates as ISO 8601 strings, numbers as JSON numbers (64/128-bit integers keep all their digits,
  *         also beyond 2^53 − 1), and `DECIMAL`/`NUMERIC` values as strings to keep their exact scale. In `.xlsx`
  *         output, integers beyond 2^53 − 1 are written as text.
@@ -238,6 +283,13 @@
  *             description: >
  *               CDA-compatible JSON structure. Note the actual `Content-Type` response header is `application/json`,
  *               not `application/vnd.fiware.cda+json`.
+ *         application/sql:
+ *           schema:
+ *             type: string
+ *             description: >
+ *               Only-fresh PostgreSQL FDAs only. SQL script, similar to `pg_dump` plain output, that recreates the
+ *               result as a table in one transaction: `CREATE TABLE` with the source column types, an optional
+ *               `create_hypertable`, and the rows as `INSERT` statements or a `COPY ... FROM stdin` block.
  *     CdaQueryResult:
  *       description: Query results in the format selected by `outputType`.
  *       content:

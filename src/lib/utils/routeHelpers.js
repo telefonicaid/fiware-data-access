@@ -39,6 +39,7 @@ const DATA_ACCEPT_CONTENT_TYPE_TO_OUTPUT = {
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xls',
   'application/vnd.ms-excel': 'xls',
   'application/vnd.fiware.cda+json': 'cda',
+  'application/sql': 'sql',
 };
 
 const FDA_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
@@ -94,7 +95,7 @@ export function getOutputTypeFromAcceptHeader(req) {
     throw new FDAError(
       406,
       'NotAcceptable',
-      'Accept header must allow application/json, application/x-ndjson, text/csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, or application/vnd.fiware.cda+json',
+      'Accept header must allow application/json, application/x-ndjson, text/csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.fiware.cda+json, or application/sql',
     );
   }
 

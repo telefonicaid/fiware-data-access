@@ -441,6 +441,184 @@ describe('pg utils', () => {
     expect(currentClient.release).toHaveBeenCalledWith(true);
   });
 
+  test('createPgCursorReader in SQL dump mode describes the columns and reads rows as PostgreSQL text', async () => {
+    const cursorObject = {
+      read: jest.fn((size, callback) =>
+        callback(null, [['7', '2020-08-17 18:25:28.332']]),
+      ),
+      close: jest.fn((callback) => callback(null)),
+    };
+    currentClient.query
+      .mockResolvedValue({})
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({
+        fields: [
+          {
+            name: 'id',
+            dataTypeID: 23,
+            dataTypeModifier: -1,
+            tableID: 0,
+            columnID: 0,
+          },
+          {
+            name: 'label',
+            dataTypeID: 1043,
+            dataTypeModifier: 54,
+            tableID: 16400,
+            columnID: 2,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ type: 'integer' }, { type: 'character varying(50)' }],
+      })
+      .mockReturnValueOnce(cursorObject);
+
+    const creds = {
+      username: 'u',
+      password: 'p',
+      host: 'h',
+      port: 5432,
+      database: 'svc_db',
+    };
+    const reader = await createPgCursorReader(
+      creds,
+      'SELECT id, label FROM t WHERE id > $1',
+      [5],
+      100,
+      { sqlDump: true },
+    );
+
+    expect(reader.columns).toEqual([
+      { name: 'id', type: 'integer' },
+      { name: 'label', type: 'character varying(50)' },
+    ]);
+    expect(currentClient.query).toHaveBeenNthCalledWith(
+      1,
+      expect.stringMatching(
+        /^BEGIN; SET LOCAL datestyle = 'ISO, YMD'; .*extra_float_digits = 3$/,
+      ),
+    );
+    expect(currentClient.query).toHaveBeenNthCalledWith(2, {
+      text: 'SELECT * FROM (SELECT id, label FROM t WHERE id > $1) AS fda_sql_dump LIMIT 0',
+      values: [5],
+      rowMode: 'array',
+    });
+    expect(currentClient.query).toHaveBeenNthCalledWith(
+      3,
+      expect.stringContaining('LEFT JOIN pg_attribute'),
+      [
+        [23, 1043],
+        [-1, 54],
+        [0, 16400],
+        [0, 2],
+      ],
+    );
+
+    const [cursorText, cursorValues, cursorConfig] =
+      cursorCtorMock.mock.calls[0];
+    expect(cursorText).toBe('SELECT id, label FROM t WHERE id > $1');
+    expect(cursorValues).toEqual([5]);
+    expect(cursorConfig.rowMode).toBe('array');
+    expect(cursorConfig.types.getTypeParser(1114)('2020-08-17 18:25:28')).toBe(
+      '2020-08-17 18:25:28',
+    );
+
+    await expect(reader.readNextChunk()).resolves.toEqual([
+      ['7', '2020-08-17 18:25:28.332'],
+    ]);
+    await reader.close();
+    expect(currentClient.query).toHaveBeenLastCalledWith('ROLLBACK');
+    expect(currentClient.release).toHaveBeenCalledWith(false);
+  });
+
+  test('createPgCursorReader in SQL dump mode skips the type lookup when the query returns no columns', async () => {
+    const cursorObject = {
+      read: jest.fn((size, callback) => callback(null, [])),
+      close: jest.fn((callback) => callback(null)),
+    };
+    currentClient.query
+      .mockResolvedValue({})
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ fields: [] })
+      .mockReturnValueOnce(cursorObject);
+
+    const reader = await createPgCursorReader(
+      {
+        username: 'u',
+        password: 'p',
+        host: 'h',
+        port: 5432,
+        database: 'svc_db',
+      },
+      'SELECT FROM t',
+      [],
+      100,
+      { sqlDump: true },
+    );
+
+    expect(reader.columns).toEqual([]);
+    expect(currentClient.query).toHaveBeenCalledTimes(3);
+    await reader.close();
+  });
+
+  test('createPgCursorReader in SQL dump mode rolls back and releases the client when describing the columns fails', async () => {
+    currentClient.query
+      .mockResolvedValue({})
+      .mockResolvedValueOnce({})
+      .mockRejectedValueOnce(new Error('relation "missing" does not exist'));
+
+    await expect(
+      createPgCursorReader(
+        {
+          username: 'u',
+          password: 'p',
+          host: 'h',
+          port: 5432,
+          database: 'svc_db',
+        },
+        'SELECT * FROM missing',
+        [],
+        100,
+        { sqlDump: true },
+      ),
+    ).rejects.toMatchObject({
+      status: 500,
+      type: 'PostgresServerError',
+      message: 'Error streaming fresh query: relation "missing" does not exist',
+    });
+
+    expect(cursorCtorMock).not.toHaveBeenCalled();
+    expect(currentClient.query).toHaveBeenLastCalledWith('ROLLBACK');
+    expect(currentClient.release).toHaveBeenCalledTimes(1);
+    expect(currentClient.release).toHaveBeenCalledWith(false);
+  });
+
+  test('createPgCursorReader in SQL dump mode discards the client when the rollback fails', async () => {
+    currentClient.query
+      .mockRejectedValue(new Error('connection lost'))
+      .mockResolvedValueOnce({})
+      .mockRejectedValueOnce(new Error('relation "missing" does not exist'));
+
+    await expect(
+      createPgCursorReader(
+        {
+          username: 'u',
+          password: 'p',
+          host: 'h',
+          port: 5432,
+          database: 'svc_db',
+        },
+        'SELECT * FROM missing',
+        [],
+        100,
+        { sqlDump: true },
+      ),
+    ).rejects.toMatchObject({ type: 'PostgresServerError' });
+
+    expect(currentClient.release).toHaveBeenCalledWith(true);
+  });
+
   test('createPgCursorReader wraps non-FDA errors', async () => {
     currentPool.connect.mockRejectedValue(new Error('connect exploded'));
 

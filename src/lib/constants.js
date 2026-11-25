@@ -120,7 +120,14 @@ export const PARTITION_TYPES = ['day', 'week', 'month', 'year', 'none'];
 export const VALID_OUTPUT_TYPES = ['ndjson', 'json', 'csv', 'xls'];
 export const DEFAULT_OUTPUT_TYPE = 'ndjson';
 export const LEGACY_DEFAULT_OUTPUT_TYPE = 'json';
-export const QUERY_STYLE_OUTPUT_TYPES = ['json', 'ndjson', 'csv', 'xls', 'cda'];
+export const QUERY_STYLE_OUTPUT_TYPES = [
+  'json',
+  'ndjson',
+  'csv',
+  'xls',
+  'cda',
+  'sql',
+];
 
 // Supported MIME types for /data, listed in server-default preference order.
 export const DATA_CONTENT_TYPES = [
@@ -130,6 +137,7 @@ export const DATA_CONTENT_TYPES = [
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/vnd.ms-excel',
   'application/vnd.fiware.cda+json',
+  'application/sql',
 ];
 
 // Error messages

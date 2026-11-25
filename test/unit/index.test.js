@@ -1348,6 +1348,77 @@ describe('index routes - validation and middleware branches', () => {
     expect(fdaMocks.executeQuery).not.toHaveBeenCalled();
   });
 
+  test('routes query-style outputType=sql through streaming with the SQL params split from the DA params', async () => {
+    await request(app)
+      .get('/public/fdas/fda1/das/da1/data')
+      .query({
+        service: 'svc',
+        servicePath: '/servicepath',
+        minAge: '18',
+        outputType: 'sql',
+        sqlTable: 'backup',
+        sqlHypertable: 'timeinstant',
+        sqlFormat: 'copy',
+      })
+      .expect(200);
+
+    expect(fdaMocks.executeQueryStream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        format: 'sql',
+        params: { fdaId: 'fda1', daId: 'da1', minAge: '18' },
+        sqlOptions: {
+          table: 'backup',
+          schema: undefined,
+          hypertableColumn: 'timeinstant',
+          format: 'copy',
+        },
+      }),
+    );
+    expect(fdaMocks.executeQuery).not.toHaveBeenCalled();
+  });
+
+  test('routes header-style Accept application/sql through streaming with default SQL options', async () => {
+    await request(app)
+      .get('/public/fdas/fda1/das/da1/data')
+      .set('Fiware-Service', 'svc')
+      .set('Fiware-ServicePath', '/servicepath')
+      .set('Accept', 'application/sql')
+      .query({ sqlSchema: 'archive' })
+      .expect(200);
+
+    expect(fdaMocks.executeQueryStream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        format: 'sql',
+        params: { fdaId: 'fda1', daId: 'da1' },
+        sqlOptions: {
+          table: undefined,
+          schema: 'archive',
+          hypertableColumn: undefined,
+          format: 'insert',
+        },
+      }),
+    );
+  });
+
+  test('rejects SQL params when the requested output is not SQL', async () => {
+    const res = await request(app)
+      .get('/public/fdas/fda1/das/da1/data')
+      .query({
+        service: 'svc',
+        servicePath: '/servicepath',
+        outputType: 'csv',
+        sqlTable: 'backup',
+      })
+      .expect(400);
+
+    expect(res.body).toEqual({
+      error: 'BadRequest',
+      description: 'Query params sqlTable are only allowed with SQL output.',
+    });
+    expect(fdaMocks.executeQueryStream).not.toHaveBeenCalled();
+    expect(fdaMocks.executeQuery).not.toHaveBeenCalled();
+  });
+
   test('returns 400 for invalid query-style outputType in DA data URL', async () => {
     const res = await request(app)
       .get('/public/fdas/fda1/das/da1/data')
@@ -1541,7 +1612,7 @@ describe('index routes - validation and middleware branches', () => {
     expect(res.body).toEqual({
       error: 'NotAcceptable',
       description:
-        'Accept header must allow application/json, application/x-ndjson, text/csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, or application/vnd.fiware.cda+json',
+        'Accept header must allow application/json, application/x-ndjson, text/csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.fiware.cda+json, or application/sql',
     });
     expect(fdaMocks.executeQuery).not.toHaveBeenCalled();
     expect(fdaMocks.executeQueryStream).not.toHaveBeenCalled();

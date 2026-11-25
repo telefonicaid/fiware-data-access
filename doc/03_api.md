@@ -138,6 +138,7 @@ All error responses follow this structure:
 | ---- | ---------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 400  | Bad Request            | `BadRequest`                     | Missing or invalid values in request body, headers, or query parameters. `Fiware-Service`, `Fiware-ServicePath`, and `visibility` (path segment) are required for all operations.                                                                                                                                  |
 | 400  | Bad Request            | `BadRequest`                     | Invalid or unsupported query fields were provided (for example, using `fresh` in `GET /{visibility}/fdas/{fdaId}/das/{daId}/data`).                                                                                                                                                                                |
+| 400  | Bad Request            | `UnsupportedOutputType`          | SQL output (`outputType=sql` or `Accept: application/sql`) was requested on a cached FDA or on an only-fresh MongoDB FDA. See [SQL output](/doc/AdvancedTopics/sql_output.md).                                                                                                                                     |
 | 400  | Bad Request            | `InvalidVisibility`              | The `visibility` path segment is not one of the allowed values (`public`, `private`).                                                                                                                                                                                                                              |
 | 400  | Bad Request            | `InvalidServicePath`             | The `Fiware-ServicePath` header value is not a valid non-root absolute path (e.g. `/servicePath/site`). The root path `/` is not allowed.                                                                                                                                                                          |
 | 400  | Bad Request            | `InvalidQueryParam`              | Some of the params in the request don't comply with the [params](#da-params) array restrictions.                                                                                                                                                                                                                   |
@@ -148,7 +149,7 @@ All error responses follow this structure:
 | 404  | Not Found              | `FDANotFound`                    | The requested FDA was not found.                                                                                                                                                                                                                                                                                   |
 | 404  | Not Found              | `DaNotFound`                     | The requested Data Access (DA) was not found.                                                                                                                                                                                                                                                                      |
 | 404  | Not Found              | `DatasourceNotFound`             | The requested datasource does not exist for the provided `Fiware-Service` (for example during FDA creation, or when resolving datasource credentials for existing FDA operations). See [Operational note about DatasourceNotFound](/doc/04_config_operational_guide.md#operational-note-about-datasourcenotfound). |
-| 406  | Not Acceptable         | `NotAcceptable`                  | `Accept` header does not allow any supported response format (`application/json`, `application/x-ndjson`, `text/csv`, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`).                                                                                                                        |
+| 406  | Not Acceptable         | `NotAcceptable`                  | `Accept` header does not allow any supported response format (`application/json`, `application/x-ndjson`, `text/csv`, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`, `application/vnd.fiware.cda+json`, `application/sql`).                                                                  |
 | 409  | Conflict               | `DuplicatedKey`                  | The resource already exists in the database. Attempting to create a duplicate resource.                                                                                                                                                                                                                            |
 | 409  | Conflict               | `FDAUnavailable`                 | FDA `exampleId` is not queryable yet because the first fetch has not completed, or a lazy/`onDemand` FDA is still being fetched after `FDA_ON_DEMAND_WAIT_TIMEOUT_MS`.                                                                                                                                             |
 | 409  | Conflict               | `FDAProcessing`                  | Attempted to delete an FDA while it is being processed (status other than `completed` or `failed`). Retry once the fetch finishes.                                                                                                                                                                                 |
@@ -2056,20 +2057,21 @@ _**Request query parameters**_
 
 The endpoint supports two request styles:
 
-| Parameter     | Optional | Description                                                                                                      | Example                  |
-| ------------- | -------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------ |
-| `service`     | ✓        | Tenant or service. Required when using query-style context (instead of FIWARE headers).                          | `trantor`                |
-| `servicePath` | ✓        | NGSI hierarchical service path. Required when using query-style context (instead of FIWARE headers).             | `/servicePath`           |
-| `outputType`  | ✓        | Output format for query-style context. Allowed values: `json`, `ndjson`, `csv`, `xls`, `cda`. Default: `ndjson`. | `csv`                    |
-| DA params     | ✓        | DA-specific parameters declared in `params`.                                                                     | `pattern=%25nosignal%25` |
+| Parameter     | Optional | Description                                                                                                             | Example                  |
+| ------------- | -------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| `service`     | ✓        | Tenant or service. Required when using query-style context (instead of FIWARE headers).                                 | `trantor`                |
+| `servicePath` | ✓        | NGSI hierarchical service path. Required when using query-style context (instead of FIWARE headers).                    | `/servicePath`           |
+| `outputType`  | ✓        | Output format for query-style context. Allowed values: `json`, `ndjson`, `csv`, `xls`, `cda`, `sql`. Default: `ndjson`. | `csv`                    |
+| SQL params    | ✓        | Only with SQL output: `sqlTable`, `sqlSchema`, `sqlHypertable` and `sqlFormat`. See [SQL output](#sql-output).          | `sqlFormat=copy`         |
+| DA params     | ✓        | DA-specific parameters declared in `params`.                                                                            | `pattern=%25nosignal%25` |
 
 _**Request headers**_
 
-| Header               | Optional | Description                                                                                                                                                                                                                                                                                                 | Example            |
-| -------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
-| `Fiware-Service`     | ✓        | Tenant or service for header-style context.                                                                                                                                                                                                                                                                 | `trantor`          |
-| `Fiware-ServicePath` | ✓        | NGSI hierarchical service path for header-style context.                                                                                                                                                                                                                                                    | `/servicePath`     |
-| `Accept`             | ✓        | Response format for header-style context, negotiated via standard HTTP content negotiation. Allowed values: `application/json`, `application/x-ndjson`, `text/csv`, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` (or `application/vnd.ms-excel`), `application/vnd.fiware.cda+json`. | `application/json` |
+| Header               | Optional | Description                                                                                                                                                                                                                                                                                                                    | Example            |
+| -------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------ |
+| `Fiware-Service`     | ✓        | Tenant or service for header-style context.                                                                                                                                                                                                                                                                                    | `trantor`          |
+| `Fiware-ServicePath` | ✓        | NGSI hierarchical service path for header-style context.                                                                                                                                                                                                                                                                       | `/servicePath`     |
+| `Accept`             | ✓        | Response format for header-style context, negotiated via standard HTTP content negotiation. Allowed values: `application/json`, `application/x-ndjson`, `text/csv`, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` (or `application/vnd.ms-excel`), `application/vnd.fiware.cda+json`, `application/sql`. | `application/json` |
 
 See "Content negotiation and serialization notes" below for the request-style mixing and precedence rules.
 
@@ -2114,12 +2116,22 @@ This endpoint is the only way to read data from any FDA, cached or not. For an F
     limited by `FDA_MAX_CONCURRENT_FRESH_QUERIES` (`429 TooManyFreshQueries`).
 -   With `Accept: application/x-ndjson` and `Accept: text/csv`, results are streamed from the datasource using a cursor
     (PostgreSQL) or a chunked collection cursor (MongoDB).
+-   On PostgreSQL FDAs, results can also be downloaded as a restorable SQL script. See [SQL output](#sql-output).
 
 ```bash
 curl -i -X GET "http://localhost:8080/public/fdas/fda_live_alarms/das/defaultDataAccess/data" \
     -H "Fiware-Service: trantor" \
     -H "Fiware-ServicePath: /servicePath"
 ```
+
+##### SQL output
+
+Only-fresh PostgreSQL FDAs can also return the result as a SQL script, similar to `pg_dump` plain output, that recreates
+it as a table in PostgreSQL or TimescaleDB: `outputType=sql` (query-style) or `Accept: application/sql` (header-style),
+shaped with the `sqlTable`, `sqlSchema`, `sqlHypertable` and `sqlFormat` query parameters. Cached and MongoDB FDAs
+reject it with `400 UnsupportedOutputType`.
+
+👉 Full documentation available at: [`SQL output`](/doc/AdvancedTopics/sql_output.md)
 
 _**Response headers**_
 
@@ -2130,6 +2142,7 @@ _**Response headers**_
 | `csv`                      | `text/csv`                                                                                        | `text/csv; charset=utf-8`                                           | `attachment; filename="results.csv"`  |
 | `xls`                      | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` or `application/vnd.ms-excel` | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` | `attachment; filename="results.xlsx"` |
 | `cda`                      | `application/vnd.fiware.cda+json`                                                                 | `application/json`                                                  | —                                     |
+| `sql`                      | `application/sql`                                                                                 | `application/sql; charset=utf-8`                                    | `attachment; filename="results.sql"`  |
 
 > Note: for `cda`, the response body follows the CDA-compatible JSON structure shown below, but the actual
 > `Content-Type` response header is `application/json`, not `application/vnd.fiware.cda+json`.
@@ -2144,6 +2157,8 @@ Depends on the resolved output format:
 -   `text/csv`: comma-separated values file. The first row contains column names. Values containing commas,
     double-quotes or newlines are quoted.
 -   spreadsheet MIME types: Excel workbook (`.xlsx` format, Office Open XML). The first row contains column names.
+-   `sql` (`application/sql`): SQL script that recreates the result as a table. See
+    [SQL output](/doc/AdvancedTopics/sql_output.md).
 -   `cda` (`application/vnd.fiware.cda+json`): CDA-compatible JSON structure:
 
 ```json
@@ -2179,7 +2194,9 @@ _**Content negotiation and serialization notes**_
 -   Numeric database values are returned as JSON numbers, including 64-bit and 128-bit integers beyond
     `Number.MAX_SAFE_INTEGER`, which keep all their digits. `DECIMAL` / `NUMERIC` values are returned as strings to
     preserve their exact scale. See [Numeric Precision](/doc/05_advanced_topics.md#numeric-precision).
--   With `Accept: text/csv` and `Accept: application/x-ndjson`, responses are streamed.
+-   With `Accept: text/csv`, `Accept: application/x-ndjson` and `Accept: application/sql`, responses are streamed.
+-   `sqlTable`, `sqlSchema`, `sqlHypertable` and `sqlFormat` are only accepted with SQL output (`400 BadRequest`
+    otherwise), and are not passed to the DA as params.
 
 _**Example Request (without DA parameters):**_
 

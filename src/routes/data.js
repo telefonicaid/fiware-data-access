@@ -27,6 +27,7 @@ import express from 'express';
 import { executeQuery, executeQueryStream } from '../lib/fda.js';
 import { validateForbiddenFieldsQuery } from '../lib/utils/utils.js';
 import { toCdaJson } from '../lib/utils/outputFormat.js';
+import { splitSqlDumpQueryParams } from '../lib/utils/sqlDump.js';
 import {
   resolveServiceContextFromRequest,
   getOutputTypeFromAcceptHeader,
@@ -36,6 +37,8 @@ import {
 } from '../lib/utils/routeHelpers.js';
 
 const router = express.Router();
+
+const STREAMED_OUTPUT_TYPES = new Set(['ndjson', 'csv', 'sql']);
 
 /**
  * @swagger
@@ -73,6 +76,12 @@ const router = express.Router();
  *       in the same request returns `409 RequestStyleConflict`. Any parameter declared in the DA's `params`
  *       array can additionally be supplied as a query parameter regardless of style (e.g. `?pattern=%25foo%25`);
  *       the `fresh` query field is always rejected.
+ *
+ *
+ *       Only-fresh PostgreSQL FDAs can also return a restorable SQL script (`outputType=sql` or
+ *       `Accept: application/sql`), tuned with `sqlTable`, `sqlSchema`, `sqlHypertable` and `sqlFormat`. Those
+ *       parameters are rejected with any other output, and SQL output is rejected on cached and MongoDB FDAs
+ *       (`400 UnsupportedOutputType`) before any download is counted.
  *     parameters:
  *       - $ref: '#/components/parameters/VisibilityPath'
  *       - $ref: '#/components/parameters/FdaIdPath'
@@ -83,11 +92,22 @@ const router = express.Router();
  *       - $ref: '#/components/parameters/ServiceQueryOptional'
  *       - $ref: '#/components/parameters/ServicePathQueryOptional'
  *       - $ref: '#/components/parameters/OutputTypeQueryOptional'
+ *       - $ref: '#/components/parameters/SqlTableQuery'
+ *       - $ref: '#/components/parameters/SqlSchemaQuery'
+ *       - $ref: '#/components/parameters/SqlHypertableQuery'
+ *       - $ref: '#/components/parameters/SqlFormatQuery'
  *     responses:
  *       '200':
  *         $ref: '#/components/responses/DataQueryResult'
  *       '400':
- *         $ref: '#/components/responses/BadRequest'
+ *         description: >
+ *           `BadRequest` (missing or invalid values, SQL parameters without SQL output, unknown `sqlHypertable`
+ *           column, duplicated column names in SQL output), `InvalidQueryParam` (DA params) or
+ *           `UnsupportedOutputType` (SQL output on a cached or MongoDB FDA).
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  *       '403':
  *         description: '`VisibilityMismatch`'
  *         content:
@@ -138,17 +158,22 @@ router.get('/:visibility/fdas/:fdaId/das/:daId/data', async (req, res) => {
   const { service, servicePath, style } = resolveServiceContextFromRequest(req);
 
   let outputType;
-  let queryParams;
+  let requestParams;
 
   if (style === 'query') {
     validateForbiddenFieldsQuery(req.query, ['fresh']);
     outputType = getQueryStyleOutputType(req.query);
-    queryParams = splitDaQueryStyleParams(req.query);
+    requestParams = splitDaQueryStyleParams(req.query);
   } else {
     validateForbiddenFieldsQuery(req.query, ['outputType', 'fresh']);
     outputType = getOutputTypeFromAcceptHeader(req);
-    queryParams = { ...req.query };
+    requestParams = { ...req.query };
   }
+
+  const { queryParams, sqlOptions } = splitSqlDumpQueryParams(
+    requestParams,
+    outputType,
+  );
 
   if (!fdaId || !daId || !service || !servicePath || !visibility) {
     return res.status(400).json({
@@ -163,7 +188,7 @@ router.get('/:visibility/fdas/:fdaId/das/:daId/data', async (req, res) => {
     ...queryParams,
   };
 
-  if (outputType === 'ndjson' || outputType === 'csv') {
+  if (STREAMED_OUTPUT_TYPES.has(outputType)) {
     return executeQueryStream({
       service,
       visibility,
@@ -172,6 +197,7 @@ router.get('/:visibility/fdas/:fdaId/das/:daId/data', async (req, res) => {
       req,
       res,
       format: outputType,
+      sqlOptions,
     });
   }
 

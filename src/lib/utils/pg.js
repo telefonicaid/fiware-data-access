@@ -396,11 +396,52 @@ export async function validatePostgresQuery(
   }
 }
 
+const SQL_DUMP_SESSION_SETUP =
+  "BEGIN; SET LOCAL datestyle = 'ISO, YMD'; " +
+  "SET LOCAL intervalstyle = 'postgres'; SET LOCAL extra_float_digits = 3";
+
+const SQL_DUMP_COLUMN_TYPES_QUERY =
+  'SELECT format_type(coalesce(a.atttypid, t.oid), coalesce(a.atttypmod, t.typmod)) AS type ' +
+  'FROM unnest($1::oid[], $2::int[], $3::oid[], $4::int[]) ' +
+  'WITH ORDINALITY AS t(oid, typmod, relid, attnum, ord) ' +
+  'LEFT JOIN pg_attribute a ON a.attrelid = t.relid AND a.attnum = t.attnum ' +
+  'ORDER BY t.ord';
+
+const SQL_DUMP_CURSOR_CONFIG = {
+  rowMode: 'array',
+  types: { getTypeParser: () => (value) => value },
+};
+
+async function describePgQueryColumns(pgClient, text, values) {
+  const { fields } = await pgClient.query({
+    text: `SELECT * FROM (${text}) AS fda_sql_dump LIMIT 0`,
+    values,
+    rowMode: 'array',
+  });
+
+  if (fields.length === 0) {
+    return [];
+  }
+
+  const { rows } = await pgClient.query(SQL_DUMP_COLUMN_TYPES_QUERY, [
+    fields.map((field) => field.dataTypeID),
+    fields.map((field) => field.dataTypeModifier),
+    fields.map((field) => field.tableID),
+    fields.map((field) => field.columnID),
+  ]);
+
+  return fields.map((field, index) => ({
+    name: field.name,
+    type: rows[index].type,
+  }));
+}
+
 export async function createPgCursorReader(
   pgCredentials,
   text,
   values,
   batchSize,
+  { sqlDump = false } = {},
 ) {
   const { username, password, host, port, database } = pgCredentials;
   const key = getPoolKey(username, password, host, port, database);
@@ -408,6 +449,7 @@ export async function createPgCursorReader(
 
   let pgClient;
   let cursor;
+  let inTransaction = false;
   let cleaned = false;
 
   const close = async () => {
@@ -417,24 +459,40 @@ export async function createPgCursorReader(
 
     cleaned = true;
 
-    const failed = cursor?.state === 'error';
+    let discard = cursor?.state === 'error';
 
     try {
-      if (cursor && !failed) {
+      if (cursor && !discard) {
         const closeCursor = promisify(cursor.close.bind(cursor));
         await closeCursor().catch(() => {});
       }
+      if (inTransaction && !discard) {
+        await pgClient.query('ROLLBACK').catch(() => {
+          discard = true;
+        });
+      }
     } finally {
-      releasePgClient(key, pgClient, failed);
+      releasePgClient(key, pgClient, discard);
     }
   };
 
   try {
     pgClient = await pgPool.connect();
-    cursor = pgClient.query(new Cursor(text, values));
+    let columns = null;
+    if (sqlDump) {
+      inTransaction = true;
+      await pgClient.query(SQL_DUMP_SESSION_SETUP);
+      columns = await describePgQueryColumns(pgClient, text, values);
+    }
+    cursor = pgClient.query(
+      sqlDump
+        ? new Cursor(text, values, SQL_DUMP_CURSOR_CONFIG)
+        : new Cursor(text, values),
+    );
     const readCursor = promisify(cursor.read.bind(cursor));
 
     return {
+      columns,
       readNextChunk: () => readCursor(batchSize),
       close,
     };
