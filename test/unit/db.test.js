@@ -998,7 +998,7 @@ describe('db utils', () => {
 
     expect(() =>
       checkParams([{ name: 'id', type: 'Number', range: [10, 5] }]),
-    ).toThrow('Fisrt number should be smaller than second number.');
+    ).toThrow('First value of range should be smaller than second value.');
   });
 
   test('checkParams validates range: cannot have more than 2 values', async () => {
@@ -1008,6 +1008,153 @@ describe('db utils', () => {
       checkParams([{ name: 'id', type: 'Number', range: [1, 5, 10] }]),
     ).toThrow('Range cant have more than two values.');
   });
+
+  test('checkParams validates range: must be an array', async () => {
+    const { checkParams } = await loadDbModule();
+
+    expect(() =>
+      checkParams([{ name: 'id', type: 'Number', range: '1,10' }]),
+    ).toThrow('Range must be an array.');
+  });
+
+  test.each(['Boolean', 'Text'])(
+    'checkParams rejects range for %s params',
+    async (type) => {
+      const { checkParams } = await loadDbModule();
+
+      expect(() => checkParams([{ name: 'p', type, range: [1, 10] }])).toThrow(
+        'Range is only allowed for Number and DateTime params.',
+      );
+    },
+  );
+
+  test('checkParams accepts DateTime range with ISO 8601 bounds', async () => {
+    const { checkParams } = await loadDbModule();
+
+    const range = ['2024-01-01T00:00:00Z', '2024-12-31T23:59:59.999+01:00'];
+
+    expect(checkParams([{ name: 'start', type: 'DateTime', range }])).toEqual([
+      { name: 'start', type: 'DateTime', range },
+    ]);
+  });
+
+  test.each([
+    [[0, 10]],
+    [['2024-01-01', '2024-12-31']],
+    [['2024-01-01T00:00:00Z', 'notADate']],
+    [['2024-01-01T00:00:00Z']],
+  ])(
+    'checkParams rejects DateTime range with invalid bounds %j',
+    async (range) => {
+      const { checkParams } = await loadDbModule();
+
+      expect(() =>
+        checkParams([{ name: 'start', type: 'DateTime', range }]),
+      ).toThrow(
+        'Both values of range param should be ISO 8601 DateTime strings.',
+      );
+    },
+  );
+
+  test('checkParams compares DateTime range bounds as instants', async () => {
+    const { checkParams } = await loadDbModule();
+
+    expect(() =>
+      checkParams([
+        {
+          name: 'start',
+          type: 'DateTime',
+          range: ['2024-12-31T00:00:00Z', '2024-01-01T00:00:00Z'],
+        },
+      ]),
+    ).toThrow('First value of range should be smaller than second value.');
+
+    expect(() =>
+      checkParams([
+        {
+          name: 'start',
+          type: 'DateTime',
+          range: ['2024-01-01T00:30:00+01:00', '2024-01-01T00:00:00Z'],
+        },
+      ]),
+    ).not.toThrow();
+  });
+
+  test('checkParams validates DateTime default against DateTime range', async () => {
+    const { checkParams } = await loadDbModule();
+    const range = ['2024-01-01T00:00:00Z', '2024-12-31T23:59:59Z'];
+
+    expect(
+      checkParams([
+        {
+          name: 'start',
+          type: 'DateTime',
+          default: '2024-06-01T12:00:00+02:00',
+          range,
+        },
+      ]),
+    ).toEqual([
+      {
+        name: 'start',
+        type: 'DateTime',
+        default: '2024-06-01T10:00:00.000Z',
+        range,
+      },
+    ]);
+
+    expect(() =>
+      checkParams([
+        {
+          name: 'start',
+          type: 'DateTime',
+          default: '2025-01-01T00:00:00Z',
+          range,
+        },
+      ]),
+    ).toThrow(
+      'Default value for param "start" not in valid param range [2024-01-01T00:00:00Z,2024-12-31T23:59:59Z].',
+    );
+  });
+
+  test.each([
+    '2024-01-01T00:00:00Z',
+    '2024-06-15T08:30:00.123Z',
+    '2025-01-01T00:59:59+01:00',
+  ])(
+    'resolveDAParams accepts DateTime value %s inside the range',
+    async (value) => {
+      const { resolveDAParams } = await loadDbModule();
+
+      const resolved = resolveDAParams({ start: value }, [
+        {
+          name: 'start',
+          type: 'DateTime',
+          range: ['2024-01-01T00:00:00Z', '2024-12-31T23:59:59Z'],
+        },
+      ]);
+
+      expect(resolved.start).toEqual(new Date(value));
+    },
+  );
+
+  test.each(['2023-12-31T23:59:59Z', '2025-01-01T00:00:00Z'])(
+    'resolveDAParams rejects DateTime value %s outside the range',
+    async (value) => {
+      const { resolveDAParams } = await loadDbModule();
+
+      expect(() =>
+        resolveDAParams({ start: value }, [
+          {
+            name: 'start',
+            type: 'DateTime',
+            range: ['2024-01-01T00:00:00Z', '2024-12-31T23:59:59Z'],
+          },
+        ]),
+      ).toThrow(
+        'Param "start" not in valid param range [2024-01-01T00:00:00Z,2024-12-31T23:59:59Z].',
+      );
+    },
+  );
 
   test('checkParams validates enum: values must be strings or numbers', async () => {
     const { checkParams } = await loadDbModule();

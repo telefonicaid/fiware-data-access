@@ -711,29 +711,7 @@ export function checkParams(params) {
     }
 
     if (param.range) {
-      const range = param.range;
-
-      if (typeof range[0] !== 'number' || typeof range[1] !== 'number') {
-        throw new FDAError(
-          400,
-          'InvalidParam',
-          `Both values of range param should be of type number".`,
-        );
-      }
-      if (range[0] > range[1]) {
-        throw new FDAError(
-          400,
-          'InvalidParam',
-          `Fisrt number should be smaller than second number.`,
-        );
-      }
-      if (range.length > 2) {
-        throw new FDAError(
-          400,
-          'InvalidParam',
-          `Range cant have more than two values.`,
-        );
-      }
+      checkRange(param);
     }
 
     if (param.enum) {
@@ -791,6 +769,55 @@ export function checkParams(params) {
 
     return normalizedParam;
   });
+}
+
+function checkRange(param) {
+  const range = param.range;
+
+  if (param.type === 'Boolean' || param.type === 'Text') {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Range is only allowed for Number and DateTime params.`,
+    );
+  }
+  if (!Array.isArray(range)) {
+    throw new FDAError(400, 'InvalidParam', `Range must be an array.`);
+  }
+  if (range.length > 2) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Range cant have more than two values.`,
+    );
+  }
+
+  if (param.type === 'DateTime') {
+    if (
+      range.length !== 2 ||
+      range.some((bound) => !(isTypeOf(bound, 'DateTime') instanceof Date))
+    ) {
+      throw new FDAError(
+        400,
+        'InvalidParam',
+        `Both values of range param should be ISO 8601 DateTime strings.`,
+      );
+    }
+  } else if (typeof range[0] !== 'number' || typeof range[1] !== 'number') {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Both values of range param should be of type number".`,
+    );
+  }
+
+  if (toComparable(range[0]) > toComparable(range[1])) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `First value of range should be smaller than second value.`,
+    );
+  }
 }
 
 export function checkTimeRange(timeRange, params) {
@@ -1103,8 +1130,24 @@ function isTypeOf(value, type) {
   return coercer(value);
 }
 
+function toComparable(value) {
+  if (value instanceof Date) {
+    return value.getTime();
+  }
+  if (typeof value === 'string') {
+    const date = isTypeOf(value, 'DateTime');
+    if (date instanceof Date) {
+      return date.getTime();
+    }
+  }
+  return value;
+}
+
 function isInRange(value, range) {
-  return value >= range[0] && value <= range[1];
+  const comparable = toComparable(value);
+  return (
+    comparable >= toComparable(range[0]) && comparable <= toComparable(range[1])
+  );
 }
 
 function isInEnum(value, enumValues) {
