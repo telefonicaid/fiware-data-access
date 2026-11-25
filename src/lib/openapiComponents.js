@@ -438,9 +438,15 @@
  *             `WHERE ($param IS NULL OR field = $param)`.
  *         range:
  *           type: array
- *           description: '`[min, max]` for `Number` params; the first value must be lower than the second.'
+ *           description: >
+ *             `[min, max]` the value must fall within, bounds included: numbers for `Number` params, ISO 8601
+ *             strings for `DateTime` params (compared as instants). Not allowed for `Boolean` or `Text` params. The
+ *             first value must not be greater than the second.
  *           items:
- *             type: number
+ *             oneOf:
+ *               - type: number
+ *               - type: string
+ *                 format: date-time
  *           minItems: 2
  *           maxItems: 2
  *         enum:

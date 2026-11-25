@@ -873,5 +873,97 @@ export function registerDaParamsIntegrationTests({
         { id: 3, name: 'carlos', age: 40 },
       ]);
     });
+
+    test('POST /fdas/:fdaId/das accepts a DateTime range and rejects values outside it', async () => {
+      const baseUrl = getBaseUrl();
+      const daId4 = 'da_params_datetime_range';
+      const range = ['2020-01-01T00:00:00Z', '2020-12-31T23:59:59Z'];
+
+      const createDa = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}/das`,
+        headers: { 'Fiware-Service': service },
+        body: {
+          id: daId4,
+          description: 'users since a bounded date',
+          query: 'SELECT id, name, age WHERE timeinstant >= $from ORDER BY id;',
+          params: [{ name: 'from', type: 'DateTime', required: true, range }],
+          timeRange: { start: 'from' },
+        },
+      });
+
+      if (createDa.status >= 400) {
+        console.error(
+          'POST /das failed:',
+          createDa.status,
+          createDa.json ?? createDa.text,
+        );
+      }
+      expect(createDa.status).toBe(204);
+
+      const getDa = await httpReq({
+        method: 'GET',
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}/das/${daId4}`,
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect(getDa.status).toBe(200);
+      expect(getDa.json.params).toEqual([
+        { name: 'from', type: 'DateTime', required: true, range },
+      ]);
+
+      const insideRes = await httpReq({
+        method: 'GET',
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId4, {
+          from: '2020-08-17T19:00:00+02:00',
+        }),
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect(insideRes.status).toBe(200);
+      expect(insideRes.json).toEqual([
+        { id: 1, name: 'ana', age: 30 },
+        { id: 2, name: 'bob', age: 20 },
+        { id: 3, name: 'carlos', age: 40 },
+      ]);
+
+      const outsideRes = await httpReq({
+        method: 'GET',
+        url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId4, {
+          from: '2021-01-01T01:00:00+01:00',
+        }),
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect(outsideRes.status).toBe(400);
+      expect(outsideRes.json.error).toBe('InvalidQueryParam');
+
+      const badBoundsRes = await httpReq({
+        method: 'PUT',
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}/das/${daId4}`,
+        headers: { 'Fiware-Service': service },
+        body: {
+          query: 'SELECT id, name, age WHERE timeinstant >= $from ORDER BY id;',
+          params: [{ name: 'from', type: 'DateTime', range: [0, 10] }],
+        },
+      });
+
+      expect(badBoundsRes.status).toBe(400);
+      expect(badBoundsRes.json.error).toBe('InvalidParam');
+
+      const textRangeRes = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}/das`,
+        headers: { 'Fiware-Service': service },
+        body: {
+          id: `${daId4}_text`,
+          query: 'SELECT id, name, age WHERE name = $uName ORDER BY id;',
+          params: [{ name: 'uName', type: 'Text', range: ['a', 'z'] }],
+        },
+      });
+
+      expect(textRangeRes.status).toBe(400);
+      expect(textRangeRes.json.error).toBe('InvalidParam');
+    });
   });
 }

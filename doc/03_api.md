@@ -141,7 +141,7 @@ All error responses follow this structure:
 | 400  | Bad Request            | `UnsupportedOutputType`          | SQL output (`outputType=sql` or `Accept: application/sql`) was requested on a cached FDA or on an only-fresh MongoDB FDA. See [SQL output](/doc/AdvancedTopics/sql_output.md).                                                                                                                                     |
 | 400  | Bad Request            | `InvalidVisibility`              | The `visibility` path segment is not one of the allowed values (`public`, `private`).                                                                                                                                                                                                                              |
 | 400  | Bad Request            | `InvalidServicePath`             | The `Fiware-ServicePath` header value is not a valid non-root absolute path (e.g. `/servicePath/site`). The root path `/` is not allowed.                                                                                                                                                                          |
-| 400  | Bad Request            | `InvalidQueryParam`              | Some of the params in the request don't comply with the [params](#params) array restrictions.                                                                                                                                                                                                                      |
+| 400  | Bad Request            | `InvalidQueryParam`              | Some of the params in the request don't comply with the [params](#da-params) array restrictions.                                                                                                                                                                                                                   |
 | 400  | Bad Request            | `PartitionError`                 | Some of the params related to the creation of the parquet partition don't comply with the [object storage configuration](#object-storage-configuration-objstgconf) requirements.                                                                                                                                   |
 | 400  | Bad Request            | `CleaningError`                  | Trying to remove a non partitioned FDA or incorrect value in the [delete interval key](#refresh-policy-object).                                                                                                                                                                                                    |
 | 400  | Bad Request            | `InvalidParam`                   | [Time column is not present](/doc/05_advanced_topics.md#time-column-behavior) in the SELECT clause of the FDA query.                                                                                                                                                                                               |
@@ -945,10 +945,10 @@ Datasource-specific constraints:
 
 Defines how and when the FDA should be automatically refreshed.
 
-| Field               | Optional | Type   | Description                                                         |
-| ------------------- | -------- | ------ | ------------------------------------------------------------------- |
-| `type`              |          | string | Refresh strategy. One of: `none`, `interval`, `window`, `onDemand`. |
-| [`params`](#params) | (\*)     | object | Object with the parameters for the refresh policy type.             |
+| Field                              | Optional | Type   | Description                                                         |
+| ---------------------------------- | -------- | ------ | ------------------------------------------------------------------- |
+| `type`                             |          | string | Refresh strategy. One of: `none`, `interval`, `window`, `onDemand`. |
+| [`params`](#refresh-policy-params) | (\*)     | object | Object with the parameters for the refresh policy type.             |
 
 (\*) Not used when `type` is `none`, mandatory otherwise
 
@@ -963,7 +963,7 @@ If omitted, the default policy is:
 { "type": "none" }
 ```
 
-##### Params
+##### Refresh policy params
 
 | Field                        | Optional | Type   | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | ---------------------------- | -------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1629,7 +1629,7 @@ A DA is represented by a JSON object with the following fields:
 | `id`          | (\*)     | string | DA identifier, unique within the associated FDA.                                                                                         |
 | `description` | ✓        | string | A free text used by the client to describe the DA. If omitted, no description is stored.                                                 |
 | `query`       |          | string | Query string, without **FROM**, clause to run over the FDA when invoking the DA                                                          |
-| `params`      | ✓        | array  | Array of [param objects](#params) to control param values. If omitted, the DA has no query parameters.                                   |
+| `params`      | ✓        | array  | Array of [param objects](#da-params) to control param values. If omitted, the DA has no query parameters.                                |
 | `timeRange`   | ✓        | object | [Time range object](#time-range) naming the params that bound the FDA `timeColumn`. If omitted, queries read every partition of the FDA. |
 
 (\*) The `id` field is mandatory when creating a DA (`POST`) and must not be included when updating a DA (`PUT`).
@@ -1639,18 +1639,18 @@ A DA is represented by a JSON object with the following fields:
 > built-in FDA capability — see
 > [SQL Pattern Matching in DA Queries](/doc/05_advanced_topics.md#sql-pattern-matching-in-da-queries) for details.
 
-#### Params
+#### DA Params
 
 Each object in the array `params` can have the following keys:
 
-| Parameter  | Optional | Type    | Description                                                                                                                                                                                                                                                                                                                                                                          |
-| ---------- | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `name`     |          | string  | Name of the param to control.                                                                                                                                                                                                                                                                                                                                                        |
-| `type`     |          | string  | Type of the param to enforce. Possible values: _Number_, _Boolean_, _Text_ and _DateTime_.                                                                                                                                                                                                                                                                                           |
-| `required` | ✓        | boolean | Tell if the param must be provided by the user. Default value _false_. If `true` and the value is missing, request fails even when `default` is defined.                                                                                                                                                                                                                             |
-| `default`  | ✓        | string  | Provide a default value for the param in case it isn't provided. It is applied only when the value is missing and `required` is `false`. If omitted, no default is applied. It can be set to `null` for any `type`, in which case the value passed to the query when the param is missing is `NULL`, useful for optional filters such as `WHERE ($param IS NULL OR field = $param)`. |
-| `range`    | ✓        | array   | Array with the minimun and maximun value (`Number`) a param can take. The array should be consistent (only two elements and the first one lesser than the second), otherwise an error will be responsed. If omitted, no range validation is applied.                                                                                                                                 |
-| `enum`     | ✓        | array   | Array with all the possible values (`Number` or `Text`) a param can take. If omitted, no enum validation is applied.                                                                                                                                                                                                                                                                 |
+| Parameter  | Optional | Type    | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ---------- | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`     |          | string  | Name of the param to control.                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `type`     |          | string  | Type of the param to enforce. Possible values: _Number_, _Boolean_, _Text_ and _DateTime_.                                                                                                                                                                                                                                                                                                                                                                                |
+| `required` | ✓        | boolean | Tell if the param must be provided by the user. Default value _false_. If `true` and the value is missing, request fails even when `default` is defined.                                                                                                                                                                                                                                                                                                                  |
+| `default`  | ✓        | string  | Provide a default value for the param in case it isn't provided. It is applied only when the value is missing and `required` is `false`. If omitted, no default is applied. It can be set to `null` for any `type`, in which case the value passed to the query when the param is missing is `NULL`, useful for optional filters such as `WHERE ($param IS NULL OR field = $param)`.                                                                                      |
+| `range`    | ✓        | array   | Array with the minimum and maximum value a param can take, bounds included: numbers for `Number` params and ISO 8601 strings for `DateTime` params (e.g. `["2024-01-01T00:00:00Z", "2024-12-31T23:59:59Z"]`, compared as instants). It is not allowed for `Boolean` or `Text` params. The array should be consistent (only two elements and the first one not greater than the second), otherwise an error will be responsed. If omitted, no range validation is applied. |
+| `enum`     | ✓        | array   | Array with all the possible values (`Number` or `Text`) a param can take. If omitted, no enum validation is applied.                                                                                                                                                                                                                                                                                                                                                      |
 
 **Empty string values (`?param=`):** when a query parameter is present but empty, its handling depends on `type`:
 
@@ -1674,7 +1674,8 @@ Example array:
     {
         "name": "timeinstant",
         "type": "DateTime",
-        "default": "2020-08-17T18:25:28.332+01:00"
+        "default": "2020-08-17T18:25:28.332+01:00",
+        "range": ["2020-01-01T00:00:00Z", "2020-12-31T23:59:59Z"]
     },
     {
         "name": "animalname",
@@ -1711,6 +1712,9 @@ When the FDA is partitioned, the values received in these params are used to rea
 requested range, instead of every partition of the FDA. `timeRange` does not filter rows by itself: the `query` must
 still compare `timeColumn` with those params. It has no effect in non-partitioned FDAs. See
 [Partition pruning](/doc/AdvancedTopics/sliding_windows_and_partitioning.md#partition-pruning) for details.
+
+`timeRange` does not validate the values either. To limit the window clients can request, declare the params as
+`DateTime` with a [`range`](#da-params): a value outside it fails with `400 InvalidQueryParam`.
 
 On update (`PUT`), `timeRange` must be sent again if it is still wanted: a `PUT` without it removes the stored one.
 Since `query` is always replaced on update, keeping a previous `timeRange` could leave it pointing to params that the
