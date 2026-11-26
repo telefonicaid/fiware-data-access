@@ -22,7 +22,14 @@
 // provided in both Spanish and international law. TSOL reserves any civil or
 // criminal actions it may exercise to protect its rights.
 
-import { beforeEach, describe, expect, jest, test } from '@jest/globals';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  jest,
+  test,
+} from '@jest/globals';
 import { FDAError } from '../../src/lib/fdaError.js';
 
 const retrieveDAMock = jest.fn();
@@ -1051,7 +1058,7 @@ describe('db utils', () => {
       expect(() =>
         checkParams([{ name: 'start', type: 'DateTime', range }]),
       ).toThrow(
-        'Both values of range param should be ISO 8601 DateTime strings.',
+        'Both values of range param should be ISO 8601 DateTime strings, "now" or "<amount> <unit> ago".',
       );
     },
   );
@@ -1155,6 +1162,277 @@ describe('db utils', () => {
       );
     },
   );
+
+  describe('DateTime range periods', () => {
+    const NOW = '2026-03-31T10:00:00.000Z';
+    const RELATIVE_BOUNDS_ERROR =
+      'Both values of range param should be ISO 8601 DateTime strings, "now" or "<amount> <unit> ago".';
+    const spanParams = [
+      { name: 'from', type: 'DateTime' },
+      { name: 'to', type: 'DateTime' },
+    ];
+    const spanTimeRange = { start: 'from', finish: 'to', maxSpan: '1 month' };
+
+    async function loadDbModuleAtNow() {
+      const module = await loadDbModule();
+      jest.useFakeTimers({ now: new Date(NOW) });
+      return module;
+    }
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    test.each([
+      [['1 year ago', 'now']],
+      [['2024-01-01T00:00:00Z', 'now']],
+      [['3 months ago', '1 day ago']],
+      [[' 2 weeks ago ', '2026-12-31T00:00:00Z']],
+      [['now', '1 year ago']],
+    ])('checkParams accepts DateTime range %j', async (range) => {
+      const { checkParams } = await loadDbModuleAtNow();
+
+      expect(checkParams([{ name: 'start', type: 'DateTime', range }])).toEqual(
+        [{ name: 'start', type: 'DateTime', range }],
+      );
+    });
+
+    test.each([
+      [['1 fortnight ago', 'now']],
+      [['tomorrow', 'now']],
+      [['-1 day ago', 'now']],
+      [['0 days ago', 'now']],
+      [['1 day', 'now']],
+      [['1 day from now', 'now']],
+      [['NOW', '2026-01-01T00:00:00Z']],
+    ])('checkParams rejects DateTime range %j', async (range) => {
+      const { checkParams } = await loadDbModuleAtNow();
+
+      expect(() =>
+        checkParams([{ name: 'start', type: 'DateTime', range }]),
+      ).toThrow(RELATIVE_BOUNDS_ERROR);
+    });
+
+    test('checkParams rejects relative bounds in Number ranges', async () => {
+      const { checkParams } = await loadDbModuleAtNow();
+
+      expect(() =>
+        checkParams([
+          { name: 'limit', type: 'Number', range: ['1 day ago', 'now'] },
+        ]),
+      ).toThrow('Both values of range param should be of type number');
+    });
+
+    test('a default outside a relative range is accepted on create and rejected on request', async () => {
+      const { checkParams, resolveDAParams } = await loadDbModuleAtNow();
+      const params = checkParams([
+        {
+          name: 'start',
+          type: 'DateTime',
+          default: '2020-01-01T00:00:00Z',
+          range: ['1 year ago', 'now'],
+        },
+      ]);
+
+      expect(() => resolveDAParams({}, params)).toThrow(
+        'Param "start" not in valid param range [1 year ago,now].',
+      );
+    });
+
+    test.each([
+      ['2026-02-28T10:00:00.000Z', true],
+      ['2026-02-28T09:59:59.999Z', false],
+      ['2026-03-31T10:00:00.000Z', true],
+      ['2026-03-31T12:00:01+02:00', false],
+    ])(
+      'resolveDAParams with range ["1 month ago", "now"] checks %s',
+      async (value, inside) => {
+        const { resolveDAParams } = await loadDbModuleAtNow();
+        const params = [
+          { name: 'start', type: 'DateTime', range: ['1 month ago', 'now'] },
+        ];
+
+        if (inside) {
+          expect(resolveDAParams({ start: value }, params)).toEqual({
+            start: new Date(value),
+          });
+        } else {
+          expect(() => resolveDAParams({ start: value }, params)).toThrow(
+            'Param "start" not in valid param range [1 month ago,now].',
+          );
+        }
+      },
+    );
+
+    test('resolveDAParams resolves relative bounds with the current time', async () => {
+      const { resolveDAParams } = await loadDbModuleAtNow();
+      const params = [
+        { name: 'start', type: 'DateTime', range: ['1 day ago', 'now'] },
+      ];
+
+      expect(() =>
+        resolveDAParams({ start: '2026-03-30T12:00:00Z' }, params),
+      ).not.toThrow();
+
+      jest.setSystemTime(new Date('2026-04-02T00:00:00Z'));
+
+      expect(() =>
+        resolveDAParams({ start: '2026-03-30T12:00:00Z' }, params),
+      ).toThrow('not in valid param range');
+    });
+
+    test('checkTimeRange keeps a valid maxSpan', async () => {
+      const { checkTimeRange } = await loadDbModuleAtNow();
+
+      expect(checkTimeRange(spanTimeRange, spanParams)).toEqual(spanTimeRange);
+    });
+
+    test.each([['3 fortnights'], ['0 days'], [''], [3]])(
+      'checkTimeRange rejects maxSpan %j',
+      async (maxSpan) => {
+        const { checkTimeRange } = await loadDbModuleAtNow();
+
+        expect(() =>
+          checkTimeRange({ start: 'from', finish: 'to', maxSpan }, spanParams),
+        ).toThrow('timeRange.maxSpan must be a period such as "3 months"');
+      },
+    );
+
+    test.each([[{ start: 'from' }], [{ finish: 'to' }]])(
+      'checkTimeRange requires start and finish with maxSpan (%j)',
+      async (bounds) => {
+        const { checkTimeRange } = await loadDbModuleAtNow();
+
+        expect(() =>
+          checkTimeRange({ ...bounds, maxSpan: '1 month' }, spanParams),
+        ).toThrow('timeRange.maxSpan requires both "start" and "finish".');
+      },
+    );
+
+    test('checkTimeRange requires a start or finish besides maxSpan', async () => {
+      const { checkTimeRange } = await loadDbModuleAtNow();
+
+      expect(() => checkTimeRange({ maxSpan: '1 month' }, spanParams)).toThrow(
+        'timeRange must include "start", "finish" or both.',
+      );
+    });
+
+    test('checkTimeRange requires DateTime params with maxSpan', async () => {
+      const { checkTimeRange } = await loadDbModuleAtNow();
+
+      expect(() =>
+        checkTimeRange(spanTimeRange, [
+          { name: 'from', type: 'DateTime' },
+          { name: 'to' },
+        ]),
+      ).toThrow(
+        'timeRange.maxSpan requires params "from" and "to" to be of type DateTime.',
+      );
+    });
+
+    test.each([
+      ['2026-01-31T00:00:00Z', '2026-02-28T00:00:00Z'],
+      ['2026-01-15T00:00:00Z', '2026-01-15T00:00:00Z'],
+      ['2026-01-15T00:00:00Z', '2026-02-15T01:00:00+01:00'],
+    ])(
+      'resolveDAParams accepts from=%s to=%s within maxSpan',
+      async (from, to) => {
+        const { resolveDAParams } = await loadDbModuleAtNow();
+
+        expect(
+          resolveDAParams({ from, to }, spanParams, spanTimeRange),
+        ).toEqual({ from: new Date(from), to: new Date(to) });
+      },
+    );
+
+    test('resolveDAParams rejects a window wider than maxSpan', async () => {
+      const { resolveDAParams } = await loadDbModuleAtNow();
+
+      expect(() =>
+        resolveDAParams(
+          { from: '2026-01-31T00:00:00Z', to: '2026-02-28T00:00:00.001Z' },
+          spanParams,
+          spanTimeRange,
+        ),
+      ).toThrow(
+        'Params "from" and "to" span more than timeRange.maxSpan (1 month).',
+      );
+    });
+
+    test('resolveDAParams rejects finish before start with maxSpan', async () => {
+      const { resolveDAParams } = await loadDbModuleAtNow();
+
+      expect(() =>
+        resolveDAParams(
+          { from: '2026-02-01T00:00:00Z', to: '2026-01-31T23:59:59Z' },
+          spanParams,
+          spanTimeRange,
+        ),
+      ).toThrow('Param "to" must not be before param "from".');
+    });
+
+    test('resolveDAParams takes a missing finish as now without binding it', async () => {
+      const { resolveDAParams } = await loadDbModuleAtNow();
+
+      expect(
+        resolveDAParams(
+          { from: '2026-03-01T00:00:00Z' },
+          spanParams,
+          spanTimeRange,
+        ),
+      ).toEqual({ from: new Date('2026-03-01T00:00:00Z') });
+
+      expect(() =>
+        resolveDAParams(
+          { from: '2026-02-01T00:00:00Z' },
+          spanParams,
+          spanTimeRange,
+        ),
+      ).toThrow('span more than timeRange.maxSpan');
+    });
+
+    test.each([
+      [{}, spanParams],
+      [
+        {},
+        [
+          { name: 'from', type: 'DateTime', default: null },
+          { name: 'to', type: 'DateTime' },
+        ],
+      ],
+    ])(
+      'resolveDAParams requires start with maxSpan',
+      async (values, params) => {
+        const { resolveDAParams } = await loadDbModuleAtNow();
+
+        expect(() =>
+          resolveDAParams(
+            { ...values, to: '2026-03-01T00:00:00Z' },
+            params,
+            spanTimeRange,
+          ),
+        ).toThrow(
+          expect.objectContaining({
+            status: 400,
+            type: 'InvalidQueryParam',
+            message: 'Param "from" is required by timeRange.maxSpan.',
+          }),
+        );
+      },
+    );
+
+    test('resolveDAParams does not check the span without maxSpan', async () => {
+      const { resolveDAParams } = await loadDbModuleAtNow();
+
+      expect(() =>
+        resolveDAParams(
+          { from: '2026-02-01T00:00:00Z', to: '2020-01-01T00:00:00Z' },
+          spanParams,
+          { start: 'from', finish: 'to' },
+        ),
+      ).not.toThrow();
+    });
+  });
 
   test('checkParams validates enum: values must be strings or numbers', async () => {
     const { checkParams } = await loadDbModule();
