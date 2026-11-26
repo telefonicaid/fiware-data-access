@@ -29,7 +29,11 @@ import { CronExpressionParser } from 'cron-parser';
 
 import { FDAError } from '../fdaError.js';
 import { getBasicLogger } from './logger.js';
-import { VALID_VISIBILITIES_SET, DURATION_UNITS_MS } from '../constants.js';
+import {
+  VALID_VISIBILITIES_SET,
+  DURATION_UNITS_MS,
+  VALID_WINDOW_FETCH_SIZES,
+} from '../constants.js';
 import { getDownloadMetadata } from './downloadPolicy.js';
 const logger = getBasicLogger();
 
@@ -289,6 +293,43 @@ export function processFetchSize(fetchSize) {
 
   unit = unit.toLowerCase().replace(/s$/, '');
   return { unit, amount };
+}
+
+export function parsePeriod(text) {
+  if (typeof text !== 'string') {
+    return undefined;
+  }
+
+  let period;
+  try {
+    period = processFetchSize(text.trim());
+  } catch {
+    return undefined;
+  }
+
+  if (!VALID_WINDOW_FETCH_SIZES.includes(period.unit) || period.amount < 1) {
+    return undefined;
+  }
+
+  return period;
+}
+
+export function shiftUTCDate(date, amount, unit) {
+  if (unit !== 'month' && unit !== 'year') {
+    return new Date(date.getTime() + amount * DURATION_UNITS_MS[unit]);
+  }
+
+  const result = new Date(date.getTime());
+  const day = result.getUTCDate();
+  result.setUTCDate(1);
+  result.setUTCMonth(
+    result.getUTCMonth() + (unit === 'year' ? amount * 12 : amount),
+  );
+  const lastDay = new Date(
+    Date.UTC(result.getUTCFullYear(), result.getUTCMonth() + 1, 0),
+  ).getUTCDate();
+  result.setUTCDate(Math.min(day, lastDay));
+  return result;
 }
 
 export function convertRefreshIntervalToMs(interval) {
