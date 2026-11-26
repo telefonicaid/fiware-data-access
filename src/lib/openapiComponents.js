@@ -387,14 +387,15 @@
  *         range:
  *           type: array
  *           description: >
- *             `[min, max]` the value must fall within, bounds included: numbers for `Number` params, ISO 8601
- *             strings for `DateTime` params (compared as instants). Not allowed for `Boolean` or `Text` params. The
- *             first value must not be greater than the second.
+ *             `[min, max]` the value must fall within, bounds included: numbers for `Number` params, and for
+ *             `DateTime` params ISO 8601 strings (compared as instants), `now` or `<amount> <unit> ago` (units
+ *             `hour`, `day`, `week`, `month` and `year`, e.g. `["1 year ago", "now"]`). Relative bounds are resolved
+ *             on each request, with calendar arithmetic in UTC. Not allowed for `Boolean` or `Text` params. When
+ *             both bounds are fixed, the first value must not be greater than the second.
  *           items:
  *             oneOf:
  *               - type: number
  *               - type: string
- *                 format: date-time
  *           minItems: 2
  *           maxItems: 2
  *         enum:
@@ -769,7 +770,8 @@
  *       description: >
  *         Names of the DA params that bound the FDA `timeColumn` in the query. When the FDA is partitioned, the
  *         values received in these params are used to read only the partitions overlapping the requested range.
- *         The query must still filter `timeColumn` with them. Ignored in non-partitioned FDAs.
+ *         The query must still filter `timeColumn` with them. Partition pruning is ignored in non-partitioned FDAs,
+ *         but `maxSpan` is checked in every FDA.
  *       properties:
  *         start:
  *           type: string
@@ -779,6 +781,15 @@
  *           type: string
  *           description: Name of the param holding the upper bound of the range.
  *           example: finish
+ *         maxSpan:
+ *           type: string
+ *           description: >
+ *             Maximum width allowed between the `start` and `finish` values of each request, as an amount and a
+ *             unit (`hour`, `day`, `week`, `month` or `year`), with calendar arithmetic in UTC. Requires both
+ *             `start` and `finish`, declared as `DateTime` params. If `finish` is not sent, the current time is
+ *             used; if `start` is not sent, or the window is wider or `finish` is before `start`, the request
+ *             fails with `400 InvalidQueryParam`.
+ *           example: 3 months
  *
  *     DaCreateRequest:
  *       type: object
