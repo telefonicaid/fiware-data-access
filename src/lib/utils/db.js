@@ -42,7 +42,12 @@ import {
   DEFAULT_DUCKDB_MEMORY_SAMPLE_INTERVAL_MS,
   DUCKDB_SIZE_PATTERN,
 } from '../constants.js';
-import { convertRefreshIntervalToMs, toJsonInteger } from './utils.js';
+import {
+  convertRefreshIntervalToMs,
+  parsePeriod,
+  shiftUTCDate,
+  toJsonInteger,
+} from './utils.js';
 import { getS3Client, listObjects } from './aws.js';
 import { resolveTimeRange, selectPartitionFiles } from './partitionPruning.js';
 import { buildParquetCopyQuery } from './parquetExport.js';
@@ -746,7 +751,11 @@ export function checkParams(params) {
       }
 
       if (normalizedDefault !== null) {
-        if (param.range && !isInRange(normalizedDefault, param.range)) {
+        if (
+          param.range &&
+          !param.range.some(isRelativeRangeBound) &&
+          !isInRange(normalizedDefault, param.range)
+        ) {
           throw new FDAError(
             400,
             'InvalidParam',
@@ -793,14 +802,11 @@ function checkRange(param) {
   }
 
   if (param.type === 'DateTime') {
-    if (
-      range.length !== 2 ||
-      range.some((bound) => !(isTypeOf(bound, 'DateTime') instanceof Date))
-    ) {
+    if (range.length !== 2 || range.some((bound) => !parseRangeBound(bound))) {
       throw new FDAError(
         400,
         'InvalidParam',
-        `Both values of range param should be ISO 8601 DateTime strings.`,
+        `Both values of range param should be ISO 8601 DateTime strings, "now" or "<amount> <unit> ago".`,
       );
     }
   } else if (typeof range[0] !== 'number' || typeof range[1] !== 'number') {
@@ -811,7 +817,10 @@ function checkRange(param) {
     );
   }
 
-  if (toComparable(range[0]) > toComparable(range[1])) {
+  if (
+    !range.some(isRelativeRangeBound) &&
+    toComparable(range[0]) > toComparable(range[1])
+  ) {
     throw new FDAError(
       400,
       'InvalidParam',
@@ -955,6 +964,7 @@ function applyParams(reqParams, params) {
     return {};
   }
 
+  const now = new Date();
   const validated = {};
 
   for (const param of params) {
@@ -964,7 +974,7 @@ function applyParams(reqParams, params) {
     }
 
     const value = coerceParamValue(rawValue, param);
-    assertParamConstraints(value, param);
+    assertParamConstraints(value, param, now);
 
     validated[param.name] =
       param.type === 'Number' && isUnsafeIntegerString(rawValue)
@@ -1009,12 +1019,12 @@ function coerceParamValue(value, param) {
   return coerced;
 }
 
-function assertParamConstraints(value, param) {
+function assertParamConstraints(value, param, now) {
   if (value === null) {
     return;
   }
 
-  if (param.range && !isInRange(value, param.range)) {
+  if (param.range && !isInRange(value, param.range, now)) {
     throw invalidQueryParamError(
       `Param "${param.name}" not in valid param range [${param.range}].`,
     );
@@ -1143,10 +1153,46 @@ function toComparable(value) {
   return value;
 }
 
-function isInRange(value, range) {
+function parseRangeBound(bound) {
+  if (typeof bound !== 'string') {
+    return undefined;
+  }
+
+  const trimmed = bound.trim();
+  if (trimmed === 'now') {
+    return { amount: 0, unit: 'day' };
+  }
+
+  const date = isTypeOf(trimmed, 'DateTime');
+  if (date instanceof Date) {
+    return { date };
+  }
+
+  const relative = /^(.+)\s+ago$/.exec(trimmed);
+  return relative ? parsePeriod(relative[1]) : undefined;
+}
+
+function isRelativeRangeBound(bound) {
+  const parsed = parseRangeBound(bound);
+  return parsed !== undefined && parsed.date === undefined;
+}
+
+function resolveRangeBound(bound, now) {
+  const parsed = parseRangeBound(bound);
+  if (!parsed) {
+    return toComparable(bound);
+  }
+  if (parsed.date) {
+    return parsed.date.getTime();
+  }
+  return shiftUTCDate(now, -parsed.amount, parsed.unit).getTime();
+}
+
+function isInRange(value, range, now = new Date()) {
   const comparable = toComparable(value);
   return (
-    comparable >= toComparable(range[0]) && comparable <= toComparable(range[1])
+    comparable >= resolveRangeBound(range[0], now) &&
+    comparable <= resolveRangeBound(range[1], now)
   );
 }
 
