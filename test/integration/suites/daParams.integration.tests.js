@@ -965,5 +965,158 @@ export function registerDaParamsIntegrationTests({
       expect(textRangeRes.status).toBe(400);
       expect(textRangeRes.json.error).toBe('InvalidParam');
     });
+
+    test('DA params accept relative DateTime ranges and timeRange.maxSpan', async () => {
+      const baseUrl = getBaseUrl();
+      const daId5 = 'da_params_datetime_periods';
+      const daUrl = `${baseUrl}/${visibility}/fdas/${fdaId}/das/${daId5}`;
+      const query =
+        'SELECT id, name, age WHERE timeinstant >= $from AND timeinstant < $to ORDER BY id;';
+      const range = ['10 years ago', 'now'];
+      const params = [
+        { name: 'from', type: 'DateTime', range },
+        { name: 'to', type: 'DateTime', range },
+      ];
+      const timeRange = { start: 'from', finish: 'to', maxSpan: '1 month' };
+      const queryDa = (values) =>
+        httpReq({
+          method: 'GET',
+          url: buildDaDataUrl(baseUrl, servicePath, fdaId, daId5, values),
+          headers: { 'Fiware-Service': service },
+        });
+
+      const createDa = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas/${fdaId}/das`,
+        headers: { 'Fiware-Service': service },
+        body: { id: daId5, query, params, timeRange },
+      });
+
+      if (createDa.status >= 400) {
+        console.error(
+          'POST /das failed:',
+          createDa.status,
+          createDa.json ?? createDa.text,
+        );
+      }
+      expect(createDa.status).toBe(204);
+
+      const getDa = await httpReq({
+        method: 'GET',
+        url: daUrl,
+        headers: { 'Fiware-Service': service },
+      });
+
+      expect(getDa.status).toBe(200);
+      expect(getDa.json.params).toEqual(params);
+      expect(getDa.json.timeRange).toEqual(timeRange);
+
+      const insideRes = await queryDa({
+        from: '2020-08-01T00:00:00Z',
+        to: '2020-09-01T00:00:00Z',
+      });
+
+      expect(insideRes.status).toBe(200);
+      expect(insideRes.json).toEqual([
+        { id: 1, name: 'ana', age: 30 },
+        { id: 2, name: 'bob', age: 20 },
+        { id: 3, name: 'carlos', age: 40 },
+      ]);
+
+      for (const [values, description] of [
+        [
+          { from: '2020-08-01T00:00:00Z', to: '2020-09-01T00:00:01Z' },
+          'Params "from" and "to" span more than timeRange.maxSpan (1 month).',
+        ],
+        [
+          { from: '2020-08-01T00:00:00Z', to: '2020-07-31T00:00:00Z' },
+          'Param "to" must not be before param "from".',
+        ],
+        [
+          { from: '2020-08-01T00:00:00Z' },
+          'Params "from" and "to" span more than timeRange.maxSpan (1 month).',
+        ],
+        [
+          { to: '2020-09-01T00:00:00Z' },
+          'Param "from" is required by timeRange.maxSpan.',
+        ],
+        [
+          { from: '2099-01-01T00:00:00Z', to: '2099-01-02T00:00:00Z' },
+          'Param "from" not in valid param range [10 years ago,now].',
+        ],
+      ]) {
+        const res = await queryDa(values);
+
+        expect(res.status).toBe(400);
+        expect(res.json.error).toBe('InvalidQueryParam');
+        expect(res.json.description).toBe(description);
+      }
+
+      const updateDa = await httpReq({
+        method: 'PUT',
+        url: daUrl,
+        headers: { 'Fiware-Service': service },
+        body: {
+          query,
+          params: [
+            { name: 'from', type: 'DateTime', range: ['1 day ago', 'now'] },
+            { name: 'to', type: 'DateTime' },
+          ],
+        },
+      });
+
+      expect(updateDa.status).toBe(204);
+
+      const oldFromRes = await queryDa({
+        from: '2020-08-01T00:00:00Z',
+        to: '2020-09-01T00:00:00Z',
+      });
+
+      expect(oldFromRes.status).toBe(400);
+      expect(oldFromRes.json.error).toBe('InvalidQueryParam');
+
+      const recentFromRes = await queryDa({
+        from: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+        to: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      });
+
+      expect(recentFromRes.status).toBe(200);
+      expect(recentFromRes.json).toEqual([]);
+
+      for (const body of [
+        {
+          query,
+          params: [{ name: 'from' }, { name: 'to' }],
+          timeRange,
+        },
+        {
+          query,
+          params,
+          timeRange: { ...timeRange, maxSpan: '3 fortnights' },
+        },
+        {
+          query,
+          params,
+          timeRange: { start: 'from', maxSpan: '1 month' },
+        },
+        {
+          query,
+          params: [
+            { name: 'from', type: 'DateTime', range: ['1 day', 'now'] },
+            { name: 'to', type: 'DateTime' },
+          ],
+        },
+      ]) {
+        const res = await httpReq({
+          method: 'PUT',
+          url: daUrl,
+          headers: { 'Fiware-Service': service },
+          body,
+        });
+
+        expect(res.status).toBe(400);
+        expect(res.json.error).toBe('InvalidParam');
+      }
+    });
   });
 }
