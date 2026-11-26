@@ -41,6 +41,7 @@ import {
   DUCKDB_MEMORY_TOP_TAGS,
   DEFAULT_DUCKDB_MEMORY_SAMPLE_INTERVAL_MS,
   DUCKDB_SIZE_PATTERN,
+  VALID_WINDOW_FETCH_SIZES,
 } from '../constants.js';
 import {
   convertRefreshIntervalToMs,
@@ -609,7 +610,7 @@ export async function runPreparedStatement(
   let resolvedParams;
   try {
     validateDAParamBindings(da.query, da.params || []);
-    resolvedParams = applyParams(paramValues || {}, da.params);
+    resolvedParams = applyParams(paramValues || {}, da.params, da.timeRange);
   } catch (e) {
     throw toPreparedStatementError(e, streaming);
   }
@@ -838,7 +839,8 @@ export function checkTimeRange(timeRange, params) {
     throw new FDAError(400, 'InvalidParam', `timeRange must be an object.`);
   }
 
-  const bounds = Object.keys(timeRange);
+  const { maxSpan, ...paramBounds } = timeRange;
+  const bounds = Object.keys(paramBounds);
   if (bounds.length === 0) {
     throw new FDAError(
       400,
@@ -857,7 +859,7 @@ export function checkTimeRange(timeRange, params) {
       throw new FDAError(
         400,
         'InvalidParam',
-        `Invalid timeRange field "${bound}". Only "start" and "finish" are allowed.`,
+        `Invalid timeRange field "${bound}". Only "start", "finish" and "maxSpan" are allowed.`,
       );
     }
 
@@ -873,7 +875,42 @@ export function checkTimeRange(timeRange, params) {
     normalized[bound] = paramName;
   }
 
+  if (maxSpan !== undefined) {
+    checkMaxSpan(maxSpan, normalized, params);
+    normalized.maxSpan = maxSpan;
+  }
+
   return normalized;
+}
+
+function checkMaxSpan(maxSpan, timeRange, params) {
+  if (!parsePeriod(maxSpan)) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `timeRange.maxSpan must be a period such as "3 months" (units: ${VALID_WINDOW_FETCH_SIZES.join(', ')}).`,
+    );
+  }
+
+  if (!timeRange.start || !timeRange.finish) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `timeRange.maxSpan requires both "start" and "finish".`,
+    );
+  }
+
+  const types = new Map(params.map((param) => [param.name, param.type]));
+  if (
+    types.get(timeRange.start) !== 'DateTime' ||
+    types.get(timeRange.finish) !== 'DateTime'
+  ) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `timeRange.maxSpan requires params "${timeRange.start}" and "${timeRange.finish}" to be of type DateTime.`,
+    );
+  }
 }
 
 async function listPrunedPartitionFiles(
@@ -957,7 +994,7 @@ function normalizeParamDefaultForStorage(value) {
   return value;
 }
 
-function applyParams(reqParams, params) {
+function applyParams(reqParams, params, timeRange) {
   logger.debug({ params }, '[DEBUG]: applyParams start');
 
   if (!Array.isArray(params) || params.length === 0) {
@@ -982,7 +1019,35 @@ function applyParams(reqParams, params) {
         : value;
   }
 
+  if (timeRange?.maxSpan) {
+    assertTimeRangeSpan(validated, timeRange, now);
+  }
+
   return validated;
+}
+
+function assertTimeRangeSpan(values, timeRange, now) {
+  const start = values[timeRange.start];
+  if (!(start instanceof Date)) {
+    throw invalidQueryParamError(
+      `Param "${timeRange.start}" is required by timeRange.maxSpan.`,
+    );
+  }
+
+  const finish =
+    values[timeRange.finish] instanceof Date ? values[timeRange.finish] : now;
+  if (finish < start) {
+    throw invalidQueryParamError(
+      `Param "${timeRange.finish}" must not be before param "${timeRange.start}".`,
+    );
+  }
+
+  const { amount, unit } = parsePeriod(timeRange.maxSpan);
+  if (finish > shiftUTCDate(start, amount, unit)) {
+    throw invalidQueryParamError(
+      `Params "${timeRange.start}" and "${timeRange.finish}" span more than timeRange.maxSpan (${timeRange.maxSpan}).`,
+    );
+  }
 }
 
 function invalidQueryParamError(description) {
@@ -1057,8 +1122,8 @@ function normalizeParamsForDuckDB(params) {
   return normalized;
 }
 
-export function resolveDAParams(reqParams, params) {
-  return applyParams(reqParams, params);
+export function resolveDAParams(reqParams, params, timeRange) {
+  return applyParams(reqParams, params, timeRange);
 }
 
 const TYPE_COERCERS = {
