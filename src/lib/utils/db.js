@@ -726,7 +726,7 @@ export function checkParams(params) {
 
     const normalizedParam = { ...param };
 
-    if (Object.prototype.hasOwnProperty.call(param, 'default')) {
+    if (Object.hasOwn(param, 'default')) {
       normalizedParam.default = normalizeParamDefault(param);
     }
 
