@@ -721,64 +721,73 @@ export function checkParams(params) {
     }
 
     if (param.enum) {
-      param.enum.forEach((v) => {
-        if (typeof v !== 'string' && typeof v !== 'number') {
-          throw new FDAError(
-            400,
-            'InvalidParam',
-            `Values of enum param should be strings or numbers".`,
-          );
-        }
-      });
+      checkEnum(param.enum);
     }
 
     const normalizedParam = { ...param };
 
     if (Object.prototype.hasOwnProperty.call(param, 'default')) {
-      let normalizedDefault = param.default;
-
-      if (param.type) {
-        const coercedDefault = isTypeOf(param.default, param.type);
-
-        if (coercedDefault === undefined) {
-          throw new FDAError(
-            400,
-            'InvalidParam',
-            `Default value for param "${param.name}" not of valid type (${param.type}).`,
-          );
-        }
-
-        normalizedDefault = coercedDefault;
-      }
-
-      if (normalizedDefault !== null) {
-        if (
-          param.range &&
-          !param.range.some(isRelativeRangeBound) &&
-          !isInRange(normalizedDefault, param.range)
-        ) {
-          throw new FDAError(
-            400,
-            'InvalidParam',
-            `Default value for param "${param.name}" not in valid param range [${param.range}].`,
-          );
-        }
-
-        if (param.enum && !isInEnum(normalizedDefault, param.enum)) {
-          throw new FDAError(
-            400,
-            'InvalidParam',
-            `Default value for param "${param.name}" not in param enum [${param.enum}].`,
-          );
-        }
-      }
-
-      normalizedParam.default =
-        normalizeParamDefaultForStorage(normalizedDefault);
+      normalizedParam.default = normalizeParamDefault(param);
     }
 
     return normalizedParam;
   });
+}
+
+function checkEnum(enumValues) {
+  enumValues.forEach((v) => {
+    if (typeof v !== 'string' && typeof v !== 'number') {
+      throw new FDAError(
+        400,
+        'InvalidParam',
+        `Values of enum param should be strings or numbers".`,
+      );
+    }
+  });
+}
+
+function normalizeParamDefault(param) {
+  let normalizedDefault = param.default;
+
+  if (param.type) {
+    normalizedDefault = isTypeOf(param.default, param.type);
+
+    if (normalizedDefault === undefined) {
+      throw new FDAError(
+        400,
+        'InvalidParam',
+        `Default value for param "${param.name}" not of valid type (${param.type}).`,
+      );
+    }
+  }
+
+  if (normalizedDefault !== null) {
+    checkDefaultConstraints(normalizedDefault, param);
+  }
+
+  return normalizeParamDefaultForStorage(normalizedDefault);
+}
+
+function checkDefaultConstraints(value, param) {
+  if (
+    param.range &&
+    !param.range.some(isRelativeRangeBound) &&
+    !isInRange(value, param.range)
+  ) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Default value for param "${param.name}" not in valid param range [${param.range}].`,
+    );
+  }
+
+  if (param.enum && !isInEnum(value, param.enum)) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Default value for param "${param.name}" not in param enum [${param.enum}].`,
+    );
+  }
 }
 
 function checkRange(param) {
@@ -1233,8 +1242,10 @@ function parseRangeBound(bound) {
     return { date };
   }
 
-  const relative = /^(.+)\s+ago$/.exec(trimmed);
-  return relative ? parsePeriod(relative[1]) : undefined;
+  const suffix = ' ago';
+  return trimmed.endsWith(suffix)
+    ? parsePeriod(trimmed.slice(0, -suffix.length))
+    : undefined;
 }
 
 function isRelativeRangeBound(bound) {

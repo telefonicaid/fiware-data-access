@@ -319,7 +319,7 @@ export function shiftUTCDate(date, amount, unit) {
     return new Date(date.getTime() + amount * DURATION_UNITS_MS[unit]);
   }
 
-  const result = new Date(date.getTime());
+  const result = new Date(date);
   const day = result.getUTCDate();
   result.setUTCDate(1);
   result.setUTCMonth(
