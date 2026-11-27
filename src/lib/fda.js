@@ -803,7 +803,11 @@ async function buildFreshQueryStatement({
   }
   assertFreshDAsSupported(fdaId, datasource);
 
-  const validatedParams = resolveDAParams(params || {}, da.params);
+  const validatedParams = resolveDAParams(
+    params || {},
+    da.params,
+    da.timeRange,
+  );
   const freshBaseQuery = buildFreshDAQuery(fda.query, da.query);
 
   return {

@@ -41,8 +41,14 @@ import {
   DUCKDB_MEMORY_TOP_TAGS,
   DEFAULT_DUCKDB_MEMORY_SAMPLE_INTERVAL_MS,
   DUCKDB_SIZE_PATTERN,
+  VALID_WINDOW_FETCH_SIZES,
 } from '../constants.js';
-import { convertRefreshIntervalToMs, toJsonInteger } from './utils.js';
+import {
+  convertRefreshIntervalToMs,
+  parsePeriod,
+  shiftUTCDate,
+  toJsonInteger,
+} from './utils.js';
 import { getS3Client, listObjects } from './aws.js';
 import { resolveTimeRange, selectPartitionFiles } from './partitionPruning.js';
 import { buildParquetCopyQuery } from './parquetExport.js';
@@ -604,7 +610,7 @@ export async function runPreparedStatement(
   let resolvedParams;
   try {
     validateDAParamBindings(da.query, da.params || []);
-    resolvedParams = applyParams(paramValues || {}, da.params);
+    resolvedParams = applyParams(paramValues || {}, da.params, da.timeRange);
   } catch (e) {
     throw toPreparedStatementError(e, streaming);
   }
@@ -715,60 +721,73 @@ export function checkParams(params) {
     }
 
     if (param.enum) {
-      param.enum.forEach((v) => {
-        if (typeof v !== 'string' && typeof v !== 'number') {
-          throw new FDAError(
-            400,
-            'InvalidParam',
-            `Values of enum param should be strings or numbers".`,
-          );
-        }
-      });
+      checkEnum(param.enum);
     }
 
     const normalizedParam = { ...param };
 
-    if (Object.prototype.hasOwnProperty.call(param, 'default')) {
-      let normalizedDefault = param.default;
-
-      if (param.type) {
-        const coercedDefault = isTypeOf(param.default, param.type);
-
-        if (coercedDefault === undefined) {
-          throw new FDAError(
-            400,
-            'InvalidParam',
-            `Default value for param "${param.name}" not of valid type (${param.type}).`,
-          );
-        }
-
-        normalizedDefault = coercedDefault;
-      }
-
-      if (normalizedDefault !== null) {
-        if (param.range && !isInRange(normalizedDefault, param.range)) {
-          throw new FDAError(
-            400,
-            'InvalidParam',
-            `Default value for param "${param.name}" not in valid param range [${param.range}].`,
-          );
-        }
-
-        if (param.enum && !isInEnum(normalizedDefault, param.enum)) {
-          throw new FDAError(
-            400,
-            'InvalidParam',
-            `Default value for param "${param.name}" not in param enum [${param.enum}].`,
-          );
-        }
-      }
-
-      normalizedParam.default =
-        normalizeParamDefaultForStorage(normalizedDefault);
+    if (Object.hasOwn(param, 'default')) {
+      normalizedParam.default = normalizeParamDefault(param);
     }
 
     return normalizedParam;
   });
+}
+
+function checkEnum(enumValues) {
+  enumValues.forEach((v) => {
+    if (typeof v !== 'string' && typeof v !== 'number') {
+      throw new FDAError(
+        400,
+        'InvalidParam',
+        `Values of enum param should be strings or numbers".`,
+      );
+    }
+  });
+}
+
+function normalizeParamDefault(param) {
+  let normalizedDefault = param.default;
+
+  if (param.type) {
+    normalizedDefault = isTypeOf(param.default, param.type);
+
+    if (normalizedDefault === undefined) {
+      throw new FDAError(
+        400,
+        'InvalidParam',
+        `Default value for param "${param.name}" not of valid type (${param.type}).`,
+      );
+    }
+  }
+
+  if (normalizedDefault !== null) {
+    checkDefaultConstraints(normalizedDefault, param);
+  }
+
+  return normalizeParamDefaultForStorage(normalizedDefault);
+}
+
+function checkDefaultConstraints(value, param) {
+  if (
+    param.range &&
+    !param.range.some(isRelativeRangeBound) &&
+    !isInRange(value, param.range)
+  ) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Default value for param "${param.name}" not in valid param range [${param.range}].`,
+    );
+  }
+
+  if (param.enum && !isInEnum(value, param.enum)) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `Default value for param "${param.name}" not in param enum [${param.enum}].`,
+    );
+  }
 }
 
 function checkRange(param) {
@@ -793,14 +812,11 @@ function checkRange(param) {
   }
 
   if (param.type === 'DateTime') {
-    if (
-      range.length !== 2 ||
-      range.some((bound) => !(isTypeOf(bound, 'DateTime') instanceof Date))
-    ) {
+    if (range.length !== 2 || range.some((bound) => !parseRangeBound(bound))) {
       throw new FDAError(
         400,
         'InvalidParam',
-        `Both values of range param should be ISO 8601 DateTime strings.`,
+        `Both values of range param should be ISO 8601 DateTime strings, "now" or "<amount> <unit> ago".`,
       );
     }
   } else if (typeof range[0] !== 'number' || typeof range[1] !== 'number') {
@@ -811,7 +827,10 @@ function checkRange(param) {
     );
   }
 
-  if (toComparable(range[0]) > toComparable(range[1])) {
+  if (
+    !range.some(isRelativeRangeBound) &&
+    toComparable(range[0]) > toComparable(range[1])
+  ) {
     throw new FDAError(
       400,
       'InvalidParam',
@@ -829,7 +848,8 @@ export function checkTimeRange(timeRange, params) {
     throw new FDAError(400, 'InvalidParam', `timeRange must be an object.`);
   }
 
-  const bounds = Object.keys(timeRange);
+  const { maxSpan, ...paramBounds } = timeRange;
+  const bounds = Object.keys(paramBounds);
   if (bounds.length === 0) {
     throw new FDAError(
       400,
@@ -848,7 +868,7 @@ export function checkTimeRange(timeRange, params) {
       throw new FDAError(
         400,
         'InvalidParam',
-        `Invalid timeRange field "${bound}". Only "start" and "finish" are allowed.`,
+        `Invalid timeRange field "${bound}". Only "start", "finish" and "maxSpan" are allowed.`,
       );
     }
 
@@ -864,7 +884,42 @@ export function checkTimeRange(timeRange, params) {
     normalized[bound] = paramName;
   }
 
+  if (maxSpan !== undefined) {
+    checkMaxSpan(maxSpan, normalized, params);
+    normalized.maxSpan = maxSpan;
+  }
+
   return normalized;
+}
+
+function checkMaxSpan(maxSpan, timeRange, params) {
+  if (!parsePeriod(maxSpan)) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `timeRange.maxSpan must be a period such as "3 months" (units: ${VALID_WINDOW_FETCH_SIZES.join(', ')}).`,
+    );
+  }
+
+  if (!timeRange.start || !timeRange.finish) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `timeRange.maxSpan requires both "start" and "finish".`,
+    );
+  }
+
+  const types = new Map(params.map((param) => [param.name, param.type]));
+  if (
+    types.get(timeRange.start) !== 'DateTime' ||
+    types.get(timeRange.finish) !== 'DateTime'
+  ) {
+    throw new FDAError(
+      400,
+      'InvalidParam',
+      `timeRange.maxSpan requires params "${timeRange.start}" and "${timeRange.finish}" to be of type DateTime.`,
+    );
+  }
 }
 
 async function listPrunedPartitionFiles(
@@ -948,13 +1003,14 @@ function normalizeParamDefaultForStorage(value) {
   return value;
 }
 
-function applyParams(reqParams, params) {
+function applyParams(reqParams, params, timeRange) {
   logger.debug({ params }, '[DEBUG]: applyParams start');
 
   if (!Array.isArray(params) || params.length === 0) {
     return {};
   }
 
+  const now = new Date();
   const validated = {};
 
   for (const param of params) {
@@ -964,7 +1020,7 @@ function applyParams(reqParams, params) {
     }
 
     const value = coerceParamValue(rawValue, param);
-    assertParamConstraints(value, param);
+    assertParamConstraints(value, param, now);
 
     validated[param.name] =
       param.type === 'Number' && isUnsafeIntegerString(rawValue)
@@ -972,7 +1028,35 @@ function applyParams(reqParams, params) {
         : value;
   }
 
+  if (timeRange?.maxSpan) {
+    assertTimeRangeSpan(validated, timeRange, now);
+  }
+
   return validated;
+}
+
+function assertTimeRangeSpan(values, timeRange, now) {
+  const start = values[timeRange.start];
+  if (!(start instanceof Date)) {
+    throw invalidQueryParamError(
+      `Param "${timeRange.start}" is required by timeRange.maxSpan.`,
+    );
+  }
+
+  const finish =
+    values[timeRange.finish] instanceof Date ? values[timeRange.finish] : now;
+  if (finish < start) {
+    throw invalidQueryParamError(
+      `Param "${timeRange.finish}" must not be before param "${timeRange.start}".`,
+    );
+  }
+
+  const { amount, unit } = parsePeriod(timeRange.maxSpan);
+  if (finish > shiftUTCDate(start, amount, unit)) {
+    throw invalidQueryParamError(
+      `Params "${timeRange.start}" and "${timeRange.finish}" span more than timeRange.maxSpan (${timeRange.maxSpan}).`,
+    );
+  }
 }
 
 function invalidQueryParamError(description) {
@@ -1009,12 +1093,12 @@ function coerceParamValue(value, param) {
   return coerced;
 }
 
-function assertParamConstraints(value, param) {
+function assertParamConstraints(value, param, now) {
   if (value === null) {
     return;
   }
 
-  if (param.range && !isInRange(value, param.range)) {
+  if (param.range && !isInRange(value, param.range, now)) {
     throw invalidQueryParamError(
       `Param "${param.name}" not in valid param range [${param.range}].`,
     );
@@ -1047,8 +1131,8 @@ function normalizeParamsForDuckDB(params) {
   return normalized;
 }
 
-export function resolveDAParams(reqParams, params) {
-  return applyParams(reqParams, params);
+export function resolveDAParams(reqParams, params, timeRange) {
+  return applyParams(reqParams, params, timeRange);
 }
 
 const TYPE_COERCERS = {
@@ -1143,10 +1227,48 @@ function toComparable(value) {
   return value;
 }
 
-function isInRange(value, range) {
+function parseRangeBound(bound) {
+  if (typeof bound !== 'string') {
+    return undefined;
+  }
+
+  const trimmed = bound.trim();
+  if (trimmed === 'now') {
+    return { amount: 0, unit: 'day' };
+  }
+
+  const date = isTypeOf(trimmed, 'DateTime');
+  if (date instanceof Date) {
+    return { date };
+  }
+
+  const suffix = ' ago';
+  return trimmed.endsWith(suffix)
+    ? parsePeriod(trimmed.slice(0, -suffix.length))
+    : undefined;
+}
+
+function isRelativeRangeBound(bound) {
+  const parsed = parseRangeBound(bound);
+  return parsed !== undefined && parsed.date === undefined;
+}
+
+function resolveRangeBound(bound, now) {
+  const parsed = parseRangeBound(bound);
+  if (!parsed) {
+    return toComparable(bound);
+  }
+  if (parsed.date) {
+    return parsed.date.getTime();
+  }
+  return shiftUTCDate(now, -parsed.amount, parsed.unit).getTime();
+}
+
+function isInRange(value, range, now = new Date()) {
   const comparable = toComparable(value);
   return (
-    comparable >= toComparable(range[0]) && comparable <= toComparable(range[1])
+    comparable >= resolveRangeBound(range[0], now) &&
+    comparable <= resolveRangeBound(range[1], now)
   );
 }
 

@@ -2,3 +2,4 @@
 - Fix: a fresh NDJSON/CSV query that fails in PostgreSQL no longer hangs the request or leaks its pool connection (#386)
 - Add: SQL output (`outputType=sql` / `Accept: application/sql`) for only-fresh PostgreSQL FDAs: a pg_dump-like script, as INSERT or COPY, that recreates the result as a table (optionally a TimescaleDB hypertable) in one transaction (#387)
 - Add: support DateTime values in DA param range, with ISO 8601 bounds (#389)
+- Add: relative bounds (`now`, `<amount> <unit> ago`) in DateTime param range and `timeRange.maxSpan` to limit the requested window (#393)

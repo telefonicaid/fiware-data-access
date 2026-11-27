@@ -494,6 +494,70 @@ describe('utils', () => {
     });
   });
 
+  describe('parsePeriod', () => {
+    let parsePeriod;
+
+    beforeAll(async () => {
+      ({ parsePeriod } = await loadUtilsModule());
+    });
+
+    test.each([
+      ['3 months', { unit: 'month', amount: 3 }],
+      ['1 year', { unit: 'year', amount: 1 }],
+      [' 2 Weeks ', { unit: 'week', amount: 2 }],
+      ['day', { unit: 'day', amount: 1 }],
+      ['12 hours', { unit: 'hour', amount: 12 }],
+    ])('parses %j', (text, expected) => {
+      expect(parsePeriod(text)).toEqual(expected);
+    });
+
+    test.each([
+      '3 minutes',
+      '1 fortnight',
+      '0 days',
+      '-1 day',
+      '1.5 days',
+      '1 day extra',
+      '',
+      3,
+      null,
+    ])('returns undefined for %j', (text) => {
+      expect(parsePeriod(text)).toBeUndefined();
+    });
+  });
+
+  describe('shiftUTCDate', () => {
+    let shiftUTCDate;
+
+    beforeAll(async () => {
+      ({ shiftUTCDate } = await loadUtilsModule());
+    });
+
+    test.each([
+      ['2026-03-10T10:00:00.000Z', -2, 'hour', '2026-03-10T08:00:00.000Z'],
+      ['2026-03-10T10:00:00.000Z', 3, 'day', '2026-03-13T10:00:00.000Z'],
+      ['2026-03-29T00:30:00.000Z', 1, 'day', '2026-03-30T00:30:00.000Z'],
+      ['2026-03-10T10:00:00.000Z', -2, 'week', '2026-02-24T10:00:00.000Z'],
+      ['2026-03-10T10:00:00.000Z', -1, 'month', '2026-02-10T10:00:00.000Z'],
+      ['2026-03-31T10:00:00.000Z', -1, 'month', '2026-02-28T10:00:00.000Z'],
+      ['2024-03-31T10:00:00.000Z', -1, 'month', '2024-02-29T10:00:00.000Z'],
+      ['2026-01-31T00:00:00.000Z', 3, 'month', '2026-04-30T00:00:00.000Z'],
+      ['2026-11-15T00:00:00.000Z', 3, 'month', '2027-02-15T00:00:00.000Z'],
+      ['2024-02-29T12:00:00.000Z', 1, 'year', '2025-02-28T12:00:00.000Z'],
+      ['2026-06-01T00:00:00.000Z', -2, 'year', '2024-06-01T00:00:00.000Z'],
+    ])('shifts %s by %d %s', (date, amount, unit, expected) => {
+      expect(shiftUTCDate(new Date(date), amount, unit).toISOString()).toBe(
+        expected,
+      );
+    });
+
+    test('does not modify the given date', () => {
+      const date = new Date('2026-03-31T10:00:00.000Z');
+      shiftUTCDate(date, -1, 'month');
+      expect(date.toISOString()).toBe('2026-03-31T10:00:00.000Z');
+    });
+  });
+
   describe('parseUploadedFile', () => {
     test('parses CSV files with comma delimiter', async () => {
       const { parseUploadedFile } = await loadUtilsModule();

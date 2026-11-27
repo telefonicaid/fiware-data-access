@@ -1643,14 +1643,14 @@ A DA is represented by a JSON object with the following fields:
 
 Each object in the array `params` can have the following keys:
 
-| Parameter  | Optional | Type    | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| ---------- | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`     |          | string  | Name of the param to control.                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `type`     |          | string  | Type of the param to enforce. Possible values: _Number_, _Boolean_, _Text_ and _DateTime_.                                                                                                                                                                                                                                                                                                                                                                                |
-| `required` | ✓        | boolean | Tell if the param must be provided by the user. Default value _false_. If `true` and the value is missing, request fails even when `default` is defined.                                                                                                                                                                                                                                                                                                                  |
-| `default`  | ✓        | string  | Provide a default value for the param in case it isn't provided. It is applied only when the value is missing and `required` is `false`. If omitted, no default is applied. It can be set to `null` for any `type`, in which case the value passed to the query when the param is missing is `NULL`, useful for optional filters such as `WHERE ($param IS NULL OR field = $param)`.                                                                                      |
-| `range`    | ✓        | array   | Array with the minimum and maximum value a param can take, bounds included: numbers for `Number` params and ISO 8601 strings for `DateTime` params (e.g. `["2024-01-01T00:00:00Z", "2024-12-31T23:59:59Z"]`, compared as instants). It is not allowed for `Boolean` or `Text` params. The array should be consistent (only two elements and the first one not greater than the second), otherwise an error will be responsed. If omitted, no range validation is applied. |
-| `enum`     | ✓        | array   | Array with all the possible values (`Number` or `Text`) a param can take. If omitted, no enum validation is applied.                                                                                                                                                                                                                                                                                                                                                      |
+| Parameter  | Optional | Type    | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ---------- | -------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`     |          | string  | Name of the param to control.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `type`     |          | string  | Type of the param to enforce. Possible values: _Number_, _Boolean_, _Text_ and _DateTime_.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `required` | ✓        | boolean | Tell if the param must be provided by the user. Default value _false_. If `true` and the value is missing, request fails even when `default` is defined.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `default`  | ✓        | string  | Provide a default value for the param in case it isn't provided. It is applied only when the value is missing and `required` is `false`. If omitted, no default is applied. It can be set to `null` for any `type`, in which case the value passed to the query when the param is missing is `NULL`, useful for optional filters such as `WHERE ($param IS NULL OR field = $param)`.                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `range`    | ✓        | array   | Array with the minimum and maximum value a param can take, bounds included. For `Number` params, numbers. For `DateTime` params, ISO 8601 strings (e.g. `["2024-01-01T00:00:00Z", "2024-12-31T23:59:59Z"]`, compared as instants), `now` or `<amount> <unit> ago` with units `hour`, `day`, `week`, `month` or `year` (e.g. `["1 year ago", "now"]`), which can be mixed. Relative bounds are resolved on each request, with calendar arithmetic in UTC (`1 month ago` on March 31st is February 28th or 29th), so a `default` is only checked against them on each request. It is not allowed for `Boolean` or `Text` params. The array should be consistent (only two elements and, when both bounds are fixed, the first one not greater than the second), otherwise an error will be responsed. If omitted, no range validation is applied. |
+| `enum`     | ✓        | array   | Array with all the possible values (`Number` or `Text`) a param can take. If omitted, no enum validation is applied.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 
 **Empty string values (`?param=`):** when a query parameter is present but empty, its handling depends on `type`:
 
@@ -1700,21 +1700,30 @@ Example array:
 
 The optional `timeRange` object tells which params of the DA hold the bounds of the FDA `timeColumn` in the query:
 
-| Parameter | Optional | Type   | Description                                               |
-| --------- | -------- | ------ | --------------------------------------------------------- |
-| `start`   | ✓        | string | Name of the param with the lower bound of the time range. |
-| `finish`  | ✓        | string | Name of the param with the upper bound of the time range. |
+| Parameter | Optional | Type   | Description                                                                                     |
+| --------- | -------- | ------ | ----------------------------------------------------------------------------------------------- |
+| `start`   | ✓        | string | Name of the param with the lower bound of the time range.                                       |
+| `finish`  | ✓        | string | Name of the param with the upper bound of the time range.                                       |
+| `maxSpan` | ✓        | string | Maximum width between the `start` and `finish` values of a request, e.g. `3 months`. See below. |
 
-At least one of them is required, and each one must be the name of a param declared in `params`; otherwise the request
-fails with `400 InvalidParam`.
+At least one of `start` and `finish` is required, and each one must be the name of a param declared in `params`;
+otherwise the request fails with `400 InvalidParam`.
 
 When the FDA is partitioned, the values received in these params are used to read only the partitions that overlap the
 requested range, instead of every partition of the FDA. `timeRange` does not filter rows by itself: the `query` must
-still compare `timeColumn` with those params. It has no effect in non-partitioned FDAs. See
+still compare `timeColumn` with those params. Pruning has no effect in non-partitioned FDAs. See
 [Partition pruning](/doc/AdvancedTopics/sliding_windows_and_partitioning.md#partition-pruning) for details.
 
-`timeRange` does not validate the values either. To limit the window clients can request, declare the params as
-`DateTime` with a [`range`](#da-params): a value outside it fails with `400 InvalidQueryParam`.
+`maxSpan` limits how wide the window requested by clients can be, no matter when it starts or ends. It is an amount and
+a unit (`hour`, `day`, `week`, `month` or `year`, e.g. `3 months`), and it requires both `start` and `finish`, declared
+as `DateTime` params. On each request, `finish` must not be before `start` nor later than `start` plus `maxSpan`, with
+calendar arithmetic in UTC (from January 31st, `1 month` reaches February 28th or 29th). If `finish` is not sent, the
+current time is used for the check (the query still gets the value or `default` of the param). If `start` is not sent,
+or the window is not valid, the request fails with `400 InvalidQueryParam`. Unlike partition pruning, `maxSpan` is
+checked in every FDA, partitioned or not, cached or fresh.
+
+To limit when the window can be, declare the params with a [`range`](#da-params), with fixed or relative bounds. Both
+can be combined: in the example below, clients can request any window of up to 3 months within the last year.
 
 On update (`PUT`), `timeRange` must be sent again if it is still wanted: a `PUT` without it removes the stored one.
 Since `query` is always replaced on update, keeping a previous `timeRange` could leave it pointing to params that the
@@ -1731,6 +1740,20 @@ Example:
         { "name": "to", "default": null }
     ],
     "timeRange": { "start": "from", "finish": "to" }
+}
+```
+
+Example with `maxSpan` and relative ranges:
+
+```json
+{
+    "id": "da_alarms_last_year",
+    "query": "SELECT * WHERE timeinstant >= $from AND ($to IS NULL OR timeinstant < $to)",
+    "params": [
+        { "name": "from", "type": "DateTime", "required": true, "range": ["1 year ago", "now"] },
+        { "name": "to", "type": "DateTime", "default": null, "range": ["1 year ago", "now"] }
+    ],
+    "timeRange": { "start": "from", "finish": "to", "maxSpan": "3 months" }
 }
 ```
 

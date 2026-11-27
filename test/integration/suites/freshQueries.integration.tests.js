@@ -353,6 +353,82 @@ export function registerFreshQueriesIntegrationTests({
       }
     });
 
+    test('custom DAs on only-fresh FDAs check relative ranges and timeRange.maxSpan', async () => {
+      const baseUrl = getBaseUrl();
+      const freshFdaId = 'fda_fresh_time_span';
+      const daId = 'da_fresh_time_span';
+
+      const createFda = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: freshFdaId,
+          description: 'fresh time span test fda',
+          query: 'SELECT id, name, timeinstant FROM public.users',
+          cached: false,
+        },
+      });
+
+      expect(createFda.status).toBe(202);
+
+      const createDa = await httpReq({
+        method: 'POST',
+        url: `${baseUrl}/${visibility}/fdas/${freshFdaId}/das`,
+        headers: {
+          'Fiware-Service': service,
+          'Fiware-ServicePath': servicePath,
+        },
+        body: {
+          id: daId,
+          description: 'fresh DA with a bounded window',
+          query:
+            'SELECT id, name WHERE timeinstant >= $from AND timeinstant < $to ORDER BY id',
+          params: [
+            { name: 'from', type: 'DateTime', range: ['10 years ago', 'now'] },
+            { name: 'to', type: 'DateTime' },
+          ],
+          timeRange: { start: 'from', finish: 'to', maxSpan: '1 month' },
+        },
+      });
+
+      expect(createDa.status).toBe(204);
+
+      const queryDa = (values) =>
+        httpReq({
+          method: 'GET',
+          url: buildDaDataUrl(baseUrl, servicePath, freshFdaId, daId, values),
+          headers: { 'Fiware-Service': service },
+        });
+
+      const insideRes = await queryDa({
+        from: '2020-08-01T00:00:00Z',
+        to: '2020-09-01T00:00:00Z',
+      });
+
+      expect(insideRes.status).toBe(200);
+      expect(insideRes.json.map((x) => x.name)).toEqual([
+        'ana',
+        'bob',
+        'carlos',
+      ]);
+
+      for (const values of [
+        { from: '2020-08-01T00:00:00Z', to: '2020-10-01T00:00:00Z' },
+        { from: '2020-08-01T00:00:00Z' },
+        { to: '2020-09-01T00:00:00Z' },
+        { from: '2099-01-01T00:00:00Z', to: '2099-01-02T00:00:00Z' },
+      ]) {
+        const res = await queryDa(values);
+
+        expect(res.status).toBe(400);
+        expect(res.json.error).toBe('InvalidQueryParam');
+      }
+    });
+
     test('only-fresh DA queries return 429 when max concurrent fresh queries is reached', async () => {
       const baseUrl = getBaseUrl();
       const fdaFreshLimitId = 'fda_fresh_limit';
